@@ -174,7 +174,12 @@
     "SETTLEMENT_NOT_FOUND": "Settlement not found",
     "USERS_NOT_IN_HOUSEHOLD": "Users not in this household",
     "SHARES_SUM_MISMATCH": "Sum of shares doesn't match",
-    "SELF_SETTLEMENT_NOT_ALLOWED": "Self-settlement not allowed"
+    "SELF_SETTLEMENT_NOT_ALLOWED": "Self-settlement not allowed",
+    "HOUSEHOLD_NOT_FOUND": "Household not found",
+    "NO_PARTICIPANTS": "No participants for split",
+    "SHARES_EMPTY": "Shares must not be empty",
+    "DUPLICATE_SHARE_USER": "Duplicate user in shares",
+    "INVITE_CODE_GENERATION_FAILED": "Could not generate invite code"
   },
   "offline": {
     "banner": "No connection – changes cannot be saved right now."

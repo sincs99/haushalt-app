@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useAuthStore } from './auth'
 import { useExpensesStore } from './expenses'
 import { createOnlineSettlementsRepository } from '../repositories/settlementsRepository'
+import { translateApiError } from '../utils/apiErrors'
 import type { SettlementInfo, SettlementCreatePayload } from '../types'
 
 export const useSettlementsStore = defineStore('settlements', () => {
@@ -36,7 +37,7 @@ export const useSettlementsStore = defineStore('settlements', () => {
     try {
       settlements.value = await repo.fetchAll(hid)
     } catch (e: any) {
-      error.value = e.message || 'Fehler beim Laden der Zahlungen'
+      error.value = translateApiError(e)
       throw e
     } finally {
       loading.value = false
@@ -59,7 +60,7 @@ export const useSettlementsStore = defineStore('settlements', () => {
       debouncedFetchBalances()
       return created
     } catch (e: any) {
-      error.value = e.response?.data?.detail || e.message || 'Fehler beim Erstellen'
+      error.value = translateApiError(e)
       throw e
     }
   }
@@ -80,7 +81,7 @@ export const useSettlementsStore = defineStore('settlements', () => {
     } catch (e: any) {
       // Rollback
       if (removed && idx !== -1) settlements.value.splice(idx, 0, removed)
-      error.value = e.response?.data?.detail || e.message || 'Fehler beim Löschen'
+      error.value = translateApiError(e)
       throw e
     }
   }

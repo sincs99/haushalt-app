@@ -174,7 +174,12 @@
     "SETTLEMENT_NOT_FOUND": "Ausgleichszahlung nicht gefunden",
     "USERS_NOT_IN_HOUSEHOLD": "Benutzer nicht in diesem Haushalt",
     "SHARES_SUM_MISMATCH": "Summe der Anteile stimmt nicht",
-    "SELF_SETTLEMENT_NOT_ALLOWED": "Zahlung an sich selbst nicht möglich"
+    "SELF_SETTLEMENT_NOT_ALLOWED": "Zahlung an sich selbst nicht möglich",
+    "HOUSEHOLD_NOT_FOUND": "Haushalt nicht gefunden",
+    "NO_PARTICIPANTS": "Keine Teilnehmer für die Aufteilung",
+    "SHARES_EMPTY": "Anteile dürfen nicht leer sein",
+    "DUPLICATE_SHARE_USER": "Doppelter Benutzer bei den Anteilen",
+    "INVITE_CODE_GENERATION_FAILED": "Invite-Code konnte nicht generiert werden"
   },
   "offline": {
     "banner": "Kein Netz – Änderungen können aktuell nicht gespeichert werden."

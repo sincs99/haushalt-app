@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlineExpensesRepository } from '../repositories/expensesRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
+import { translateApiError } from '../utils/apiErrors'
 import type { Expense, ExpenseCreatePayload, ExpenseUpdatePayload, BalancesResponse, HouseholdMemberInfo } from '../types'
 
 export const useExpensesStore = defineStore('expenses', () => {
@@ -39,7 +40,7 @@ export const useExpensesStore = defineStore('expenses', () => {
     try {
       expenses.value = await repo.fetchAll(hid)
     } catch (e: any) {
-      error.value = e.message || 'Fehler beim Laden der Ausgaben'
+      error.value = translateApiError(e)
       throw e
     } finally {
       loading.value = false
@@ -90,7 +91,7 @@ export const useExpensesStore = defineStore('expenses', () => {
       debouncedFetchBalances()
       return created
     } catch (e: any) {
-      error.value = e.response?.data?.detail || e.message || 'Fehler beim Erstellen'
+      error.value = translateApiError(e)
       throw e
     }
   }
@@ -110,7 +111,7 @@ export const useExpensesStore = defineStore('expenses', () => {
       debouncedFetchBalances()
       return updated
     } catch (e: any) {
-      error.value = e.response?.data?.detail || e.message || 'Fehler beim Bearbeiten'
+      error.value = translateApiError(e)
       throw e
     }
   }
@@ -131,7 +132,7 @@ export const useExpensesStore = defineStore('expenses', () => {
     } catch (e: any) {
       // Rollback
       if (removed && idx !== -1) expenses.value.splice(idx, 0, removed)
-      error.value = e.response?.data?.detail || e.message || 'Fehler beim Löschen'
+      error.value = translateApiError(e)
       throw e
     }
   }

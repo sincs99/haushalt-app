@@ -6,6 +6,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useI18n } from 'vue-i18n'
+import { translateApiError } from '../utils/apiErrors'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -23,8 +24,7 @@ async function handleLogin() {
     await authStore.login(email.value, password.value)
     router.push('/shopping')
   } catch (err: any) {
-    error.value =
-      err.response?.data?.detail || t('auth.loginFailed')
+    error.value = translateApiError(err)
   } finally {
     isLoading.value = false
   }

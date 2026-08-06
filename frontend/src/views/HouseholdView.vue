@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/auth'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
+import { translateApiError } from '../utils/apiErrors'
 import type { HouseholdMemberInfo } from '../types'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
@@ -77,14 +78,7 @@ async function joinHousehold() {
     joinCode.value = ''
     router.push('/shopping')
   } catch (error: any) {
-    const status = error?.response?.status
-    if (status === 404) {
-      showToast(t('household.joinNotFound'), 'error')
-    } else if (status === 409) {
-      showToast(t('household.joinAlreadyMember'), 'error')
-    } else {
-      showToast(t('household.joinFailed'), 'error')
-    }
+    showToast(translateApiError(error), 'error')
   } finally {
     joinLoading.value = false
   }

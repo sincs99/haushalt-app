@@ -5,9 +5,11 @@ import BaseCard from '../components/ui/BaseCard.vue'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useI18n } from 'vue-i18n'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const email = ref('')
 const password = ref('')
@@ -29,7 +31,7 @@ async function handleRegister() {
     router.push('/shopping')
   } catch (err: any) {
     error.value =
-      err.response?.data?.detail || 'Registrierung fehlgeschlagen. Bitte prüfe deine Eingaben.'
+      err.response?.data?.detail || t('auth.registerFailed')
   } finally {
     isLoading.value = false
   }
@@ -39,39 +41,39 @@ async function handleRegister() {
 <template>
   <div class="auth-page">
     <BaseCard padding="lg" class="auth-card">
-      <h1 class="auth-title">🏠 Haushalt App</h1>
-      <p class="auth-subtitle">Erstelle dein Konto</p>
+      <h1 class="auth-title">🏠 {{ $t('auth.appTitle') }}</h1>
+      <p class="auth-subtitle">{{ $t('auth.registerSubtitle') }}</p>
 
       <form @submit.prevent="handleRegister" class="auth-form">
         <BaseInput
           v-model="email"
-          label="E-Mail"
+          :label="$t('auth.email')"
           type="email"
-          placeholder="deine@email.ch"
+          :placeholder="$t('auth.emailPlaceholder')"
           autocomplete="email"
         />
 
         <BaseInput
           v-model="password"
-          label="Passwort"
+          :label="$t('auth.password')"
           type="password"
-          placeholder="Min. 8 Zeichen"
+          :placeholder="$t('auth.passwordMinLength')"
           autocomplete="new-password"
         />
 
         <BaseInput
           v-model="displayName"
-          label="Anzeigename"
+          :label="$t('auth.displayName')"
           type="text"
-          placeholder="Dein Name"
+          :placeholder="$t('auth.namePlaceholder')"
           autocomplete="name"
         />
 
         <BaseInput
           v-model="householdName"
-          label="Haushaltsname"
+          :label="$t('auth.householdName')"
           type="text"
-          placeholder="z.B. Familie Müller"
+          :placeholder="$t('auth.householdPlaceholder')"
         />
 
         <p v-if="error" class="auth-error">{{ error }}</p>
@@ -83,11 +85,11 @@ async function handleRegister() {
           :disabled="isLoading"
           class="auth-submit"
         >
-          Registrieren
+          {{ $t('auth.register') }}
         </BaseButton>
 
         <p class="auth-link">
-          Bereits registriert? <router-link to="/login">Hier anmelden</router-link>
+          {{ $t('auth.hasAccount') }} <router-link to="/login">{{ $t('auth.loginHere') }}</router-link>
         </p>
       </form>
     </BaseCard>

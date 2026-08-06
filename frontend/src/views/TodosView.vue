@@ -15,7 +15,7 @@ onMounted(() => {
 
 <template>
   <div class="view-page">
-    <h1 class="view-title">✅ Aufgaben</h1>
+    <h1 class="view-title">✅ {{ $t('todos.title') }}</h1>
     <TodoList />
   </div>
 </template>

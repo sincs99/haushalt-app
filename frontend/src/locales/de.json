@@ -28,11 +28,20 @@
     "email": "E-Mail",
     "password": "Passwort",
     "displayName": "Anzeigename",
-    "householdName": "Haushalt-Name",
+    "householdName": "Haushaltsname",
     "loginFailed": "Anmeldung fehlgeschlagen",
     "registerFailed": "Registrierung fehlgeschlagen",
     "noAccount": "Noch kein Konto?",
-    "hasAccount": "Bereits ein Konto?"
+    "hasAccount": "Bereits registriert?",
+    "loginSubtitle": "Melde dich an, um fortzufahren",
+    "registerSubtitle": "Erstelle dein Konto",
+    "emailPlaceholder": "deine{'@'}email.ch",
+    "emailRequired": "E-Mail erforderlich",
+    "passwordMinLength": "Min. 8 Zeichen",
+    "namePlaceholder": "Dein Name",
+    "householdPlaceholder": "z.B. Familie Müller",
+    "appTitle": "Haushalt App",
+    "loginHere": "Hier anmelden"
   },
   "nav": {
     "shopping": "Einkaufen",
@@ -48,7 +57,12 @@
     "emptySubtitle": "Füge oben einen neuen Artikel hinzu",
     "deleteError": "Artikel konnte nicht gelöscht werden.",
     "quantityPlaceholder": "Menge",
-    "categoryPlaceholder": "Kategorie"
+    "categoryPlaceholder": "Kategorie",
+    "addError": "Artikel konnte nicht hinzugefügt werden.",
+    "toggleError": "Änderung konnte nicht gespeichert werden.",
+    "emptyOpenTitle": "Keine offenen Artikel",
+    "emptyOpenSubtitle": "Füge oben einen Artikel hinzu",
+    "doneCount": "Erledigt ({count})"
   },
   "todos": {
     "title": "Aufgaben",
@@ -59,7 +73,17 @@
     "descriptionPlaceholder": "Beschreibung (optional)",
     "assignTo": "Zuweisen an",
     "unassigned": "Nicht zugewiesen",
-    "dueDate": "Fällig am"
+    "dueDate": "Fälligkeitsdatum",
+    "addError": "Aufgabe konnte nicht hinzugefügt werden.",
+    "toggleError": "Änderung konnte nicht gespeichert werden.",
+    "saveError": "Änderung konnte nicht gespeichert werden.",
+    "detailsHide": "Details ausblenden",
+    "detailsShow": "Details hinzufügen",
+    "overdue": "Überfällig",
+    "titlePlaceholder": "Titel",
+    "noneAssigned": "– Niemand zugewiesen –",
+    "emptyOpenTitle": "Keine offenen Aufgaben",
+    "doneToggle": "{count} erledigt"
   },
   "expenses": {
     "title": "Ausgaben",
@@ -80,6 +104,15 @@
     "editExpense": "Ausgabe bearbeiten",
     "newExpense": "Neue Ausgabe",
     "saveExpense": "Speichern",
+    "descriptionPlaceholder": "z.B. Einkauf Migros",
+    "descriptionRequired": "Beschreibung erforderlich",
+    "amountPlaceholder": "z.B. 23.50",
+    "invalidAmount": "Ungültiger Betrag",
+    "submitError": "Ein Fehler ist aufgetreten",
+    "customSplit": {
+      "allocated": "Aufgeteilt",
+      "mismatch": "Summe stimmt nicht"
+    },
     "balance": {
       "title": "Saldo",
       "settled": "✓ Alles ausgeglichen",
@@ -102,9 +135,10 @@
     "deleteConfirm": "Ausgleichszahlung wirklich löschen?",
     "deleteError": "Zahlung konnte nicht gelöscht werden.",
     "created": "Ausgleichszahlung erfasst!",
-    "invalidAmount": "Ungültiger Betrag",
-    "sameUser": "Absender und Empfänger müssen verschieden sein",
-    "flow": "{from} → {to}"
+    "invalidAmount": "Bitte einen gültigen Betrag eingeben.",
+    "sameUser": "Von und An dürfen nicht identisch sein.",
+    "flow": "{from} → {to}",
+    "saveError": "Zahlung konnte nicht gespeichert werden."
   },
   "household": {
     "title": "Haushalt",
@@ -143,6 +177,6 @@
     "SELF_SETTLEMENT_NOT_ALLOWED": "Zahlung an sich selbst nicht möglich"
   },
   "offline": {
-    "banner": "📡 Kein Netz – Änderungen können aktuell nicht gespeichert werden."
+    "banner": "Kein Netz – Änderungen können aktuell nicht gespeichert werden."
   }
 }

@@ -2,11 +2,13 @@
 import { ref, computed } from 'vue'
 import { useShoppingStore } from '../stores/shopping'
 import { useToast } from '../composables/useToast'
+import { useI18n } from 'vue-i18n'
 import BaseSpinner from './ui/BaseSpinner.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
 
 const shoppingStore = useShoppingStore()
 const { showToast } = useToast()
+const { t } = useI18n()
 
 const newItemName = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
@@ -27,7 +29,7 @@ async function handleAddItem() {
   try {
     await shoppingStore.addItem(name)
   } catch {
-    showToast('Artikel konnte nicht hinzugefügt werden. Bitte erneut versuchen.')
+    showToast(t('shopping.addError'))
   }
   // Fokus bleibt im Feld — UX-Prinzip "Quick-Add in unter 3 Sekunden"
   inputRef.value?.focus()
@@ -37,7 +39,7 @@ async function handleToggle(itemId: string) {
   try {
     await shoppingStore.toggleChecked(itemId)
   } catch {
-    showToast('Änderung konnte nicht gespeichert werden.')
+    showToast(t('shopping.toggleError'))
   }
 }
 
@@ -45,7 +47,7 @@ async function handleDelete(itemId: string) {
   try {
     await shoppingStore.deleteItem(itemId)
   } catch {
-    showToast('Artikel konnte nicht gelöscht werden.')
+    showToast(t('shopping.deleteError'))
   }
 }
 </script>
@@ -58,7 +60,7 @@ async function handleDelete(itemId: string) {
         ref="inputRef"
         v-model="newItemName"
         type="text"
-        placeholder="Artikel hinzufügen..."
+        :placeholder="$t('shopping.addPlaceholder')"
         class="quick-add__input"
         autofocus
       />
@@ -95,13 +97,13 @@ async function handleDelete(itemId: string) {
     <BaseEmptyState
       v-if="!shoppingStore.loading && openItems.length === 0"
       icon="🛒"
-      title="Keine offenen Artikel"
-      subtitle="Füge oben einen Artikel hinzu"
+      :title="$t('shopping.emptyOpenTitle')"
+      :subtitle="$t('shopping.emptyOpenSubtitle')"
     />
 
     <!-- Abgehakte Items -->
     <div v-if="checkedItems.length > 0" class="done-section">
-      <p class="done-section__heading">Erledigt ({{ checkedItems.length }})</p>
+      <p class="done-section__heading">{{ $t('shopping.doneCount', { count: checkedItems.length }) }}</p>
       <ul class="item-list">
         <li
           v-for="item in checkedItems"
@@ -122,8 +124,8 @@ async function handleDelete(itemId: string) {
           <button
             class="item-row__delete"
             @click.stop="handleDelete(item.id)"
-            title="Löschen"
-            aria-label="Löschen"
+            :title="$t('common.delete')"
+            :aria-label="$t('common.delete')"
           >
             ✕
           </button>

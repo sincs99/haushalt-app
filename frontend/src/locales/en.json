@@ -32,7 +32,16 @@
     "loginFailed": "Login failed",
     "registerFailed": "Registration failed",
     "noAccount": "Don't have an account?",
-    "hasAccount": "Already have an account?"
+    "hasAccount": "Already registered?",
+    "loginSubtitle": "Log in to continue",
+    "registerSubtitle": "Create your account",
+    "emailPlaceholder": "your{'@'}email.com",
+    "emailRequired": "Email required",
+    "passwordMinLength": "Min. 8 characters",
+    "namePlaceholder": "Your name",
+    "householdPlaceholder": "e.g. The Smiths",
+    "appTitle": "Household App",
+    "loginHere": "Log in here"
   },
   "nav": {
     "shopping": "Shopping",
@@ -48,7 +57,12 @@
     "emptySubtitle": "Add a new item above",
     "deleteError": "Could not delete item.",
     "quantityPlaceholder": "Quantity",
-    "categoryPlaceholder": "Category"
+    "categoryPlaceholder": "Category",
+    "addError": "Could not add item.",
+    "toggleError": "Could not save change.",
+    "emptyOpenTitle": "No open items",
+    "emptyOpenSubtitle": "Add an item above",
+    "doneCount": "Done ({count})"
   },
   "todos": {
     "title": "Tasks",
@@ -59,7 +73,17 @@
     "descriptionPlaceholder": "Description (optional)",
     "assignTo": "Assign to",
     "unassigned": "Unassigned",
-    "dueDate": "Due date"
+    "dueDate": "Due date",
+    "addError": "Could not add task.",
+    "toggleError": "Could not save change.",
+    "saveError": "Could not save change.",
+    "detailsHide": "Hide details",
+    "detailsShow": "Add details",
+    "overdue": "Overdue",
+    "titlePlaceholder": "Title",
+    "noneAssigned": "– Nobody assigned –",
+    "emptyOpenTitle": "No open tasks",
+    "doneToggle": "{count} done"
   },
   "expenses": {
     "title": "Expenses",
@@ -80,6 +104,15 @@
     "editExpense": "Edit expense",
     "newExpense": "New expense",
     "saveExpense": "Save",
+    "descriptionPlaceholder": "e.g. Grocery shopping",
+    "descriptionRequired": "Description required",
+    "amountPlaceholder": "e.g. 23.50",
+    "invalidAmount": "Invalid amount",
+    "submitError": "An error occurred",
+    "customSplit": {
+      "allocated": "Allocated",
+      "mismatch": "Sum doesn't match"
+    },
     "balance": {
       "title": "Balance",
       "settled": "✓ All settled",
@@ -102,9 +135,10 @@
     "deleteConfirm": "Really delete this settlement?",
     "deleteError": "Could not delete payment.",
     "created": "Settlement recorded!",
-    "invalidAmount": "Invalid amount",
-    "sameUser": "Sender and recipient must be different",
-    "flow": "{from} → {to}"
+    "invalidAmount": "Please enter a valid amount.",
+    "sameUser": "Sender and recipient must be different.",
+    "flow": "{from} → {to}",
+    "saveError": "Could not save payment."
   },
   "household": {
     "title": "Household",
@@ -143,6 +177,6 @@
     "SELF_SETTLEMENT_NOT_ALLOWED": "Self-settlement not allowed"
   },
   "offline": {
-    "banner": "📡 No connection – changes cannot be saved right now."
+    "banner": "No connection – changes cannot be saved right now."
   }
 }

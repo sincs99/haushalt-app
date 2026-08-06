@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import { useToast } from '../composables/useToast'
+import { useI18n } from 'vue-i18n'
 import type { HouseholdMemberInfo } from '../types'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
@@ -13,6 +14,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const repo = createOnlineHouseholdsRepository()
 const { showToast } = useToast()
+const { t } = useI18n()
 
 // Invite-Code
 const inviteCode = ref('')
@@ -31,7 +33,7 @@ async function loadInviteCode() {
   try {
     inviteCode.value = await repo.fetchInviteCode(authStore.currentHouseholdId)
   } catch {
-    showToast('Invite-Code konnte nicht geladen werden', 'error')
+    showToast(t('household.inviteLoadError'), 'error')
   } finally {
     inviteCodeLoading.value = false
   }
@@ -49,9 +51,9 @@ async function loadMembers() {
 async function copyInviteCode() {
   try {
     await navigator.clipboard.writeText(inviteCode.value)
-    showToast('Invite-Code kopiert!', 'success')
+    showToast(t('household.codeCopied'), 'success')
   } catch {
-    showToast('Kopieren fehlgeschlagen', 'error')
+    showToast(t('household.copyFailed'), 'error')
   }
 }
 
@@ -60,7 +62,7 @@ async function joinHousehold() {
   joinLoading.value = true
   try {
     const result = await repo.join(joinCode.value.trim().toUpperCase())
-    showToast(`Haushalt "${result.name}" beigetreten!`, 'success')
+    showToast(t('household.joinSuccess', { name: result.name }), 'success')
     await authStore.fetchMe()
     authStore.switchHousehold(result.id)
     joinCode.value = ''
@@ -68,11 +70,11 @@ async function joinHousehold() {
   } catch (error: any) {
     const status = error?.response?.status
     if (status === 404) {
-      showToast('Code nicht gefunden', 'error')
+      showToast(t('household.joinNotFound'), 'error')
     } else if (status === 409) {
-      showToast('Du bist bereits Mitglied', 'error')
+      showToast(t('household.joinAlreadyMember'), 'error')
     } else {
-      showToast('Beitritt fehlgeschlagen', 'error')
+      showToast(t('household.joinFailed'), 'error')
     }
   } finally {
     joinLoading.value = false
@@ -93,12 +95,12 @@ watch(() => authStore.currentHouseholdId, () => {
 
 <template>
   <div class="view-page">
-    <h1 class="view-title">🏠 Haushalt</h1>
+    <h1 class="view-title">🏠 {{ $t('household.title') }}</h1>
 
     <!-- Invite-Code Card (prominent) -->
     <BaseCard>
-      <h2 class="section-title">Einladungscode</h2>
-      <p class="section-hint">Teile diesen Code, damit andere deinem Haushalt beitreten können:</p>
+      <h2 class="section-title">{{ $t('household.inviteCode') }}</h2>
+      <p class="section-hint">{{ $t('household.inviteHint') }}</p>
       <div v-if="inviteCodeLoading" class="loading-center">
         <BaseSpinner size="sm" />
       </div>
@@ -110,31 +112,31 @@ watch(() => authStore.currentHouseholdId, () => {
           @click="copyInviteCode"
           :disabled="!inviteCode"
         >
-          📋 Kopieren
+          {{ $t('household.copyCode') }}
         </BaseButton>
       </div>
     </BaseCard>
 
     <!-- Mitglieder -->
     <BaseCard>
-      <h2 class="section-title">Mitglieder</h2>
+      <h2 class="section-title">{{ $t('household.members') }}</h2>
       <div v-if="members.length > 0" class="member-chips">
         <span v-for="member in members" :key="member.id" class="member-chip">
           <span class="member-chip__avatar">{{ member.display_name.charAt(0).toUpperCase() }}</span>
           <span class="member-chip__name">{{ member.display_name }}</span>
         </span>
       </div>
-      <p v-else class="section-hint">Keine Mitglieder geladen.</p>
+      <p v-else class="section-hint">{{ $t('household.noMembers') }}</p>
     </BaseCard>
 
     <!-- Haushalt beitreten -->
     <BaseCard>
-      <h2 class="section-title">Anderem Haushalt beitreten</h2>
+      <h2 class="section-title">{{ $t('household.joinTitle') }}</h2>
       <form @submit.prevent="joinHousehold" class="join-form">
         <input
           v-model="joinCode"
           type="text"
-          placeholder="Einladungscode eingeben"
+          :placeholder="$t('household.joinPlaceholder')"
           class="join-form__input"
           :disabled="joinLoading"
         />
@@ -145,7 +147,7 @@ watch(() => authStore.currentHouseholdId, () => {
           :loading="joinLoading"
           :disabled="joinLoading || !joinCode.trim()"
         >
-          Beitreten
+          {{ $t('household.joinButton') }}
         </BaseButton>
       </form>
     </BaseCard>
@@ -153,7 +155,7 @@ watch(() => authStore.currentHouseholdId, () => {
     <!-- Logout-Button für Mobile (auf Desktop in Top-Bar) -->
     <div class="mobile-logout">
       <BaseButton variant="ghost" @click="authStore.logout()" class="mobile-logout__btn">
-        Abmelden
+        {{ $t('auth.logout') }}
       </BaseButton>
     </div>
   </div>

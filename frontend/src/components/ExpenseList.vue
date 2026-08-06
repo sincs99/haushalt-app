@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useExpensesStore } from '../stores/expenses'
 import { useToast } from '../composables/useToast'
+import { useI18n } from 'vue-i18n'
 import { formatRappen } from '../utils/money'
 import type { Expense } from '../types'
 import BaseButton from './ui/BaseButton.vue'
@@ -11,6 +12,7 @@ import ExpenseFormDialog from './ExpenseFormDialog.vue'
 
 const expensesStore = useExpensesStore()
 const { showToast } = useToast()
+const { t } = useI18n()
 
 // Dialog State
 const showDialog = ref(false)
@@ -27,21 +29,23 @@ function openEditDialog(expense: Expense) {
 }
 
 function resolveUserName(userId: string | null): string {
-  if (!userId) return 'Ehemaliges Mitglied'
+  if (!userId) return t('common.formerMember')
   const member = expensesStore.members.find(m => m.id === userId)
-  return member?.display_name ?? 'Ehemaliges Mitglied'
+  return member?.display_name ?? t('common.formerMember')
 }
 
-function formatDateDE(dateStr: string): string {
+function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const locale = localStorage.getItem('haushalt_locale') ?? 'de'
+  const intlLocale = locale === 'de' ? 'de-CH' : 'en-CH'
+  return d.toLocaleDateString(intlLocale, { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 async function handleDelete(expenseId: string) {
   try {
     await expensesStore.removeExpense(expenseId)
   } catch {
-    showToast('Ausgabe konnte nicht gelöscht werden.', 'error')
+    showToast(t('expenses.deleteError'), 'error')
   }
 }
 </script>
@@ -51,7 +55,7 @@ async function handleDelete(expenseId: string) {
     <!-- Sticky Add-Button -->
     <div class="quick-add">
       <BaseButton variant="primary" @click="openAddDialog">
-        + Ausgabe hinzufügen
+        {{ $t('expenses.addExpense') }}
       </BaseButton>
     </div>
 
@@ -74,9 +78,9 @@ async function handleDelete(expenseId: string) {
               <span class="expense-row__amount">{{ formatRappen(expense.amount_rappen) }}</span>
             </div>
             <div class="expense-row__meta">
-              <span class="expense-row__date">{{ formatDateDE(expense.expense_date) }}</span>
+              <span class="expense-row__date">{{ formatDate(expense.expense_date) }}</span>
               <span class="expense-row__paid-by">
-                bezahlt von {{ resolveUserName(expense.paid_by_user_id) }}
+                {{ $t('expenses.paidBy', { name: resolveUserName(expense.paid_by_user_id) }) }}
               </span>
             </div>
           </div>
@@ -85,8 +89,8 @@ async function handleDelete(expenseId: string) {
           <button
             class="action-btn action-btn--danger"
             @click.stop="handleDelete(expense.id)"
-            title="Löschen"
-            aria-label="Löschen"
+            :title="$t('common.delete')"
+            :aria-label="$t('common.delete')"
           >
             ✕
           </button>
@@ -98,8 +102,8 @@ async function handleDelete(expenseId: string) {
     <BaseEmptyState
       v-if="!expensesStore.loading && expensesStore.expenses.length === 0"
       icon="💰"
-      title="Noch keine Ausgaben erfasst"
-      subtitle="Erfasse oben eine neue Ausgabe"
+      :title="$t('expenses.emptyTitle')"
+      :subtitle="$t('expenses.emptySubtitle')"
     />
 
     <!-- Dialog -->

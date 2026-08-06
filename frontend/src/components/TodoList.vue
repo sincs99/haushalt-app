@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useTodosStore } from '../stores/todos'
 import { useToast } from '../composables/useToast'
+import { useI18n } from 'vue-i18n'
 import type { TodoItem } from '../types'
 import BaseButton from './ui/BaseButton.vue'
 import BaseSpinner from './ui/BaseSpinner.vue'
@@ -9,6 +10,7 @@ import BaseEmptyState from './ui/BaseEmptyState.vue'
 
 const todosStore = useTodosStore()
 const { showToast } = useToast()
+const { t } = useI18n()
 
 // Quick-Add
 const newTodoTitle = ref('')
@@ -51,12 +53,13 @@ function getMemberName(userId: string | null): string | null {
   return member?.display_name ?? null
 }
 
-// Datum formatieren
+// Datum formatieren (locale-aware)
 function formatDate(dateStr: string | null): string | null {
   if (!dateStr) return null
   const d = new Date(dateStr)
-  const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
-  return `${days[d.getDay()]} ${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.`
+  const locale = localStorage.getItem('haushalt_locale') ?? 'de'
+  const intlLocale = locale === 'de' ? 'de-CH' : 'en-CH'
+  return d.toLocaleDateString(intlLocale, { weekday: 'short', day: '2-digit', month: '2-digit' })
 }
 
 // Quick-Add Handler
@@ -78,7 +81,7 @@ async function handleAddTodo() {
   try {
     await todosStore.addTodo(title, description, assignedTo, dueDate)
   } catch {
-    showToast('Aufgabe konnte nicht hinzugefügt werden. Bitte erneut versuchen.')
+    showToast(t('todos.addError'))
   }
   // Fokus bleibt im Feld — UX-Prinzip "Quick-Add in unter 3 Sekunden"
   inputRef.value?.focus()
@@ -88,7 +91,7 @@ async function handleToggle(todoId: string) {
   try {
     await todosStore.toggleDone(todoId)
   } catch {
-    showToast('Änderung konnte nicht gespeichert werden.')
+    showToast(t('todos.toggleError'))
   }
 }
 
@@ -96,7 +99,7 @@ async function handleDelete(todoId: string) {
   try {
     await todosStore.deleteTodo(todoId)
   } catch {
-    showToast('Todo konnte nicht gelöscht werden.')
+    showToast(t('todos.deleteError'))
   }
 }
 
@@ -126,7 +129,7 @@ async function saveEdit(todoId: string) {
     })
     editingId.value = null
   } catch {
-    showToast('Änderung konnte nicht gespeichert werden.')
+    showToast(t('todos.saveError'))
   }
 }
 </script>
@@ -139,7 +142,7 @@ async function saveEdit(todoId: string) {
         ref="inputRef"
         v-model="newTodoTitle"
         type="text"
-        placeholder="Neue Aufgabe..."
+        :placeholder="$t('todos.addPlaceholder')"
         class="quick-add__input"
         autofocus
       />
@@ -147,14 +150,14 @@ async function saveEdit(todoId: string) {
 
     <!-- Details Toggle -->
     <button type="button" class="details-toggle" @click="showAddDetails = !showAddDetails">
-      {{ showAddDetails ? '▾ Details ausblenden' : '▸ Details hinzufügen' }}
+      {{ showAddDetails ? '▾ ' + $t('todos.detailsHide') : '▸ ' + $t('todos.detailsShow') }}
     </button>
 
     <!-- Erweiterte Felder -->
     <div v-if="showAddDetails" class="add-details">
       <textarea
         v-model="newDescription"
-        placeholder="Beschreibung (optional)"
+        :placeholder="$t('todos.descriptionPlaceholder')"
         class="add-details__textarea"
         rows="2"
       />
@@ -162,10 +165,10 @@ async function saveEdit(todoId: string) {
         v-model="newDueDate"
         type="date"
         class="add-details__input"
-        title="Fälligkeitsdatum"
+        :title="$t('todos.dueDate')"
       />
-      <select v-model="newAssignedTo" class="add-details__input" title="Zuweisen an">
-        <option value="">– Niemand zugewiesen –</option>
+      <select v-model="newAssignedTo" class="add-details__input" :title="$t('todos.assignTo')">
+        <option value="">{{ $t('todos.noneAssigned') }}</option>
         <option v-for="member in todosStore.members" :key="member.id" :value="member.id">
           {{ member.display_name }}
         </option>
@@ -200,7 +203,7 @@ async function saveEdit(todoId: string) {
             <div class="todo-row__content">
               <div class="todo-row__title-line">
                 <span class="todo-row__name">{{ todo.title }}</span>
-                <span v-if="isOverdue(todo)" class="overdue-badge">Überfällig</span>
+                <span v-if="isOverdue(todo)" class="overdue-badge">{{ $t('todos.overdue') }}</span>
               </div>
               <div v-if="todo.description || todo.due_date || todo.assigned_to_user_id" class="todo-row__meta">
                 <span v-if="todo.description" class="todo-row__desc">{{ todo.description }}</span>
@@ -214,26 +217,26 @@ async function saveEdit(todoId: string) {
             </div>
           </div>
           <div class="todo-row__actions">
-            <button class="action-btn" @click="startEdit(todo)" title="Bearbeiten" aria-label="Bearbeiten">✎</button>
-            <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" title="Löschen" aria-label="Löschen">✕</button>
+            <button class="action-btn" @click="startEdit(todo)" :title="$t('common.edit')" :aria-label="$t('common.edit')">✎</button>
+            <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')">✕</button>
           </div>
         </template>
 
         <!-- Bearbeitungs-Modus -->
         <template v-else>
           <form class="edit-form" @submit.prevent="saveEdit(todo.id)">
-            <input v-model="editTitle" type="text" class="add-details__input" placeholder="Titel" />
-            <textarea v-model="editDescription" class="add-details__textarea" placeholder="Beschreibung (optional)" rows="2" />
-            <input v-model="editDueDate" type="date" class="add-details__input" title="Fälligkeitsdatum" />
-            <select v-model="editAssignedTo" class="add-details__input" title="Zuweisen an">
-              <option value="">– Niemand zugewiesen –</option>
+            <input v-model="editTitle" type="text" class="add-details__input" :placeholder="$t('todos.titlePlaceholder')" />
+            <textarea v-model="editDescription" class="add-details__textarea" :placeholder="$t('todos.descriptionPlaceholder')" rows="2" />
+            <input v-model="editDueDate" type="date" class="add-details__input" :title="$t('todos.dueDate')" />
+            <select v-model="editAssignedTo" class="add-details__input" :title="$t('todos.assignTo')">
+              <option value="">{{ $t('todos.noneAssigned') }}</option>
               <option v-for="member in todosStore.members" :key="member.id" :value="member.id">
                 {{ member.display_name }}
               </option>
             </select>
             <div class="edit-form__actions">
-              <BaseButton type="submit" variant="primary" size="sm">Speichern</BaseButton>
-              <BaseButton type="button" variant="secondary" size="sm" @click="cancelEdit">Abbrechen</BaseButton>
+              <BaseButton type="submit" variant="primary" size="sm">{{ $t('common.save') }}</BaseButton>
+              <BaseButton type="button" variant="secondary" size="sm" @click="cancelEdit">{{ $t('common.cancel') }}</BaseButton>
             </div>
           </form>
         </template>
@@ -244,14 +247,14 @@ async function saveEdit(todoId: string) {
     <BaseEmptyState
       v-if="!todosStore.loading && openTodos.length === 0"
       icon="🎉"
-      title="Keine offenen Aufgaben"
-      subtitle="Erstelle oben eine neue Aufgabe"
+      :title="$t('todos.emptyOpenTitle')"
+      :subtitle="$t('todos.emptySubtitle')"
     />
 
     <!-- Erledigte Todos (eingeklappt) -->
     <div v-if="doneTodos.length > 0" class="done-section">
       <button type="button" class="done-section__toggle" @click="showDone = !showDone">
-        {{ doneTodos.length }} erledigt {{ showDone ? '▾' : '▸' }}
+        {{ $t('todos.doneToggle', { count: doneTodos.length }) }} {{ showDone ? '▾' : '▸' }}
       </button>
       <ul v-if="showDone" class="item-list">
         <li v-for="todo in doneTodos" :key="todo.id" class="todo-row todo-row--done">
@@ -276,7 +279,7 @@ async function saveEdit(todoId: string) {
               </div>
             </div>
           </div>
-          <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" title="Löschen" aria-label="Löschen">✕</button>
+          <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')">✕</button>
         </li>
       </ul>
     </div>
@@ -317,52 +320,66 @@ async function saveEdit(todoId: string) {
   transition: border-color var(--transition-fast);
 }
 
-.quick-add__input::placeholder { color: var(--color-text-muted); }
+.quick-add__input::placeholder {
+  color: var(--color-text-muted);
+}
+
 .quick-add__input:focus {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
-/* Details Toggle */
+/* Details-Toggle */
 .details-toggle {
   background: none;
   border: none;
-  color: var(--color-text-secondary);
-  cursor: pointer;
+  color: var(--color-text-muted);
   font-size: var(--text-sm);
-  padding: var(--space-2) var(--space-3);
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
+  cursor: pointer;
+  padding: var(--space-1) 0;
   text-align: left;
-  font-family: var(--font-family);
 }
-.details-toggle:hover { color: var(--color-text); }
 
-/* Add Details */
+.details-toggle:hover {
+  color: var(--color-text);
+}
+
+/* Erweiterte Felder */
 .add-details {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-.add-details__input,
 .add-details__textarea {
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-neutral-300);
   border-radius: var(--radius-sm);
-  font-size: var(--text-base);  /* 16px verhindert iOS-Zoom */
+  font-size: var(--text-sm);
+  font-family: var(--font-family);
+  background: var(--color-surface);
+  color: var(--color-text);
+  resize: vertical;
+}
+
+.add-details__input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-neutral-300);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
   font-family: var(--font-family);
   background: var(--color-surface);
   color: var(--color-text);
 }
-.add-details__textarea { resize: vertical; }
-.add-details__input:focus,
-.add-details__textarea:focus {
+
+.add-details__textarea:focus,
+.add-details__input:focus {
   outline: none;
   border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
 /* Loading */
@@ -377,6 +394,8 @@ async function saveEdit(todoId: string) {
   list-style: none;
   padding: 0;
   margin: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Todo-Zeile */
@@ -389,8 +408,7 @@ async function saveEdit(todoId: string) {
 }
 
 .todo-row--overdue {
-  border-left: 3px solid var(--color-danger);
-  padding-left: var(--space-3);
+  background: #FFF5F5;
 }
 
 .todo-row__main {
@@ -399,7 +417,7 @@ async function saveEdit(todoId: string) {
   gap: var(--space-3);
   flex: 1;
   cursor: pointer;
-  min-height: 44px; /* Touch-Target */
+  min-height: 44px;
   -webkit-user-select: none;
   user-select: none;
 }
@@ -433,7 +451,6 @@ async function saveEdit(todoId: string) {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex-wrap: wrap;
 }
 
 .todo-row__name {
@@ -441,18 +458,13 @@ async function saveEdit(todoId: string) {
   color: var(--color-text);
 }
 
-/* Überfällig-Badge */
 .overdue-badge {
-  display: inline-block;
-  padding: 1px var(--space-2);
-  background: #FEF2F2;
-  color: var(--color-danger);
   font-size: var(--text-xs);
+  color: var(--color-danger);
   font-weight: var(--font-weight-semibold);
-  border-radius: var(--radius-full);
+  white-space: nowrap;
 }
 
-/* Meta-Zeile */
 .todo-row__meta {
   display: flex;
   flex-wrap: wrap;
@@ -464,20 +476,24 @@ async function saveEdit(todoId: string) {
 }
 
 .todo-row__desc {
-  width: 100%;
   color: var(--color-text-secondary);
 }
 
-.todo-row__date { white-space: nowrap; }
-.todo-row__date--overdue { color: var(--color-danger); }
+.todo-row__date {
+  white-space: nowrap;
+}
 
-/* Initialen-Chip */
+.todo-row__date--overdue {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-medium);
+}
+
 .initials-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: var(--radius-full);
   background: var(--color-primary-light);
   color: var(--color-primary);
@@ -486,10 +502,10 @@ async function saveEdit(todoId: string) {
   flex-shrink: 0;
 }
 
-/* Actions */
+/* Aktions-Buttons */
 .todo-row__actions {
   display: flex;
-  gap: 2px;
+  gap: var(--space-1);
   flex-shrink: 0;
 }
 
@@ -498,58 +514,68 @@ async function saveEdit(todoId: string) {
   border: none;
   color: var(--color-text-muted);
   cursor: pointer;
-  font-size: var(--text-base);
-  padding: var(--space-2);
+  font-size: var(--text-sm);
+  padding: var(--space-1);
   border-radius: var(--radius-sm);
   transition: background var(--transition-fast), color var(--transition-fast);
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 32px;
+  min-height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.action-btn:hover { background: var(--color-neutral-100); color: var(--color-primary); }
-.action-btn--danger:hover { background: #FEF2F2; color: var(--color-danger); }
-
-/* Done-Todos */
-.todo-row--done { opacity: 0.55; }
-.todo-row--done .todo-row__name {
-  text-decoration: line-through;
-  color: var(--color-text-muted);
+.action-btn:hover {
+  background: var(--color-neutral-100);
+  color: var(--color-primary);
 }
 
-/* Erledigt-Toggle */
-.done-section { margin-top: var(--space-2); }
-.done-section__toggle {
-  background: none;
-  border: none;
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-muted);
-  cursor: pointer;
-  padding: var(--space-2) 0;
-  font-family: var(--font-family);
-}
-.done-section__toggle:hover { color: var(--color-text-secondary); }
-
-@media (hover: hover) {
-  .todo-row__main:hover {
-    background: var(--color-neutral-50);
-    border-radius: var(--radius-sm);
-  }
+.action-btn--danger:hover {
+  background: #FEF2F2;
+  color: var(--color-danger);
 }
 
-/* Edit-Form */
+/* Bearbeitungs-Form */
 .edit-form {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  width: 100%;
+  flex: 1;
+  padding: var(--space-2) 0;
 }
 
 .edit-form__actions {
   display: flex;
   gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+/* Erledigte Todos */
+.todo-row--done {
+  opacity: 0.55;
+}
+
+.todo-row--done .todo-row__name {
+  text-decoration: line-through;
+  color: var(--color-text-muted);
+}
+
+/* Erledigt-Sektion */
+.done-section {
+  margin-top: var(--space-2);
+}
+
+.done-section__toggle {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  padding: var(--space-2) 0;
+}
+
+.done-section__toggle:hover {
+  color: var(--color-text);
 }
 </style>

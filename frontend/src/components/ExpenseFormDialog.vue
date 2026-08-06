@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useExpensesStore } from '../stores/expenses'
 import { useAuthStore } from '../stores/auth'
 import { useToast } from '../composables/useToast'
+import { useI18n } from 'vue-i18n'
 import { formatRappen, parseAmountToRappen } from '../utils/money'
 import type { Expense, SplitType, ExpenseShare } from '../types'
 import BaseButton from './ui/BaseButton.vue'
@@ -20,6 +21,7 @@ const emit = defineEmits<{
 const expensesStore = useExpensesStore()
 const authStore = useAuthStore()
 const { showToast } = useToast()
+const { t } = useI18n()
 
 // Form State
 const description = ref('')
@@ -34,7 +36,7 @@ const serverError = ref('')
 const submitting = ref(false)
 
 const isEditMode = computed(() => !!props.expense)
-const dialogTitle = computed(() => isEditMode.value ? 'Ausgabe bearbeiten' : 'Neue Ausgabe')
+const dialogTitle = computed(() => isEditMode.value ? t('expenses.editExpense') : t('expenses.newExpense'))
 
 // Betrag parsen
 const parsedAmountRappen = computed(() => {
@@ -128,7 +130,7 @@ function toggleParticipant(memberId: string) {
 
 function resolveUserName(userId: string): string {
   const member = expensesStore.members.find(m => m.id === userId)
-  return member?.display_name ?? 'Ehemaliges Mitglied'
+  return member?.display_name ?? t('common.formerMember')
 }
 
 async function handleSubmit() {
@@ -137,7 +139,7 @@ async function handleSubmit() {
   serverError.value = ''
 
   if (parsedAmountRappen.value === null) {
-    amountError.value = 'Ungültiger Betrag'
+    amountError.value = t('expenses.invalidAmount')
     return
   }
 
@@ -197,7 +199,7 @@ async function handleSubmit() {
     } else if (Array.isArray(detail)) {
       serverError.value = detail.map((d: any) => d.msg ?? d).join(', ')
     } else {
-      serverError.value = e.message || 'Ein Fehler ist aufgetreten'
+      serverError.value = e.message || t('expenses.submitError')
     }
   } finally {
     submitting.value = false
@@ -215,23 +217,23 @@ async function handleSubmit() {
           <!-- Beschreibung -->
           <BaseInput
             v-model="description"
-            label="Beschreibung"
-            placeholder="z.B. Einkauf Migros"
-            :error="description.trim().length === 0 && description.length > 0 ? 'Beschreibung erforderlich' : undefined"
+            :label="$t('expenses.description')"
+            :placeholder="$t('expenses.descriptionPlaceholder')"
+            :error="description.trim().length === 0 && description.length > 0 ? $t('expenses.descriptionRequired') : undefined"
           />
 
           <!-- Betrag -->
           <BaseInput
             v-model="amountText"
-            label="Betrag (CHF)"
-            placeholder="z.B. 23.50"
+            :label="$t('expenses.amount')"
+            :placeholder="$t('expenses.amountPlaceholder')"
             inputmode="decimal"
             :error="amountError || undefined"
           />
 
           <!-- Datum -->
           <div class="form-field">
-            <label class="form-field__label" for="expense-date">Datum</label>
+            <label class="form-field__label" for="expense-date">{{ $t('expenses.date') }}</label>
             <input
               id="expense-date"
               v-model="expenseDate"
@@ -242,7 +244,7 @@ async function handleSubmit() {
 
           <!-- Bezahlt von -->
           <div class="form-field">
-            <label class="form-field__label" for="expense-paid-by">Bezahlt von</label>
+            <label class="form-field__label" for="expense-paid-by">{{ $t('expenses.payer') }}</label>
             <select
               id="expense-paid-by"
               v-model="paidByUserId"
@@ -256,7 +258,7 @@ async function handleSubmit() {
 
           <!-- Split-Typ Auswahl -->
           <div class="form-field">
-            <label class="form-field__label">Aufteilung</label>
+            <label class="form-field__label">{{ $t('expenses.splitType') }}</label>
             <div class="split-toggle">
               <button
                 type="button"
@@ -264,7 +266,7 @@ async function handleSubmit() {
                 :class="{ 'split-toggle__btn--active': splitType === 'even' }"
                 @click="splitType = 'even'"
               >
-                Gleichmässig
+                {{ $t('expenses.splitEven') }}
               </button>
               <button
                 type="button"
@@ -272,7 +274,7 @@ async function handleSubmit() {
                 :class="{ 'split-toggle__btn--active': splitType === 'custom' }"
                 @click="splitType = 'custom'"
               >
-                Individuell
+                {{ $t('expenses.splitCustom') }}
               </button>
             </div>
           </div>
@@ -310,13 +312,13 @@ async function handleSubmit() {
               />
             </div>
             <div class="custom-shares__summary">
-              <span>Aufgeteilt: {{ formatRappen(customSharesSum) }}</span>
+              <span>{{ $t('expenses.customSplit.allocated') }}: {{ formatRappen(customSharesSum) }}</span>
               <span v-if="parsedAmountRappen !== null"> / {{ formatRappen(parsedAmountRappen) }}</span>
               <span
                 v-if="parsedAmountRappen !== null && customSharesSum !== parsedAmountRappen"
                 class="custom-shares__warning"
               >
-                ≠ Summe stimmt nicht
+                ≠ {{ $t('expenses.customSplit.mismatch') }}
               </span>
             </div>
           </div>
@@ -332,10 +334,10 @@ async function handleSubmit() {
               :disabled="!canSubmit"
               :loading="submitting"
             >
-              {{ isEditMode ? 'Speichern' : 'Hinzufügen' }}
+              {{ isEditMode ? $t('expenses.saveExpense') : $t('common.add') }}
             </BaseButton>
             <BaseButton type="button" variant="secondary" @click="close">
-              Abbrechen
+              {{ $t('common.cancel') }}
             </BaseButton>
           </div>
         </form>

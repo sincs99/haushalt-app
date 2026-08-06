@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useExpensesStore } from '../stores/expenses'
 import { useSettlementsStore } from '../stores/settlements'
 import { useToast } from '../composables/useToast'
+import { useI18n } from 'vue-i18n'
 import { formatRappen, parseAmountToRappen } from '../utils/money'
 import BaseCard from './ui/BaseCard.vue'
 import BaseButton from './ui/BaseButton.vue'
@@ -11,10 +12,11 @@ import type { SettlementEntry } from '../types'
 const expensesStore = useExpensesStore()
 const settlementsStore = useSettlementsStore()
 const { showToast } = useToast()
+const { t } = useI18n()
 
 function resolveUserName(userId: string): string {
   const member = expensesStore.members.find(m => m.id === userId)
-  return member?.display_name ?? 'Ehemaliges Mitglied'
+  return member?.display_name ?? t('common.formerMember')
 }
 
 const hasExpenses = computed(() => expensesStore.expenses.length > 0)
@@ -60,11 +62,11 @@ function openSettlementDialog(s: SettlementEntry) {
 async function confirmSettlement() {
   const rappen = parseAmountToRappen(dialogAmount.value)
   if (!rappen) {
-    showToast('Bitte einen gültigen Betrag eingeben.', 'error')
+    showToast(t('settlements.invalidAmount'), 'error')
     return
   }
   if (dialogFrom.value === dialogTo.value) {
-    showToast('Von und An dürfen nicht identisch sein.', 'error')
+    showToast(t('settlements.sameUser'), 'error')
     return
   }
 
@@ -77,10 +79,10 @@ async function confirmSettlement() {
       settled_date: dialogDate.value || undefined,
       note: dialogNote.value.trim() || undefined,
     })
-    showToast('Ausgleichszahlung erfasst ✓', 'success')
+    showToast(t('settlements.created'), 'success')
     showSettlementDialog.value = false
   } catch {
-    showToast('Zahlung konnte nicht gespeichert werden.', 'error')
+    showToast(t('settlements.saveError'), 'error')
   } finally {
     settlementSaving.value = false
   }
@@ -104,7 +106,7 @@ async function confirmSettlement() {
 
       <!-- Ausgleich-Sektion -->
       <div v-if="hasSettlements" class="settlement-section">
-        <h3 class="settlement-section__title">Ausgleich</h3>
+        <h3 class="settlement-section__title">{{ $t('expenses.balance.settlementTitle') }}</h3>
         <div
           v-for="(s, idx) in expensesStore.balances.settlements"
           :key="idx"
@@ -112,24 +114,24 @@ async function confirmSettlement() {
         >
           <span>
             <strong>{{ resolveUserName(s.from_user_id) }}</strong>
-            zahlt
+            {{ $t('expenses.balance.pays') }}
             <strong>{{ resolveUserName(s.to_user_id) }}</strong>:
             {{ formatRappen(s.amount_rappen) }}
           </span>
           <button class="mark-paid-btn" @click="openSettlementDialog(s)">
-            ✓ Als bezahlt markieren
+            {{ $t('settlements.markAsPaid') }}
           </button>
         </div>
       </div>
 
       <!-- Alles ausgeglichen -->
       <p v-if="allSettled" class="settled-message">
-        ✓ Alles ausgeglichen
+        {{ $t('expenses.balance.settled') }}
       </p>
 
       <!-- Unassigned-Hinweis -->
       <p v-if="unassignedRappen > 0" class="unassigned-hint">
-        {{ formatRappen(unassignedRappen) }} von ehemaligen Mitgliedern nicht zuordenbar
+        {{ $t('expenses.balance.unassignedHint', { amount: formatRappen(unassignedRappen) }) }}
       </p>
     </div>
   </BaseCard>
@@ -138,36 +140,36 @@ async function confirmSettlement() {
   <Teleport to="body">
     <div v-if="showSettlementDialog" class="dialog-backdrop" @click.self="showSettlementDialog = false">
       <div class="dialog-panel">
-        <h3 class="dialog-title">Ausgleichszahlung erfassen</h3>
+        <h3 class="dialog-title">{{ $t('settlements.dialogTitle') }}</h3>
         <div class="dialog-form">
           <label class="dialog-label">
-            Von
+            {{ $t('settlements.from') }}
             <select v-model="dialogFrom" class="dialog-select">
               <option v-for="m in expensesStore.members" :key="m.id" :value="m.id">{{ m.display_name }}</option>
             </select>
           </label>
           <label class="dialog-label">
-            An
+            {{ $t('settlements.to') }}
             <select v-model="dialogTo" class="dialog-select">
               <option v-for="m in expensesStore.members" :key="m.id" :value="m.id">{{ m.display_name }}</option>
             </select>
           </label>
           <label class="dialog-label">
-            Betrag (CHF)
+            {{ $t('settlements.amount') }}
             <input v-model="dialogAmount" type="text" inputmode="decimal" class="dialog-input" />
           </label>
           <label class="dialog-label">
-            Datum
+            {{ $t('settlements.date') }}
             <input v-model="dialogDate" type="date" class="dialog-input" />
           </label>
           <label class="dialog-label">
-            Notiz (optional)
-            <input v-model="dialogNote" type="text" maxlength="200" class="dialog-input" placeholder="z.B. Twint-Zahlung" />
+            {{ $t('settlements.note') }}
+            <input v-model="dialogNote" type="text" maxlength="200" class="dialog-input" :placeholder="$t('settlements.notePlaceholder')" />
           </label>
         </div>
         <div class="dialog-actions">
-          <BaseButton variant="ghost" size="sm" @click="showSettlementDialog = false">Abbrechen</BaseButton>
-          <BaseButton variant="primary" size="sm" @click="confirmSettlement" :loading="settlementSaving">Zahlung erfassen</BaseButton>
+          <BaseButton variant="ghost" size="sm" @click="showSettlementDialog = false">{{ $t('common.cancel') }}</BaseButton>
+          <BaseButton variant="primary" size="sm" @click="confirmSettlement" :loading="settlementSaving">{{ $t('settlements.confirm') }}</BaseButton>
         </div>
       </div>
     </div>

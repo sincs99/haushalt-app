@@ -3,6 +3,7 @@ import { onMounted } from 'vue'
 import { useExpensesStore } from '../stores/expenses'
 import { useSettlementsStore } from '../stores/settlements'
 import { useToast } from '../composables/useToast'
+import { useI18n } from 'vue-i18n'
 import { formatRappen } from '../utils/money'
 import ExpenseList from '../components/ExpenseList.vue'
 import BalanceSummary from '../components/BalanceSummary.vue'
@@ -11,24 +12,27 @@ import BaseCard from '../components/ui/BaseCard.vue'
 const expensesStore = useExpensesStore()
 const settlementsStore = useSettlementsStore()
 const { showToast } = useToast()
+const { t } = useI18n()
 
 function resolveUserName(userId: string | null): string {
-  if (!userId) return 'Ehemaliges Mitglied'
+  if (!userId) return t('common.formerMember')
   const member = expensesStore.members.find(m => m.id === userId)
-  return member?.display_name ?? 'Ehemaliges Mitglied'
+  return member?.display_name ?? t('common.formerMember')
 }
 
-function formatDateDE(dateStr: string): string {
+function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const locale = localStorage.getItem('haushalt_locale') ?? 'de'
+  const intlLocale = locale === 'de' ? 'de-CH' : 'en-CH'
+  return d.toLocaleDateString(intlLocale, { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 async function handleDeleteSettlement(settlementId: string) {
-  if (!confirm('Ausgleichszahlung wirklich löschen?')) return
+  if (!confirm(t('settlements.deleteConfirm'))) return
   try {
     await settlementsStore.remove(settlementId)
   } catch {
-    showToast('Zahlung konnte nicht gelöscht werden.', 'error')
+    showToast(t('settlements.deleteError'), 'error')
   }
 }
 
@@ -42,13 +46,13 @@ onMounted(() => {
 
 <template>
   <div class="view-page">
-    <h1 class="view-title">💰 Ausgaben</h1>
+    <h1 class="view-title">💰 {{ $t('expenses.title') }}</h1>
     <BalanceSummary />
     <ExpenseList />
 
     <!-- Settlement-Liste -->
     <BaseCard v-if="settlementsStore.settlements.length > 0">
-      <h2 class="section-title">Ausgleichszahlungen</h2>
+      <h2 class="section-title">{{ $t('settlements.title') }}</h2>
       <ul class="settlement-list">
         <li
           v-for="s in settlementsStore.settlements"
@@ -64,14 +68,14 @@ onMounted(() => {
             <span class="settlement-item__amount">{{ formatRappen(s.amount_rappen) }}</span>
           </div>
           <div class="settlement-item__meta">
-            <span>{{ formatDateDE(s.settled_date) }}</span>
+            <span>{{ formatDate(s.settled_date) }}</span>
             <span v-if="s.note" class="settlement-item__note">{{ s.note }}</span>
           </div>
           <button
             class="action-btn action-btn--danger"
             @click="handleDeleteSettlement(s.id)"
-            title="Löschen"
-            aria-label="Ausgleichszahlung löschen"
+            :title="$t('common.delete')"
+            :aria-label="$t('settlements.deleteConfirm')"
           >
             ✕
           </button>

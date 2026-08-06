@@ -123,7 +123,7 @@ onUnmounted(() => {
 <template>
   <!-- Offline-Banner -->
   <div v-if="!isOnline" class="offline-banner" role="alert">
-    📡 Kein Netz – Änderungen können aktuell nicht gespeichert werden.
+    📡 {{ $t('offline.banner') }}
   </div>
 
   <!-- App-Shell (authentifiziert) -->
@@ -132,19 +132,19 @@ onUnmounted(() => {
     <!-- Desktop Top-Bar (≥768px sichtbar) -->
     <header class="top-bar">
       <div class="top-bar__content">
-        <span class="top-bar__brand">🏠 Haushalt</span>
+        <span class="top-bar__brand">🏠 {{ $t('nav.brand') }}</span>
         <nav class="top-bar__nav">
           <router-link to="/shopping" class="top-bar__link" active-class="top-bar__link--active">
-            🛒 Einkaufen
+            🛒 {{ $t('nav.shopping') }}
           </router-link>
           <router-link to="/todos" class="top-bar__link" active-class="top-bar__link--active">
-            ✅ Aufgaben
+            ✅ {{ $t('nav.todos') }}
           </router-link>
           <router-link to="/expenses" class="top-bar__link" active-class="top-bar__link--active">
-            💰 Ausgaben
+            💰 {{ $t('nav.expenses') }}
           </router-link>
           <router-link to="/household" class="top-bar__link" active-class="top-bar__link--active">
-            🏠 Haushalt
+            🏠 {{ $t('nav.household') }}
           </router-link>
         </nav>
         <div class="top-bar__right">
@@ -160,7 +160,7 @@ onUnmounted(() => {
             </option>
           </select>
           <span class="top-bar__user">{{ authStore.user?.display_name }}</span>
-          <button class="top-bar__logout" @click="authStore.logout()">Abmelden</button>
+          <button class="top-bar__logout" @click="authStore.logout()">{{ $t('auth.logout') }}</button>
         </div>
       </div>
     </header>
@@ -171,22 +171,22 @@ onUnmounted(() => {
     </main>
 
     <!-- Mobile Bottom-Tab-Bar (<768px sichtbar) -->
-    <nav class="tab-bar" aria-label="Hauptnavigation">
+    <nav class="tab-bar" :aria-label="$t('nav.brand')">
       <router-link to="/shopping" class="tab-bar__tab" active-class="tab-bar__tab--active">
         <span class="tab-bar__icon">🛒</span>
-        <span class="tab-bar__label">Einkaufen</span>
+        <span class="tab-bar__label">{{ $t('nav.shopping') }}</span>
       </router-link>
       <router-link to="/todos" class="tab-bar__tab" active-class="tab-bar__tab--active">
         <span class="tab-bar__icon">✅</span>
-        <span class="tab-bar__label">Aufgaben</span>
+        <span class="tab-bar__label">{{ $t('nav.todos') }}</span>
       </router-link>
       <router-link to="/expenses" class="tab-bar__tab" active-class="tab-bar__tab--active">
         <span class="tab-bar__icon">💰</span>
-        <span class="tab-bar__label">Ausgaben</span>
+        <span class="tab-bar__label">{{ $t('nav.expenses') }}</span>
       </router-link>
       <router-link to="/household" class="tab-bar__tab" active-class="tab-bar__tab--active">
         <span class="tab-bar__icon">🏠</span>
-        <span class="tab-bar__label">Haushalt</span>
+        <span class="tab-bar__label">{{ $t('nav.household') }}</span>
       </router-link>
     </nav>
   </div>

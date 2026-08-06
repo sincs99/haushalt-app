@@ -2,8 +2,10 @@
  * Formatiert Rappen als CHF-String.
  * 2350 => "CHF 23.50", -500 => "-CHF 5.00"
  */
-export function formatRappen(rappen: number, currency = 'CHF'): string {
-  return new Intl.NumberFormat('de-CH', {
+export function formatRappen(rappen: number, currency = 'CHF', locale?: string): string {
+  const effectiveLocale = locale ?? (typeof window !== 'undefined' ? localStorage.getItem('haushalt_locale') ?? 'de' : 'de')
+  const intlLocale = effectiveLocale === 'de' ? 'de-CH' : 'en-CH'
+  return new Intl.NumberFormat(intlLocale, {
     style: 'currency',
     currency,
   }).format(rappen / 100)

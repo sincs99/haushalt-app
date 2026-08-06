@@ -5,9 +5,11 @@ import BaseCard from '../components/ui/BaseCard.vue'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useI18n } from 'vue-i18n'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const email = ref('')
 const password = ref('')
@@ -22,7 +24,7 @@ async function handleLogin() {
     router.push('/shopping')
   } catch (err: any) {
     error.value =
-      err.response?.data?.detail || 'Login fehlgeschlagen. Bitte prüfe deine Eingaben.'
+      err.response?.data?.detail || t('auth.loginFailed')
   } finally {
     isLoading.value = false
   }
@@ -32,24 +34,24 @@ async function handleLogin() {
 <template>
   <div class="auth-page">
     <BaseCard padding="lg" class="auth-card">
-      <h1 class="auth-title">🏠 Haushalt App</h1>
-      <p class="auth-subtitle">Melde dich an, um fortzufahren</p>
+      <h1 class="auth-title">🏠 {{ $t('auth.appTitle') }}</h1>
+      <p class="auth-subtitle">{{ $t('auth.loginSubtitle') }}</p>
 
       <form @submit.prevent="handleLogin" class="auth-form">
         <BaseInput
           v-model="email"
-          label="E-Mail"
+          :label="$t('auth.email')"
           type="email"
-          placeholder="deine@email.ch"
+          :placeholder="$t('auth.emailPlaceholder')"
           autocomplete="email"
-          :error="error && !email ? 'E-Mail erforderlich' : undefined"
+          :error="error && !email ? $t('auth.emailRequired') : undefined"
         />
 
         <BaseInput
           v-model="password"
-          label="Passwort"
+          :label="$t('auth.password')"
           type="password"
-          placeholder="Passwort"
+          :placeholder="$t('auth.password')"
           autocomplete="current-password"
         />
 
@@ -62,11 +64,11 @@ async function handleLogin() {
           :disabled="isLoading"
           class="auth-submit"
         >
-          Anmelden
+          {{ $t('auth.login') }}
         </BaseButton>
 
         <p class="auth-link">
-          Noch kein Konto? <router-link to="/register">Registrieren</router-link>
+          {{ $t('auth.noAccount') }} <router-link to="/register">{{ $t('auth.register') }}</router-link>
         </p>
       </form>
     </BaseCard>

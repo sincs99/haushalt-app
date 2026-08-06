@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +10,15 @@ from app.socket_manager import socket_app, set_event_loop
 
 _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 
-app = FastAPI(title="Haushalt App API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Event-Loop für sync→async Bridge (emit_to_household_sync) setzen."""
+    set_event_loop(asyncio.get_running_loop())
+    yield
+
+
+app = FastAPI(title="Haushalt App API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,12 +37,6 @@ app.include_router(expenses.router)
 
 # Socket.IO unter /socket.io mounten
 app.mount("/socket.io", socket_app)
-
-
-@app.on_event("startup")
-def on_startup():
-    """Event-Loop für sync→async Bridge (emit_to_household_sync) setzen."""
-    set_event_loop(asyncio.get_event_loop())
 
 
 @app.get("/api/health")

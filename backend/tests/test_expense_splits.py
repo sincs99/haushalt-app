@@ -347,3 +347,13 @@ class TestDeleteExpense:
             headers={"Authorization": f"Bearer {token_a}"},
         )
         assert resp.status_code == 404
+
+
+class TestListExpensesPagination:
+    def test_limit_exceeds_max_422(self, client, household_a, token_a, user_a):
+        """limit=10000 → 422 Validation Error."""
+        resp = client.get(
+            f"/api/households/{household_a.id}/expenses/?limit=10000",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert resp.status_code == 422

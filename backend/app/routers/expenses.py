@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
@@ -232,8 +232,8 @@ router = APIRouter(
 @router.get("/", response_model=list[ExpenseResponse])
 def list_expenses(
     household_id: uuid.UUID,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):

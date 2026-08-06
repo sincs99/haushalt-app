@@ -3,7 +3,7 @@ import logging
 import uuid
 
 import socketio
-from jose import JWTError
+from jwt import PyJWTError as JWTError
 
 from app.core.security import decode_access_token
 from app.database import SessionLocal

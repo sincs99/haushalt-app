@@ -10,6 +10,7 @@ import ExpenseList from '../components/ExpenseList.vue'
 import BalanceSummary from '../components/BalanceSummary.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
+import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 
 const expensesStore = useExpensesStore()
 const settlementsStore = useSettlementsStore()
@@ -71,6 +72,17 @@ onMounted(() => {
     <h1 class="view-title">{{ $t('expenses.title') }}</h1>
     <BalanceSummary />
     <ExpenseList />
+
+    <!-- Settlement Skeleton Loading -->
+    <BaseCard v-if="settlementsStore.loading && settlementsStore.settlements.length === 0">
+      <div class="skeleton-list">
+        <div class="skeleton-row" v-for="n in 2" :key="n">
+          <BaseSkeleton width="22px" height="22px" rounded />
+          <BaseSkeleton width="60%" height="14px" />
+          <BaseSkeleton width="80px" height="14px" />
+        </div>
+      </div>
+    </BaseCard>
 
     <!-- Settlement-Liste -->
     <BaseCard v-if="settlementsStore.settlements.length > 0">
@@ -209,5 +221,19 @@ onMounted(() => {
 .action-btn--danger:hover {
   background: var(--color-danger);
   color: var(--color-surface);
+}
+
+/* Skeleton Loading */
+.skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-2);
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 </style>

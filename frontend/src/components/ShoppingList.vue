@@ -5,7 +5,7 @@ import { useExpensesStore } from '../stores/expenses'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { X, ShoppingCart, ChevronDown } from 'lucide-vue-next'
-import BaseSpinner from './ui/BaseSpinner.vue'
+import BaseSkeleton from './ui/BaseSkeleton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
 
@@ -118,9 +118,12 @@ async function handleClearDone() {
       />
     </form>
 
-    <!-- Loading -->
-    <div v-if="shoppingStore.loading" class="loading-center">
-      <BaseSpinner />
+    <!-- Skeleton Loading -->
+    <div v-if="shoppingStore.loading && shoppingStore.items.length === 0" class="skeleton-list">
+      <div class="skeleton-row" v-for="n in 3" :key="n">
+        <BaseSkeleton width="20px" height="20px" rounded />
+        <BaseSkeleton :width="['75%', '60%', '85%'][n - 1]" height="16px" />
+      </div>
     </div>
 
     <!-- Offene Items -->
@@ -263,11 +266,18 @@ async function handleClearDone() {
   box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
-/* Loading */
-.loading-center {
+/* Skeleton Loading */
+.skeleton-list {
   display: flex;
-  justify-content: center;
-  padding: var(--space-8) 0;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-2);
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 /* Item-Liste */

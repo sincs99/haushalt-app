@@ -7,7 +7,7 @@ import type { TodoItem } from '../types'
 import { Pencil, X, ListChecks } from 'lucide-vue-next'
 import BaseButton from './ui/BaseButton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
-import BaseSpinner from './ui/BaseSpinner.vue'
+import BaseSkeleton from './ui/BaseSkeleton.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
 
 const todosStore = useTodosStore()
@@ -193,9 +193,15 @@ async function saveEdit(todoId: string) {
       </select>
     </div>
 
-    <!-- Loading -->
-    <div v-if="todosStore.loading" class="loading-center">
-      <BaseSpinner />
+    <!-- Skeleton Loading -->
+    <div v-if="todosStore.loading && todosStore.items.length === 0" class="skeleton-list">
+      <div class="skeleton-row" v-for="n in 3" :key="n">
+        <BaseSkeleton width="20px" height="20px" rounded />
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+          <BaseSkeleton :width="['75%', '60%', '85%'][n - 1]" height="16px" />
+          <BaseSkeleton width="40%" height="12px" />
+        </div>
+      </div>
     </div>
 
     <!-- Offene Todos -->
@@ -406,11 +412,18 @@ async function saveEdit(todoId: string) {
   box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
-/* Loading */
-.loading-center {
+/* Skeleton Loading */
+.skeleton-list {
   display: flex;
-  justify-content: center;
-  padding: var(--space-8) 0;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-2);
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 /* Item-Liste */

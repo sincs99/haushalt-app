@@ -8,7 +8,7 @@ import type { Expense } from '../types'
 import { X, Receipt } from 'lucide-vue-next'
 import BaseButton from './ui/BaseButton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
-import BaseSpinner from './ui/BaseSpinner.vue'
+import BaseSkeleton from './ui/BaseSkeleton.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
 import ExpenseFormDialog from './ExpenseFormDialog.vue'
 
@@ -82,9 +82,17 @@ async function handleDelete(expenseId: string) {
       </BaseButton>
     </div>
 
-    <!-- Loading -->
-    <div v-if="expensesStore.loading" class="loading-center">
-      <BaseSpinner />
+    <!-- Skeleton Loading -->
+    <div v-if="expensesStore.loading && expensesStore.expenses.length === 0" class="skeleton-list">
+      <div class="skeleton-row" v-for="n in 3" :key="n">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+          <div style="display: flex; justify-content: space-between;">
+            <BaseSkeleton :width="['60%', '50%', '70%'][n - 1]" height="16px" />
+            <BaseSkeleton width="80px" height="16px" />
+          </div>
+          <BaseSkeleton width="45%" height="12px" />
+        </div>
+      </div>
     </div>
 
     <!-- Expense-Einträge -->
@@ -165,11 +173,18 @@ async function handleDelete(expenseId: string) {
   }
 }
 
-/* Loading */
-.loading-center {
+/* Skeleton Loading */
+.skeleton-list {
   display: flex;
-  justify-content: center;
-  padding: var(--space-8) 0;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-2);
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 /* Item-Liste */

@@ -128,10 +128,14 @@ class TestBalancesEndpoint:
 
         assert ba["paid_rappen"] == 3000
         assert ba["owed_rappen"] == 2100
+        assert ba["settled_out_rappen"] == 0
+        assert ba["settled_in_rappen"] == 0
         assert ba["saldo_rappen"] == 900
 
         assert ba2["paid_rappen"] == 1000
         assert ba2["owed_rappen"] == 1900
+        assert ba2["settled_out_rappen"] == 0
+        assert ba2["settled_in_rappen"] == 0
         assert ba2["saldo_rappen"] == -900
 
         # SUM(saldi) == 0
@@ -156,6 +160,8 @@ class TestBalancesEndpoint:
         assert data["unassigned_rappen"] == 0
         assert len(data["balances"]) == 2  # 2 Mitglieder
         assert all(b["saldo_rappen"] == 0 for b in data["balances"])
+        assert all(b["settled_out_rappen"] == 0 for b in data["balances"])
+        assert all(b["settled_in_rappen"] == 0 for b in data["balances"])
         assert data["settlements"] == []
 
     def test_balances_unassigned_payer(self, db, client, household_a, token_a, user_a, user_a2):

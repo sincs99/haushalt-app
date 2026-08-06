@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.database import get_db
-from app.models import Expense, ExpenseShare, HouseholdMember
+from app.models import Expense, ExpenseShare, HouseholdMember, Settlement
 from app.services.household_checks import assert_users_in_household
 from app.socket_manager import emit_to_household_sync
 
@@ -109,7 +109,9 @@ class BalanceEntry(BaseModel):
     user_id: uuid.UUID
     paid_rappen: int      # Summe aller Expenses, die dieser User bezahlt hat
     owed_rappen: int      # Summe aller Shares dieses Users
-    saldo_rappen: int     # paid - owed; positiv = bekommt Geld, negativ = schuldet
+    settled_out_rappen: int   # Summe von Settlements, in denen dieser User FROM ist (hat gezahlt)
+    settled_in_rappen: int    # Summe von Settlements, in denen dieser User TO ist (hat empfangen)
+    saldo_rappen: int     # paid - owed + settled_out - settled_in
 
 
 class SettlementEntry(BaseModel):
@@ -276,13 +278,38 @@ def get_balances(
     )
     unassigned_rappen = int(unassigned_result)
 
-    # 4. User-Menge: VEREINIGUNG aus aktuellen Mitgliedern + Payern + Share-Inhabern
+    # 4a. Settlement-Aggregationen
+    # settled_out: Summe pro from_user_id (Schuldner hat gezahlt → verbessert seinen Saldo)
+    settled_out_rows = (
+        db.query(Settlement.from_user_id, func.sum(Settlement.amount_rappen))
+        .filter(Settlement.household_id == household_id)
+        .group_by(Settlement.from_user_id)
+        .all()
+    )
+    settled_out_map: dict[uuid.UUID, int] = {row[0]: row[1] for row in settled_out_rows}
+
+    # settled_in: Summe pro to_user_id (Empfänger hat empfangen → reduziert sein Guthaben)
+    settled_in_rows = (
+        db.query(Settlement.to_user_id, func.sum(Settlement.amount_rappen))
+        .filter(Settlement.household_id == household_id)
+        .group_by(Settlement.to_user_id)
+        .all()
+    )
+    settled_in_map: dict[uuid.UUID, int] = {row[0]: row[1] for row in settled_in_rows}
+
+    # 4b. User-Menge: VEREINIGUNG aus aktuellen Mitgliedern + Payern + Share-Inhabern + Settlement-Beteiligte
     member_rows = (
         db.query(HouseholdMember.user_id)
         .filter(HouseholdMember.household_id == household_id)
         .all()
     )
-    all_user_ids = {m.user_id for m in member_rows} | set(paid_map.keys()) | set(owed_map.keys())
+    all_user_ids = (
+        {m.user_id for m in member_rows}
+        | set(paid_map.keys())
+        | set(owed_map.keys())
+        | set(settled_out_map.keys())
+        | set(settled_in_map.keys())
+    )
 
     # 5. BalanceEntries berechnen
     balances = []
@@ -290,12 +317,16 @@ def get_balances(
     for uid in sorted(all_user_ids, key=str):  # deterministisch
         paid = paid_map.get(uid, 0)
         owed = owed_map.get(uid, 0)
-        saldo = paid - owed
+        s_out = settled_out_map.get(uid, 0)
+        s_in = settled_in_map.get(uid, 0)
+        saldo = paid - owed + s_out - s_in
         saldi[uid] = saldo
         balances.append(BalanceEntry(
             user_id=uid,
             paid_rappen=paid,
             owed_rappen=owed,
+            settled_out_rappen=s_out,
+            settled_in_rappen=s_in,
             saldo_rappen=saldo,
         ))
 

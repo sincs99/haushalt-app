@@ -79,8 +79,8 @@ function initForm() {
     amountText.value = (props.expense.amount_rappen / 100).toFixed(2)
     expenseDate.value = props.expense.expense_date
     paidByUserId.value = props.expense.paid_by_user_id ?? ''
-    // Backend speichert keinen split_type — immer als "custom" anzeigen mit bestehenden Share-Beträgen
-    splitType.value = 'custom'
+    // Gespeicherten split_type aus dem Backend vorauswählen
+    splitType.value = props.expense.split_type
     customShares.value = {}
     for (const share of props.expense.shares) {
       customShares.value[share.user_id] = (share.amount_rappen / 100).toFixed(2)

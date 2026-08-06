@@ -160,6 +160,11 @@ class Expense(Base):
     currency: Mapped[str] = mapped_column(
         String(3), nullable=False, server_default="CHF"
     )
+    split_type: Mapped[str] = mapped_column(
+        Enum("even", "custom", name="expense_split_type"),
+        nullable=False,
+        server_default="even",
+    )
     paid_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

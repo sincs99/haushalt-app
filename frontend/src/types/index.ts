@@ -42,6 +42,7 @@ export interface Expense {
   description: string
   amount_rappen: number
   currency: string
+  split_type: SplitType
   paid_by_user_id: string | null
   expense_date: string
   created_at: string

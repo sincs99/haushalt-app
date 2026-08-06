@@ -214,6 +214,124 @@ class TestPatchExpense:
         assert sum(s["amount_rappen"] for s in data["shares"]) == 5000
 
 
+    def test_patch_amount_with_stored_even_reshares(
+        self, client, household_a, token_a, user_a, user_a2, expense_a
+    ):
+        """PATCH nur amount_rappen bei gespeichertem even → Shares werden neu berechnet."""
+        resp = client.patch(
+            f"/api/households/{household_a.id}/expenses/{expense_a.id}",
+            headers={"Authorization": f"Bearer {token_a}"},
+            json={"amount_rappen": 5000},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["amount_rappen"] == 5000
+        assert data["split_type"] == "even"
+        assert sum(s["amount_rappen"] for s in data["shares"]) == 5000
+
+    def test_patch_amount_with_stored_custom_requires_shares(
+        self, client, household_a, token_a, user_a, user_a2
+    ):
+        """PATCH nur amount_rappen bei gespeichertem custom → 422."""
+        # Zuerst custom-Expense anlegen
+        create_resp = client.post(
+            f"/api/households/{household_a.id}/expenses/",
+            headers={"Authorization": f"Bearer {token_a}"},
+            json={
+                "description": "Custom",
+                "amount_rappen": 3000,
+                "paid_by_user_id": str(user_a.id),
+                "split_type": "custom",
+                "shares": [
+                    {"user_id": str(user_a.id), "amount_rappen": 1000},
+                    {"user_id": str(user_a2.id), "amount_rappen": 2000},
+                ],
+            },
+        )
+        assert create_resp.status_code == 201
+        expense_id = create_resp.json()["id"]
+
+        # PATCH nur amount → 422
+        resp = client.patch(
+            f"/api/households/{household_a.id}/expenses/{expense_id}",
+            headers={"Authorization": f"Bearer {token_a}"},
+            json={"amount_rappen": 5000},
+        )
+        assert resp.status_code == 422
+
+    def test_patch_shares_without_split_type_uses_stored_custom(
+        self, client, household_a, token_a, user_a, user_a2
+    ):
+        """PATCH shares ohne split_type bei gespeichertem custom → Reshare wird durchgeführt."""
+        # Zuerst custom-Expense anlegen
+        create_resp = client.post(
+            f"/api/households/{household_a.id}/expenses/",
+            headers={"Authorization": f"Bearer {token_a}"},
+            json={
+                "description": "Custom Reshare",
+                "amount_rappen": 3000,
+                "paid_by_user_id": str(user_a.id),
+                "split_type": "custom",
+                "shares": [
+                    {"user_id": str(user_a.id), "amount_rappen": 1000},
+                    {"user_id": str(user_a2.id), "amount_rappen": 2000},
+                ],
+            },
+        )
+        assert create_resp.status_code == 201
+        expense_id = create_resp.json()["id"]
+
+        # PATCH shares ohne split_type → nutzt gespeicherten custom
+        resp = client.patch(
+            f"/api/households/{household_a.id}/expenses/{expense_id}",
+            headers={"Authorization": f"Bearer {token_a}"},
+            json={
+                "shares": [
+                    {"user_id": str(user_a.id), "amount_rappen": 2000},
+                    {"user_id": str(user_a2.id), "amount_rappen": 1000},
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        shares = {s["user_id"]: s["amount_rappen"] for s in data["shares"]}
+        assert shares[str(user_a.id)] == 2000
+        assert shares[str(user_a2.id)] == 1000
+
+    def test_patch_shares_with_effective_even_rejected(
+        self, client, household_a, token_a, user_a, user_a2, expense_a
+    ):
+        """PATCH shares bei effektivem even → 422."""
+        resp = client.patch(
+            f"/api/households/{household_a.id}/expenses/{expense_a.id}",
+            headers={"Authorization": f"Bearer {token_a}"},
+            json={
+                "shares": [
+                    {"user_id": str(user_a.id), "amount_rappen": 2000},
+                    {"user_id": str(user_a2.id), "amount_rappen": 1000},
+                ],
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_create_expense_stores_split_type(
+        self, client, household_a, token_a, user_a
+    ):
+        """split_type wird bei create gespeichert und in Response zurückgegeben."""
+        resp = client.post(
+            f"/api/households/{household_a.id}/expenses/",
+            headers={"Authorization": f"Bearer {token_a}"},
+            json={
+                "description": "Test Split Type",
+                "amount_rappen": 1000,
+                "paid_by_user_id": str(user_a.id),
+                "split_type": "even",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["split_type"] == "even"
+
+
 class TestDeleteExpense:
     def test_delete_expense(self, client, household_a, token_a, expense_a):
         resp = client.delete(

@@ -296,6 +296,7 @@ def expense_a(db, household_a, user_a, user_a2) -> Expense:
         amount_rappen=3000,
         paid_by_user_id=user_a.id,
         expense_date=__import__("datetime").date.today(),
+        split_type="even",
     )
     db.add(expense)
     db.flush()
@@ -323,6 +324,7 @@ def expense_b(db, household_b, user_b) -> Expense:
         amount_rappen=2500,
         paid_by_user_id=user_b.id,
         expense_date=__import__("datetime").date.today(),
+        split_type="even",
     )
     db.add(expense)
     db.flush()

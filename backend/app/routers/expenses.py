@@ -94,6 +94,7 @@ class ExpenseResponse(BaseModel):
     description: str
     amount_rappen: int
     currency: str
+    split_type: str
     paid_by_user_id: uuid.UUID | None
     expense_date: date
     created_at: datetime
@@ -369,6 +370,7 @@ def create_expense(
         currency=body.currency,
         paid_by_user_id=body.paid_by_user_id,
         expense_date=body.expense_date or date.today(),
+        split_type=body.split_type,
     )
     db.add(expense)
     db.flush()  # ID generieren
@@ -425,58 +427,64 @@ def update_expense(
     if "amount_rappen" in update_data:
         expense.amount_rappen = update_data["amount_rappen"]
 
+    # split_type aktualisieren falls im Payload
+    if "split_type" in update_data:
+        expense.split_type = update_data["split_type"]
+
+    # Effektiver split_type: aus Payload oder DB
+    effective_split_type = update_data.get("split_type", expense.split_type)
+
+    # Validierung: kein Input darf still ignoriert werden
+    if "shares" in update_data and effective_split_type == "even":
+        raise HTTPException(422, "shares only allowed for split_type='custom'")
+    if "participant_ids" in update_data and effective_split_type == "custom":
+        raise HTTPException(422, "participant_ids only allowed for split_type='even'")
+
     # Shares neu berechnen wenn split_type, shares, participant_ids oder amount_rappen geändert
     needs_reshare = any(
         k in update_data for k in ("split_type", "shares", "participant_ids", "amount_rappen")
     )
 
     if needs_reshare:
-        split_type = update_data.get("split_type") or body.split_type
-        # Wir brauchen einen split_type um Shares zu berechnen
-        if split_type is None:
-            # Nur amount geändert, kein split_type → erzwinge split_type
-            if "amount_rappen" in update_data and "split_type" not in update_data:
-                raise HTTPException(422, "split_type required when changing amount_rappen")
+        amount = expense.amount_rappen
 
-        if split_type is not None:
-            amount = expense.amount_rappen
-
-            if split_type == "even":
-                if body.participant_ids:
-                    assert_users_in_household(db, household_id, body.participant_ids)
-                    user_ids = body.participant_ids
-                else:
-                    members = (
-                        db.query(HouseholdMember.user_id)
-                        .filter(HouseholdMember.household_id == household_id)
-                        .all()
-                    )
-                    user_ids = [m.user_id for m in members]
-                if not user_ids:
-                    raise HTTPException(422, "No participants for even split")
-                share_map = split_evenly(amount, user_ids)
+        if effective_split_type == "even":
+            if body.participant_ids:
+                assert_users_in_household(db, household_id, body.participant_ids)
+                user_ids = body.participant_ids
             else:
-                shares_input = body.shares
-                if not shares_input:
-                    raise HTTPException(422, "shares required for split_type='custom'")
-                share_user_ids = [s.user_id for s in shares_input]
-                assert_users_in_household(db, household_id, share_user_ids)
-                validate_custom_shares(amount, shares_input)
-                share_map = {s.user_id: s.amount_rappen for s in shares_input}
-
-            # Alte Shares löschen
-            expense.shares.clear()
-            db.flush()
-
-            # Neue Shares anlegen
-            for uid, rappen in share_map.items():
-                share = ExpenseShare(
-                    expense_id=expense.id,
-                    household_id=household_id,
-                    user_id=uid,
-                    amount_rappen=rappen,
+                members = (
+                    db.query(HouseholdMember.user_id)
+                    .filter(HouseholdMember.household_id == household_id)
+                    .all()
                 )
-                db.add(share)
+                user_ids = [m.user_id for m in members]
+            if not user_ids:
+                raise HTTPException(422, "No participants for even split")
+            share_map = split_evenly(amount, user_ids)
+        else:
+            # custom
+            shares_input = body.shares
+            if not shares_input:
+                raise HTTPException(422, "custom split requires shares when changing amount")
+            share_user_ids = [s.user_id for s in shares_input]
+            assert_users_in_household(db, household_id, share_user_ids)
+            validate_custom_shares(amount, shares_input)
+            share_map = {s.user_id: s.amount_rappen for s in shares_input}
+
+        # Alte Shares löschen
+        expense.shares.clear()
+        db.flush()
+
+        # Neue Shares anlegen
+        for uid, rappen in share_map.items():
+            share = ExpenseShare(
+                expense_id=expense.id,
+                household_id=household_id,
+                user_id=uid,
+                amount_rappen=rappen,
+            )
+            db.add(share)
 
     db.commit()
     db.refresh(expense)

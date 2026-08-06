@@ -9,6 +9,7 @@ import { useChoresStore } from './stores/chores'
 import { useSocket } from './composables/useSocket'
 import { useConnectivity } from './composables/useConnectivity'
 import { useToast } from './composables/useToast'
+import { ShoppingCart, ListChecks, Wallet, Home, Brush, WifiOff, CheckCircle2, AlertCircle, Info } from 'lucide-vue-next'
 
 const { isOnline } = useConnectivity()
 const { toasts } = useToast()
@@ -147,7 +148,8 @@ onUnmounted(() => {
 <template>
   <!-- Offline-Banner -->
   <div v-if="!isOnline" class="offline-banner" role="alert">
-    📡 {{ $t('offline.banner') }}
+    <WifiOff :size="16" />
+    {{ $t('offline.banner') }}
   </div>
 
   <!-- App-Shell (authentifiziert) -->
@@ -156,22 +158,22 @@ onUnmounted(() => {
     <!-- Desktop Top-Bar (≥768px sichtbar) -->
     <header class="top-bar">
       <div class="top-bar__content">
-        <span class="top-bar__brand">🏠 {{ $t('nav.brand') }}</span>
+        <span class="top-bar__brand"><Home :size="20" /> {{ $t('nav.brand') }}</span>
         <nav class="top-bar__nav">
           <router-link to="/shopping" class="top-bar__link" active-class="top-bar__link--active">
-            🛒 {{ $t('nav.shopping') }}
+            <ShoppingCart :size="18" /> {{ $t('nav.shopping') }}
           </router-link>
           <router-link to="/todos" class="top-bar__link" active-class="top-bar__link--active">
-            ✅ {{ $t('nav.todos') }}
+            <ListChecks :size="18" /> {{ $t('nav.todos') }}
           </router-link>
           <router-link to="/expenses" class="top-bar__link" active-class="top-bar__link--active">
-            💰 {{ $t('nav.expenses') }}
+            <Wallet :size="18" /> {{ $t('nav.expenses') }}
           </router-link>
           <router-link to="/chores" class="top-bar__link" active-class="top-bar__link--active">
-            🧹 {{ $t('nav.chores') }}
+            <Brush :size="18" /> {{ $t('nav.chores') }}
           </router-link>
           <router-link to="/household" class="top-bar__link" active-class="top-bar__link--active">
-            🏠 {{ $t('nav.household') }}
+            <Home :size="18" /> {{ $t('nav.household') }}
           </router-link>
         </nav>
         <div class="top-bar__right">
@@ -200,23 +202,23 @@ onUnmounted(() => {
     <!-- Mobile Bottom-Tab-Bar (<768px sichtbar) -->
     <nav class="tab-bar" :aria-label="$t('nav.brand')">
       <router-link to="/shopping" class="tab-bar__tab" active-class="tab-bar__tab--active">
-        <span class="tab-bar__icon">🛒</span>
+        <ShoppingCart :size="22" class="tab-bar__icon" />
         <span class="tab-bar__label">{{ $t('nav.shopping') }}</span>
       </router-link>
       <router-link to="/todos" class="tab-bar__tab" active-class="tab-bar__tab--active">
-        <span class="tab-bar__icon">✅</span>
+        <ListChecks :size="22" class="tab-bar__icon" />
         <span class="tab-bar__label">{{ $t('nav.todos') }}</span>
       </router-link>
       <router-link to="/expenses" class="tab-bar__tab" active-class="tab-bar__tab--active">
-        <span class="tab-bar__icon">💰</span>
+        <Wallet :size="22" class="tab-bar__icon" />
         <span class="tab-bar__label">{{ $t('nav.expenses') }}</span>
       </router-link>
       <router-link to="/chores" class="tab-bar__tab" active-class="tab-bar__tab--active">
-        <span class="tab-bar__icon">🧹</span>
+        <Brush :size="22" class="tab-bar__icon" />
         <span class="tab-bar__label">{{ $t('nav.chores') }}</span>
       </router-link>
       <router-link to="/household" class="tab-bar__tab" active-class="tab-bar__tab--active">
-        <span class="tab-bar__icon">🏠</span>
+        <Home :size="22" class="tab-bar__icon" />
         <span class="tab-bar__label">{{ $t('nav.household') }}</span>
       </router-link>
     </nav>
@@ -235,6 +237,9 @@ onUnmounted(() => {
           :class="['toast', `toast--${toast.type}`]"
           role="status"
         >
+          <CheckCircle2 v-if="toast.type === 'success'" :size="16" />
+          <AlertCircle v-if="toast.type === 'error'" :size="16" />
+          <Info v-if="toast.type === 'info'" :size="16" />
           {{ toast.text }}
         </div>
       </TransitionGroup>
@@ -250,6 +255,10 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   background-color: var(--color-warning);
   color: var(--color-neutral-900);
@@ -286,6 +295,9 @@ onUnmounted(() => {
 }
 
 .top-bar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font-weight: var(--font-weight-bold);
   font-size: var(--text-lg);
   color: var(--color-primary);
@@ -297,6 +309,9 @@ onUnmounted(() => {
 }
 
 .top-bar__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   padding: var(--space-2) var(--space-3);
   text-decoration: none;
   color: var(--color-text-secondary);
@@ -411,11 +426,16 @@ onUnmounted(() => {
 }
 
 .tab-bar__icon {
-  font-size: 22px;
   line-height: 1;
+  width: 22px;
+  height: 22px;
 }
 
 .tab-bar__label {
+  font-weight: var(--font-weight-normal);
+}
+
+.tab-bar__tab--active .tab-bar__label {
   font-weight: var(--font-weight-medium);
 }
 
@@ -441,6 +461,10 @@ onUnmounted(() => {
 }
 
 .toast {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
   font-size: var(--text-sm);

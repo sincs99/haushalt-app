@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useShoppingStore } from '../stores/shopping'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
+import { X, ShoppingCart } from 'lucide-vue-next'
 import BaseSpinner from './ui/BaseSpinner.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
 
@@ -96,7 +97,7 @@ async function handleDelete(itemId: string) {
     <!-- Empty State -->
     <BaseEmptyState
       v-if="!shoppingStore.loading && openItems.length === 0"
-      icon="🛒"
+      :icon="ShoppingCart"
       :title="$t('shopping.emptyOpenTitle')"
       :subtitle="$t('shopping.emptyOpenSubtitle')"
     />
@@ -127,7 +128,7 @@ async function handleDelete(itemId: string) {
             :title="$t('common.delete')"
             :aria-label="$t('common.delete')"
           >
-            ✕
+            <X :size="16" />
           </button>
         </li>
       </ul>

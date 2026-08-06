@@ -14,7 +14,7 @@ onMounted(() => {
 
 <template>
   <div class="view-page">
-    <h1 class="view-title">🛒 {{ $t('shopping.title') }}</h1>
+    <h1 class="view-title">{{ $t('shopping.title') }}</h1>
     <ShoppingList />
   </div>
 </template>

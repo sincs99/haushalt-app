@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useChoresStore } from '../stores/chores'
 import { useToast } from '../composables/useToast'
 import type { ChoreInfo, ChoreAssignmentInfo, ChoreCreatePayload, ChoreUpdatePayload } from '../types'
+import { Brush, CalendarCheck, Pencil, X } from 'lucide-vue-next'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
@@ -287,7 +288,7 @@ const weekdayOptions = computed(() =>
 
 <template>
   <div class="view-page">
-    <h1 class="view-title">🧹 {{ $t('chores.title') }}</h1>
+    <h1 class="view-title">{{ $t('chores.title') }}</h1>
 
     <!-- Loading -->
     <div v-if="choresStore.loading" class="loading-center">
@@ -300,7 +301,7 @@ const weekdayOptions = computed(() =>
 
       <BaseEmptyState
         v-if="!choresStore.loading && assignmentsByDay.length === 0"
-        icon="📋"
+        :icon="CalendarCheck"
         :title="$t('chores.noAssignments')"
       />
 
@@ -370,7 +371,7 @@ const weekdayOptions = computed(() =>
               <div v-if="reassignDialogId === assignment.id" class="reassign-dropdown">
                 <div class="reassign-dropdown__header">
                   <span>{{ $t('chores.reassignTo') }}</span>
-                  <button class="action-btn" @click="closeReassignDialog">✕</button>
+                  <button class="action-btn" @click="closeReassignDialog"><X :size="16" /></button>
                 </div>
                 <button
                   v-for="member in choresStore.members"
@@ -515,7 +516,7 @@ const weekdayOptions = computed(() =>
       <!-- Chore-Liste -->
       <BaseEmptyState
         v-if="!choresStore.loading && choresStore.chores.length === 0 && !showChoreForm"
-        icon="🧹"
+        :icon="Brush"
         :title="$t('chores.noChores')"
         :subtitle="$t('chores.noChoresSubtitle')"
       />
@@ -543,13 +544,13 @@ const weekdayOptions = computed(() =>
               @click="openEditForm(chore)"
               :title="$t('common.edit')"
               :aria-label="$t('common.edit')"
-            >✎</button>
+            ><Pencil :size="16" /></button>
             <button
               class="action-btn action-btn--danger"
               @click="confirmDelete(chore.id)"
               :title="$t('common.delete')"
               :aria-label="$t('common.delete')"
-            >✕</button>
+            ><X :size="16" /></button>
           </div>
 
           <!-- Delete-Bestätigung inline -->

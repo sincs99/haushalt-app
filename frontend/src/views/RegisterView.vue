@@ -7,6 +7,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useI18n } from 'vue-i18n'
 import { translateApiError } from '../utils/apiErrors'
+import { Home } from 'lucide-vue-next'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -41,7 +42,7 @@ async function handleRegister() {
 <template>
   <div class="auth-page">
     <BaseCard padding="lg" class="auth-card">
-      <h1 class="auth-title">🏠 {{ $t('auth.appTitle') }}</h1>
+      <h1 class="auth-title"><Home :size="24" /> {{ $t('auth.appTitle') }}</h1>
       <p class="auth-subtitle">{{ $t('auth.registerSubtitle') }}</p>
 
       <form @submit.prevent="handleRegister" class="auth-form">

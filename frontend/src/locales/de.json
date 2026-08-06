@@ -116,7 +116,7 @@
     },
     "balance": {
       "title": "Saldo",
-      "settled": "✓ Alles ausgeglichen",
+      "settled": "Alles ausgeglichen",
       "settlementTitle": "Ausgleich",
       "pays": "zahlt",
       "unassignedHint": "{amount} von ehemaligen Mitgliedern nicht zuordenbar"
@@ -124,7 +124,7 @@
   },
   "settlements": {
     "title": "Ausgleichszahlungen",
-    "markAsPaid": "✓ Als bezahlt markieren",
+    "markAsPaid": "Als bezahlt markieren",
     "dialogTitle": "Ausgleichszahlung erfassen",
     "from": "Von",
     "to": "An",
@@ -184,7 +184,7 @@
     "title": "Haushalt",
     "inviteCode": "Einladungscode",
     "inviteHint": "Teile diesen Code, damit andere deinem Haushalt beitreten können:",
-    "copyCode": "📋 Kopieren",
+    "copyCode": "Kopieren",
     "codeCopied": "Invite-Code kopiert!",
     "copyFailed": "Kopieren fehlgeschlagen",
     "members": "Mitglieder",

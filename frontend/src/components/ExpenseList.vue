@@ -5,6 +5,7 @@ import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatRappen } from '../utils/money'
 import type { Expense } from '../types'
+import { X, Receipt } from 'lucide-vue-next'
 import BaseButton from './ui/BaseButton.vue'
 import BaseSpinner from './ui/BaseSpinner.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
@@ -92,7 +93,7 @@ async function handleDelete(expenseId: string) {
             :title="$t('common.delete')"
             :aria-label="$t('common.delete')"
           >
-            ✕
+            <X :size="16" />
           </button>
         </div>
       </li>
@@ -101,7 +102,7 @@ async function handleDelete(expenseId: string) {
     <!-- Empty State -->
     <BaseEmptyState
       v-if="!expensesStore.loading && expensesStore.expenses.length === 0"
-      icon="💰"
+      :icon="Receipt"
       :title="$t('expenses.emptyTitle')"
       :subtitle="$t('expenses.emptySubtitle')"
     />

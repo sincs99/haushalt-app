@@ -5,6 +5,7 @@ import { useSettlementsStore } from '../stores/settlements'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatRappen } from '../utils/money'
+import { X } from 'lucide-vue-next'
 import ExpenseList from '../components/ExpenseList.vue'
 import BalanceSummary from '../components/BalanceSummary.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
@@ -46,7 +47,7 @@ onMounted(() => {
 
 <template>
   <div class="view-page">
-    <h1 class="view-title">💰 {{ $t('expenses.title') }}</h1>
+    <h1 class="view-title">{{ $t('expenses.title') }}</h1>
     <BalanceSummary />
     <ExpenseList />
 
@@ -77,7 +78,7 @@ onMounted(() => {
             :title="$t('common.delete')"
             :aria-label="$t('settlements.deleteConfirm')"
           >
-            ✕
+            <X :size="16" />
           </button>
         </li>
       </ul>

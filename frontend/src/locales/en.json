@@ -116,7 +116,7 @@
     },
     "balance": {
       "title": "Balance",
-      "settled": "✓ All settled",
+      "settled": "All settled",
       "settlementTitle": "Settlements",
       "pays": "pays",
       "unassignedHint": "{amount} from former members unassignable"
@@ -124,7 +124,7 @@
   },
   "settlements": {
     "title": "Settlements",
-    "markAsPaid": "✓ Mark as paid",
+    "markAsPaid": "Mark as paid",
     "dialogTitle": "Record settlement",
     "from": "From",
     "to": "To",
@@ -184,7 +184,7 @@
     "title": "Household",
     "inviteCode": "Invite code",
     "inviteHint": "Share this code so others can join your household:",
-    "copyCode": "📋 Copy",
+    "copyCode": "Copy",
     "codeCopied": "Invite code copied!",
     "copyFailed": "Copy failed",
     "members": "Members",

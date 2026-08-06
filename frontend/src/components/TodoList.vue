@@ -4,6 +4,7 @@ import { useTodosStore } from '../stores/todos'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import type { TodoItem } from '../types'
+import { Pencil, X, ListChecks } from 'lucide-vue-next'
 import BaseButton from './ui/BaseButton.vue'
 import BaseSpinner from './ui/BaseSpinner.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
@@ -208,7 +209,7 @@ async function saveEdit(todoId: string) {
               <div v-if="todo.description || todo.due_date || todo.assigned_to_user_id" class="todo-row__meta">
                 <span v-if="todo.description" class="todo-row__desc">{{ todo.description }}</span>
                 <span v-if="todo.due_date" class="todo-row__date" :class="{ 'todo-row__date--overdue': isOverdue(todo) }">
-                  📅 {{ formatDate(todo.due_date) }}
+                  {{ formatDate(todo.due_date) }}
                 </span>
                 <span v-if="getMemberName(todo.assigned_to_user_id)" class="initials-chip">
                   {{ getMemberName(todo.assigned_to_user_id)!.charAt(0).toUpperCase() }}
@@ -217,8 +218,8 @@ async function saveEdit(todoId: string) {
             </div>
           </div>
           <div class="todo-row__actions">
-            <button class="action-btn" @click="startEdit(todo)" :title="$t('common.edit')" :aria-label="$t('common.edit')">✎</button>
-            <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')">✕</button>
+            <button class="action-btn" @click="startEdit(todo)" :title="$t('common.edit')" :aria-label="$t('common.edit')"><Pencil :size="16" /></button>
+            <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><X :size="16" /></button>
           </div>
         </template>
 
@@ -246,7 +247,7 @@ async function saveEdit(todoId: string) {
     <!-- Empty State -->
     <BaseEmptyState
       v-if="!todosStore.loading && openTodos.length === 0"
-      icon="🎉"
+      :icon="ListChecks"
       :title="$t('todos.emptyOpenTitle')"
       :subtitle="$t('todos.emptySubtitle')"
     />
@@ -272,14 +273,14 @@ async function saveEdit(todoId: string) {
               <span class="todo-row__name">{{ todo.title }}</span>
               <div v-if="todo.description || todo.due_date || todo.assigned_to_user_id" class="todo-row__meta">
                 <span v-if="todo.description" class="todo-row__desc">{{ todo.description }}</span>
-                <span v-if="todo.due_date" class="todo-row__date">📅 {{ formatDate(todo.due_date) }}</span>
+                <span v-if="todo.due_date" class="todo-row__date">{{ formatDate(todo.due_date) }}</span>
                 <span v-if="getMemberName(todo.assigned_to_user_id)" class="initials-chip">
                   {{ getMemberName(todo.assigned_to_user_id)!.charAt(0).toUpperCase() }}
                 </span>
               </div>
             </div>
           </div>
-          <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')">✕</button>
+          <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><X :size="16" /></button>
         </li>
       </ul>
     </div>

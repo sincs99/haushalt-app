@@ -1,16 +1,17 @@
 <script setup lang="ts">
-withDefaults(defineProps<{
-  icon?: string
+import type { Component } from 'vue'
+import { Package } from 'lucide-vue-next'
+
+const props = withDefaults(defineProps<{
+  icon?: Component
   title: string
   subtitle?: string
-}>(), {
-  icon: '📭',
-})
+}>(), {})
 </script>
 
 <template>
   <div class="base-empty-state">
-    <span class="base-empty-state__icon" aria-hidden="true">{{ icon }}</span>
+    <component :is="icon ?? Package" :size="48" class="base-empty-state__icon" aria-hidden="true" />
     <p class="base-empty-state__title">{{ title }}</p>
     <p v-if="subtitle" class="base-empty-state__subtitle">{{ subtitle }}</p>
   </div>
@@ -26,8 +27,7 @@ withDefaults(defineProps<{
 }
 
 .base-empty-state__icon {
-  font-size: 48px;
-  line-height: 1;
+  color: var(--color-text-muted);
   margin-bottom: var(--space-3);
 }
 

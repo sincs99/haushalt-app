@@ -98,7 +98,7 @@ watch(() => authStore.currentHouseholdId, () => {
 
 <template>
   <div class="view-page">
-    <h1 class="view-title">🏠 {{ $t('household.title') }}</h1>
+    <h1 class="view-title">{{ $t('household.title') }}</h1>
 
     <!-- Invite-Code Card (prominent) -->
     <BaseCard>

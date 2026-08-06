@@ -53,6 +53,10 @@ watch(
     off('chore_deleted', choresStore.handleChoreDeleted)
     off('chore_assignment_created', choresStore.handleAssignmentCreated)
     off('chore_assignment_updated', choresStore.handleAssignmentUpdated)
+    off('household_updated', authStore.handleHouseholdUpdated)
+    off('household_member_joined', authStore.handleMemberJoined)
+    off('household_member_left', authStore.handleMemberLeft)
+    off('household_member_removed', authStore.handleMemberRemoved)
 
     // Wenn Token weg (Logout): Socket disconnecten
     if (!token) {
@@ -101,6 +105,10 @@ watch(
       on('chore_deleted', choresStore.handleChoreDeleted)
       on('chore_assignment_created', choresStore.handleAssignmentCreated)
       on('chore_assignment_updated', choresStore.handleAssignmentUpdated)
+      on('household_updated', authStore.handleHouseholdUpdated)
+      on('household_member_joined', authStore.handleMemberJoined)
+      on('household_member_left', authStore.handleMemberLeft)
+      on('household_member_removed', authStore.handleMemberRemoved)
 
       shoppingStore.fetchItems()
       todosStore.fetchTodos()
@@ -148,6 +156,10 @@ onUnmounted(() => {
   off('chore_deleted', choresStore.handleChoreDeleted)
   off('chore_assignment_created', choresStore.handleAssignmentCreated)
   off('chore_assignment_updated', choresStore.handleAssignmentUpdated)
+  off('household_updated', authStore.handleHouseholdUpdated)
+  off('household_member_joined', authStore.handleMemberJoined)
+  off('household_member_left', authStore.handleMemberLeft)
+  off('household_member_removed', authStore.handleMemberRemoved)
   offReconnect(handleReconnect)
   disconnect()
 })

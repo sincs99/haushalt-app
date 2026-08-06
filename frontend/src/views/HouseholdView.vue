@@ -1,23 +1,32 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
+import { createOnlineExpensesRepository } from '../repositories/expensesRepository'
 import { useToast } from '../composables/useToast'
+import { useSocket } from '../composables/useSocket'
 import { useI18n } from 'vue-i18n'
 import { translateApiError } from '../utils/apiErrors'
+import { formatRappen } from '../utils/money'
 import type { HouseholdMemberInfo } from '../types'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
+import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
+import BaseAvatar from '../components/ui/BaseAvatar.vue'
+import BaseDialog from '../components/ui/BaseDialog.vue'
+import { UserMinus, LogOut } from 'lucide-vue-next'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const repo = createOnlineHouseholdsRepository()
+const expensesRepo = createOnlineExpensesRepository()
 const { showToast } = useToast()
 const { t, locale } = useI18n()
+const { on, off } = useSocket()
 
-// Locale
+// ── Locale ──
 const currentLocale = ref(locale.value)
 
 function changeLocale(newLocale: string) {
@@ -26,16 +35,115 @@ function changeLocale(newLocale: string) {
   currentLocale.value = newLocale
 }
 
-// Invite-Code
+// ── Haushalt-Name (Admin: editierbar) ──
+const householdName = ref('')
+const renameSaving = ref(false)
+
+const isAdmin = computed(() => {
+  return authStore.currentHousehold?.role === 'admin'
+})
+
+const nameChanged = computed(() => {
+  return householdName.value.trim() !== (authStore.currentHousehold?.name ?? '')
+})
+
+async function saveHouseholdName() {
+  if (!authStore.currentHouseholdId || !nameChanged.value) return
+  renameSaving.value = true
+  try {
+    await repo.rename(authStore.currentHouseholdId, householdName.value.trim())
+    showToast(t('household.renameSuccess'), 'success')
+  } catch {
+    showToast(t('household.renameError'), 'error')
+  } finally {
+    renameSaving.value = false
+  }
+}
+
+// ── Mitglieder ──
+const members = ref<HouseholdMemberInfo[]>([])
+
+async function loadMembers() {
+  if (!authStore.currentHouseholdId) return
+  try {
+    members.value = await repo.fetchMembers(authStore.currentHouseholdId)
+  } catch {
+    // Silent fail
+  }
+}
+
+// ── Mitglied entfernen (Admin) ──
+const removeMemberDialogOpen = ref(false)
+const memberToRemove = ref<HouseholdMemberInfo | null>(null)
+const removeMemberLoading = ref(false)
+
+function openRemoveMemberDialog(member: HouseholdMemberInfo) {
+  memberToRemove.value = member
+  removeMemberDialogOpen.value = true
+}
+
+async function confirmRemoveMember() {
+  if (!authStore.currentHouseholdId || !memberToRemove.value) return
+  removeMemberLoading.value = true
+  try {
+    await repo.removeMember(authStore.currentHouseholdId, memberToRemove.value.id)
+    showToast(t('household.removeMemberSuccess', { name: memberToRemove.value.display_name }), 'success')
+    removeMemberDialogOpen.value = false
+    memberToRemove.value = null
+    await loadMembers()
+  } catch (error: unknown) {
+    showToast(translateApiError(error), 'error')
+  } finally {
+    removeMemberLoading.value = false
+  }
+}
+
+// ── Haushalt verlassen ──
+const leaveDialogOpen = ref(false)
+const leaveLoading = ref(false)
+const leaveBalanceAmount = ref<string | null>(null)
+
+async function openLeaveDialog() {
+  if (!authStore.currentHouseholdId || !authStore.user) return
+  leaveBalanceAmount.value = null
+
+  try {
+    const balances = await expensesRepo.getBalances(authStore.currentHouseholdId)
+    const myBalance = balances.balances.find(b => b.user_id === authStore.user!.id)
+    if (myBalance && myBalance.saldo_rappen !== 0) {
+      const currency = authStore.currentHousehold?.currency ?? 'CHF'
+      leaveBalanceAmount.value = formatRappen(Math.abs(myBalance.saldo_rappen), currency)
+    }
+  } catch {
+    // Balances nicht ladbar — Dialog trotzdem zeigen
+  }
+
+  leaveDialogOpen.value = true
+}
+
+async function confirmLeave() {
+  if (!authStore.currentHouseholdId) return
+  leaveLoading.value = true
+  try {
+    await repo.leave(authStore.currentHouseholdId)
+    showToast(t('household.leaveSuccess'), 'success')
+    leaveDialogOpen.value = false
+    // authStore _handleRemoval wird über Socket-Event ausgelöst
+    // Falls kein Socket: manuell fetchMe
+    await authStore.fetchMe()
+    if (authStore.households.length > 0) {
+      router.push('/shopping')
+    }
+  } catch (error: unknown) {
+    showToast(translateApiError(error), 'error')
+  } finally {
+    leaveLoading.value = false
+  }
+}
+
+// ── Einladen ──
 const inviteCode = ref('')
 const inviteCodeLoading = ref(false)
-
-// Join
-const joinCode = ref('')
-const joinLoading = ref(false)
-
-// Members
-const members = ref<HouseholdMemberInfo[]>([])
 
 async function loadInviteCode() {
   if (!authStore.currentHouseholdId) return
@@ -49,15 +157,6 @@ async function loadInviteCode() {
   }
 }
 
-async function loadMembers() {
-  if (!authStore.currentHouseholdId) return
-  try {
-    members.value = await repo.fetchMembers(authStore.currentHouseholdId)
-  } catch {
-    // Silent fail
-  }
-}
-
 async function copyInviteCode() {
   try {
     await navigator.clipboard.writeText(inviteCode.value)
@@ -66,6 +165,10 @@ async function copyInviteCode() {
     showToast(t('household.copyFailed'), 'error')
   }
 }
+
+// ── Join ──
+const joinCode = ref('')
+const joinLoading = ref(false)
 
 async function joinHousehold() {
   if (!joinCode.value.trim()) return
@@ -77,22 +180,54 @@ async function joinHousehold() {
     authStore.switchHousehold(result.id)
     joinCode.value = ''
     router.push('/shopping')
-  } catch (error: any) {
+  } catch (error: unknown) {
     showToast(translateApiError(error), 'error')
   } finally {
     joinLoading.value = false
   }
 }
 
-onMounted(() => {
+// ── Socket-Events: Members nachladen bei Änderungen ──
+function onMemberJoined() {
+  loadMembers()
+}
+function onMemberLeft() {
+  loadMembers()
+}
+function onMemberRemoved() {
+  loadMembers()
+}
+function onHouseholdUpdated(data: { id: string; name: string }) {
+  if (data.id === authStore.currentHouseholdId) {
+    householdName.value = data.name
+  }
+}
+
+// ── Init + Watch ──
+function initData() {
+  householdName.value = authStore.currentHousehold?.name ?? ''
   loadInviteCode()
   loadMembers()
+}
+
+onMounted(() => {
+  initData()
+  on('household_member_joined', onMemberJoined)
+  on('household_member_left', onMemberLeft)
+  on('household_member_removed', onMemberRemoved)
+  on('household_updated', onHouseholdUpdated)
 })
 
-// Bei Household-Wechsel neu laden
+import { onUnmounted } from 'vue'
+onUnmounted(() => {
+  off('household_member_joined', onMemberJoined)
+  off('household_member_left', onMemberLeft)
+  off('household_member_removed', onMemberRemoved)
+  off('household_updated', onHouseholdUpdated)
+})
+
 watch(() => authStore.currentHouseholdId, () => {
-  loadInviteCode()
-  loadMembers()
+  initData()
 })
 </script>
 
@@ -100,7 +235,74 @@ watch(() => authStore.currentHouseholdId, () => {
   <div class="view-page">
     <h1 class="view-title">{{ $t('household.title') }}</h1>
 
-    <!-- Invite-Code Card (prominent) -->
+    <!-- ══ Sektion: Haushalt ══ -->
+    <BaseCard>
+      <h2 class="section-title">{{ $t('household.title') }}</h2>
+
+      <!-- Admin: Editierbarer Name -->
+      <div v-if="isAdmin" class="rename-row">
+        <BaseInput
+          v-model="householdName"
+          :label="$t('household.nameLabel')"
+          :placeholder="$t('household.nameLabel')"
+        />
+        <BaseButton
+          variant="primary"
+          size="sm"
+          :disabled="!nameChanged || renameSaving"
+          :loading="renameSaving"
+          @click="saveHouseholdName"
+        >
+          {{ $t('household.saveName') }}
+        </BaseButton>
+      </div>
+
+      <!-- Member: Nur Name anzeigen -->
+      <div v-else class="household-name-display">
+        <span class="household-name-label">{{ $t('household.nameLabel') }}</span>
+        <span class="household-name-value">{{ authStore.currentHousehold?.name }}</span>
+      </div>
+
+      <!-- Haushalt verlassen -->
+      <div class="leave-section">
+        <BaseButton variant="danger" size="sm" @click="openLeaveDialog">
+          <LogOut :size="16" />
+          {{ $t('household.leaveTitle') }}
+        </BaseButton>
+      </div>
+    </BaseCard>
+
+    <!-- ══ Sektion: Mitglieder ══ -->
+    <BaseCard>
+      <h2 class="section-title">{{ $t('household.members') }}</h2>
+      <div v-if="members.length > 0" class="member-list">
+        <div
+          v-for="member in members"
+          :key="member.id"
+          class="member-row"
+        >
+          <BaseAvatar :name="member.display_name" :user-id="member.id" size="md" />
+          <div class="member-info">
+            <span class="member-name">{{ member.display_name }}</span>
+            <span v-if="member.role === 'admin'" class="admin-badge">
+              {{ $t('household.adminBadge') }}
+            </span>
+          </div>
+          <!-- Admin: Entfernen-Button (nicht bei Admins, nicht bei sich selbst) -->
+          <button
+            v-if="isAdmin && member.role !== 'admin' && member.id !== authStore.user?.id"
+            class="member-remove-btn"
+            :aria-label="$t('household.removeMemberButton')"
+            @click="openRemoveMemberDialog(member)"
+          >
+            <UserMinus :size="18" />
+          </button>
+        </div>
+      </div>
+      <p v-else class="section-hint">{{ $t('household.noMembers') }}</p>
+    </BaseCard>
+
+    <!-- ══ Sektion: Einladen ══ -->
     <BaseCard>
       <h2 class="section-title">{{ $t('household.inviteCode') }}</h2>
       <p class="section-hint">{{ $t('household.inviteHint') }}</p>
@@ -118,44 +320,32 @@ watch(() => authStore.currentHouseholdId, () => {
           {{ $t('household.copyCode') }}
         </BaseButton>
       </div>
-    </BaseCard>
 
-    <!-- Mitglieder -->
-    <BaseCard>
-      <h2 class="section-title">{{ $t('household.members') }}</h2>
-      <div v-if="members.length > 0" class="member-chips">
-        <span v-for="member in members" :key="member.id" class="member-chip">
-          <span class="member-chip__avatar">{{ member.display_name.charAt(0).toUpperCase() }}</span>
-          <span class="member-chip__name">{{ member.display_name }}</span>
-        </span>
+      <!-- Beitreten -->
+      <div class="join-section">
+        <h3 class="subsection-title">{{ $t('household.joinTitle') }}</h3>
+        <form @submit.prevent="joinHousehold" class="join-form">
+          <input
+            v-model="joinCode"
+            type="text"
+            :placeholder="$t('household.joinPlaceholder')"
+            class="join-form__input"
+            :disabled="joinLoading"
+          />
+          <BaseButton
+            type="submit"
+            variant="primary"
+            size="sm"
+            :loading="joinLoading"
+            :disabled="joinLoading || !joinCode.trim()"
+          >
+            {{ $t('household.joinButton') }}
+          </BaseButton>
+        </form>
       </div>
-      <p v-else class="section-hint">{{ $t('household.noMembers') }}</p>
     </BaseCard>
 
-    <!-- Haushalt beitreten -->
-    <BaseCard>
-      <h2 class="section-title">{{ $t('household.joinTitle') }}</h2>
-      <form @submit.prevent="joinHousehold" class="join-form">
-        <input
-          v-model="joinCode"
-          type="text"
-          :placeholder="$t('household.joinPlaceholder')"
-          class="join-form__input"
-          :disabled="joinLoading"
-        />
-        <BaseButton
-          type="submit"
-          variant="primary"
-          size="sm"
-          :loading="joinLoading"
-          :disabled="joinLoading || !joinCode.trim()"
-        >
-          {{ $t('household.joinButton') }}
-        </BaseButton>
-      </form>
-    </BaseCard>
-
-    <!-- Einstellungen -->
+    <!-- ══ Sektion: App ══ -->
     <BaseCard>
       <h2 class="section-title">{{ $t('household.settings') }}</h2>
       <div class="settings-row">
@@ -170,14 +360,65 @@ watch(() => authStore.currentHouseholdId, () => {
           <option value="en">{{ $t('household.languageEn') }}</option>
         </select>
       </div>
+
+      <!-- Logout-Button für Mobile -->
+      <div class="mobile-logout">
+        <BaseButton variant="ghost" @click="authStore.logout()" class="mobile-logout__btn">
+          {{ $t('auth.logout') }}
+        </BaseButton>
+      </div>
     </BaseCard>
 
-    <!-- Logout-Button für Mobile (auf Desktop in Top-Bar) -->
-    <div class="mobile-logout">
-      <BaseButton variant="ghost" @click="authStore.logout()" class="mobile-logout__btn">
-        {{ $t('auth.logout') }}
-      </BaseButton>
-    </div>
+    <!-- ══ Dialog: Haushalt verlassen ══ -->
+    <BaseDialog
+      :open="leaveDialogOpen"
+      :title="$t('household.leaveTitle')"
+      danger
+      @close="leaveDialogOpen = false"
+    >
+      <p v-if="leaveBalanceAmount" class="dialog-warning-text">
+        {{ $t('household.leaveBalanceWarning', { amount: leaveBalanceAmount }) }}
+      </p>
+      <p v-else>{{ $t('household.leaveConfirm') }}</p>
+
+      <template #footer>
+        <BaseButton variant="ghost" size="sm" @click="leaveDialogOpen = false">
+          {{ $t('common.cancel') }}
+        </BaseButton>
+        <BaseButton
+          variant="danger"
+          size="sm"
+          :loading="leaveLoading"
+          @click="confirmLeave"
+        >
+          {{ $t('household.leaveButton') }}
+        </BaseButton>
+      </template>
+    </BaseDialog>
+
+    <!-- ══ Dialog: Mitglied entfernen ══ -->
+    <BaseDialog
+      :open="removeMemberDialogOpen"
+      :title="$t('household.removeMemberTitle')"
+      danger
+      @close="removeMemberDialogOpen = false"
+    >
+      <p>{{ $t('household.removeMemberConfirm', { name: memberToRemove?.display_name ?? '' }) }}</p>
+
+      <template #footer>
+        <BaseButton variant="ghost" size="sm" @click="removeMemberDialogOpen = false">
+          {{ $t('common.cancel') }}
+        </BaseButton>
+        <BaseButton
+          variant="danger"
+          size="sm"
+          :loading="removeMemberLoading"
+          @click="confirmRemoveMember"
+        >
+          {{ $t('household.removeMemberButton') }}
+        </BaseButton>
+      </template>
+    </BaseDialog>
   </div>
 </template>
 
@@ -196,8 +437,15 @@ watch(() => authStore.currentHouseholdId, () => {
 }
 
 .section-title {
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-3);
   font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.subsection-title {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-base);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text);
 }
@@ -208,14 +456,110 @@ watch(() => authStore.currentHouseholdId, () => {
   margin: 0 0 var(--space-3);
 }
 
-/* Loading */
+/* ── Haushalt-Name ── */
+.rename-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.rename-row .base-input {
+  flex: 1;
+}
+
+.household-name-display {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.household-name-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+
+.household-name-value {
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.leave-section {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-neutral-200);
+}
+
+/* ── Mitglieder ── */
+.member-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-neutral-50);
+}
+
+.member-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.member-name {
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-0-5) var(--space-2);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.member-remove-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.member-remove-btn:hover {
+  color: var(--color-danger);
+  background: var(--color-neutral-100);
+}
+
+/* ── Invite-Code ── */
 .loading-center {
   display: flex;
   justify-content: center;
   padding: var(--space-4) 0;
 }
 
-/* Invite-Code gross + prominent */
 .invite-code-display {
   display: flex;
   align-items: center;
@@ -237,42 +581,11 @@ watch(() => authStore.currentHouseholdId, () => {
   text-align: center;
 }
 
-/* Mitglieder-Chips */
-.member-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+/* ── Join-Form ── */
+.join-section {
+  margin-top: var(--space-3);
 }
 
-.member-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
-  background: var(--color-neutral-100);
-  border-radius: var(--radius-full);
-  font-size: var(--text-sm);
-}
-
-.member-chip__avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-full);
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  font-size: var(--text-xs);
-  font-weight: var(--font-weight-bold);
-}
-
-.member-chip__name {
-  color: var(--color-text);
-  font-weight: var(--font-weight-medium);
-}
-
-/* Join-Form */
 .join-form {
   display: flex;
   gap: var(--space-2);
@@ -296,7 +609,7 @@ watch(() => authStore.currentHouseholdId, () => {
   box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
-/* Settings */
+/* ── Settings ── */
 .settings-row {
   display: flex;
   align-items: center;
@@ -326,14 +639,22 @@ watch(() => authStore.currentHouseholdId, () => {
   box-shadow: 0 0 0 2px var(--color-primary-light);
 }
 
-/* Mobile Logout */
+/* ── Mobile Logout ── */
 .mobile-logout {
   display: flex;
   justify-content: center;
-  padding: var(--space-4) 0;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-neutral-200);
 }
 
 @media (min-width: 768px) {
   .mobile-logout { display: none; }
+}
+
+/* ── Dialog-Warntext ── */
+.dialog-warning-text {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-medium);
 }
 </style>

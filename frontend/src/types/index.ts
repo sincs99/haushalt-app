@@ -120,6 +120,7 @@ export interface HouseholdInfo {
 export interface HouseholdMemberInfo {
   id: string
   display_name: string
+  role: string
 }
 
 export interface MeResponse {

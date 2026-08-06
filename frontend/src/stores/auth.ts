@@ -103,6 +103,40 @@ export const useAuthStore = defineStore('auth', () => {
     router.push('/login')
   }
 
+  // Socket-Event-Handler für Household-Events
+  function handleHouseholdUpdated(data: { id: string; name: string }) {
+    const h = households.value.find(h => h.id === data.id)
+    if (h) h.name = data.name
+  }
+
+  function handleMemberJoined(_data: { household_id: string; user_id: string; display_name: string; role: string }) {
+    // Kein State-Update nötig im auth store — HouseholdView refetcht Members
+  }
+
+  function handleMemberLeft(data: { household_id: string; user_id: string }) {
+    _handleRemoval(data.household_id, data.user_id)
+  }
+
+  function handleMemberRemoved(data: { household_id: string; user_id: string }) {
+    _handleRemoval(data.household_id, data.user_id)
+  }
+
+  function _handleRemoval(householdId: string, userId: string) {
+    // Betrifft es den EIGENEN User im AKTUELLEN Haushalt?
+    if (userId === user.value?.id && householdId === currentHouseholdId.value) {
+      // Haushalt aus Liste entfernen
+      households.value = households.value.filter(h => h.id !== householdId)
+      if (households.value.length > 0) {
+        // Auf ersten verbleibenden Haushalt wechseln
+        switchHousehold(households.value[0].id)
+      } else {
+        // Kein Haushalt mehr → Zustand "kein Haushalt"
+        currentHouseholdId.value = null
+        localStorage.removeItem(HOUSEHOLD_KEY)
+      }
+    }
+  }
+
   return {
     // State
     token,
@@ -118,5 +152,10 @@ export const useAuthStore = defineStore('auth', () => {
     fetchMe,
     switchHousehold,
     logout,
+    // Socket-Event-Handler
+    handleHouseholdUpdated,
+    handleMemberJoined,
+    handleMemberLeft,
+    handleMemberRemoved,
   }
 })

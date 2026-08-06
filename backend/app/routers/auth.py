@@ -8,6 +8,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.database import get_db
 from app.models import User, Household, HouseholdMember
+from app.core.error_codes import ErrorCode, error_detail
 from app.core.security import hash_password, verify_password, create_access_token, generate_invite_code
 from app.core.deps import get_current_user
 
@@ -45,7 +46,7 @@ class MeResponse(BaseModel):
 def register(data: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter_by(email=data.email).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=400, detail=error_detail(ErrorCode.EMAIL_ALREADY_REGISTERED, "Email already registered"))
 
     user = User(
         email=data.email,
@@ -68,7 +69,7 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
             )
             raise HTTPException(
                 status_code=500,
-                detail="Could not generate unique invite code",
+                detail=error_detail(ErrorCode.INVITE_CODE_GENERATION_FAILED, "Could not generate unique invite code"),
             )
 
     household = Household(name=data.household_name, invite_code=invite_code)
@@ -87,7 +88,7 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter_by(email=form_data.username).first()
     if not user or not verify_password(form_data.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Incorrect email or password")
+        raise HTTPException(status_code=401, detail=error_detail(ErrorCode.INVALID_CREDENTIALS, "Incorrect email or password"))
 
     token = create_access_token(str(user.id))
     return TokenResponse(access_token=token)

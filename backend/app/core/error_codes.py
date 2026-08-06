@@ -1,0 +1,30 @@
+"""Maschinenlesbare Fehlercodes für API-Responses.
+
+Konvention: detail = {"code": "<CODE>", "message": "<english fallback>"}
+Frontend mapped code → i18n-Key (errors.<CODE>).
+"""
+
+
+class ErrorCode:
+    """Fehlercodes als Konstanten."""
+
+    INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
+    EMAIL_ALREADY_REGISTERED = "EMAIL_ALREADY_REGISTERED"
+    NOT_HOUSEHOLD_MEMBER = "NOT_HOUSEHOLD_MEMBER"
+    INVITE_CODE_NOT_FOUND = "INVITE_CODE_NOT_FOUND"
+    ALREADY_MEMBER = "ALREADY_MEMBER"
+    EXPENSE_NOT_FOUND = "EXPENSE_NOT_FOUND"
+    SETTLEMENT_NOT_FOUND = "SETTLEMENT_NOT_FOUND"
+    USERS_NOT_IN_HOUSEHOLD = "USERS_NOT_IN_HOUSEHOLD"
+    SHARES_SUM_MISMATCH = "SHARES_SUM_MISMATCH"
+    SELF_SETTLEMENT_NOT_ALLOWED = "SELF_SETTLEMENT_NOT_ALLOWED"
+    HOUSEHOLD_NOT_FOUND = "HOUSEHOLD_NOT_FOUND"
+    NO_PARTICIPANTS = "NO_PARTICIPANTS"
+    SHARES_EMPTY = "SHARES_EMPTY"
+    DUPLICATE_SHARE_USER = "DUPLICATE_SHARE_USER"
+    INVITE_CODE_GENERATION_FAILED = "INVITE_CODE_GENERATION_FAILED"
+
+
+def error_detail(code: str, message: str) -> dict:
+    """Erzeugt ein strukturiertes detail-Objekt."""
+    return {"code": code, "message": message}

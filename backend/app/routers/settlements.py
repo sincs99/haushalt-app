@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
+from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import Settlement, HouseholdMember
 from app.services.household_checks import assert_users_in_household
@@ -81,7 +82,7 @@ def create_settlement(
     if body.from_user_id == body.to_user_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="from_user_id and to_user_id must be different",
+            detail=error_detail(ErrorCode.SELF_SETTLEMENT_NOT_ALLOWED, "from_user_id and to_user_id must be different"),
         )
 
     # Beide User müssen Household-Mitglieder sein
@@ -121,7 +122,7 @@ def delete_settlement(
     if settlement is None or settlement.household_id != household_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Settlement not found in this household",
+            detail=error_detail(ErrorCode.SETTLEMENT_NOT_FOUND, "Settlement not found in this household"),
         )
 
     db.delete(settlement)

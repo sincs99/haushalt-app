@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import get_current_user, verify_household_access
+from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import Household, HouseholdMember, User
 
@@ -71,7 +72,7 @@ def get_invite_code(
 ):
     household = db.get(Household, household_id)
     if household is None:
-        raise HTTPException(status_code=404, detail="Household not found")
+        raise HTTPException(status_code=404, detail=error_detail(ErrorCode.HOUSEHOLD_NOT_FOUND, "Household not found"))
     return InviteCodeResponse(invite_code=household.invite_code)
 
 
@@ -104,7 +105,7 @@ def join_household(
     if household is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Invite-Code nicht gefunden",
+            detail=error_detail(ErrorCode.INVITE_CODE_NOT_FOUND, "Invite code not found"),
         )
 
     # Prüfen ob User bereits Mitglied ist
@@ -116,7 +117,7 @@ def join_household(
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Du bist bereits Mitglied dieses Haushalts",
+            detail=error_detail(ErrorCode.ALREADY_MEMBER, "Already a member of this household"),
         )
 
     # Membership anlegen

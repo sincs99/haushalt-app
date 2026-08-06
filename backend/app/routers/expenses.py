@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
+from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import Expense, ExpenseShare, HouseholdMember, Settlement
 from app.services.household_checks import assert_users_in_household
@@ -143,16 +144,16 @@ def split_evenly(amount_rappen: int, user_ids: list[uuid.UUID]) -> dict[uuid.UUI
 def validate_custom_shares(amount_rappen: int, shares: list[ExpenseShareInput]) -> None:
     """Wirft HTTPException 422 wenn Summe != amount, doppelte user_ids, oder leere Liste."""
     if not shares:
-        raise HTTPException(422, "shares must not be empty")
+        raise HTTPException(422, detail=error_detail(ErrorCode.SHARES_EMPTY, "shares must not be empty"))
     seen: set[uuid.UUID] = set()
     for s in shares:
         if s.user_id in seen:
-            raise HTTPException(422, f"Duplicate user_id: {s.user_id}")
+            raise HTTPException(422, detail=error_detail(ErrorCode.DUPLICATE_SHARE_USER, f"Duplicate user_id: {s.user_id}"))
         seen.add(s.user_id)
     total = sum(s.amount_rappen for s in shares)
     if total != amount_rappen:
         diff = total - amount_rappen
-        raise HTTPException(422, f"shares sum ({total}) != amount ({amount_rappen}), diff={diff}")
+        raise HTTPException(422, detail=error_detail(ErrorCode.SHARES_SUM_MISMATCH, f"shares sum ({total}) != amount ({amount_rappen}), diff={diff}"))
 
 
 def compute_settlements(saldi: dict[uuid.UUID, int]) -> list[dict]:
@@ -368,7 +369,7 @@ def create_expense(
             )
             user_ids = [m.user_id for m in members]
         if not user_ids:
-            raise HTTPException(422, "No participants for even split")
+            raise HTTPException(422, detail=error_detail(ErrorCode.NO_PARTICIPANTS, "No participants for even split"))
         share_map = split_evenly(body.amount_rappen, user_ids)
     else:
         share_user_ids = [s.user_id for s in body.shares]
@@ -424,7 +425,7 @@ def update_expense(
     if expense is None or expense.household_id != household_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Expense not found in this household",
+            detail=error_detail(ErrorCode.EXPENSE_NOT_FOUND, "Expense not found in this household"),
         )
 
     update_data = body.model_dump(exclude_unset=True)
@@ -450,9 +451,9 @@ def update_expense(
 
     # Validierung: kein Input darf still ignoriert werden
     if "shares" in update_data and effective_split_type == "even":
-        raise HTTPException(422, "shares only allowed for split_type='custom'")
+        raise HTTPException(422, detail=error_detail(ErrorCode.SHARES_SUM_MISMATCH, "shares only allowed for split_type='custom'"))
     if "participant_ids" in update_data and effective_split_type == "custom":
-        raise HTTPException(422, "participant_ids only allowed for split_type='even'")
+        raise HTTPException(422, detail=error_detail(ErrorCode.SHARES_SUM_MISMATCH, "participant_ids only allowed for split_type='even'"))
 
     # Shares neu berechnen wenn split_type, shares, participant_ids oder amount_rappen geändert
     needs_reshare = any(
@@ -474,13 +475,13 @@ def update_expense(
                 )
                 user_ids = [m.user_id for m in members]
             if not user_ids:
-                raise HTTPException(422, "No participants for even split")
+                raise HTTPException(422, detail=error_detail(ErrorCode.NO_PARTICIPANTS, "No participants for even split"))
             share_map = split_evenly(amount, user_ids)
         else:
             # custom
             shares_input = body.shares
             if not shares_input:
-                raise HTTPException(422, "custom split requires shares when changing amount")
+                raise HTTPException(422, detail=error_detail(ErrorCode.SHARES_EMPTY, "custom split requires shares when changing amount"))
             share_user_ids = [s.user_id for s in shares_input]
             assert_users_in_household(db, household_id, share_user_ids)
             validate_custom_shares(amount, shares_input)
@@ -525,7 +526,7 @@ def delete_expense(
     if expense is None or expense.household_id != household_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Expense not found in this household",
+            detail=error_detail(ErrorCode.EXPENSE_NOT_FOUND, "Expense not found in this household"),
         )
 
     db.delete(expense)

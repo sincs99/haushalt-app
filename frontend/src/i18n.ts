@@ -12,7 +12,7 @@ function detectLocale(): string {
   if (nav.startsWith('de')) return 'de'
 
   // 3. Fallback
-  return 'de'
+  return 'en'
 }
 
 const i18n = createI18n({

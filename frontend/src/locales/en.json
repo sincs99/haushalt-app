@@ -231,7 +231,9 @@
     "CHORE_ASSIGNMENT_NOT_FOUND": "Assignment not found",
     "CHORE_WINDOW_TOO_LARGE": "Date window too large (max 92 days)",
     "CURRENCY_MISMATCH": "Currency does not match household currency",
-    "ADMIN_REQUIRED": "Admin role required"
+    "ADMIN_REQUIRED": "Admin role required",
+    "CANNOT_REMOVE_ADMIN": "Cannot remove admin members",
+    "CANNOT_REMOVE_SELF": "Cannot remove yourself - use Leave household instead"
   },
   "offline": {
     "banner": "No connection – changes cannot be saved right now."

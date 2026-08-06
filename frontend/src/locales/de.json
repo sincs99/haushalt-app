@@ -231,7 +231,9 @@
     "CHORE_ASSIGNMENT_NOT_FOUND": "Aufgaben-Zuweisung nicht gefunden",
     "CHORE_WINDOW_TOO_LARGE": "Zeitfenster zu gross (max. 92 Tage)",
     "CURRENCY_MISMATCH": "Währung stimmt nicht mit der Haushaltswährung überein",
-    "ADMIN_REQUIRED": "Admin-Berechtigung erforderlich"
+    "ADMIN_REQUIRED": "Admin-Berechtigung erforderlich",
+    "CANNOT_REMOVE_ADMIN": "Admins können nicht entfernt werden",
+    "CANNOT_REMOVE_SELF": "Du kannst dich nicht selbst entfernen – nutze Haushalt verlassen"
   },
   "offline": {
     "banner": "Kein Netz – Änderungen können aktuell nicht gespeichert werden."

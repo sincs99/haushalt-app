@@ -119,6 +119,115 @@ def rename_household(
     return result
 
 
+@router.post("/leave", status_code=status.HTTP_204_NO_CONTENT)
+def leave_household(
+    household_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    """Haushalt verlassen. Immer erlaubt — auch mit offenen Salden.
+
+    Geschäftsregeln:
+    - Letztes Mitglied → Haushalt wird komplett gelöscht (CASCADE)
+    - Einziger Admin, aber andere Mitglieder → dienstältestes Mitglied wird Admin
+    - Expenses/Shares werden NICHT gelöscht (Ehemaliges-Mitglied-Muster)
+    - rotation_order wird NICHT bereinigt (Scheduler überspringt)
+    """
+    user_id = membership.user_id
+
+    # Alle Mitglieder dieses Haushalts zählen
+    all_members = (
+        db.query(HouseholdMember)
+        .filter(HouseholdMember.household_id == household_id)
+        .all()
+    )
+
+    if len(all_members) <= 1:
+        # Letztes Mitglied → Haushalt löschen
+        household = db.get(Household, household_id)
+        if household:
+            db.delete(household)  # CASCADE löscht members, expenses, etc.
+        db.commit()
+        return  # Kein Event nötig bei Löschung
+
+    # Prüfe ob Admin-Promotion nötig
+    is_admin = membership.role == "admin"
+    remaining = [m for m in all_members if m.id != membership.id]
+
+    if is_admin:
+        # Gibt es andere Admins?
+        other_admins = [m for m in remaining if m.role == "admin"]
+        if not other_admins:
+            # Kein anderer Admin → dienstältestes Mitglied promoten
+            # Sortierung: joined_at ASC, dann user_id ASC (deterministic tiebreaker)
+            promoted = sorted(remaining, key=lambda m: (m.joined_at, str(m.user_id)))[0]
+            promoted.role = "admin"
+
+    db.delete(membership)
+    db.commit()
+
+    # Socket-Event NACH Commit
+    # Hinweis: Die Room-Mitgliedschaft des Verlassenden besteht bis zu dessen Disconnect.
+    # REST ist ab sofort durch verify_household_access dicht.
+    # Das Frontend des Betroffenen reagiert auf das Event mit Socket-Reconnect.
+    emit_to_household_sync(
+        household_id,
+        "household_member_left",
+        {"household_id": str(household_id), "user_id": str(user_id)},
+    )
+
+
+@router.delete("/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_member(
+    household_id: uuid.UUID,
+    user_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_admin),
+    db: Session = Depends(get_db),
+):
+    """Mitglied entfernen (nur Admin). Admins können nicht entfernt werden.
+
+    Sich selbst entfernt man über POST /leave, nicht über diesen Endpoint.
+
+    Hinweis: Die Socket-Room-Mitgliedschaft des Entfernten besteht bis zu dessen
+    Disconnect weiter; REST ist ab sofort durch verify_household_access dicht.
+    Das Frontend des Betroffenen reagiert auf household_member_removed mit
+    Socket-Reconnect — damit ist auch der Room bereinigt.
+    """
+    # Sich selbst entfernen → 422 (Verlassen-Endpoint nutzen)
+    if user_id == membership.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(ErrorCode.CANNOT_REMOVE_SELF, "Use /leave to remove yourself"),
+        )
+
+    # Ziel-Membership finden
+    target = db.query(HouseholdMember).filter_by(
+        household_id=household_id, user_id=user_id
+    ).first()
+
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail(ErrorCode.NOT_HOUSEHOLD_MEMBER, "User is not a member of this household"),
+        )
+
+    # Admin kann keine Admins entfernen
+    if target.role == "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_detail(ErrorCode.CANNOT_REMOVE_ADMIN, "Cannot remove admin members"),
+        )
+
+    db.delete(target)
+    db.commit()
+
+    emit_to_household_sync(
+        household_id,
+        "household_member_removed",
+        {"household_id": str(household_id), "user_id": str(user_id)},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Router 2: Household-übergreifende Endpoints (ohne household_id im Pfad)
 # ---------------------------------------------------------------------------

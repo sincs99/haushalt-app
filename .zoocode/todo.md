@@ -74,7 +74,7 @@ Drei Business-Logik-Lücken schliessen: erzwungene Haushalts-Währung, echte Adm
 
 ---
 
-## Aufgabe 4: Verlassen und Entfernen
+## Aufgabe 4: Verlassen und Entfernen ✅ (Backend erledigt 2026-08-06)
 
 ### 4.1 Backend — Geschäftsregeln (nicht abweichen!)
 - Verlassen IMMER erlaubt, auch mit Saldo ≠ 0
@@ -85,20 +85,26 @@ Drei Business-Logik-Lücken schliessen: erzwungene Haushalts-Währung, echte Adm
 - rotation_order NICHT bereinigen (Scheduler überspringt bereits)
 
 ### 4.2 Endpoints
-- [ ] Neuer Error-Code `CANNOT_REMOVE_ADMIN` in `error_codes.py`
-- [ ] `POST /api/households/{household_id}/leave` (204, jedes Mitglied): Regeln oben. Event `household_member_left {household_id, user_id}`
-- [ ] `DELETE /api/households/{household_id}/members/{user_id}` (204, Admin): Regeln oben. Event `household_member_removed {household_id, user_id}`
-- [ ] Socket-Hinweis als Kommentar im Router
-- [ ] Tests:
-  - leave normal
-  - letzter Admin mit Auto-Promotion (genau das dienstälteste Mitglied wird Admin)
-  - letztes Mitglied löscht Haushalt inkl. Kaskade (Expenses etc. weg)
-  - remove als Member → 403
-  - Admin entfernt Admin → 403 CANNOT_REMOVE_ADMIN
-  - Entfernter bekommt auf alle Endpoints 403
-  - Balances zeigen Ex-Mitglied weiterhin korrekt
-- [ ] `pytest backend/` ✅
+- [x] Neuer Error-Code `CANNOT_REMOVE_ADMIN` + `CANNOT_REMOVE_SELF` in `error_codes.py`
+- [x] `POST /api/households/{household_id}/leave` (204, jedes Mitglied): Event `household_member_left {household_id, user_id}`
+- [x] `DELETE /api/households/{household_id}/members/{user_id}` (204, Admin): Event `household_member_removed {household_id, user_id}`
+- [x] Socket-Hinweis als Kommentar im Router
+- [x] Tests: 10 Tests in `tests/test_leave_remove.py`, alle 145 Tests grün
+- [x] `pytest backend/` ✅
 - [ ] **Git Commit: "feat: leave/remove household members with business rules"**
+
+> **API-Änderungen für Frontend:**
+> - **NEU** `POST /api/households/{household_id}/leave` → `204` (jedes Mitglied). Verlassen immer erlaubt, auch mit Saldo ≠ 0.
+>   - Letztes Mitglied → Haushalt wird gelöscht (CASCADE)
+>   - Einziger Admin → dienstältestes Mitglied (frühestes `joined_at`) wird automatisch Admin
+>   - Socket-Event: `household_member_left` `{household_id, user_id}`
+> - **NEU** `DELETE /api/households/{household_id}/members/{user_id}` → `204` (nur Admin)
+>   - Nur Members entfernbar, nicht andere Admins → `403` mit `CANNOT_REMOVE_ADMIN`
+>   - Sich selbst entfernen → `422` mit `CANNOT_REMOVE_SELF` (nutze `/leave`)
+>   - Nicht-Mitglied als Ziel → `404` mit `NOT_HOUSEHOLD_MEMBER`
+>   - Socket-Event: `household_member_removed` `{household_id, user_id}`
+> - **i18n**: `CANNOT_REMOVE_ADMIN` + `CANNOT_REMOVE_SELF` in `de.json` + `en.json` hinzugefügt
+> - Expenses/Balances bleiben nach Verlassen/Entfernen intakt (Ehemaliges-Mitglied-Muster)
 
 ---
 

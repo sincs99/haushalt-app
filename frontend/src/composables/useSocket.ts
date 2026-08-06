@@ -4,6 +4,10 @@ import { io, type Socket } from 'socket.io-client'
 let socket: Socket | null = null
 const isConnected = ref(false)
 
+// Reconnect-Mechanismus: Callbacks werden bei automatischem Reconnect aufgerufen
+const reconnectCallbacks = new Set<() => void>()
+let hasConnectedBefore = false
+
 function connect(token: string) {
   if (socket?.connected) {
     return
@@ -17,6 +21,12 @@ function connect(token: string) {
 
   socket.on('connect', () => {
     isConnected.value = true
+
+    // Bei automatischem Reconnect alle registrierten Callbacks aufrufen
+    if (hasConnectedBefore) {
+      reconnectCallbacks.forEach((cb) => cb())
+    }
+    hasConnectedBefore = true
   })
 
   socket.on('disconnect', () => {
@@ -44,11 +54,20 @@ function off(event: string, callback: (...args: any[]) => void) {
   socket.off(event, callback)
 }
 
+function onReconnect(callback: () => void) {
+  reconnectCallbacks.add(callback)
+}
+
+function offReconnect(callback: () => void) {
+  reconnectCallbacks.delete(callback)
+}
+
 function disconnect() {
   if (!socket) return
   socket.disconnect()
   socket = null
   isConnected.value = false
+  hasConnectedBefore = false
 }
 
 export function useSocket() {
@@ -58,6 +77,8 @@ export function useSocket() {
     leaveHousehold,
     on,
     off,
+    onReconnect,
+    offReconnect,
     disconnect,
     isConnected,
   }

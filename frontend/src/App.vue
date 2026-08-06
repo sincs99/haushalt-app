@@ -14,7 +14,7 @@ const authStore = useAuthStore()
 const shoppingStore = useShoppingStore()
 const todosStore = useTodosStore()
 const expensesStore = useExpensesStore()
-const { connect, joinHousehold, leaveHousehold, on, off, disconnect } = useSocket()
+const { connect, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect } = useSocket()
 
 // Socket-Event-Binding: Watch auf Token + HouseholdId
 watch(
@@ -80,6 +80,20 @@ watch(
   { immediate: true }
 )
 
+// Reconnect-Handler: Room neu beitreten + Daten nachladen
+function handleReconnect() {
+  const householdId = authStore.currentHouseholdId
+  if (householdId) {
+    joinHousehold(householdId)
+    shoppingStore.fetchItems()
+    todosStore.fetchTodos()
+    expensesStore.fetchExpenses()
+    expensesStore.fetchBalances()
+  }
+}
+
+onReconnect(handleReconnect)
+
 onUnmounted(() => {
   off('shopping_item_created', shoppingStore.handleItemCreated)
   off('shopping_item_updated', shoppingStore.handleItemUpdated)
@@ -90,6 +104,7 @@ onUnmounted(() => {
   off('expense_created', expensesStore.handleExpenseCreated)
   off('expense_updated', expensesStore.handleExpenseUpdated)
   off('expense_deleted', expensesStore.handleExpenseDeleted)
+  offReconnect(handleReconnect)
   disconnect()
 })
 </script>

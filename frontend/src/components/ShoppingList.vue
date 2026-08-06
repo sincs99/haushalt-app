@@ -4,7 +4,7 @@ import { useShoppingStore } from '../stores/shopping'
 import { useExpensesStore } from '../stores/expenses'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
-import { X, ShoppingCart } from 'lucide-vue-next'
+import { X, ShoppingCart, ChevronDown } from 'lucide-vue-next'
 import BaseSpinner from './ui/BaseSpinner.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
@@ -16,6 +16,7 @@ const { t } = useI18n()
 
 const newItemName = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
+const showDone = ref(false)
 
 function resolveUserName(userId: string | null): string | null {
   if (!userId) return null
@@ -59,6 +60,13 @@ async function handleDelete(itemId: string) {
   } catch {
     showToast(t('shopping.deleteError'))
   }
+}
+
+async function handleClearDone() {
+  const itemsToDelete = [...checkedItems.value]
+  await Promise.all(
+    itemsToDelete.map(item => shoppingStore.deleteItem(item.id).catch(() => {}))
+  )
 }
 </script>
 
@@ -117,42 +125,62 @@ async function handleDelete(itemId: string) {
       :subtitle="$t('shopping.emptyOpenSubtitle')"
     />
 
-    <!-- Abgehakte Items -->
+    <!-- Erledigt-Sektion (einklappbar) -->
     <div v-if="checkedItems.length > 0" class="done-section">
-      <p class="done-section__heading">{{ $t('shopping.doneCount', { count: checkedItems.length }) }}</p>
-      <ul class="item-list">
-        <li
-          v-for="item in checkedItems"
-          :key="item.id"
-          class="item-row item-row--checked"
-        >
-          <span class="item-row__check" @click="handleToggle(item.id)">
-            <input
-              type="checkbox"
-              :checked="item.is_checked"
-              @click.stop
-              @change="handleToggle(item.id)"
-              class="item-row__checkbox"
-            />
-          </span>
-          <span class="item-row__name" @click="handleToggle(item.id)">{{ item.name }}</span>
-          <span v-if="item.quantity" class="item-row__meta">{{ item.quantity }}</span>
-          <BaseAvatar
-            v-if="item.added_by_user_id && resolveUserName(item.added_by_user_id)"
-            :name="resolveUserName(item.added_by_user_id)!"
-            :user-id="item.added_by_user_id"
-            size="sm"
+      <div class="done-section__header">
+        <button type="button" class="done-section__toggle" @click="showDone = !showDone">
+          <ChevronDown
+            :size="18"
+            class="done-section__chevron"
+            :class="{ 'done-section__chevron--open': showDone }"
           />
-          <button
-            class="item-row__delete"
-            @click.stop="handleDelete(item.id)"
-            :title="$t('common.delete')"
-            :aria-label="$t('common.delete')"
+          {{ $t('shopping.doneCount', { count: checkedItems.length }) }}
+        </button>
+        <button
+          v-if="showDone"
+          type="button"
+          class="done-section__clear-btn"
+          @click="handleClearDone"
+        >
+          {{ $t('shopping.clearDone') }}
+        </button>
+      </div>
+
+      <Transition name="collapse">
+        <ul v-if="showDone" class="item-list">
+          <li
+            v-for="item in checkedItems"
+            :key="item.id"
+            class="item-row item-row--checked"
           >
-            <X :size="16" />
-          </button>
-        </li>
-      </ul>
+            <span class="item-row__check" @click="handleToggle(item.id)">
+              <input
+                type="checkbox"
+                :checked="item.is_checked"
+                @click.stop
+                @change="handleToggle(item.id)"
+                class="item-row__checkbox"
+              />
+            </span>
+            <span class="item-row__name" @click="handleToggle(item.id)">{{ item.name }}</span>
+            <span v-if="item.quantity" class="item-row__meta">{{ item.quantity }}</span>
+            <BaseAvatar
+              v-if="item.added_by_user_id && resolveUserName(item.added_by_user_id)"
+              :name="resolveUserName(item.added_by_user_id)!"
+              :user-id="item.added_by_user_id"
+              size="sm"
+            />
+            <button
+              class="item-row__delete"
+              @click.stop="handleDelete(item.id)"
+              :title="$t('common.delete')"
+              :aria-label="$t('common.delete')"
+            >
+              <X :size="16" />
+            </button>
+          </li>
+        </ul>
+      </Transition>
     </div>
   </div>
 </template>
@@ -307,10 +335,71 @@ async function handleDelete(itemId: string) {
   margin-top: var(--space-2);
 }
 
-.done-section__heading {
-  margin: 0 0 var(--space-2);
+.done-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) 0;
+}
+
+.done-section__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  padding: var(--space-1) 0;
+}
+
+.done-section__toggle:hover {
+  color: var(--color-text-secondary);
+}
+
+.done-section__chevron {
+  transition: transform var(--transition-normal);
+  transform: rotate(-90deg);
+}
+
+.done-section__chevron--open {
+  transform: rotate(0deg);
+}
+
+.done-section__clear-btn {
+  background: none;
+  border: none;
   color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.done-section__clear-btn:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-light);
+}
+
+/* Collapse-Transition */
+.collapse-enter-active,
+.collapse-leave-active {
+  transition: all var(--transition-normal);
+  overflow: hidden;
+}
+
+.collapse-enter-from,
+.collapse-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+
+.collapse-enter-to,
+.collapse-leave-from {
+  opacity: 1;
+  max-height: 1000px;
 }
 </style>

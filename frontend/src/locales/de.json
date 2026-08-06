@@ -63,7 +63,8 @@
     "toggleError": "Änderung konnte nicht gespeichert werden.",
     "emptyOpenTitle": "Keine offenen Artikel",
     "emptyOpenSubtitle": "Füge oben einen Artikel hinzu",
-    "doneCount": "Erledigt ({count})"
+    "doneCount": "Erledigt ({count})",
+    "clearDone": "Liste leeren"
   },
   "todos": {
     "title": "Aufgaben",

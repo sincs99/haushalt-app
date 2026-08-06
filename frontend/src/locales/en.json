@@ -63,7 +63,8 @@
     "toggleError": "Could not save change.",
     "emptyOpenTitle": "No open items",
     "emptyOpenSubtitle": "Add an item above",
-    "doneCount": "Done ({count})"
+    "doneCount": "Done ({count})",
+    "clearDone": "Clear list"
   },
   "todos": {
     "title": "Tasks",

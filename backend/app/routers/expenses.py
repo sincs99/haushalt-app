@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import verify_household_access
 from app.database import get_db
 from app.models import Expense, ExpenseShare, HouseholdMember
+from app.services.household_checks import assert_users_in_household
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -150,24 +151,6 @@ def validate_custom_shares(amount_rappen: int, shares: list[ExpenseShareInput]) 
     if total != amount_rappen:
         diff = total - amount_rappen
         raise HTTPException(422, f"shares sum ({total}) != amount ({amount_rappen}), diff={diff}")
-
-
-def assert_users_in_household(
-    db: Session, household_id: uuid.UUID, user_ids: list[uuid.UUID]
-) -> None:
-    """Prüft, ob alle user_ids Mitglieder des Households sind. Wirft 422 wenn nicht."""
-    members = (
-        db.query(HouseholdMember.user_id)
-        .filter(
-            HouseholdMember.household_id == household_id,
-            HouseholdMember.user_id.in_(user_ids),
-        )
-        .all()
-    )
-    member_ids = {m.user_id for m in members}
-    missing = set(user_ids) - member_ids
-    if missing:
-        raise HTTPException(422, f"Users not in household: {[str(u) for u in missing]}")
 
 
 def compute_settlements(saldi: dict[uuid.UUID, int]) -> list[dict]:

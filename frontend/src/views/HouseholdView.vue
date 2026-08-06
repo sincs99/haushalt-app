@@ -16,7 +16,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
-import { UserMinus, LogOut, Plus } from 'lucide-vue-next'
+import { UserMinus, LogOut, Plus, Share2 } from 'lucide-vue-next'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -161,6 +161,39 @@ async function copyInviteCode() {
   try {
     await navigator.clipboard.writeText(inviteCode.value)
     showToast(t('household.codeCopied'), 'success')
+  } catch {
+    showToast(t('household.copyFailed'), 'error')
+  }
+}
+
+async function shareInvite() {
+  const householdName = authStore.currentHousehold?.name ?? ''
+  // TODO: Add join URL when public URL is available
+  const shareText = t('household.shareText', { name: householdName, code: inviteCode.value })
+
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: t('household.shareTitle'),
+        text: shareText,
+      })
+    } catch (err: unknown) {
+      // User hat Share-Dialog abgebrochen — kein Fehler
+      if (err instanceof DOMException && err.name !== 'AbortError') {
+        // Fallback bei anderem Fehler
+        await copyShareText(shareText)
+      }
+    }
+  } else {
+    // Desktop-Fallback: in Clipboard kopieren
+    await copyShareText(shareText)
+  }
+}
+
+async function copyShareText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    showToast(t('household.shareCopied'), 'success')
   } catch {
     showToast(t('household.copyFailed'), 'error')
   }
@@ -332,16 +365,29 @@ watch(() => authStore.currentHouseholdId, () => {
       <div v-if="inviteCodeLoading" class="loading-center">
         <BaseSpinner size="sm" />
       </div>
-      <div v-else class="invite-code-display">
-        <code class="invite-code">{{ inviteCode || '...' }}</code>
-        <BaseButton
-          variant="secondary"
-          size="sm"
-          @click="copyInviteCode"
-          :disabled="!inviteCode"
-        >
-          {{ $t('household.copyCode') }}
-        </BaseButton>
+      <div v-else>
+        <div class="invite-code-display">
+          <code class="invite-code">{{ inviteCode || '...' }}</code>
+        </div>
+        <div class="invite-actions">
+          <BaseButton
+            variant="primary"
+            size="sm"
+            @click="shareInvite"
+            :disabled="!inviteCode"
+          >
+            <Share2 :size="16" />
+            {{ $t('household.shareInvite') }}
+          </BaseButton>
+          <BaseButton
+            variant="secondary"
+            size="sm"
+            @click="copyInviteCode"
+            :disabled="!inviteCode"
+          >
+            {{ $t('household.copyCode') }}
+          </BaseButton>
+        </div>
       </div>
 
       <!-- Beitreten -->
@@ -625,6 +671,12 @@ watch(() => authStore.currentHouseholdId, () => {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.invite-actions {
+  display: flex;
+  gap: var(--space-2);
 }
 
 .invite-code {

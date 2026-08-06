@@ -32,6 +32,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/chores',
+      name: 'chores',
+      component: () => import('../views/ChoresView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/household',
       name: 'household',
       component: () => import('../views/HouseholdView.vue'),

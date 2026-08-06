@@ -5,6 +5,7 @@ import { useShoppingStore } from './stores/shopping'
 import { useTodosStore } from './stores/todos'
 import { useExpensesStore } from './stores/expenses'
 import { useSettlementsStore } from './stores/settlements'
+import { useChoresStore } from './stores/chores'
 import { useSocket } from './composables/useSocket'
 import { useConnectivity } from './composables/useConnectivity'
 import { useToast } from './composables/useToast'
@@ -16,6 +17,7 @@ const shoppingStore = useShoppingStore()
 const todosStore = useTodosStore()
 const expensesStore = useExpensesStore()
 const settlementsStore = useSettlementsStore()
+const choresStore = useChoresStore()
 const { connect, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect } = useSocket()
 
 // Socket-Event-Binding: Watch auf Token + HouseholdId
@@ -37,6 +39,11 @@ watch(
     off('expense_deleted', expensesStore.handleExpenseDeleted)
     off('settlement_created', settlementsStore.handleSettlementCreated)
     off('settlement_deleted', settlementsStore.handleSettlementDeleted)
+    off('chore_created', choresStore.handleChoreCreated)
+    off('chore_updated', choresStore.handleChoreUpdated)
+    off('chore_deleted', choresStore.handleChoreDeleted)
+    off('chore_assignment_created', choresStore.handleAssignmentCreated)
+    off('chore_assignment_updated', choresStore.handleAssignmentUpdated)
 
     // Wenn Token weg (Logout): Socket disconnecten
     if (!token) {
@@ -61,6 +68,9 @@ watch(
         expensesStore.balances = null
         expensesStore.members = []
         settlementsStore.settlements = []
+        choresStore.chores = []
+        choresStore.assignments = []
+        choresStore.members = []
       }
 
       joinHousehold(householdId)
@@ -77,12 +87,19 @@ watch(
       on('expense_deleted', expensesStore.handleExpenseDeleted)
       on('settlement_created', settlementsStore.handleSettlementCreated)
       on('settlement_deleted', settlementsStore.handleSettlementDeleted)
+      on('chore_created', choresStore.handleChoreCreated)
+      on('chore_updated', choresStore.handleChoreUpdated)
+      on('chore_deleted', choresStore.handleChoreDeleted)
+      on('chore_assignment_created', choresStore.handleAssignmentCreated)
+      on('chore_assignment_updated', choresStore.handleAssignmentUpdated)
 
       shoppingStore.fetchItems()
       todosStore.fetchTodos()
       expensesStore.fetchExpenses()
       expensesStore.fetchBalances()
       settlementsStore.fetchAll()
+      choresStore.fetchChores()
+      choresStore.fetchAssignments()
     }
   },
   { immediate: true }
@@ -98,6 +115,8 @@ function handleReconnect() {
     expensesStore.fetchExpenses()
     expensesStore.fetchBalances()
     settlementsStore.fetchAll()
+    choresStore.fetchChores()
+    choresStore.fetchAssignments()
   }
 }
 
@@ -115,6 +134,11 @@ onUnmounted(() => {
   off('expense_deleted', expensesStore.handleExpenseDeleted)
   off('settlement_created', settlementsStore.handleSettlementCreated)
   off('settlement_deleted', settlementsStore.handleSettlementDeleted)
+  off('chore_created', choresStore.handleChoreCreated)
+  off('chore_updated', choresStore.handleChoreUpdated)
+  off('chore_deleted', choresStore.handleChoreDeleted)
+  off('chore_assignment_created', choresStore.handleAssignmentCreated)
+  off('chore_assignment_updated', choresStore.handleAssignmentUpdated)
   offReconnect(handleReconnect)
   disconnect()
 })
@@ -142,6 +166,9 @@ onUnmounted(() => {
           </router-link>
           <router-link to="/expenses" class="top-bar__link" active-class="top-bar__link--active">
             💰 {{ $t('nav.expenses') }}
+          </router-link>
+          <router-link to="/chores" class="top-bar__link" active-class="top-bar__link--active">
+            🧹 {{ $t('nav.chores') }}
           </router-link>
           <router-link to="/household" class="top-bar__link" active-class="top-bar__link--active">
             🏠 {{ $t('nav.household') }}
@@ -183,6 +210,10 @@ onUnmounted(() => {
       <router-link to="/expenses" class="tab-bar__tab" active-class="tab-bar__tab--active">
         <span class="tab-bar__icon">💰</span>
         <span class="tab-bar__label">{{ $t('nav.expenses') }}</span>
+      </router-link>
+      <router-link to="/chores" class="tab-bar__tab" active-class="tab-bar__tab--active">
+        <span class="tab-bar__icon">🧹</span>
+        <span class="tab-bar__label">{{ $t('nav.chores') }}</span>
       </router-link>
       <router-link to="/household" class="tab-bar__tab" active-class="tab-bar__tab--active">
         <span class="tab-bar__icon">🏠</span>

@@ -35,6 +35,9 @@ class Household(Base):
     expenses: Mapped[list["Expense"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
+    settlements: Mapped[list["Settlement"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
 
 
 class User(Base):
@@ -211,3 +214,41 @@ class ExpenseShare(Base):
     amount_rappen: Mapped[int] = mapped_column(Integer, nullable=False)
 
     expense: Mapped["Expense"] = relationship(back_populates="shares")
+
+
+class Settlement(Base):
+    __tablename__ = "settlements"
+    __table_args__ = (
+        CheckConstraint("amount_rappen > 0", name="ck_settlement_amount_positive"),
+        CheckConstraint("from_user_id != to_user_id", name="ck_settlement_distinct_users"),
+        Index("ix_settlements_household_date", "household_id", "settled_date"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    from_user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    to_user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    amount_rappen: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, server_default="CHF"
+    )
+    settled_date: Mapped[datetime] = mapped_column(
+        Date, nullable=False, server_default=text("CURRENT_DATE")
+    )
+    note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    household: Mapped["Household"] = relationship(back_populates="settlements")

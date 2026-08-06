@@ -38,7 +38,7 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.database import Base, get_db  # noqa: E402
-from app.models import Household, User, HouseholdMember, ShoppingItem, Todo, Expense, ExpenseShare  # noqa: E402
+from app.models import Household, User, HouseholdMember, ShoppingItem, Todo, Expense, ExpenseShare, Settlement  # noqa: E402
 from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 

@@ -30,9 +30,29 @@ function formatDate(dateStr: string): string {
 }
 
 async function handleDeleteSettlement(settlementId: string) {
-  if (!confirm(t('settlements.deleteConfirm'))) return
+  // Snapshot für Undo
+  const settlement = settlementsStore.settlements.find(s => s.id === settlementId)
+  if (!settlement) return
+
   try {
     await settlementsStore.remove(settlementId)
+    // Erfolg → Undo-Toast
+    showToast(t('common.deleted'), 'success', undefined, {
+      label: t('common.undo'),
+      onAction: () => {
+        // Re-create mit den gleichen Feldern (neue Server-ID ist ok)
+        settlementsStore.create({
+          from_user_id: settlement.from_user_id,
+          to_user_id: settlement.to_user_id,
+          amount_rappen: settlement.amount_rappen,
+          currency: settlement.currency,
+          settled_date: settlement.settled_date,
+          note: settlement.note ?? undefined,
+        }).catch(() => {
+          showToast(t('settlements.saveError'), 'error')
+        })
+      },
+    })
   } catch {
     showToast(t('settlements.deleteError'), 'error')
   }

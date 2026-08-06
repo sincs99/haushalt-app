@@ -19,7 +19,10 @@
     "unknown": "Unbekannt",
     "formerMember": "Ehemaliges Mitglied",
     "copy": "Kopieren",
-    "copied": "Kopiert!"
+    "copied": "Kopiert!",
+    "deleted": "Gelöscht",
+    "undo": "Rückgängig",
+    "listCleared": "Liste geleert"
   },
   "auth": {
     "login": "Anmelden",

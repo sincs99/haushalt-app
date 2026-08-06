@@ -44,8 +44,29 @@ function formatDate(dateStr: string): string {
 }
 
 async function handleDelete(expenseId: string) {
+  // Snapshot für Undo
+  const expense = expensesStore.expenses.find(e => e.id === expenseId)
+  if (!expense) return
+
   try {
     await expensesStore.removeExpense(expenseId)
+    showToast(t('common.deleted'), 'success', undefined, {
+      label: t('common.undo'),
+      onAction: () => {
+        expensesStore.addExpense({
+          description: expense.description,
+          amount_rappen: expense.amount_rappen,
+          currency: expense.currency,
+          paid_by_user_id: expense.paid_by_user_id!,
+          expense_date: expense.expense_date,
+          split_type: expense.split_type,
+          shares: expense.split_type === 'custom' ? expense.shares : undefined,
+          participant_ids: expense.split_type === 'even' ? expense.shares.map(s => s.user_id) : undefined,
+        }).catch(() => {
+          showToast(t('expenses.submitError'), 'error')
+        })
+      },
+    })
   } catch {
     showToast(t('expenses.deleteError'), 'error')
   }

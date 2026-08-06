@@ -98,8 +98,24 @@ async function handleToggle(todoId: string) {
 }
 
 async function handleDelete(todoId: string) {
+  const todo = todosStore.items.find(t => t.id === todoId)
+  if (!todo) return
+
   try {
     await todosStore.deleteTodo(todoId)
+    showToast(t('common.deleted'), 'success', undefined, {
+      label: t('common.undo'),
+      onAction: () => {
+        todosStore.addTodo(
+          todo.title,
+          todo.description ?? undefined,
+          todo.assigned_to_user_id ?? undefined,
+          todo.due_date ?? undefined,
+        ).catch(() => {
+          showToast(t('todos.addError'), 'error')
+        })
+      },
+    })
   } catch {
     showToast(t('todos.deleteError'))
   }

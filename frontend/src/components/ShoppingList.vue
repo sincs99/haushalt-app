@@ -55,8 +55,23 @@ async function handleToggle(itemId: string) {
 }
 
 async function handleDelete(itemId: string) {
+  const item = shoppingStore.items.find(i => i.id === itemId)
+  if (!item) return
+
   try {
     await shoppingStore.deleteItem(itemId)
+    showToast(t('common.deleted'), 'success', undefined, {
+      label: t('common.undo'),
+      onAction: () => {
+        shoppingStore.addItem(
+          item.name,
+          item.quantity ?? undefined,
+          item.category ?? undefined,
+        ).catch(() => {
+          showToast(t('shopping.addError'), 'error')
+        })
+      },
+    })
   } catch {
     showToast(t('shopping.deleteError'))
   }
@@ -64,9 +79,28 @@ async function handleDelete(itemId: string) {
 
 async function handleClearDone() {
   const itemsToDelete = [...checkedItems.value]
+  if (itemsToDelete.length === 0) return
+
+  // Lösche alle abgehakten Items
   await Promise.all(
     itemsToDelete.map(item => shoppingStore.deleteItem(item.id).catch(() => {}))
   )
+
+  // Undo-Toast: alle gelöschten Items wieder anlegen
+  showToast(t('common.listCleared'), 'success', undefined, {
+    label: t('common.undo'),
+    onAction: () => {
+      Promise.all(
+        itemsToDelete.map(item =>
+          shoppingStore.addItem(
+            item.name,
+            item.quantity ?? undefined,
+            item.category ?? undefined,
+          ).catch(() => {})
+        )
+      )
+    },
+  })
 }
 </script>
 

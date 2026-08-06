@@ -13,7 +13,7 @@ import { useToast } from './composables/useToast'
 import { ShoppingCart, ListChecks, Wallet, Home, Brush, WifiOff, CheckCircle2, AlertCircle, Info } from 'lucide-vue-next'
 
 const { isOnline } = useConnectivity()
-const { toasts } = useToast()
+const { toasts, dismissToast } = useToast()
 const authStore = useAuthStore()
 const shoppingStore = useShoppingStore()
 const todosStore = useTodosStore()
@@ -246,7 +246,14 @@ onUnmounted(() => {
           <CheckCircle2 v-if="toast.type === 'success'" :size="16" />
           <AlertCircle v-if="toast.type === 'error'" :size="16" />
           <Info v-if="toast.type === 'info'" :size="16" />
-          {{ toast.text }}
+          <span class="toast__text">{{ toast.text }}</span>
+          <button
+            v-if="toast.action"
+            class="toast__action"
+            @click="toast.action.onAction(); dismissToast(toast.id)"
+          >
+            {{ toast.action.label }}
+          </button>
         </div>
       </TransitionGroup>
     </div>
@@ -465,16 +472,37 @@ onUnmounted(() => {
 .toast {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
   line-height: var(--line-height-normal);
-  text-align: center;
   box-shadow: var(--shadow-overlay);
   pointer-events: auto;
+}
+
+.toast__text {
+  flex: 1;
+}
+
+.toast__action {
+  background: none;
+  border: none;
+  color: inherit;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  text-decoration: underline;
+  opacity: 0.9;
+  pointer-events: auto;
+}
+
+.toast__action:hover {
+  opacity: 1;
 }
 
 .toast--error {

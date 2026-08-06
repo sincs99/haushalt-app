@@ -186,7 +186,10 @@
     "completeError": "Änderung konnte nicht gespeichert werden.",
     "reassignTo": "Zuweisen an",
     "unassigned": "Nicht zugewiesen",
-    "completedBy": "Erledigt von {name}"
+    "completedBy": "Erledigt von {name}",
+    "createFirst": "Erstes Ämtli anlegen",
+    "filterAll": "Alle",
+    "filterMine": "Nur meine"
   },
   "household": {
     "title": "Haushalt",

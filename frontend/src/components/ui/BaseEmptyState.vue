@@ -14,6 +14,9 @@ const props = withDefaults(defineProps<{
     <component :is="icon ?? Package" :size="48" class="base-empty-state__icon" aria-hidden="true" />
     <p class="base-empty-state__title">{{ title }}</p>
     <p v-if="subtitle" class="base-empty-state__subtitle">{{ subtitle }}</p>
+    <div v-if="$slots.action" class="empty-state__action">
+      <slot name="action" />
+    </div>
   </div>
 </template>
 
@@ -43,5 +46,9 @@ const props = withDefaults(defineProps<{
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
   line-height: var(--line-height-normal);
+}
+
+.empty-state__action {
+  margin-top: var(--space-4);
 }
 </style>

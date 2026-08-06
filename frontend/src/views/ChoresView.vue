@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChoresStore } from '../stores/chores'
+import { useAuthStore } from '../stores/auth'
 import { useToast } from '../composables/useToast'
 import { formatDateShort } from '../utils/dates'
 import type { ChoreInfo, ChoreAssignmentInfo, ChoreCreatePayload, ChoreUpdatePayload } from '../types'
@@ -12,6 +13,7 @@ import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
 
 const choresStore = useChoresStore()
+const authStore = useAuthStore()
 const { showToast } = useToast()
 const { t, locale } = useI18n()
 
@@ -53,6 +55,14 @@ function getChoreName(choreId: string): string {
   return chore?.title ?? t('common.unknown')
 }
 
+// ── "Nur meine" Filter ──
+const showOnlyMine = ref(false)
+
+const filteredAssignments = computed(() => {
+  if (!showOnlyMine.value) return choresStore.assignments
+  return choresStore.assignments.filter(a => a.assigned_user_id === authStore.user?.id)
+})
+
 // ── Sektion A: Assignments gruppiert nach Tag ──
 interface DayGroup {
   date: string
@@ -66,7 +76,7 @@ const assignmentsByDay = computed<DayGroup[]>(() => {
   const today = todayStr()
   const grouped = new Map<string, ChoreAssignmentInfo[]>()
 
-  for (const a of choresStore.assignments) {
+  for (const a of filteredAssignments.value) {
     const existing = grouped.get(a.due_date)
     if (existing) {
       existing.push(a)
@@ -299,11 +309,35 @@ const weekdayOptions = computed(() =>
     <section class="section">
       <h2 class="section__title">{{ $t('chores.thisWeek') }}</h2>
 
+      <!-- Filter-Toggle -->
+      <div class="filter-toggle">
+        <button
+          class="filter-chip"
+          :class="{ 'filter-chip--active': !showOnlyMine }"
+          @click="showOnlyMine = false"
+        >
+          {{ $t('chores.filterAll') }}
+        </button>
+        <button
+          class="filter-chip"
+          :class="{ 'filter-chip--active': showOnlyMine }"
+          @click="showOnlyMine = true"
+        >
+          {{ $t('chores.filterMine') }}
+        </button>
+      </div>
+
       <BaseEmptyState
         v-if="!choresStore.loading && assignmentsByDay.length === 0"
         :icon="CalendarCheck"
         :title="$t('chores.noAssignments')"
-      />
+      >
+        <template #action>
+          <BaseButton variant="primary" size="sm" @click="openCreateForm">
+            {{ $t('chores.createFirst') }}
+          </BaseButton>
+        </template>
+      </BaseEmptyState>
 
       <div v-else class="day-groups">
         <div
@@ -1069,5 +1103,34 @@ const weekdayOptions = computed(() =>
 .delete-confirm__actions {
   display: flex;
   gap: var(--space-2);
+}
+/* ── Filter-Toggle ── */
+.filter-toggle {
+  display: flex;
+  gap: var(--space-1);
+  background: var(--color-neutral-100);
+  border-radius: var(--radius-md);
+  padding: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.filter-chip {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: var(--font-family);
+  transition: all 0.15s ease;
+}
+
+.filter-chip--active {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
 }
 </style>

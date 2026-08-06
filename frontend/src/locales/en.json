@@ -186,7 +186,10 @@
     "completeError": "Could not save change.",
     "reassignTo": "Assign to",
     "unassigned": "Unassigned",
-    "completedBy": "Completed by {name}"
+    "completedBy": "Completed by {name}",
+    "createFirst": "Create first chore",
+    "filterAll": "All",
+    "filterMine": "Only mine"
   },
   "household": {
     "title": "Household",

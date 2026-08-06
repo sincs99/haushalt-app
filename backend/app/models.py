@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     String, DateTime, ForeignKey, Enum, UniqueConstraint,
-    Integer, CheckConstraint, Index, Date, text,
+    Integer, CheckConstraint, Index, Date, text, JSON,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
@@ -22,6 +22,9 @@ class Household(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+    timezone: Mapped[str] = mapped_column(
+        String(50), nullable=False, server_default="Europe/Zurich"
+    )
 
     members: Mapped[list["HouseholdMember"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
@@ -36,6 +39,12 @@ class Household(Base):
         back_populates="household", cascade="all, delete-orphan"
     )
     settlements: Mapped[list["Settlement"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
+    chores: Mapped[list["Chore"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
+    chore_assignments: Mapped[list["ChoreAssignment"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
 
@@ -252,3 +261,79 @@ class Settlement(Base):
     )
 
     household: Mapped["Household"] = relationship(back_populates="settlements")
+
+
+class Chore(Base):
+    __tablename__ = "chores"
+    __table_args__ = (
+        CheckConstraint(
+            "day_of_month >= 1 AND day_of_month <= 31",
+            name="ck_chore_day_of_month_range",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    recurrence: Mapped[str] = mapped_column(
+        Enum("weekly", "biweekly", "monthly", name="chore_recurrence"),
+        nullable=False,
+    )
+    weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rotation_order: Mapped[list] = mapped_column(JSON, nullable=False)
+    next_rotation_index: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    anchor_date: Mapped[datetime] = mapped_column(Date, nullable=False)
+    active: Mapped[bool] = mapped_column(nullable=False, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    household: Mapped["Household"] = relationship(back_populates="chores")
+    assignments: Mapped[list["ChoreAssignment"]] = relationship(
+        back_populates="chore", cascade="all, delete-orphan"
+    )
+
+
+class ChoreAssignment(Base):
+    __tablename__ = "chore_assignments"
+    __table_args__ = (
+        UniqueConstraint("chore_id", "due_date", name="uq_chore_assignment_per_date"),
+        Index("ix_chore_assignments_household_date", "household_id", "due_date"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    chore_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("chores.id", ondelete="CASCADE"), nullable=False
+    )
+    assigned_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    due_date: Mapped[datetime] = mapped_column(Date, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    household: Mapped["Household"] = relationship(back_populates="chore_assignments")
+    chore: Mapped["Chore"] = relationship(back_populates="assignments")

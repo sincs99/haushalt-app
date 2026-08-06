@@ -202,7 +202,7 @@ async function handleDelete(itemId: string) {
   gap: var(--space-3);
   padding: var(--space-3) var(--space-2);
   min-height: 48px; /* Touch-Target */
-  border-bottom: 1px solid var(--color-neutral-100);
+  border-bottom: 1px solid var(--color-neutral-200);
   cursor: pointer;
   transition: background var(--transition-fast);
   -webkit-user-select: none;
@@ -276,7 +276,7 @@ async function handleDelete(itemId: string) {
 }
 
 .item-row__delete:hover {
-  background: #FEF2F2;
+  background: var(--color-danger-light);
   color: var(--color-danger);
 }
 

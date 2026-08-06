@@ -1,111 +1,104 @@
-# Putzplan (Chores) — Implementierungsplan
+# Design-Refresh — Haushalt-App Frontend
 
-**Epic:** Wiederkehrende Haushaltsaufgaben mit automatischer Ämtli-Rotation
-**Stand:** 2026-08-06
-**Tech Lead:** Orchestrator
+**Ziel:** Reiner Design-Refresh — keine neuen Features, keine Backend-Änderungen, keine Store-Logik-Änderungen (ausser wo explizit beschrieben).
+
+**Regeln:**
+- npm-Pakete IMMER mit expliziter Version, kompatibel zu `vue@^3.5.41`
+- Jeder neue UI-String in `de.json` UND `en.json`
+- Bestehende Funktionalität darf sich NICHT ändern
+- Ausschliesslich Design-Tokens verwenden, keine hartcodierten Farben/Grössen
+- Nach jedem Schritt: `npx vue-tsc --noEmit` und `npm run check:locales`
+- Pro Aufgabe einzeln committen
 
 ---
 
-## Aufgabe 0: Rest-Fixes aus Review
+## Aufgabe 1: Token-Refresh — warme Palette
+- [ ] `theme.css`: Neutral-Palette von kühlem Blaugrau auf warme Stone-Töne umstellen
+- [ ] `theme.css`: Text-Tokens anpassen (`--color-text`, `--color-text-secondary`, `--color-text-muted`)
+- [ ] `theme.css`: Neue Tokens ergänzen (`--icon-size-sm/md/lg`, `--toast-duration`, `--radius-xl`, Avatar-Palette)
+- [ ] Alle Komponenten durchsuchen: hartcodierte Grau-Hex (#F9FAFB, #E5E7EB, #6B7280 etc.) auf Tokens umstellen
+- [ ] Border-Farben in Komponenten auf `--color-neutral-200` vereinheitlichen
+- [ ] `useToast.ts`: Default-Duration auf `var(--toast-duration)` / 4000ms Token verwenden
+- [ ] TypeCheck + Locale-Check + Commit
 
-- [x] `useSocket.ts` → `hasConnectedBefore = false` in `disconnect()` (bereits erledigt)
-- [x] `i18n.ts` → `detectLocale()`: Fallback `return 'de'` → `return 'en'`
-- [x] `package.json` → Script `"check:locales"` + Build absichern
-- [x] Commit: "fix: detectLocale fallback + build locale check"
-- [x] `npx vue-tsc --noEmit` grün
+## Aufgabe 2: Lucide-Icons statt Emojis
+- [ ] `npm i lucide-vue-next@0.454.0` (kompatibel mit Vue 3.5.x, Version prüfen)
+- [ ] `App.vue` Top-Bar: Emojis → Lucide-Icons (ShoppingCart, ListChecks, Wallet, Home etc.)
+- [ ] `App.vue` Tab-Bar: Emojis → Lucide-Icons, aktiv = Primary, inaktiv = --color-text-muted
+- [ ] `App.vue` Offline-Banner: 📡 → WifiOff
+- [ ] View-Titel: Emoji-Präfixe entfernen (ShoppingView, TodosView, ExpensesView, ChoresView)
+- [ ] Aktions-Buttons: ✕ → X, ✎ → Pencil, Hinzufügen → Plus (TodoList, ExpenseList, ExpensesView, ShoppingList)
+- [ ] `BaseEmptyState.vue`: icon-Prop von String auf Lucide-Komponente umbauen
+- [ ] Alle Aufrufer von BaseEmptyState anpassen (ShoppingList, TodoList, ExpenseList, ChoresView)
+- [ ] Toast-Typen: optionales Icon (CheckCircle2, AlertCircle, Info) in App.vue Toast-Rendering
+- [ ] i18n-Strings: Emojis entfernen (📋, ✓, 📅 etc. in de.json + en.json)
+- [ ] Aktive Tabs: Label mit `--font-weight-medium`, Icon+Label in Primary-Farbe
+- [ ] TypeCheck + Locale-Check + Commit
 
-## Aufgabe 1: Datenmodell + Migration
+## Aufgabe 3: BaseAvatar mit deterministischen Farben
+- [ ] `theme.css`: Avatar-Farbpaare (6er-Palette) als Tokens ergänzen
+- [ ] Neue Komponente `src/components/ui/BaseAvatar.vue` erstellen
+- [ ] `BalanceSummary.vue`: BaseAvatar statt Namenstext einsetzen
+- [ ] `ExpenseList.vue`: Avatar des Zahlers ergänzen
+- [ ] `ExpensesView.vue` Settlement-Liste: Avatare für from/to
+- [ ] `TodoList.vue`: Initialen-Chip durch BaseAvatar ersetzen
+- [ ] `ShoppingList.vue`: sm-Avatar des Erstellers (added_by_user_id vorhanden? → ja)
+- [ ] `App.vue` Top-Bar: eigener Avatar (md) statt Namenstext
+- [ ] TypeCheck + Locale-Check + Commit
 
-- [x] `models.py`: Household.timezone (String(50), server_default="Europe/Zurich")
-- [x] `models.py`: Chore Model (id, household_id, title, description, recurrence Enum, weekday, day_of_month, rotation_order JSON, next_rotation_index, anchor_date, active, created_at, created_by_user_id)
-- [x] `models.py`: ChoreAssignment Model (id, household_id, chore_id, assigned_user_id, due_date, completed_at, completed_by_user_id, created_at, UniqueConstraint, Index)
-- [x] `models.py`: Relationships auf Household (chores, chore_assignments)
-- [x] Alembic-Migration erzeugen (SQLite-kompatibel, Enum wie expense_split_type)
-- [x] pytest in backend/ grün
-- [x] Commit: "feat(models): add Chore + ChoreAssignment + Household.timezone"
+## Aufgabe 4: Einkaufsliste — Erledigt-Sektion einklappbar
+- [ ] `ShoppingList.vue`: Erledigt-Sektion einklappbar mit Chevron-Icon
+- [ ] Default: eingeklappt wenn offene Items > 0
+- [ ] "Liste leeren"-Button in Sektions-Kopfzeile
+- [ ] Sanfte Transition beim Auf-/Zuklappen
+- [ ] i18n: Keys für "Liste leeren" in de.json + en.json
+- [ ] TypeCheck + Locale-Check + Commit
 
-## Aufgabe 2: Rotations- und Generierungslogik
+## Aufgabe 5: Undo-Toast statt confirm()
+- [ ] `useToast.ts`: Action-Parameter erweitern (label, onAction, 6000ms Dauer)
+- [ ] `App.vue`: Toast-Template um Action-Button ergänzen
+- [ ] Settlement-Löschen (`ExpensesView.vue`): confirm() → Optimistic Delete + Undo-Toast
+- [ ] Expense-Löschen (`ExpenseList.vue`): confirm() entfernen (war keins, aber Undo-Toast ergänzen)
+- [ ] Todo-Löschen (`TodoList.vue`): Undo-Toast ergänzen
+- [ ] Shopping-Item-Löschen (`ShoppingList.vue`): Undo-Toast ergänzen
+- [ ] "Liste leeren" (ShoppingList): Undo legt alle Items wieder an
+- [ ] ALLE verbleibenden confirm()-Aufrufe entfernen
+- [ ] i18n: `common.deleted`, `common.undo`, `common.listCleared` (DE + EN)
+- [ ] TypeCheck + Locale-Check + Commit
 
-- [x] `services/chore_scheduler.py`: today_in_tz(tz_name) → date
-- [x] `services/chore_scheduler.py`: next_due_dates(chore, from_date, until_date) → list[date]
-  - weekly: passender weekday
-  - biweekly: Parität über Wochendifferenz zu anchor_date
-  - monthly: day_of_month mit Clamping
-- [x] `services/chore_scheduler.py`: materialize_due_assignments(db, household) → list[ChoreAssignment]
-  - Lazy-Materialisierung, Savepoint + IntegrityError-Handling
-  - Rotation: überspringe ausgeschiedene Mitglieder
-- [x] pytest grün
-- [x] Commit: "feat(services): chore_scheduler with lazy materialization"
+## Aufgabe 6: Skeleton-Loader
+- [ ] Neue Komponente `src/components/ui/BaseSkeleton.vue`
+- [ ] ShoppingList: Skeleton statt Spinner beim initialen Loading
+- [ ] TodoList: Skeleton statt Spinner beim initialen Loading
+- [ ] ExpenseList: Skeleton statt Spinner beim initialen Loading
+- [ ] Settlement-Liste (ExpensesView): Skeleton beim Loading
+- [ ] BaseSpinner bleibt für Button-Loading-States
+- [ ] TypeCheck + Locale-Check + Commit
 
-## Aufgabe 3: REST-API
+## Aufgabe 7: Mobile-Feinschliff
+- [ ] Tab-Bar: `padding-bottom: calc(... + env(safe-area-inset-bottom))` (bereits vorhanden ✓)
+- [ ] `index.html`: `viewport-fit=cover` prüfen (bereits vorhanden ✓)
+- [ ] Neuer Util `src/utils/dates.ts`: `formatDate()` + `formatDateShort()`, Locale aus i18n
+- [ ] Alle lokalen formatDate-Implementierungen ersetzen (TodoList, ExpenseList, ExpensesView, ChoresView)
+- [ ] Sync-Indikator: Top-Bar (Desktop) + Tab-Bar-Punkt (Mobile)
+- [ ] i18n: Status-Texte für Sync-Indikator (connected, reconnecting, offline) DE + EN
+- [ ] TypeCheck + Locale-Check + Commit
 
-- [x] `core/error_codes.py`: CHORE_NOT_FOUND, CHORE_WEEKDAY_REQUIRED, CHORE_DAY_OF_MONTH_REQUIRED, CHORE_INVALID_ROTATION, CHORE_ASSIGNMENT_NOT_FOUND, CHORE_WINDOW_TOO_LARGE
-- [x] `routers/chores.py`: Router mit Prefix /api/households/{household_id}/chores
-  - GET / → Liste aller Chores
-  - POST / (201) → Validierung + anchor_date
-  - PATCH /{chore_id} → inkl. Recurrence-Änderung (zukünftige Assignments löschen)
-  - DELETE /{chore_id} (204) → CASCADE
-  - GET /assignments → materialize + Fenster-Validierung
-  - POST /assignments/{id}/complete → idempotent
-  - POST /assignments/{id}/uncomplete → idempotent
-  - PATCH /assignments/{id} → reassign
-- [x] `main.py`: Router mounten
-- [x] Socket-Events: chore_created, chore_updated, chore_deleted, chore_assignment_created, chore_assignment_updated
-- [x] conftest.py: Socket-Mock für chores-Router ergänzen
-- [x] pytest grün
-- [x] Commit: "feat(api): chores REST endpoints with socket events"
+## Aufgabe 8: Selbstkontrolle
+- [ ] Grep: Kein Emoji mehr im UI (`src/`)
+- [ ] Grep: Kein `confirm(` mehr in `src/`
+- [ ] Grep: Keine hartcodierten Blaugrau-Hex (#F9FAFB, #E5E7EB, #6B7280 etc.) in Komponenten
+- [ ] `npm run check:locales` grün
+- [ ] `npx vue-tsc --noEmit` grün
+- [ ] `npm run build` läuft durch
+- [ ] Finaler Commit mit Smoke-Test-Notiz
 
-## Aufgabe 4: Backend-Tests
+---
 
-- [x] `tests/test_chores.py`: Scheduler-Unit-Tests + API-Tests
-  - weekly/biweekly/monthly Termine
-  - Rotation (3 User, 5 Termine)
-  - Doppelte Materialisierung idempotent
-  - Ausgeschiedenes Mitglied → übersprungen
-  - POST-Validierungen (weekday, day_of_month, rotation_order)
-  - complete/uncomplete idempotent
-  - PATCH recurrence → zukünftige Assignments gelöscht, erledigte behalten
-  - Socket-Events verifiziert
-- [x] `tests/test_chore_scoping.py`: Cross-Household → 403
-- [x] pytest grün (alle Tests)
-- [x] Commit: "test: comprehensive chore tests + scoping"
-
-## Aufgabe 5: Frontend
-
-### 5a: Types + Repository + Store
-- [x] `types/index.ts`: ChoreInfo, ChoreAssignmentInfo, Payloads
-- [x] `repositories/choresRepository.ts`: Interface + Online-Factory
-- [x] `stores/chores.ts`: State, Actions, Socket-Handler (idempotent)
-- [x] Commit: "feat(frontend): chores types, repository, store"
-
-### 5b: View + Route + Navigation
-- [x] `views/ChoresView.vue`: "Diese Woche" + "Ämtli verwalten"
-- [x] `router/index.ts`: /chores Route
-- [x] `App.vue`: Socket-Bindings, Reconnect-Refetch, Household-Wechsel-Reset
-- [x] Navigation (Top-Bar + Bottom-Tab-Bar): 🧹 Putzplan Tab
-- [x] Commit: "feat(frontend): ChoresView + navigation + socket bindings"
-
-### 5c: i18n
-- [x] `locales/de.json`: Alle neuen Strings (chores.*)
-- [x] `locales/en.json`: Alle neuen Strings (chores.*)
-- [x] `npm run check:locales` grün
-- [x] Commit: "feat(i18n): chores translations DE/EN"
-
-### 5d: TypeScript-Check
-- [x] `npx vue-tsc --noEmit` grün
-
-## Aufgabe 6: Manuelle Akzeptanz
-
-- [x] In Commit-Message dokumentieren: Chore erstellt, Abhaken live, Sprachwechsel
-
-## Aufgabe 7: Alembic gegen Postgres
-
-- [x] `alembic upgrade head` gegen Docker-Postgres
-- [x] Enum + Timezone-Spalte verifiziert
-
-## Aufgabe 8: PROJECT-STATUS.md
-
-- [x] Chores-Modul dokumentiert
-- [x] Test-Count aktualisiert
-- [x] Offene Punkte ergänzt
-- [x] Commit: "docs: update PROJECT-STATUS.md with chores module"
+## NICHT in diesem Durchgang:
+- ❌ Kein "Heute"-Dashboard-Tab
+- ❌ Kein Dark Mode
+- ❌ Keine Swipe-Gesten
+- ❌ Keine Backend-/API-Änderungen
+- ❌ Keine neuen Schriftarten
+- ❌ Keine Änderungen an Login/Register-Views (ausser Token-Vererbung)

@@ -156,7 +156,7 @@ async function handleDelete(expenseId: string) {
   align-items: flex-start;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-2);
-  border-bottom: 1px solid var(--color-neutral-100);
+  border-bottom: 1px solid var(--color-neutral-200);
 }
 
 .expense-row__main {

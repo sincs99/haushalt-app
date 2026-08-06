@@ -404,7 +404,7 @@ async function saveEdit(todoId: string) {
   align-items: flex-start;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-2);
-  border-bottom: 1px solid var(--color-neutral-100);
+  border-bottom: 1px solid var(--color-neutral-200);
 }
 
 .todo-row--overdue {
@@ -531,7 +531,7 @@ async function saveEdit(todoId: string) {
 }
 
 .action-btn--danger:hover {
-  background: #FEF2F2;
+  background: var(--color-danger-light);
   color: var(--color-danger);
 }
 

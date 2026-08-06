@@ -639,7 +639,7 @@ const weekdayOptions = computed(() =>
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   background: var(--color-neutral-50);
-  border-bottom: 1px solid var(--color-neutral-100);
+  border-bottom: 1px solid var(--color-neutral-200);
 }
 
 .day-group__label {
@@ -674,7 +674,7 @@ const weekdayOptions = computed(() =>
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-neutral-100);
+  border-bottom: 1px solid var(--color-neutral-200);
   position: relative;
 }
 
@@ -762,7 +762,7 @@ const weekdayOptions = computed(() =>
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-secondary);
-  border-bottom: 1px solid var(--color-neutral-100);
+  border-bottom: 1px solid var(--color-neutral-200);
   margin-bottom: var(--space-1);
 }
 

@@ -114,7 +114,7 @@ async function handleLogin() {
 .auth-error {
   margin: 0;
   padding: var(--space-3);
-  background: #FEF2F2;
+  background: var(--color-danger-light);
   border: 1px solid #FECACA;
   border-radius: var(--radius-sm);
   color: var(--color-danger);

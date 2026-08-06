@@ -16,7 +16,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | Realtime | Socket.IO (python-socketio) |
 | Frontend | Vue 3.5, TypeScript 7, Vite 8, Pinia 4 |
 | Auth | JWT (Bearer Token), bcrypt-Hashing |
-| i18n | vue-i18n, 205 Keys (DE + EN), Build-gesicherter Key-Sync |
+| i18n | vue-i18n, 255 Keys (DE + EN), Build-gesicherter Key-Sync |
 | UI | Custom Design-System (CSS Custom Properties), Mobile-First |
 
 ---
@@ -55,22 +55,23 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | Datei | Zweck | Status |
 |---|---|---|
 | [`app/main.py`](../backend/app/main.py) | FastAPI-App, CORS, Router-Mount (auth, shopping, todos, households, expenses, settlements, chores), Socket.IO-Mount | ✅ Fertig |
-| [`app/models.py`](../backend/app/models.py) | SQLAlchemy Models: Household (+timezone), User, HouseholdMember, ShoppingItem, Todo, Expense, ExpenseShare, Chore, ChoreAssignment | ✅ Fertig |
+| [`app/models.py`](../backend/app/models.py) | SQLAlchemy Models: Household (+timezone, +currency), User, HouseholdMember, ShoppingItem, Todo, Expense, ExpenseShare, Chore, ChoreAssignment | ✅ Fertig |
 | [`app/database.py`](../backend/app/database.py) | DB-Session, Engine, Base | ✅ Fertig |
 | [`app/socket_manager.py`](../backend/app/socket_manager.py) | Socket.IO Server, Auth, Room-Join, emit_to_household_sync | ✅ Fertig |
 | [`app/core/config.py`](../backend/app/core/config.py) | Pydantic Settings (DB-URL, JWT-Secret, CORS) | ✅ Fertig |
 | [`app/core/security.py`](../backend/app/core/security.py) | JWT-Erstellung, Passwort-Hashing/-Verify, Invite-Code-Generierung | ✅ Fertig |
-| [`app/core/deps.py`](../backend/app/core/deps.py) | Dependencies: get_current_user, verify_household_access | ✅ Fertig |
-| [`app/core/error_codes.py`](../backend/app/core/error_codes.py) | Maschinenlesbare Error-Codes (+ 6 Chore-Codes: CHORE_NOT_FOUND, CHORE_WEEKDAY_REQUIRED, CHORE_DAY_OF_MONTH_REQUIRED, CHORE_INVALID_ROTATION, CHORE_ASSIGNMENT_NOT_FOUND, CHORE_WINDOW_TOO_LARGE) | ✅ Fertig |
-| [`app/routers/auth.py`](../backend/app/routers/auth.py) | POST /register, POST /login, GET /me | ✅ Fertig |
+| [`app/core/deps.py`](../backend/app/core/deps.py) | Dependencies: get_current_user, verify_household_access, verify_household_admin | ✅ Fertig |
+| [`app/core/error_codes.py`](../backend/app/core/error_codes.py) | Maschinenlesbare Error-Codes (+ Chore-Codes + CURRENCY_MISMATCH, ADMIN_REQUIRED, CANNOT_REMOVE_ADMIN, CANNOT_REMOVE_SELF) | ✅ Fertig |
+| [`app/routers/auth.py`](../backend/app/routers/auth.py) | POST /register (household_name ODER invite_code), POST /login, GET /me (inkl. household.currency) | ✅ Fertig |
 | [`app/routers/shopping.py`](../backend/app/routers/shopping.py) | CRUD Shopping-Items + Socket-Events | ✅ Fertig |
 | [`app/routers/todos.py`](../backend/app/routers/todos.py) | CRUD Todos + Socket-Events | ✅ Fertig |
-| [`app/routers/households.py`](../backend/app/routers/households.py) | GET /members, GET /invite-code, POST /join | ✅ Fertig |
+| [`app/routers/households.py`](../backend/app/routers/households.py) | GET /members (inkl. role), GET /invite-code, POST /join (+Event), POST / (create), PATCH (rename, Admin), POST /leave, DELETE /members/{user_id} | ✅ Fertig |
 | [`app/routers/expenses.py`](../backend/app/routers/expenses.py) | CRUD Expenses + Split-Logik (even/custom), Pydantic-Schemas inline | ✅ Fertig |
 | [`app/routers/settlements.py`](../backend/app/routers/settlements.py) | CRUD Settlements (GET/POST/DELETE) + Socket-Events | ✅ Fertig |
 | [`app/routers/chores.py`](../backend/app/routers/chores.py) | CRUD Chores + 4 Assignment-Endpoints + Socket-Events | ✅ Fertig |
 | [`app/services/chore_scheduler.py`](../backend/app/services/chore_scheduler.py) | Lazy-Materialisierung, Kalender-basierte Rotation, Datumsberechnung (weekly/biweekly/monthly) | ✅ Fertig |
-| `migrations/` | Alembic-Migrationen (8 Versionen) | ✅ Fertig |
+| [`app/services/invite_code.py`](../backend/app/services/invite_code.py) | Gemeinsame Invite-Code-Generierung mit Retry-Logik | ✅ Fertig |
+| `migrations/` | Alembic-Migrationen (9 Versionen) | ✅ Fertig |
 | [`scripts/regenerate_invite_codes.py`](../backend/scripts/regenerate_invite_codes.py) | Dry-Run/Apply Script für Invite-Code-Migration | ✅ Fertig |
 
 ### Backend-Tests (`backend/tests/`)
@@ -89,6 +90,11 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | [`test_settlements.py`](../backend/tests/test_settlements.py) | CRUD, Scoping, Validierung, Balance-Integration, Socket-Events (23 Tests) | ✅ Fertig |
 | [`test_chores.py`](../backend/tests/test_chores.py) | Scheduler-Unit-Tests, API-Tests, Socket-Events (28 Tests) | ✅ Fertig |
 | [`test_chore_scoping.py`](../backend/tests/test_chore_scoping.py) | Cross-Household 403 auf alle 8 Endpoints (8 Tests) | ✅ Fertig |
+| [`test_currency.py`](../backend/tests/test_currency.py) | Währungs-Mismatch, Default-Currency, /me Response | ✅ Fertig |
+| [`test_admin_guard.py`](../backend/tests/test_admin_guard.py) | verify_household_admin: Admin pass, Non-admin reject | ✅ Fertig |
+| [`test_households.py`](../backend/tests/test_households.py) | Create, Rename, Join-Event, Members-Role (8 Tests) | ✅ Fertig |
+| [`test_leave_remove.py`](../backend/tests/test_leave_remove.py) | Leave/Remove: Auto-Promotion, Cascade, Balances, 403-Regeln (10 Tests) | ✅ Fertig |
+| [`test_register.py`](../backend/tests/test_register.py) | Register mit Code, ohne Code, beides/keines → 422 (6 Tests) | ✅ Fertig |
 
 ### Frontend (`frontend/src/`)
 
@@ -98,20 +104,22 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | [`main.ts`](../frontend/src/main.ts) | App-Bootstrap, Pinia, Router, i18n, Theme-CSS Import | ✅ Fertig |
 | [`i18n.ts`](../frontend/src/i18n.ts) | vue-i18n Setup, detectLocale (localStorage → navigator.language → en) | ✅ Fertig |
 | [`api/client.ts`](../frontend/src/api/client.ts) | Axios-Client mit JWT-Interceptor, 401-Handler | ✅ Fertig |
-| [`types/index.ts`](../frontend/src/types/index.ts) | ShoppingItem, TodoItem, UserInfo, HouseholdInfo, HouseholdMemberInfo, MeResponse, ChoreInfo, ChoreAssignmentInfo, SettlementInfo | ✅ Fertig |
+| [`types/index.ts`](../frontend/src/types/index.ts) | ShoppingItem, TodoItem, UserInfo, HouseholdInfo (+currency), HouseholdMemberInfo (+role), MeResponse, ChoreInfo, ChoreAssignmentInfo, SettlementInfo | ✅ Fertig |
 | **i18n** | | |
-| [`locales/de.json`](../frontend/src/locales/de.json) | Deutsche Übersetzungen (205 Keys) | ✅ Fertig |
-| [`locales/en.json`](../frontend/src/locales/en.json) | Englische Übersetzungen (205 Keys) | ✅ Fertig |
+| [`locales/de.json`](../frontend/src/locales/de.json) | Deutsche Übersetzungen (255 Keys) | ✅ Fertig |
+| [`locales/en.json`](../frontend/src/locales/en.json) | Englische Übersetzungen (255 Keys) | ✅ Fertig |
 | [`scripts/check-locales.js`](../frontend/scripts/check-locales.js) | Build-Script: Prüft Key-Sync zwischen DE und EN | ✅ Fertig |
 | **Design-System** | | |
 | [`assets/theme.css`](../frontend/src/assets/theme.css) | Design-Token-System: Farben, Typografie, Spacing, Radii, Schatten, Transitions, Global Reset | ✅ Fertig |
 | [`components/ui/BaseButton.vue`](../frontend/src/components/ui/BaseButton.vue) | Button: 4 Varianten (primary/secondary/danger/ghost), 2 Grössen, Loading-State | ✅ Fertig |
 | [`components/ui/BaseInput.vue`](../frontend/src/components/ui/BaseInput.vue) | Input: Label, Error-State, v-model, iOS-Zoom-Prevention (16px) | ✅ Fertig |
 | [`components/ui/BaseCard.vue`](../frontend/src/components/ui/BaseCard.vue) | Card: 3 Padding-Stufen, Surface-Background, Shadow | ✅ Fertig |
-| [`components/ui/BaseEmptyState.vue`](../frontend/src/components/ui/BaseEmptyState.vue) | Empty-State: Icon + Titel + Subtitle, zentriert | ✅ Fertig |
+| [`components/ui/BaseEmptyState.vue`](../frontend/src/components/ui/BaseEmptyState.vue) | Empty-State: Icon + Titel + Subtitle, zentriert, + Action-Slot | ✅ Fertig |
+| [`components/ui/BaseDialog.vue`](../frontend/src/components/ui/BaseDialog.vue) | Wiederverwendbarer Dialog (Teleport, Overlay, Esc, Transitions) | ✅ Fertig |
+| [`components/ui/BaseSkeleton.vue`](../frontend/src/components/ui/BaseSkeleton.vue) | Skeleton-Loading-Platzhalter | ✅ Fertig |
 | [`components/ui/BaseSpinner.vue`](../frontend/src/components/ui/BaseSpinner.vue) | CSS-only Spinner: 2 Grössen, accessible | ✅ Fertig |
 | **Stores** | | |
-| [`stores/auth.ts`](../frontend/src/stores/auth.ts) | Login, Register, Token-Persistenz, fetchMe, Household-Wechsel | ✅ Fertig |
+| [`stores/auth.ts`](../frontend/src/stores/auth.ts) | Login, Register (+ invite_code Option), Token-Persistenz, fetchMe, Household-Wechsel, Socket-Handler (household_updated/member_joined/left/removed) | ✅ Fertig |
 | [`stores/shopping.ts`](../frontend/src/stores/shopping.ts) | Shopping CRUD, Optimistic Updates, Repository-Pattern, Race-Condition-Schutz | ✅ Fertig |
 | [`stores/todos.ts`](../frontend/src/stores/todos.ts) | Todos CRUD, Optimistic Updates, Repository-Pattern, Race-Condition-Schutz | ✅ Fertig |
 | [`stores/expenses.ts`](../frontend/src/stores/expenses.ts) | Expenses CRUD, Socket-Handler, debounced Balances-Refetch, Optimistic Delete | ✅ Fertig |
@@ -120,7 +128,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | **Repositories** | | |
 | [`repositories/shoppingRepository.ts`](../frontend/src/repositories/shoppingRepository.ts) | ShoppingRepository Interface + Online-Factory | ✅ Fertig |
 | [`repositories/todosRepository.ts`](../frontend/src/repositories/todosRepository.ts) | TodosRepository Interface + Online-Factory | ✅ Fertig |
-| [`repositories/householdsRepository.ts`](../frontend/src/repositories/householdsRepository.ts) | HouseholdsRepository Interface + Online-Factory (join, fetchInviteCode, fetchMembers) | ✅ Fertig |
+| [`repositories/householdsRepository.ts`](../frontend/src/repositories/householdsRepository.ts) | HouseholdsRepository Interface + Online-Factory (join, fetchInviteCode, fetchMembers, + create, rename, leave, removeMember) | ✅ Fertig |
 | [`repositories/expensesRepository.ts`](../frontend/src/repositories/expensesRepository.ts) | ExpensesRepository Interface + Online-Factory (CRUD + getBalances) | ✅ Fertig |
 | [`repositories/settlementsRepository.ts`](../frontend/src/repositories/settlementsRepository.ts) | SettlementsRepository Interface + Online-Factory | ✅ Fertig |
 | [`repositories/choresRepository.ts`](../frontend/src/repositories/choresRepository.ts) | ChoresRepository Interface + Online-Factory | ✅ Fertig |
@@ -133,12 +141,13 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | [`composables/useToast.ts`](../frontend/src/composables/useToast.ts) | App-weites Toast-System für Fehler-Feedback | ✅ Fertig |
 | **Views** | | |
 | [`views/LoginView.vue`](../frontend/src/views/LoginView.vue) | Login-Formular (BaseCard/BaseInput/BaseButton) | ✅ Fertig |
-| [`views/RegisterView.vue`](../frontend/src/views/RegisterView.vue) | Registrierungs-Formular (BaseCard/BaseInput/BaseButton) | ✅ Fertig |
+| [`views/RegisterView.vue`](../frontend/src/views/RegisterView.vue) | Registrierung: Tab-Umschalter (Haushalt gründen / Mit Code beitreten), ?code= Query-Param | ✅ Fertig |
 | [`views/ShoppingView.vue`](../frontend/src/views/ShoppingView.vue) | Shopping-Seite | ✅ Fertig |
 | [`views/TodosView.vue`](../frontend/src/views/TodosView.vue) | Todos-Seite mit Aufgabenliste | ✅ Fertig |
-| [`views/HouseholdView.vue`](../frontend/src/views/HouseholdView.vue) | Haushalt-Verwaltung: Invite-Code, Join, Mitglieder, Household-Wechsel, Mobile-Logout | ✅ Fertig |
+| [`views/HouseholdView.vue`](../frontend/src/views/HouseholdView.vue) | Haushalt-Verwaltung: 4 Sektionen (Haushalt, Mitglieder, Einladen, App), Leave/Remove, Share-Invite | ✅ Fertig |
 | [`views/ExpensesView.vue`](../frontend/src/views/ExpensesView.vue) | Ausgaben-Seite: BalanceSummary + ExpenseList | ✅ Fertig |
-| [`views/ChoresView.vue`](../frontend/src/views/ChoresView.vue) | Putzplan: "Diese Woche" (Assignments gruppiert nach Tag) + "Ämtli verwalten" (CRUD) | ✅ Fertig |
+| [`views/ChoresView.vue`](../frontend/src/views/ChoresView.vue) | Putzplan: "Diese Woche" (Assignments gruppiert nach Tag) + "Ämtli verwalten" (CRUD), "Nur meine" Filter, Empty-State CTA, BaseAvatar/BaseSkeleton | ✅ Fertig |
+| [`views/NoHouseholdView.vue`](../frontend/src/views/NoHouseholdView.vue) | Kein-Haushalt-Zustand: Gründen / Beitreten | ✅ Fertig |
 | **Komponenten** | | |
 | [`components/ShoppingList.vue`](../frontend/src/components/ShoppingList.vue) | Shopping-Liste: Touch-optimiert, sticky Quick-Add, Error-Handling | ✅ Fertig |
 | [`components/TodoList.vue`](../frontend/src/components/TodoList.vue) | Todo-Liste: Quick-Add, Detail-Edit, Zuweisung, Fälligkeitsdatum, Überfällig-Badge, Initialen-Chips | ✅ Fertig |
@@ -146,7 +155,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | [`components/BalanceSummary.vue`](../frontend/src/components/BalanceSummary.vue) | Saldo-Übersicht: Salden pro Mitglied, Ausgleichsvorschläge, Inline-Settlement-Erfassung | ✅ Fertig |
 | [`components/ExpenseFormDialog.vue`](../frontend/src/components/ExpenseFormDialog.vue) | Expense-Formular-Dialog: Create/Edit, Even/Custom Split, Betrags-Validierung | ✅ Fertig |
 | **Router** | | |
-| [`router/index.ts`](../frontend/src/router/index.ts) | Routen: /login, /register, /shopping, /chores, /todos, /expenses, /household + Auth-Guard | ✅ Fertig |
+| [`router/index.ts`](../frontend/src/router/index.ts) | Routen: /login, /register, /shopping, /chores, /todos, /expenses, /household, /no-household + Auth-Guard (+ 0-Haushalte-Guard) | ✅ Fertig |
 
 ---
 
@@ -154,12 +163,16 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 
 | Method | Path | Auth | Beschreibung |
 |---|---|---|---|
-| POST | `/api/auth/register` | ❌ | User + Household erstellen |
+| POST | `/api/auth/register` | ❌ | **Geändert:** household_name ODER invite_code |
 | POST | `/api/auth/login` | ❌ | JWT zurückgeben |
 | GET | `/api/auth/me` | ✅ | User-Info + Households |
 | GET | `/api/households/{id}/members` | ✅ | Mitglieder-Liste |
 | GET | `/api/households/{id}/invite-code` | ✅ | Invite-Code des Households |
 | POST | `/api/households/join` | ✅ | Household per Invite-Code beitreten |
+| POST | `/api/households/` | ✅ | **NEU:** Haushalt erstellen (Ersteller wird Admin) |
+| PATCH | `/api/households/{id}` | ✅ Admin | **NEU:** Haushalt umbenennen |
+| POST | `/api/households/{id}/leave` | ✅ | **NEU:** Haushalt verlassen |
+| DELETE | `/api/households/{id}/members/{uid}` | ✅ Admin | **NEU:** Mitglied entfernen |
 | **Shopping** | | | |
 | GET | `/api/households/{id}/shopping-items/` | ✅ | Einkaufsliste |
 | POST | `/api/households/{id}/shopping-items/` | ✅ | Item hinzufügen |
@@ -219,6 +232,11 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | `chore_deleted` | Server → Room | `{ id, household_id }` |
 | `chore_assignment_created` | Server → Room | `ChoreAssignmentResponse` |
 | `chore_assignment_updated` | Server → Room | `ChoreAssignmentResponse` |
+| **Households** | | |
+| `household_updated` | Server → Room | `{ id, name }` |
+| `household_member_joined` | Server → Room | `{ household_id, user_id, display_name, role }` |
+| `household_member_left` | Server → Room | `{ household_id, user_id }` |
+| `household_member_removed` | Server → Room | `{ household_id, user_id }` |
 
 ---
 
@@ -232,8 +250,9 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 │ name         │    │ user_id (FK)      ├───►│ email        │
 │ invite_code  │    │ role              │    │ password_hash│
 │ timezone     │    │ joined_at         │    │ display_name │
-│ created_at   │    └───────────────────┘    │ created_at   │
-└──────┬───────┘                              └──────────────┘
+│ currency     │    └───────────────────┘    │ created_at   │
+│ created_at   │                              └──────────────┘
+└──────┬───────┘
        │
        ├──────────────────┬──────────────────┬──────────────────┐
        │                  │                  │                  │
@@ -281,7 +300,44 @@ Invariante: SUM(expense_shares.amount_rappen) == expense.amount_rappen
 (erzwungen im Service-Layer, nicht als DB-Constraint)
 
 Household.timezone: Default "Europe/Zurich", verwendet für Chore-Datumsberechnung
+Household.currency: Default "CHF", eine Währung pro Haushalt
 ```
+
+---
+
+## Geschäftsregeln
+
+### Währungsregel
+- **Eine Währung pro Haushalt** (`Household.currency`, Default: CHF)
+- Expenses und Settlements müssen die Haushaltswährung verwenden
+- Fremdwährungs-Mismatch → 422 CURRENCY_MISMATCH
+- Kein Multi-Currency (bewusste Design-Entscheidung)
+
+### Rollen und Berechtigungen
+- **Zwei Rollen:** `admin` und `member`
+- Registrierung mit `household_name` → Ersteller wird `admin`
+- Registrierung mit `invite_code` → Beitritt als `member`
+- `POST /api/households/` → Ersteller wird `admin`
+- Admin-geschützte Endpoints: PATCH Haushalt (rename), DELETE Member
+- Keine feingranularen Berechtigungen (bewusst: nur admin/member)
+
+### Haushalt verlassen
+- **Immer erlaubt**, auch mit offenem Saldo
+- Expenses/Shares werden NICHT gelöscht ("Ehemaliges Mitglied"-Muster)
+- Letztes Mitglied verlässt → Haushalt wird komplett gelöscht (CASCADE)
+- Einziger Admin verlässt → dienstältestes verbleibendes Mitglied (frühestes `joined_at`, Tiebreaker: `user_id`) wird automatisch Admin
+- Kein manueller Admin-Transfer-Dialog (Auto-Promotion-Regel reicht)
+
+### Mitglied entfernen
+- Admin darf Mitglieder mit `role="member"` entfernen
+- Admin darf andere Admins NICHT entfernen → 403 CANNOT_REMOVE_ADMIN
+- Sich selbst entfernen → 422 CANNOT_REMOVE_SELF (nutze /leave stattdessen)
+- rotation_order in Chores wird NICHT bereinigt (Scheduler überspringt Nicht-Mitglieder)
+
+### Registrierung
+- Genau eines von `household_name` oder `invite_code` muss gesetzt sein
+- `household_name` → neuer Haushalt + Admin
+- `invite_code` → bestehender Haushalt + Member
 
 ---
 
@@ -372,21 +428,25 @@ Household.timezone: Default "Europe/Zurich", verwendet für Chore-Datumsberechnu
 | Expenses-Modul (CRUD + Split + Saldo) | ✅ | ✅ ExpensesView, ExpenseList, BalanceSummary, ExpenseFormDialog | ✅ Socket |
 | Settlements-Modul | ✅ | ✅ | ✅ Socket |
 | Chores-Modul (Putzplan + Rotation) | ✅ | ✅ | ✅ Socket |
-| i18n (DE + EN, 205 Keys, Locale-Check) | ✅ | ✅ | — |
+| i18n (DE + EN, 255 Keys, Locale-Check) | ✅ | ✅ | — |
 | Error-Code-System (maschinenlesbar) | ✅ | ✅ i18n-Mapping | — |
 | Offline-Banner | — | ✅ | — |
 | Toast-System | — | ✅ | — |
 | Repository-Layer (Offline-Ready Seam) | — | ✅ (6 Repos) | — |
 | Race-Condition-Schutz (Temp-IDs, Toggle-Mutex) | — | ✅ | — |
-| Design-System (CSS Custom Properties) | — | ✅ theme.css + 5 UI-Komponenten | — |
+| Design-System (CSS Custom Properties) | — | ✅ theme.css + 7 UI-Komponenten | — |
 | Mobile-First UI | — | ✅ Bottom-Tab-Bar, Touch-optimiert | — |
-| Backend-Tests (Multi-Tenant + Auth) | ✅ 12 Testdateien, 118 Tests | — | — |
+| Household erstellen (eigenständig) | ✅ POST /households/ | ✅ HouseholdView | — |
+| Household umbenennen | ✅ PATCH /households/{id} | ✅ HouseholdView | ✅ Socket |
+| Haushalt verlassen / Mitglied entfernen | ✅ POST /leave, DELETE /members/{uid} | ✅ HouseholdView | ✅ Socket |
+| Rollen-System (admin/member) | ✅ verify_household_admin | ✅ UI-Anzeige | — |
+| Währung pro Haushalt | ✅ Household.currency | ✅ /me Response | — |
+| Backend-Tests (Multi-Tenant + Auth) | ✅ 17 Testdateien, ~151 Tests | — | — |
 
 ### ❌ Offen (nächste Schritte)
 
 | Feature | Aufwand | Prio | Beschreibung |
 |---|---|---|---|
-| Household erstellen (zusätzlich) | Klein | 🟡 Mittel | Neuen Household erstellen (nicht nur bei Registrierung) |
 | Push-Notifications für Chores | Mittel | 🔵 Niedrig | "Du bist dran"-Benachrichtigung |
 | Rate-Limiting vor Public Launch | Klein | 🟡 Mittel | Endpoint-basiertes Rate-Limiting |
 | Offline-Phase 2 (IndexedDB + SyncQueue) | Gross | 🔵 Niedrig | Lokale Persistenz, Sync-Queue, Conflict Resolution |
@@ -405,7 +465,6 @@ Household.timezone: Default "Europe/Zurich", verwendet für Chore-Datumsberechnu
 |---|---|---|
 | `updated_at` fehlt | Auf ShoppingItem und Todo — wird für Phase-2 Conflict Resolution gebraucht | Phase 2 |
 | `navigator.onLine` unzuverlässig | Captive Portals, WiFi ohne Internet werden nicht erkannt | Phase 2 |
-| Kein neuer Household erstellen | Nur bei Registrierung wird ein Household erstellt; Join geht aber | Feature |
 | `deleteItem()` Rollback-Position | Bei paralleler Socket-Mutation kann Position abweichen (kosmetisch) | Gering |
 | Keine Frontend-Tests | Stores und Komponenten haben keine Unit-Tests | Technische Schuld |
 | Auth-Styles dupliziert | Login/Register haben identische Scoped-CSS-Blöcke (Shared-Auth-Component wäre Refactoring) | Gering |
@@ -484,7 +543,7 @@ Household.timezone: Default "Europe/Zurich", verwendet für Chore-Datumsberechnu
 
 ### Epic 5: i18n (Internationalisierung DE/EN) ✅
 - **Abgeschlossen:** 2026-08-06
-- **Umfang:** vue-i18n, detectLocale (localStorage → navigator.language → en), 205 Keys in de.json + en.json
+- **Umfang:** vue-i18n, detectLocale (localStorage → navigator.language → en), 255 Keys in de.json + en.json
 - **Build-Absicherung:** `check-locales.js` prüft Key-Sync, in Build-Pipeline integriert
 - **Error-Codes:** Maschinenlesbare Codes (backend) → i18n-Keys (frontend)
 
@@ -505,4 +564,18 @@ Household.timezone: Default "Europe/Zurich", verwendet für Chore-Datumsberechnu
   - Store mit Optimistic Updates, Toggle-Mutex, 5 Socket-Handler
   - Route /chores, 🧹-Tab in Navigation (5 Module)
 - **Tests:** 36 neue Tests (28 API/Scheduler + 8 Scoping), Gesamt: 118
-- **Manuelle Akzeptanz:** Chore "wöchentlich montags" mit 2-User-Rotation angelegt → Assignment mit korrektem User, Abhaken live sichtbar, Sprachwechsel DE↔EN vollständig
+
+### Epic 7: Household-Management + Rollen + Währung ✅
+- **Abgeschlossen:** 2026-08-06
+- **Umfang:**
+  - Household CRUD: Erstellen (POST), Umbenennen (PATCH), Verlassen (POST /leave), Mitglied entfernen (DELETE)
+  - Rollen-System: admin/member, verify_household_admin Dependency, Auto-Promotion bei Admin-Abgang
+  - Währung: Household.currency (Default CHF), CURRENCY_MISMATCH-Validierung
+  - Registrierung: household_name ODER invite_code (XOR-Validierung)
+  - Invite-Code-Service: Gemeinsame Generierung mit Retry-Logik
+  - Frontend: NoHouseholdView, BaseDialog, überarbeitete RegisterView (Tab-Umschalter), HouseholdView (4 Sektionen)
+  - Socket-Events: household_updated, household_member_joined/left/removed
+  - 4 neue Socket-Handler im Auth-Store
+- **Tests:** 5 neue Testdateien (test_currency, test_admin_guard, test_households, test_leave_remove, test_register), ~33 neue Tests, Gesamt: ~151
+- **Migration:** `a194489b8f0e` (add_household_currency)
+- **i18n:** 205 → 255 Keys (50 neue Keys für Household-Management, Rollen, Währung)

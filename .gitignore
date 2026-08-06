@@ -54,3 +54,4 @@ Desktop.ini
 *.log
 *.sqlite3
 *.db
+backend/test_output.txt 

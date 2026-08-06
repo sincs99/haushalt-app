@@ -11,6 +11,8 @@ from app.models import User, HouseholdMember
 
 logger = logging.getLogger(__name__)
 
+# cors_allowed_origins=[] deaktiviert Engine.IO-CORS bewusst —
+# CORS wird von FastAPIs CORSMiddleware gehandhabt (wirkt auch auf den /socket.io-Mount).
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=[])
 socket_app = socketio.ASGIApp(sio)
 

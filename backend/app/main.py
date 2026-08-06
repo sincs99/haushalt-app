@@ -5,11 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.routers import auth, shopping, todos, households, expenses
-from app.socket_manager import socket_app, set_event_loop, sio
+from app.socket_manager import socket_app, set_event_loop
 
-# CORS-Origins für Socket.IO übernehmen
 _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
-sio.cors_allowed_origins = _cors_origins
 
 app = FastAPI(title="Haushalt App API")
 

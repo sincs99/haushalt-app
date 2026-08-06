@@ -1,13 +1,56 @@
-﻿# Python
-backend/venv/
-backend/__pycache__/
-backend/.env
+﻿# ========================
+# Python / Backend
+# ========================
+__pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+*.egg
+backend/venv/
+backend/.env
+backend/.env.*
+!backend/.env.example
 
-# Node
+# ========================
+# Node / Frontend
+# ========================
 frontend/node_modules/
 frontend/dist/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+frontend/tsconfig.app.tsbuildinfo
 
-# General
-.DS_Store
+# ========================
+# Testing / Coverage
+# ========================
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# ========================
+# IDE / Editor
+# ========================
 .vscode/settings.json
+.vscode/launch.json
+.idea/
+
+# ========================
+# OS
+# ========================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ========================
+# Agent / Tooling
+# ========================
+.zoocode/
+
+# ========================
+# Misc
+# ========================
+*.log
+*.sqlite3
+*.db

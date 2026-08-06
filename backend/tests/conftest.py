@@ -124,6 +124,7 @@ def household_a(db) -> Household:
         id=uuid.uuid4(),
         name="Haushalt Alpha",
         invite_code="ALPHA123",
+        currency="CHF",
     )
     db.add(h)
     db.commit()
@@ -137,6 +138,7 @@ def household_b(db) -> Household:
         id=uuid.uuid4(),
         name="Haushalt Beta",
         invite_code="BETA456",
+        currency="CHF",
     )
     db.add(h)
     db.commit()

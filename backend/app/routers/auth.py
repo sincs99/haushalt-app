@@ -33,6 +33,7 @@ class HouseholdOut(BaseModel):
     id: uuid.UUID
     name: str
     role: str
+    currency: str
 
 
 class MeResponse(BaseModel):
@@ -107,7 +108,7 @@ def get_me(
         .all()
     )
     households = [
-        HouseholdOut(id=m.household.id, name=m.household.name, role=m.role)
+        HouseholdOut(id=m.household.id, name=m.household.name, role=m.role, currency=m.household.currency)
         for m in memberships
     ]
 

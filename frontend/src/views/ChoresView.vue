@@ -7,7 +7,8 @@ import { formatDateShort } from '../utils/dates'
 import type { ChoreInfo, ChoreAssignmentInfo, ChoreCreatePayload, ChoreUpdatePayload } from '../types'
 import { Brush, CalendarCheck, Pencil, X } from 'lucide-vue-next'
 import BaseButton from '../components/ui/BaseButton.vue'
-import BaseSpinner from '../components/ui/BaseSpinner.vue'
+import BaseAvatar from '../components/ui/BaseAvatar.vue'
+import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
 
 const choresStore = useChoresStore()
@@ -45,11 +46,6 @@ function getMemberName(userId: string | null): string {
   if (!userId) return t('chores.unassigned')
   const member = choresStore.members.find(m => m.id === userId)
   return member?.display_name ?? t('common.unknown')
-}
-
-function getInitial(userId: string | null): string {
-  const name = getMemberName(userId)
-  return name.charAt(0).toUpperCase()
 }
 
 function getChoreName(choreId: string): string {
@@ -289,8 +285,14 @@ const weekdayOptions = computed(() =>
     <h1 class="view-title">{{ $t('chores.title') }}</h1>
 
     <!-- Loading -->
-    <div v-if="choresStore.loading" class="loading-center">
-      <BaseSpinner />
+    <div v-if="choresStore.loading" class="skeleton-list">
+      <div class="skeleton-row" v-for="n in 3" :key="n">
+        <BaseSkeleton width="22px" height="22px" rounded />
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+          <BaseSkeleton :width="['75%', '60%', '85%'][n - 1]" height="16px" />
+          <BaseSkeleton width="40%" height="12px" />
+        </div>
+      </div>
     </div>
 
     <!-- ═══ Sektion A: Diese Woche ═══ -->
@@ -348,13 +350,12 @@ const weekdayOptions = computed(() =>
               </div>
 
               <div class="assignment-row__actions">
-                <span
+                <BaseAvatar
                   v-if="assignment.assigned_user_id"
-                  class="initials-chip"
-                  :title="getMemberName(assignment.assigned_user_id)"
-                >
-                  {{ getInitial(assignment.assigned_user_id) }}
-                </span>
+                  :name="getMemberName(assignment.assigned_user_id)"
+                  :userId="assignment.assigned_user_id"
+                  size="sm"
+                />
                 <button
                   class="action-btn"
                   :title="$t('chores.reassignTo')"
@@ -378,7 +379,7 @@ const weekdayOptions = computed(() =>
                   :class="{ 'reassign-dropdown__option--active': member.id === assignment.assigned_user_id }"
                   @click="handleReassign(assignment.id, member.id)"
                 >
-                  <span class="initials-chip initials-chip--sm">{{ member.display_name.charAt(0).toUpperCase() }}</span>
+                  <BaseAvatar :name="member.display_name" :userId="member.id" size="sm" />
                   {{ member.display_name }}
                 </button>
               </div>
@@ -469,7 +470,7 @@ const weekdayOptions = computed(() =>
                 :key="uid"
                 class="rotation-item"
               >
-                <span class="initials-chip">{{ getMemberName(uid).charAt(0).toUpperCase() }}</span>
+                <BaseAvatar :name="getMemberName(uid)" :userId="uid" size="sm" />
                 <span class="rotation-item__name">{{ getMemberName(uid) }}</span>
                 <div class="rotation-item__actions">
                   <button
@@ -533,7 +534,15 @@ const weekdayOptions = computed(() =>
             </div>
             <div class="chore-card__meta">
               <span class="chore-card__recurrence">{{ recurrenceSummary(chore) }}</span>
-              <span class="chore-card__rotation">{{ rotationSummary(chore) }}</span>
+              <div class="chore-card__rotation">
+                <BaseAvatar
+                  v-for="uid in chore.rotation_order"
+                  :key="uid"
+                  :name="getMemberName(uid)"
+                  :userId="uid"
+                  size="sm"
+                />
+              </div>
             </div>
           </div>
           <div class="chore-card__actions">
@@ -583,10 +592,22 @@ const weekdayOptions = computed(() =>
   color: var(--color-text);
 }
 
-.loading-center {
+/* ── Skeleton Loading ── */
+.skeleton-list {
   display: flex;
-  justify-content: center;
-  padding: var(--space-8) 0;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
 }
 
 /* ── Sektionen ── */
@@ -791,26 +812,6 @@ const weekdayOptions = computed(() =>
   font-weight: var(--font-weight-medium);
 }
 
-/* ── Initials Chip ── */
-.initials-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-full);
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  font-size: var(--text-xs);
-  font-weight: var(--font-weight-bold);
-  flex-shrink: 0;
-}
-
-.initials-chip--sm {
-  width: 22px;
-  height: 22px;
-  font-size: 10px;
-}
 
 /* ── Action Buttons ── */
 .action-btn {
@@ -1038,8 +1039,9 @@ const weekdayOptions = computed(() =>
 }
 
 .chore-card__rotation {
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .chore-card__actions {

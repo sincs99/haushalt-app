@@ -173,6 +173,7 @@ def materialize_due_assignments(db: Session, household) -> list:
     chores = (
         db.query(Chore)
         .filter(Chore.household_id == household.id, Chore.active == True)  # noqa: E712
+        .with_for_update()
         .all()
     )
 
@@ -191,6 +192,10 @@ def materialize_due_assignments(db: Session, household) -> list:
             from_date = last_assignment.due_date + timedelta(days=1)
         else:
             from_date = chore.anchor_date
+
+        # Backfill-Limit – maximal 14 Tage in die Vergangenheit
+        backfill_limit = today - timedelta(days=14)
+        from_date = max(from_date, backfill_limit)
 
         if from_date > horizon:
             continue

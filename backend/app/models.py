@@ -25,6 +25,9 @@ class Household(Base):
     timezone: Mapped[str] = mapped_column(
         String(50), nullable=False, server_default="Europe/Zurich"
     )
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, server_default="CHF"
+    )
 
     members: Mapped[list["HouseholdMember"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"

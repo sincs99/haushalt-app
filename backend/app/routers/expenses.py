@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import Expense, ExpenseShare, HouseholdMember, Settlement
+from app.models import Expense, ExpenseShare, Household, HouseholdMember, Settlement
 from app.services.household_checks import assert_users_in_household
 from app.socket_manager import emit_to_household_sync
 
@@ -26,7 +26,7 @@ class ExpenseShareInput(BaseModel):
 class ExpenseCreate(BaseModel):
     description: str = Field(..., min_length=1, max_length=200)
     amount_rappen: int = Field(..., gt=0)
-    currency: str = Field(default="CHF", pattern=r"^[A-Z]{3}$")
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     paid_by_user_id: uuid.UUID
     expense_date: date | None = None  # Default: heute (server-seitig)
     split_type: Literal["even", "custom"]
@@ -352,6 +352,17 @@ def create_expense(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
+    # 0. Haushalt laden und Currency prüfen
+    household = db.get(Household, household_id)
+    if body.currency is not None and body.currency != household.currency:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.CURRENCY_MISMATCH,
+                f"Currency {body.currency} does not match household currency {household.currency}",
+            ),
+        )
+
     # 1. paid_by_user_id muss Mitglied sein
     assert_users_in_household(db, household_id, [body.paid_by_user_id])
 
@@ -382,7 +393,7 @@ def create_expense(
         household_id=household_id,
         description=body.description,
         amount_rappen=body.amount_rappen,
-        currency=body.currency,
+        currency=household.currency,
         paid_by_user_id=body.paid_by_user_id,
         expense_date=body.expense_date or date.today(),
         split_type=body.split_type,
@@ -429,6 +440,18 @@ def update_expense(
         )
 
     update_data = body.model_dump(exclude_unset=True)
+
+    # Currency-Check bei Update
+    if body.currency is not None:
+        household = db.get(Household, household_id)
+        if body.currency != household.currency:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=error_detail(
+                    ErrorCode.CURRENCY_MISMATCH,
+                    f"Currency {body.currency} does not match household currency {household.currency}",
+                ),
+            )
 
     # Einfache Felder aktualisieren (außer split-spezifische)
     simple_fields = {"description", "currency", "paid_by_user_id", "expense_date"}

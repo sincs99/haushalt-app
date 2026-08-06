@@ -9,7 +9,7 @@ damit alle Datumsberechnungen deterministisch sind.
 """
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -806,3 +806,94 @@ class TestSocketEvents:
         ]
         assert len(deleted_calls) == 1
         assert deleted_calls[0][0][2]["id"] == chore_id
+
+
+# ---------------------------------------------------------------------------
+# Backfill-Limit
+# ---------------------------------------------------------------------------
+
+
+class TestBackfillLimit:
+    """Prüft, dass die Backfill-Begrenzung auf 14 Tage greift."""
+
+    def _setup_old_chore(self, db):
+        """Erstellt Household + 2 User + wöchentliche Chore (Mi) mit anchor_date 60 Tage zurück."""
+        household = Household(
+            id=uuid.uuid4(),
+            name="Backfill-HH",
+            invite_code="BKFL0001",
+            timezone="Europe/Zurich",
+        )
+        db.add(household)
+        db.flush()
+
+        user1 = User(
+            id=uuid.uuid4(),
+            email="backfill_u1@test.com",
+            password_hash=hash_password("pw"),
+            display_name="BF-User1",
+        )
+        user2 = User(
+            id=uuid.uuid4(),
+            email="backfill_u2@test.com",
+            password_hash=hash_password("pw"),
+            display_name="BF-User2",
+        )
+        db.add_all([user1, user2])
+        db.flush()
+
+        for u in [user1, user2]:
+            db.add(
+                HouseholdMember(
+                    id=uuid.uuid4(),
+                    household_id=household.id,
+                    user_id=u.id,
+                    role="member",
+                )
+            )
+        db.flush()
+
+        # anchor_date = 2026-06-10 (Mittwoch), ca. 57 Tage vor MOCK_TODAY
+        chore = Chore(
+            id=uuid.uuid4(),
+            household_id=household.id,
+            title="Alte Chore",
+            recurrence="weekly",
+            weekday=2,  # Mittwoch
+            rotation_order=[str(user1.id), str(user2.id)],
+            next_rotation_index=0,
+            anchor_date=date(2026, 6, 10),  # Mittwoch, ~60 Tage zurück
+            active=True,
+            created_by_user_id=user1.id,
+        )
+        db.add(chore)
+        db.commit()
+
+        return household, user1, user2, chore
+
+    def test_backfill_limited_to_14_days(self, db):
+        """
+        Chore weekly Mi, anchor=2026-06-10, today=2026-08-06 (Do).
+        Ohne Backfill-Limit wären 9 Mittwoche seit 10.06. fällig.
+        Mit Limit (today-14d = 2026-07-23) werden nur Mittwoche im
+        Fenster [2026-07-23, 2026-08-13] materialisiert:
+        29.07, 05.08, 12.08 → 3 Assignments.
+        Rotation rückt nur 3× weiter → next_rotation_index == 3.
+        """
+        household, user1, user2, chore = self._setup_old_chore(db)
+
+        with patch(_PATCH_SERVICE, return_value=MOCK_TODAY):
+            new = materialize_due_assignments(db, household)
+
+        # Erwartete Mittwoche: 29.07, 05.08, 12.08
+        assert len(new) == 3
+        due_dates = sorted(a.due_date for a in new)
+        assert due_dates == [
+            date(2026, 7, 29),
+            date(2026, 8, 5),
+            date(2026, 8, 12),
+        ]
+
+        # Rotation: nur 3 Schritte weiter (nicht 9)
+        db.refresh(chore)
+        assert chore.next_rotation_index == 3

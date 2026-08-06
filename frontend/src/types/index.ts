@@ -114,6 +114,7 @@ export interface HouseholdInfo {
   id: string
   name: string
   role: string
+  currency: string  // z.B. "CHF" — vom Backend via GET /api/auth/me
 }
 
 export interface HouseholdMemberInfo {

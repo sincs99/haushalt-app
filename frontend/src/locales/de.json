@@ -230,7 +230,8 @@
     "CHORE_INVALID_ROTATION": "Ungültige Rotations-Reihenfolge",
     "CHORE_ASSIGNMENT_NOT_FOUND": "Aufgaben-Zuweisung nicht gefunden",
     "CHORE_WINDOW_TOO_LARGE": "Zeitfenster zu gross (max. 92 Tage)",
-    "CURRENCY_MISMATCH": "Währung stimmt nicht mit der Haushaltswährung überein"
+    "CURRENCY_MISMATCH": "Währung stimmt nicht mit der Haushaltswährung überein",
+    "ADMIN_REQUIRED": "Admin-Berechtigung erforderlich"
   },
   "offline": {
     "banner": "Kein Netz – Änderungen können aktuell nicht gespeichert werden."

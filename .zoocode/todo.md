@@ -38,14 +38,14 @@ Drei Business-Logik-Lücken schliessen: erzwungene Haushalts-Währung, echte Adm
 
 ---
 
-## Aufgabe 2: Admin-Guard als Dependency
+## Aufgabe 2: Admin-Guard als Dependency ✅ (erledigt 2026-08-06)
 
 ### 2.1 Backend
-- [ ] Neuer Error-Code `ADMIN_REQUIRED` in `app/core/error_codes.py`
-- [ ] `verify_household_admin` in `app/core/deps.py`: baut auf `verify_household_access` auf, prüft `membership.role == "admin"`, sonst 403 ADMIN_REQUIRED
-- [ ] Test: Nicht-Admin auf Admin-Endpoint → 403 ADMIN_REQUIRED
-- [ ] `pytest backend/` ✅
-- [ ] i18n: `ADMIN_REQUIRED` in `de.json` + `en.json`
+- [x] Neuer Error-Code `ADMIN_REQUIRED` in `app/core/error_codes.py`
+- [x] `verify_household_admin` in `app/core/deps.py`: baut auf `verify_household_access` auf, prüft `membership.role == "admin"`, sonst 403 ADMIN_REQUIRED
+- [x] Test: `tests/test_admin_guard.py` – Admin passiert, Member bekommt 403 ADMIN_REQUIRED
+- [x] `pytest backend/` ✅
+- [x] i18n: `ADMIN_REQUIRED` in `de.json` + `en.json`
 - [ ] **Git Commit: "feat: add verify_household_admin dependency"**
 
 ---

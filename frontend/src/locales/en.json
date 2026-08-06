@@ -230,7 +230,8 @@
     "CHORE_INVALID_ROTATION": "Invalid rotation order",
     "CHORE_ASSIGNMENT_NOT_FOUND": "Assignment not found",
     "CHORE_WINDOW_TOO_LARGE": "Date window too large (max 92 days)",
-    "CURRENCY_MISMATCH": "Currency does not match household currency"
+    "CURRENCY_MISMATCH": "Currency does not match household currency",
+    "ADMIN_REQUIRED": "Admin role required"
   },
   "offline": {
     "banner": "No connection – changes cannot be saved right now."

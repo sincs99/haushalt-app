@@ -44,3 +44,15 @@ def verify_household_access(household_id: uuid.UUID, current_user: User = Depend
             detail=error_detail(ErrorCode.NOT_HOUSEHOLD_MEMBER, "Not a member of this household"),
         )
     return membership
+
+
+def verify_household_admin(
+    membership: HouseholdMember = Depends(verify_household_access),
+) -> HouseholdMember:
+    """Wie verify_household_access, aber zusätzlich Admin-Rolle erforderlich."""
+    if membership.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_detail(ErrorCode.ADMIN_REQUIRED, "Admin role required"),
+        )
+    return membership

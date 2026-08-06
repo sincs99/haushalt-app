@@ -4,6 +4,7 @@ import { useAuthStore } from './stores/auth'
 import { useShoppingStore } from './stores/shopping'
 import { useTodosStore } from './stores/todos'
 import { useExpensesStore } from './stores/expenses'
+import { useSettlementsStore } from './stores/settlements'
 import { useSocket } from './composables/useSocket'
 import { useConnectivity } from './composables/useConnectivity'
 import { useToast } from './composables/useToast'
@@ -14,6 +15,7 @@ const authStore = useAuthStore()
 const shoppingStore = useShoppingStore()
 const todosStore = useTodosStore()
 const expensesStore = useExpensesStore()
+const settlementsStore = useSettlementsStore()
 const { connect, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect } = useSocket()
 
 // Socket-Event-Binding: Watch auf Token + HouseholdId
@@ -33,6 +35,8 @@ watch(
     off('expense_created', expensesStore.handleExpenseCreated)
     off('expense_updated', expensesStore.handleExpenseUpdated)
     off('expense_deleted', expensesStore.handleExpenseDeleted)
+    off('settlement_created', settlementsStore.handleSettlementCreated)
+    off('settlement_deleted', settlementsStore.handleSettlementDeleted)
 
     // Wenn Token weg (Logout): Socket disconnecten
     if (!token) {
@@ -56,6 +60,7 @@ watch(
         expensesStore.expenses = []
         expensesStore.balances = null
         expensesStore.members = []
+        settlementsStore.settlements = []
       }
 
       joinHousehold(householdId)
@@ -70,11 +75,14 @@ watch(
       on('expense_created', expensesStore.handleExpenseCreated)
       on('expense_updated', expensesStore.handleExpenseUpdated)
       on('expense_deleted', expensesStore.handleExpenseDeleted)
+      on('settlement_created', settlementsStore.handleSettlementCreated)
+      on('settlement_deleted', settlementsStore.handleSettlementDeleted)
 
       shoppingStore.fetchItems()
       todosStore.fetchTodos()
       expensesStore.fetchExpenses()
       expensesStore.fetchBalances()
+      settlementsStore.fetchAll()
     }
   },
   { immediate: true }
@@ -89,6 +97,7 @@ function handleReconnect() {
     todosStore.fetchTodos()
     expensesStore.fetchExpenses()
     expensesStore.fetchBalances()
+    settlementsStore.fetchAll()
   }
 }
 
@@ -104,6 +113,8 @@ onUnmounted(() => {
   off('expense_created', expensesStore.handleExpenseCreated)
   off('expense_updated', expensesStore.handleExpenseUpdated)
   off('expense_deleted', expensesStore.handleExpenseDeleted)
+  off('settlement_created', settlementsStore.handleSettlementCreated)
+  off('settlement_deleted', settlementsStore.handleSettlementDeleted)
   offReconnect(handleReconnect)
   disconnect()
 })

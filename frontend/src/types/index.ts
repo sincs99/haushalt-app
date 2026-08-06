@@ -69,6 +69,8 @@ export interface BalanceEntry {
   user_id: string
   paid_rappen: number
   owed_rappen: number
+  settled_out_rappen: number
+  settled_in_rappen: number
   saldo_rappen: number
 }
 
@@ -76,6 +78,30 @@ export interface SettlementEntry {
   from_user_id: string
   to_user_id: string
   amount_rappen: number
+}
+
+// ── Settlements ──
+
+export interface SettlementInfo {
+  id: string
+  household_id: string
+  from_user_id: string
+  to_user_id: string
+  amount_rappen: number
+  currency: string
+  settled_date: string
+  note: string | null
+  created_by_user_id: string | null
+  created_at: string
+}
+
+export interface SettlementCreatePayload {
+  from_user_id: string
+  to_user_id: string
+  amount_rappen: number
+  currency?: string
+  settled_date?: string
+  note?: string
 }
 
 export interface BalancesResponse {

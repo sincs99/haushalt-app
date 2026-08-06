@@ -233,5 +233,10 @@
   },
   "offline": {
     "banner": "No connection – changes cannot be saved right now."
+  },
+  "sync": {
+    "connected": "Connected",
+    "reconnecting": "Reconnecting…",
+    "offline": "Offline"
   }
 }

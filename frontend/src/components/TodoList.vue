@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useTodosStore } from '../stores/todos'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
+import { formatDateShort } from '../utils/dates'
 import type { TodoItem } from '../types'
 import { Pencil, X, ListChecks } from 'lucide-vue-next'
 import BaseButton from './ui/BaseButton.vue'
@@ -55,14 +56,6 @@ function getMemberName(userId: string | null): string | null {
   return member?.display_name ?? null
 }
 
-// Datum formatieren (locale-aware)
-function formatDate(dateStr: string | null): string | null {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  const locale = localStorage.getItem('haushalt_locale') ?? 'de'
-  const intlLocale = locale === 'de' ? 'de-CH' : 'en-CH'
-  return d.toLocaleDateString(intlLocale, { weekday: 'short', day: '2-digit', month: '2-digit' })
-}
 
 // Quick-Add Handler
 async function handleAddTodo() {
@@ -232,7 +225,7 @@ async function saveEdit(todoId: string) {
               <div v-if="todo.description || todo.due_date || todo.assigned_to_user_id" class="todo-row__meta">
                 <span v-if="todo.description" class="todo-row__desc">{{ todo.description }}</span>
                 <span v-if="todo.due_date" class="todo-row__date" :class="{ 'todo-row__date--overdue': isOverdue(todo) }">
-                  {{ formatDate(todo.due_date) }}
+                  {{ formatDateShort(todo.due_date) }}
                 </span>
                 <BaseAvatar
                   v-if="todo.assigned_to_user_id && getMemberName(todo.assigned_to_user_id)"
@@ -299,7 +292,7 @@ async function saveEdit(todoId: string) {
               <span class="todo-row__name">{{ todo.title }}</span>
               <div v-if="todo.description || todo.due_date || todo.assigned_to_user_id" class="todo-row__meta">
                 <span v-if="todo.description" class="todo-row__desc">{{ todo.description }}</span>
-                <span v-if="todo.due_date" class="todo-row__date">{{ formatDate(todo.due_date) }}</span>
+                <span v-if="todo.due_date" class="todo-row__date">{{ formatDateShort(todo.due_date) }}</span>
                 <BaseAvatar
                   v-if="todo.assigned_to_user_id && getMemberName(todo.assigned_to_user_id)"
                   :name="getMemberName(todo.assigned_to_user_id)!"

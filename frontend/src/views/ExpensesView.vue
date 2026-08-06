@@ -5,6 +5,7 @@ import { useSettlementsStore } from '../stores/settlements'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatRappen } from '../utils/money'
+import { formatDate } from '../utils/dates'
 import { X } from 'lucide-vue-next'
 import ExpenseList from '../components/ExpenseList.vue'
 import BalanceSummary from '../components/BalanceSummary.vue'
@@ -23,12 +24,6 @@ function resolveUserName(userId: string | null): string {
   return member?.display_name ?? t('common.formerMember')
 }
 
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  const locale = localStorage.getItem('haushalt_locale') ?? 'de'
-  const intlLocale = locale === 'de' ? 'de-CH' : 'en-CH'
-  return d.toLocaleDateString(intlLocale, { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
 
 async function handleDeleteSettlement(settlementId: string) {
   // Snapshot für Undo

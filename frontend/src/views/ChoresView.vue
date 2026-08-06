@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChoresStore } from '../stores/chores'
 import { useToast } from '../composables/useToast'
+import { formatDateShort } from '../utils/dates'
 import type { ChoreInfo, ChoreAssignmentInfo, ChoreCreatePayload, ChoreUpdatePayload } from '../types'
 import { Brush, CalendarCheck, Pencil, X } from 'lucide-vue-next'
 import BaseButton from '../components/ui/BaseButton.vue'
@@ -30,9 +31,6 @@ function formatWeekday(dateStr: string): string {
   return new Intl.DateTimeFormat(locale.value, { weekday: 'long' }).format(new Date(dateStr + 'T00:00:00'))
 }
 
-function formatDate(dateStr: string): string {
-  return new Intl.DateTimeFormat(locale.value, { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(dateStr + 'T00:00:00'))
-}
 
 function isOverdue(assignment: ChoreAssignmentInfo): boolean {
   return !assignment.completed_at && assignment.due_date < todayStr()
@@ -317,7 +315,7 @@ const weekdayOptions = computed(() =>
         >
           <div class="day-group__header">
             <span class="day-group__label">{{ group.label }}</span>
-            <span class="day-group__date">{{ formatDate(group.date) }}</span>
+            <span class="day-group__date">{{ formatDateShort(group.date) }}</span>
             <span v-if="group.isOverdue" class="overdue-badge">{{ $t('chores.overdue') }}</span>
           </div>
 

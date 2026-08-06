@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch, onUnmounted } from 'vue'
+import { watch, onUnmounted, computed } from 'vue'
 import { useAuthStore } from './stores/auth'
 import { useShoppingStore } from './stores/shopping'
 import { useTodosStore } from './stores/todos'
@@ -20,7 +20,14 @@ const todosStore = useTodosStore()
 const expensesStore = useExpensesStore()
 const settlementsStore = useSettlementsStore()
 const choresStore = useChoresStore()
-const { connect, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect } = useSocket()
+const { connect, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect, isConnected } = useSocket()
+
+// Sync-Status für Indikator
+const syncStatus = computed(() => {
+  if (isConnected.value) return 'connected'
+  if (isOnline.value) return 'reconnecting'
+  return 'offline'
+})
 
 // Socket-Event-Binding: Watch auf Token + HouseholdId
 watch(
@@ -196,6 +203,13 @@ onUnmounted(() => {
             size="md"
           />
           <button class="top-bar__logout" @click="authStore.logout()">{{ $t('auth.logout') }}</button>
+          <span
+            class="sync-dot"
+            :class="`sync-dot--${syncStatus}`"
+            :title="$t(`sync.${syncStatus}`)"
+            :aria-label="$t(`sync.${syncStatus}`)"
+            role="status"
+          />
         </div>
       </div>
     </header>
@@ -207,6 +221,12 @@ onUnmounted(() => {
 
     <!-- Mobile Bottom-Tab-Bar (<768px sichtbar) -->
     <nav class="tab-bar" :aria-label="$t('nav.brand')">
+      <span
+        class="tab-bar__sync-dot"
+        :class="`sync-dot--${syncStatus}`"
+        :aria-label="$t(`sync.${syncStatus}`)"
+        role="status"
+      />
       <router-link to="/shopping" class="tab-bar__tab" active-class="tab-bar__tab--active">
         <ShoppingCart :size="22" class="tab-bar__icon" />
         <span class="tab-bar__label">{{ $t('nav.shopping') }}</span>
@@ -446,6 +466,42 @@ onUnmounted(() => {
 
 .tab-bar__tab--active .tab-bar__label {
   font-weight: var(--font-weight-medium);
+}
+
+/* ── Sync-Indikator ── */
+.sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.sync-dot--connected {
+  background-color: var(--color-success);
+}
+
+.sync-dot--reconnecting {
+  background-color: var(--color-warning);
+  animation: sync-pulse 1.5s ease-in-out infinite;
+}
+
+.sync-dot--offline {
+  background-color: var(--color-neutral-400);
+}
+
+@keyframes sync-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Tab-Bar Sync-Punkt */
+.tab-bar__sync-dot {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
 }
 
 /* ── Toast-Container ── */

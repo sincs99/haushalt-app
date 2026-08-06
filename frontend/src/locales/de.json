@@ -233,5 +233,10 @@
   },
   "offline": {
     "banner": "Kein Netz – Änderungen können aktuell nicht gespeichert werden."
+  },
+  "sync": {
+    "connected": "Verbunden",
+    "reconnecting": "Verbindung wird wiederhergestellt…",
+    "offline": "Offline"
   }
 }

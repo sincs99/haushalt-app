@@ -14,7 +14,16 @@ const router = useRouter()
 const authStore = useAuthStore()
 const repo = createOnlineHouseholdsRepository()
 const { showToast } = useToast()
-const { t } = useI18n()
+const { t, locale } = useI18n()
+
+// Locale
+const currentLocale = ref(locale.value)
+
+function changeLocale(newLocale: string) {
+  locale.value = newLocale
+  localStorage.setItem('haushalt_locale', newLocale)
+  currentLocale.value = newLocale
+}
 
 // Invite-Code
 const inviteCode = ref('')
@@ -152,6 +161,23 @@ watch(() => authStore.currentHouseholdId, () => {
       </form>
     </BaseCard>
 
+    <!-- Einstellungen -->
+    <BaseCard>
+      <h2 class="section-title">{{ $t('household.settings') }}</h2>
+      <div class="settings-row">
+        <label class="settings-label" for="locale-select">{{ $t('household.language') }}</label>
+        <select
+          id="locale-select"
+          :value="currentLocale"
+          @change="changeLocale(($event.target as HTMLSelectElement).value)"
+          class="settings-select"
+        >
+          <option value="de">{{ $t('household.languageDe') }}</option>
+          <option value="en">{{ $t('household.languageEn') }}</option>
+        </select>
+      </div>
+    </BaseCard>
+
     <!-- Logout-Button für Mobile (auf Desktop in Top-Bar) -->
     <div class="mobile-logout">
       <BaseButton variant="ghost" @click="authStore.logout()" class="mobile-logout__btn">
@@ -274,6 +300,36 @@ watch(() => authStore.currentHouseholdId, () => {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+/* Settings */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.settings-label {
+  font-size: var(--text-base);
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+}
+
+.settings-select {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  color: var(--color-text);
+  background: var(--color-bg);
+  cursor: pointer;
+}
+
+.settings-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-light);
 }
 
 /* Mobile Logout */

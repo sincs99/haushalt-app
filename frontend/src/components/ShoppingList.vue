@@ -1,18 +1,27 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useShoppingStore } from '../stores/shopping'
+import { useExpensesStore } from '../stores/expenses'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { X, ShoppingCart } from 'lucide-vue-next'
 import BaseSpinner from './ui/BaseSpinner.vue'
+import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
 
 const shoppingStore = useShoppingStore()
+const expensesStore = useExpensesStore()
 const { showToast } = useToast()
 const { t } = useI18n()
 
 const newItemName = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
+
+function resolveUserName(userId: string | null): string | null {
+  if (!userId) return null
+  const member = expensesStore.members.find(m => m.id === userId)
+  return member?.display_name ?? null
+}
 
 // Getrennte Listen: offen vs. abgehakt
 const openItems = computed(() =>
@@ -91,6 +100,12 @@ async function handleDelete(itemId: string) {
         </span>
         <span class="item-row__name">{{ item.name }}</span>
         <span v-if="item.quantity" class="item-row__meta">{{ item.quantity }}</span>
+        <BaseAvatar
+          v-if="item.added_by_user_id && resolveUserName(item.added_by_user_id)"
+          :name="resolveUserName(item.added_by_user_id)!"
+          :user-id="item.added_by_user_id"
+          size="sm"
+        />
       </li>
     </ul>
 
@@ -122,6 +137,12 @@ async function handleDelete(itemId: string) {
           </span>
           <span class="item-row__name" @click="handleToggle(item.id)">{{ item.name }}</span>
           <span v-if="item.quantity" class="item-row__meta">{{ item.quantity }}</span>
+          <BaseAvatar
+            v-if="item.added_by_user_id && resolveUserName(item.added_by_user_id)"
+            :name="resolveUserName(item.added_by_user_id)!"
+            :user-id="item.added_by_user_id"
+            size="sm"
+          />
           <button
             class="item-row__delete"
             @click.stop="handleDelete(item.id)"

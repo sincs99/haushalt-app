@@ -7,6 +7,7 @@ import { formatRappen } from '../utils/money'
 import type { Expense } from '../types'
 import { X, Receipt } from 'lucide-vue-next'
 import BaseButton from './ui/BaseButton.vue'
+import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseSpinner from './ui/BaseSpinner.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
 import ExpenseFormDialog from './ExpenseFormDialog.vue'
@@ -81,6 +82,12 @@ async function handleDelete(expenseId: string) {
             <div class="expense-row__meta">
               <span class="expense-row__date">{{ formatDate(expense.expense_date) }}</span>
               <span class="expense-row__paid-by">
+                <BaseAvatar
+                  v-if="expense.paid_by_user_id"
+                  :name="resolveUserName(expense.paid_by_user_id)"
+                  :user-id="expense.paid_by_user_id"
+                  size="sm"
+                />
                 {{ $t('expenses.paidBy', { name: resolveUserName(expense.paid_by_user_id) }) }}
               </span>
             </div>
@@ -218,6 +225,9 @@ async function handleDelete(expenseId: string) {
 }
 
 .expense-row__paid-by {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   white-space: nowrap;
 }
 

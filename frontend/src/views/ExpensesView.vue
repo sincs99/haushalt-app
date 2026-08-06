@@ -9,6 +9,7 @@ import { X } from 'lucide-vue-next'
 import ExpenseList from '../components/ExpenseList.vue'
 import BalanceSummary from '../components/BalanceSummary.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
+import BaseAvatar from '../components/ui/BaseAvatar.vue'
 
 const expensesStore = useExpensesStore()
 const settlementsStore = useSettlementsStore()
@@ -62,8 +63,10 @@ onMounted(() => {
         >
           <div class="settlement-item__main">
             <div class="settlement-item__flow">
+              <BaseAvatar :name="resolveUserName(s.from_user_id)" :user-id="s.from_user_id" size="sm" />
               <strong>{{ resolveUserName(s.from_user_id) }}</strong>
               →
+              <BaseAvatar :name="resolveUserName(s.to_user_id)" :user-id="s.to_user_id" size="sm" />
               <strong>{{ resolveUserName(s.to_user_id) }}</strong>
             </div>
             <span class="settlement-item__amount">{{ formatRappen(s.amount_rappen) }}</span>
@@ -139,6 +142,9 @@ onMounted(() => {
 }
 
 .settlement-item__flow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   font-size: var(--text-sm);
   color: var(--color-text);
 }

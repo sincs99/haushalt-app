@@ -8,6 +8,7 @@ import { useSettlementsStore } from './stores/settlements'
 import { useChoresStore } from './stores/chores'
 import { useSocket } from './composables/useSocket'
 import { useConnectivity } from './composables/useConnectivity'
+import BaseAvatar from './components/ui/BaseAvatar.vue'
 import { useToast } from './composables/useToast'
 import { ShoppingCart, ListChecks, Wallet, Home, Brush, WifiOff, CheckCircle2, AlertCircle, Info } from 'lucide-vue-next'
 
@@ -188,7 +189,12 @@ onUnmounted(() => {
               {{ h.name }}
             </option>
           </select>
-          <span class="top-bar__user">{{ authStore.user?.display_name }}</span>
+          <BaseAvatar
+            v-if="authStore.user"
+            :name="authStore.user.display_name"
+            :user-id="authStore.user.id"
+            size="md"
+          />
           <button class="top-bar__logout" @click="authStore.logout()">{{ $t('auth.logout') }}</button>
         </div>
       </div>
@@ -338,10 +344,6 @@ onUnmounted(() => {
   gap: var(--space-3);
 }
 
-.top-bar__user {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-}
 
 .top-bar__logout {
   padding: var(--space-1) var(--space-3);

@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 import { formatRappen, parseAmountToRappen } from '../utils/money'
 import BaseCard from './ui/BaseCard.vue'
 import BaseButton from './ui/BaseButton.vue'
+import BaseAvatar from './ui/BaseAvatar.vue'
 import type { SettlementEntry } from '../types'
 
 const expensesStore = useExpensesStore()
@@ -98,7 +99,10 @@ async function confirmSettlement() {
         :key="entry.user_id"
         class="balance-row"
       >
-        <span class="balance-row__name">{{ resolveUserName(entry.user_id) }}</span>
+        <div class="balance-row__left">
+          <BaseAvatar :name="resolveUserName(entry.user_id)" :user-id="entry.user_id" size="sm" />
+          <span class="balance-row__name">{{ resolveUserName(entry.user_id) }}</span>
+        </div>
         <span class="balance-row__saldo" :style="{ color: saldoColor(entry.saldo_rappen) }">
           {{ formatSaldo(entry.saldo_rappen) }}
         </span>
@@ -188,6 +192,12 @@ async function confirmSettlement() {
   justify-content: space-between;
   align-items: center;
   padding: var(--space-1) 0;
+}
+
+.balance-row__left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .balance-row__name {

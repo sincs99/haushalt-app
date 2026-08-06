@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import type { TodoItem } from '../types'
 import { Pencil, X, ListChecks } from 'lucide-vue-next'
 import BaseButton from './ui/BaseButton.vue'
+import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseSpinner from './ui/BaseSpinner.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
 
@@ -211,9 +212,12 @@ async function saveEdit(todoId: string) {
                 <span v-if="todo.due_date" class="todo-row__date" :class="{ 'todo-row__date--overdue': isOverdue(todo) }">
                   {{ formatDate(todo.due_date) }}
                 </span>
-                <span v-if="getMemberName(todo.assigned_to_user_id)" class="initials-chip">
-                  {{ getMemberName(todo.assigned_to_user_id)!.charAt(0).toUpperCase() }}
-                </span>
+                <BaseAvatar
+                  v-if="todo.assigned_to_user_id && getMemberName(todo.assigned_to_user_id)"
+                  :name="getMemberName(todo.assigned_to_user_id)!"
+                  :user-id="todo.assigned_to_user_id"
+                  size="sm"
+                />
               </div>
             </div>
           </div>
@@ -274,9 +278,12 @@ async function saveEdit(todoId: string) {
               <div v-if="todo.description || todo.due_date || todo.assigned_to_user_id" class="todo-row__meta">
                 <span v-if="todo.description" class="todo-row__desc">{{ todo.description }}</span>
                 <span v-if="todo.due_date" class="todo-row__date">{{ formatDate(todo.due_date) }}</span>
-                <span v-if="getMemberName(todo.assigned_to_user_id)" class="initials-chip">
-                  {{ getMemberName(todo.assigned_to_user_id)!.charAt(0).toUpperCase() }}
-                </span>
+                <BaseAvatar
+                  v-if="todo.assigned_to_user_id && getMemberName(todo.assigned_to_user_id)"
+                  :name="getMemberName(todo.assigned_to_user_id)!"
+                  :user-id="todo.assigned_to_user_id"
+                  size="sm"
+                />
               </div>
             </div>
           </div>
@@ -487,20 +494,6 @@ async function saveEdit(todoId: string) {
 .todo-row__date--overdue {
   color: var(--color-danger);
   font-weight: var(--font-weight-medium);
-}
-
-.initials-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-full);
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  font-size: var(--text-xs);
-  font-weight: var(--font-weight-bold);
-  flex-shrink: 0;
 }
 
 /* Aktions-Buttons */

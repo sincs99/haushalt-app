@@ -84,7 +84,8 @@ def _mock_socket_emit():
                 with patch("app.routers.expenses.emit_to_household_sync", mock_emit):
                     with patch("app.routers.settlements.emit_to_household_sync", mock_emit):
                         with patch("app.routers.chores.emit_to_household_sync", mock_emit):
-                            yield mock_emit
+                            with patch("app.routers.households.emit_to_household_sync", mock_emit):
+                                yield mock_emit
 
 
 @pytest.fixture()

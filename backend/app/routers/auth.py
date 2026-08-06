@@ -9,7 +9,8 @@ from pydantic import BaseModel, EmailStr, Field
 from app.database import get_db
 from app.models import User, Household, HouseholdMember
 from app.core.error_codes import ErrorCode, error_detail
-from app.core.security import hash_password, verify_password, create_access_token, generate_invite_code
+from app.core.security import hash_password, verify_password, create_access_token
+from app.services.invite_code import generate_unique_invite_code
 from app.core.deps import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -57,22 +58,7 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.flush()
 
-    MAX_INVITE_CODE_RETRIES = 5
-    for attempt in range(MAX_INVITE_CODE_RETRIES):
-        invite_code = generate_invite_code()
-        existing = db.query(Household).filter_by(invite_code=invite_code).first()
-        if existing is None:
-            break
-        if attempt == MAX_INVITE_CODE_RETRIES - 1:
-            logger.error(
-                "Failed to generate unique invite code after %d attempts",
-                MAX_INVITE_CODE_RETRIES,
-            )
-            raise HTTPException(
-                status_code=500,
-                detail=error_detail(ErrorCode.INVITE_CODE_GENERATION_FAILED, "Could not generate unique invite code"),
-            )
-
+    invite_code = generate_unique_invite_code(db)
     household = Household(name=data.household_name, invite_code=invite_code)
     db.add(household)
     db.flush()

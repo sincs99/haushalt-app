@@ -50,18 +50,27 @@ Drei Business-Logik-Lücken schliessen: erzwungene Haushalts-Währung, echte Adm
 
 ---
 
-## Aufgabe 3: Haushalt erstellen, umbenennen, beitreten-Event
+## Aufgabe 3: Haushalt erstellen, umbenennen, beitreten-Event ✅ (erledigt 2026-08-06)
 
 ### 3.1 Backend
-- [ ] Invite-Code-Generierung aus `auth.py` in gemeinsame Service-Funktion `app/services/invite_code.py` extrahieren
-- [ ] `auth.py` und neue Endpoints nutzen die gemeinsame Funktion
-- [ ] `POST /api/households` (201, nur Auth): Body `{name: str (1–100)}` → erstellt Haushalt + Membership role="admin". Response wie in `/me`.
-- [ ] `PATCH /api/households/{household_id}` (Admin): Body `{name}` → umbenennen. Socket-Event `household_updated` `{id, name}`
-- [ ] Bestehender `POST .../join`: Socket-Event `household_member_joined` `{display_name, user_id, role}` emittieren
-- [ ] Mock-Patch für `emit_to_household_sync` in `conftest.py` um `app.routers.households` erweitern
-- [ ] Tests: create → Ersteller ist admin; rename als Nicht-Admin → 403; Events emittiert
-- [ ] `pytest backend/` ✅
+- [x] Invite-Code-Generierung aus `auth.py` in gemeinsame Service-Funktion `app/services/invite_code.py` extrahieren
+- [x] `auth.py` und neue Endpoints nutzen die gemeinsame Funktion
+- [x] `POST /api/households` (201, nur Auth): Body `{name: str (1–100)}` → erstellt Haushalt + Membership role="admin". Response wie in `/me`.
+- [x] `PATCH /api/households/{household_id}` (Admin): Body `{name}` → umbenennen. Socket-Event `household_updated` `{id, name}`
+- [x] Bestehender `POST .../join`: Socket-Event `household_member_joined` `{display_name, user_id, role}` emittieren
+- [x] `HouseholdMemberResponse` um `role` erweitert (GET /members gibt jetzt `role` zurück)
+- [x] Mock-Patch für `emit_to_household_sync` in `conftest.py` um `app.routers.households` erweitern
+- [x] Tests: 8 neue Tests in `tests/test_households.py`, alle 135 Tests grün
+- [x] `pytest backend/` ✅
 - [ ] **Git Commit: "feat: create/rename household endpoints + join event"**
+
+> **API-Änderungen für Frontend:**
+> - **NEU** `POST /api/households/` → Body `{"name": "..."}` → `201` mit `{id, name, role, currency}`
+> - **NEU** `PATCH /api/households/{household_id}` → Body `{"name": "..."}` → `200` mit `{id, name}` (nur Admin)
+> - `GET /api/households/{household_id}/members` → Response enthält jetzt **`role`** pro Mitglied (`"admin"` oder `"member"`)
+> - `POST /api/households/join` → emittiert jetzt Socket-Event `household_member_joined` `{household_id, user_id, display_name, role}`
+> - `PATCH /api/households/{household_id}` → emittiert Socket-Event `household_updated` `{id, name}`
+> - Nicht-Admin auf PATCH → `403` mit `detail.code = "ADMIN_REQUIRED"`
 
 ---
 

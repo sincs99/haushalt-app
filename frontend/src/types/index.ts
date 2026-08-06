@@ -127,3 +127,54 @@ export interface MeResponse {
   display_name: string
   households: HouseholdInfo[]
 }
+
+// ── Chores ──
+
+export type ChoreRecurrence = 'weekly' | 'biweekly' | 'monthly'
+
+export interface ChoreInfo {
+  id: string
+  household_id: string
+  title: string
+  description: string | null
+  recurrence: ChoreRecurrence
+  weekday: number | null        // 0=Mo..6=So
+  day_of_month: number | null   // 1-31
+  rotation_order: string[]      // User-UUID-Strings
+  next_rotation_index: number
+  anchor_date: string           // "YYYY-MM-DD"
+  active: boolean
+  created_at: string
+  created_by_user_id: string | null
+}
+
+export interface ChoreCreatePayload {
+  title: string
+  description?: string
+  recurrence: ChoreRecurrence
+  weekday?: number
+  day_of_month?: number
+  rotation_order: string[]
+  active?: boolean
+}
+
+export interface ChoreUpdatePayload {
+  title?: string
+  description?: string
+  recurrence?: ChoreRecurrence
+  weekday?: number
+  day_of_month?: number
+  rotation_order?: string[]
+  active?: boolean
+}
+
+export interface ChoreAssignmentInfo {
+  id: string
+  household_id: string
+  chore_id: string
+  assigned_user_id: string | null
+  due_date: string              // "YYYY-MM-DD"
+  completed_at: string | null
+  completed_by_user_id: string | null
+  created_at: string
+}

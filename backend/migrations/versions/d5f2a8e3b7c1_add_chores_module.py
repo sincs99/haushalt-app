@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -36,7 +37,7 @@ def upgrade() -> None:
         sa.Column('household_id', sa.UUID(), nullable=False),
         sa.Column('title', sa.String(length=100), nullable=False),
         sa.Column('description', sa.String(length=500), nullable=True),
-        sa.Column('recurrence', sa.Enum("weekly", "biweekly", "monthly", name="chore_recurrence", create_constraint=True), nullable=False),
+        sa.Column('recurrence', postgresql.ENUM("weekly", "biweekly", "monthly", name="chore_recurrence", create_type=False), nullable=False),
         sa.Column('weekday', sa.Integer(), nullable=True),
         sa.Column('day_of_month', sa.Integer(), nullable=True),
         sa.Column('rotation_order', sa.JSON(), nullable=False),

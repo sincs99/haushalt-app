@@ -44,7 +44,11 @@
     "namePlaceholder": "Your name",
     "householdPlaceholder": "e.g. The Smiths",
     "appTitle": "Household App",
-    "loginHere": "Log in here"
+    "loginHere": "Log in here",
+    "tabCreate": "Create household",
+    "tabJoin": "Join with code",
+    "inviteCodeLabel": "Invite code",
+    "inviteCodePlaceholder": "e.g. ABCD1234"
   },
   "nav": {
     "shopping": "Shopping",
@@ -222,7 +226,19 @@
     "removeMemberError": "Could not remove member",
     "adminBadge": "Admin",
     "removed": "You have been removed from the household",
-    "householdLeft": "You have left the household"
+    "householdLeft": "You have left the household",
+    "createNewTitle": "Create another household",
+    "createNewButton": "Create household",
+    "createNewSuccess": "Household \"{name}\" created!"
+  },
+  "noHousehold": {
+    "title": "Welcome back",
+    "subtitle": "You're not in any household. Create a new one or join an existing one.",
+    "createTitle": "Create household",
+    "createHint": "Start a new household and invite others.",
+    "createButton": "Create household",
+    "joinTitle": "Join household",
+    "joinHint": "Do you have an invite code?"
   },
   "errors": {
     "unknown": "An unknown error occurred",

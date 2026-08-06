@@ -16,7 +16,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
-import { UserMinus, LogOut } from 'lucide-vue-next'
+import { UserMinus, LogOut, Plus } from 'lucide-vue-next'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -163,6 +163,29 @@ async function copyInviteCode() {
     showToast(t('household.codeCopied'), 'success')
   } catch {
     showToast(t('household.copyFailed'), 'error')
+  }
+}
+
+// ── Neuen Haushalt erstellen (Dialog) ──
+const createDialogOpen = ref(false)
+const newHouseholdName = ref('')
+const createNewLoading = ref(false)
+
+async function createNewHousehold() {
+  if (!newHouseholdName.value.trim()) return
+  createNewLoading.value = true
+  try {
+    const result = await repo.create(newHouseholdName.value.trim())
+    showToast(t('household.createNewSuccess', { name: result.name }), 'success')
+    await authStore.fetchMe()
+    authStore.switchHousehold(result.id)
+    createDialogOpen.value = false
+    newHouseholdName.value = ''
+    router.push('/shopping')
+  } catch (error: unknown) {
+    showToast(translateApiError(error), 'error')
+  } finally {
+    createNewLoading.value = false
   }
 }
 
@@ -343,6 +366,14 @@ watch(() => authStore.currentHouseholdId, () => {
           </BaseButton>
         </form>
       </div>
+
+      <!-- Weiteren Haushalt gründen -->
+      <div class="create-new-section">
+        <BaseButton variant="ghost" size="sm" @click="createDialogOpen = true">
+          <Plus :size="16" />
+          {{ $t('household.createNewTitle') }}
+        </BaseButton>
+      </div>
     </BaseCard>
 
     <!-- ══ Sektion: App ══ -->
@@ -416,6 +447,36 @@ watch(() => authStore.currentHouseholdId, () => {
           @click="confirmRemoveMember"
         >
           {{ $t('household.removeMemberButton') }}
+        </BaseButton>
+      </template>
+    </BaseDialog>
+
+    <!-- ══ Dialog: Neuen Haushalt erstellen ══ -->
+    <BaseDialog
+      :open="createDialogOpen"
+      :title="$t('household.createNewTitle')"
+      @close="createDialogOpen = false"
+    >
+      <form @submit.prevent="createNewHousehold" class="create-new-form">
+        <BaseInput
+          v-model="newHouseholdName"
+          :label="$t('auth.householdName')"
+          :placeholder="$t('auth.householdPlaceholder')"
+        />
+      </form>
+
+      <template #footer>
+        <BaseButton variant="ghost" size="sm" @click="createDialogOpen = false">
+          {{ $t('common.cancel') }}
+        </BaseButton>
+        <BaseButton
+          variant="primary"
+          size="sm"
+          :loading="createNewLoading"
+          :disabled="createNewLoading || !newHouseholdName.trim()"
+          @click="createNewHousehold"
+        >
+          {{ $t('household.createNewButton') }}
         </BaseButton>
       </template>
     </BaseDialog>
@@ -607,6 +668,19 @@ watch(() => authStore.currentHouseholdId, () => {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+/* ── Neuen Haushalt gründen ── */
+.create-new-section {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-neutral-200);
+}
+
+.create-new-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
 /* ── Settings ── */

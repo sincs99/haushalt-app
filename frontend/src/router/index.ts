@@ -14,6 +14,12 @@ const router = createRouter({
       component: () => import('../views/RegisterView.vue'),
     },
     {
+      path: '/no-household',
+      name: 'no-household',
+      component: () => import('../views/NoHouseholdView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/shopping',
       name: 'shopping',
       component: () => import('../views/ShoppingView.vue'),
@@ -57,6 +63,11 @@ router.beforeEach(async (to) => {
     const authStore = useAuthStore()
     if (!authStore.isAuthenticated) {
       return { path: '/login' }
+    }
+    // Authentifiziert aber keine Haushalte → NoHousehold
+    // (ausser wir gehen bereits zu /no-household)
+    if (to.path !== '/no-household' && authStore.households.length === 0) {
+      return { path: '/no-household' }
     }
   }
 })

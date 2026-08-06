@@ -54,14 +54,19 @@ export const useAuthStore = defineStore('auth', () => {
     email: string,
     password: string,
     displayName: string,
-    householdName: string
+    options: { householdName: string } | { inviteCode: string }
   ) {
-    const response = await api.post('/api/auth/register', {
+    const payload: Record<string, string> = {
       email,
       password,
       display_name: displayName,
-      household_name: householdName,
-    })
+    }
+    if ('householdName' in options) {
+      payload.household_name = options.householdName
+    } else {
+      payload.invite_code = options.inviteCode
+    }
+    const response = await api.post('/api/auth/register', payload)
     token.value = response.data.access_token
     localStorage.setItem(STORAGE_KEY, token.value!)
     await fetchMe()

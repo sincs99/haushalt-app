@@ -44,7 +44,11 @@
     "namePlaceholder": "Dein Name",
     "householdPlaceholder": "z.B. Familie Müller",
     "appTitle": "Haushalt App",
-    "loginHere": "Hier anmelden"
+    "loginHere": "Hier anmelden",
+    "tabCreate": "Haushalt gründen",
+    "tabJoin": "Mit Code beitreten",
+    "inviteCodeLabel": "Einladungscode",
+    "inviteCodePlaceholder": "z.B. ABCD1234"
   },
   "nav": {
     "shopping": "Einkaufen",
@@ -222,7 +226,19 @@
     "removeMemberError": "Entfernen fehlgeschlagen",
     "adminBadge": "Admin",
     "removed": "Du wurdest aus dem Haushalt entfernt",
-    "householdLeft": "Du hast den Haushalt verlassen"
+    "householdLeft": "Du hast den Haushalt verlassen",
+    "createNewTitle": "Weiteren Haushalt gründen",
+    "createNewButton": "Haushalt erstellen",
+    "createNewSuccess": "Haushalt \"{name}\" erstellt!"
+  },
+  "noHousehold": {
+    "title": "Willkommen zurück",
+    "subtitle": "Du bist in keinem Haushalt. Gründe einen neuen oder tritt einem bei.",
+    "createTitle": "Haushalt gründen",
+    "createHint": "Erstelle einen neuen Haushalt und lade andere ein.",
+    "createButton": "Haushalt erstellen",
+    "joinTitle": "Haushalt beitreten",
+    "joinHint": "Hast du einen Einladungscode erhalten?"
   },
   "errors": {
     "unknown": "Ein unbekannter Fehler ist aufgetreten",

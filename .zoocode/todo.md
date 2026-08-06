@@ -139,12 +139,23 @@ Drei Business-Logik-Lücken schliessen: erzwungene Haushalts-Währung, echte Adm
 
 ## Aufgabe 6: Onboarding-Zweig für Eingeladene
 
-### 6.1 Backend
-- [ ] `POST /api/auth/register`: Body-Umbau — `household_name: str | None` und `invite_code: str | None`
-- [ ] Pydantic-Validator: genau eines von beiden muss gesetzt sein (sonst 422)
-- [ ] invite_code-Pfad: Haushalt via Code suchen (404 INVITE_CODE_NOT_FOUND), Membership role="member"
-- [ ] Bestehende Tests anpassen + neue: Register mit Code, ungültiger Code, beidem/keinem → 422
-- [ ] `pytest backend/` ✅
+### 6.1 Backend ✅ (erledigt 2026-08-06)
+- [x] `POST /api/auth/register`: Body-Umbau — `household_name: str | None` und `invite_code: str | None`
+- [x] Pydantic `model_validator`: genau eines von beiden muss gesetzt sein (sonst 422)
+- [x] invite_code-Pfad: Haushalt via Code suchen (404 INVITE_CODE_NOT_FOUND), Membership role="member"
+- [x] household_name-Pfad: neuer Haushalt + Membership role="admin" (wie bisher)
+- [x] 6 neue Tests in `tests/test_register.py`, alle Tests grün
+- [x] `pytest backend/` ✅
+
+> **API-Änderungen für Frontend:**
+> - `POST /api/auth/register` → Body-Felder geändert:
+>   - `household_name` ist jetzt **optional** (String | null)
+>   - **NEU** `invite_code` (String | null) — Einladungscode eines bestehenden Haushalts
+>   - **Genau eines** von `household_name` oder `invite_code` muss gesetzt sein (sonst `422`)
+>   - Leere Strings (`""`) zählen als nicht gesetzt → `422`
+> - Pfad A (household_name): Erstellt neuen Haushalt, User wird `admin` (Verhalten wie bisher)
+> - Pfad B (invite_code): User tritt bestehendem Haushalt bei als `member`
+>   - Ungültiger Code → `404` mit `detail.code = "INVITE_CODE_NOT_FOUND"`
 
 ### 6.2 Frontend
 - [ ] `RegisterView.vue`: Umschalter (Tabs) zwischen "Neuen Haushalt gründen" und "Einladungscode"

@@ -3,8 +3,9 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 from app.database import get_db
 from app.models import User, Household, HouseholdMember
@@ -22,7 +23,17 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=128)
     display_name: str
-    household_name: str
+    household_name: str | None = None
+    invite_code: str | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_household_method(self):
+        """Genau eines von household_name oder invite_code muss gesetzt sein."""
+        has_name = self.household_name is not None and self.household_name.strip() != ""
+        has_code = self.invite_code is not None and self.invite_code.strip() != ""
+        if has_name == has_code:  # Beide gesetzt oder beide leer
+            raise ValueError("Exactly one of household_name or invite_code must be provided")
+        return self
 
 
 class TokenResponse(BaseModel):
@@ -58,12 +69,28 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.flush()
 
-    invite_code = generate_unique_invite_code(db)
-    household = Household(name=data.household_name, invite_code=invite_code)
-    db.add(household)
-    db.flush()
+    if data.invite_code:
+        # ── Pfad B: Mit Einladungscode beitreten ──
+        code = data.invite_code.strip().upper()
+        household = (
+            db.query(Household)
+            .filter(func.upper(Household.invite_code) == code)
+            .first()
+        )
+        if household is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_detail(ErrorCode.INVITE_CODE_NOT_FOUND, "Invite code not found"),
+            )
+        membership = HouseholdMember(household_id=household.id, user_id=user.id, role="member")
+    else:
+        # ── Pfad A: Neuen Haushalt erstellen (Standard, wie bisher) ──
+        invite_code = generate_unique_invite_code(db)
+        household = Household(name=data.household_name.strip(), invite_code=invite_code)
+        db.add(household)
+        db.flush()
+        membership = HouseholdMember(household_id=household.id, user_id=user.id, role="admin")
 
-    membership = HouseholdMember(household_id=household.id, user_id=user.id, role="admin")
     db.add(membership)
     db.commit()
 

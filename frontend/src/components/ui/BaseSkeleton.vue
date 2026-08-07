@@ -21,7 +21,7 @@ withDefaults(defineProps<{
 
 <style scoped>
 .base-skeleton {
-  background: var(--color-neutral-100);
+  background: var(--chip);
   border-radius: var(--radius-sm);
   animation: skeleton-pulse 1.5s ease-in-out infinite;
 }

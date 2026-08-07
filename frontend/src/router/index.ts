@@ -4,6 +4,18 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
+      path: '/dashboard',
+      name: 'dashboard',
+      component: () => import('../views/DashboardView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/calendar',
+      name: 'calendar',
+      component: () => import('../views/CalendarView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('../views/LoginView.vue'),
@@ -51,7 +63,7 @@ const router = createRouter({
     },
     {
       path: '/',
-      redirect: '/shopping',
+      redirect: '/dashboard',
     },
   ],
 })
@@ -63,6 +75,10 @@ router.beforeEach(async (to) => {
     const authStore = useAuthStore()
     if (!authStore.isAuthenticated) {
       return { path: '/login' }
+    }
+    // Warten bis fetchMe() abgeschlossen ist (verhindert Race bei F5)
+    if (authStore.isAuthenticated) {
+      try { await authStore.ready } catch {}
     }
     // Authentifiziert aber keine Haushalte → NoHousehold
     // (ausser wir gehen bereits zu /no-household)

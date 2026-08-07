@@ -41,11 +41,11 @@ withDefaults(defineProps<{
   justify-content: center;
   gap: var(--space-2);
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-btn);
   font-family: var(--font-family);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: background-color var(--transition-fast),
+  transition: filter var(--transition-fast),
               color var(--transition-fast),
               border-color var(--transition-fast);
   white-space: nowrap;
@@ -68,35 +68,35 @@ withDefaults(defineProps<{
 
 /* --- Variants --- */
 .base-btn--primary {
-  background-color: var(--color-primary);
-  color: var(--color-surface);
+  background-color: var(--acc);
+  color: var(--card);
 }
 .base-btn--primary:hover:not(:disabled) {
-  background-color: var(--color-primary-hover);
+  filter: brightness(1.08);
 }
 
 .base-btn--primary:active:not(:disabled) {
-  background-color: var(--color-primary-dark);
+  filter: brightness(0.95);
   transform: scale(0.98);
 }
 
 .base-btn--secondary {
-  background-color: var(--color-surface);
-  color: var(--color-text);
-  border-color: var(--color-neutral-300);
+  background-color: var(--chip);
+  color: var(--ink);
+  border-color: transparent;
 }
 .base-btn--secondary:hover:not(:disabled) {
-  background-color: var(--color-neutral-100);
+  filter: brightness(0.96);
 }
 
 .base-btn--secondary:active:not(:disabled) {
-  background-color: var(--color-neutral-200);
+  filter: brightness(0.92);
   transform: scale(0.98);
 }
 
 .base-btn--danger {
   background-color: var(--color-danger);
-  color: var(--color-surface);
+  color: var(--card);
 }
 .base-btn--danger:hover:not(:disabled) {
   background-color: var(--color-danger-hover);
@@ -109,14 +109,14 @@ withDefaults(defineProps<{
 
 .base-btn--ghost {
   background-color: transparent;
-  color: var(--color-primary);
+  color: var(--acc);
 }
 .base-btn--ghost:hover:not(:disabled) {
-  background-color: var(--color-primary-light);
+  background-color: var(--acc-soft);
 }
 
 .base-btn--ghost:active:not(:disabled) {
-  background-color: var(--color-neutral-200);
+  background-color: var(--acc-soft);
   transform: scale(0.98);
 }
 
@@ -128,7 +128,7 @@ withDefaults(defineProps<{
 
 /* --- Focus visible --- */
 .base-btn:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--acc);
   outline-offset: 2px;
 }
 

@@ -14,8 +14,8 @@ withDefaults(defineProps<{
 
 <style scoped>
 .base-card {
-  background: var(--color-surface);
-  border-radius: var(--radius-md);
+  background: var(--card);
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
 }
 

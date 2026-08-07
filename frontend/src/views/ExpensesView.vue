@@ -6,7 +6,7 @@ import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatRappen } from '../utils/money'
 import { formatDate } from '../utils/dates'
-import { X } from 'lucide-vue-next'
+import { PhX } from '@phosphor-icons/vue'
 import ExpenseList from '../components/ExpenseList.vue'
 import BalanceSummary from '../components/BalanceSummary.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
@@ -108,7 +108,7 @@ onMounted(() => {
             :title="$t('common.delete')"
             :aria-label="$t('settlements.deleteConfirm')"
           >
-            <X :size="16" />
+            <PhX :size="16" />
           </button>
         </li>
       </ul>
@@ -125,16 +125,18 @@ onMounted(() => {
 
 .view-title {
   margin: 0;
+  font-family: var(--font-display);
   font-size: var(--text-xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  color: var(--ink);
 }
 
 .section-title {
   margin: 0 0 var(--space-3) 0;
+  font-family: var(--font-display);
   font-size: var(--text-base);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text);
+  color: var(--ink);
 }
 
 .settlement-list {

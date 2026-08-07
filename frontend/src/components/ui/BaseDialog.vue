@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { watch, nextTick, ref } from 'vue'
-import { X } from 'lucide-vue-next'
+import { PhX } from '@phosphor-icons/vue'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -44,7 +44,7 @@ function onKeydown(e: KeyboardEvent) {
           <div class="dialog-header" v-if="title">
             <h2 class="dialog-title">{{ title }}</h2>
             <button class="dialog-close" @click="emit('close')" :aria-label="$t('common.close')">
-              <X :size="18" />
+              <PhX :size="18" />
             </button>
           </div>
           <div class="dialog-body">
@@ -73,9 +73,9 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .dialog-panel {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  background: var(--card);
+  border-radius: var(--radius-dialog);
+  box-shadow: var(--shadow-overlay);
   width: 100%;
   max-width: 420px;
   max-height: 90vh;
@@ -87,22 +87,23 @@ function onKeydown(e: KeyboardEvent) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--color-neutral-200);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--line);
 }
 
 .dialog-title {
   margin: 0;
+  font-family: var(--font-display);
   font-size: var(--text-lg);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text);
+  color: var(--ink);
 }
 
 .dialog-close {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--color-text-secondary);
+  color: var(--sub);
   padding: var(--space-1);
   border-radius: var(--radius-sm);
   display: flex;
@@ -110,20 +111,20 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .dialog-close:hover {
-  color: var(--color-text);
-  background: var(--color-neutral-100);
+  color: var(--ink);
+  background: var(--chip);
 }
 
 .dialog-body {
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-4) var(--space-6);
 }
 
 .dialog-footer {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-5);
-  border-top: 1px solid var(--color-neutral-200);
+  padding: var(--space-3) var(--space-6);
+  border-top: 1px solid var(--line);
 }
 
 /* Transitions */

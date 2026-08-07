@@ -51,12 +51,33 @@
     "inviteCodePlaceholder": "z.B. ABCD1234"
   },
   "nav": {
-    "shopping": "Einkaufen",
+    "start": "Start",
+    "calendar": "Kalender",
+    "shopping": "Einkauf",
     "todos": "Aufgaben",
-    "expenses": "Ausgaben",
+    "more": "Mehr",
+    "expenses": "Finanzen",
     "chores": "Putzplan",
     "household": "Haushalt",
-    "brand": "Haushalt"
+    "brand": "Haushalt",
+    "cats": "Katzen",
+    "meals": "Essen",
+    "notes": "Notizen",
+    "settings": "Einstellungen"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "emptyTitle": "Dashboard kommt bald",
+    "emptySubtitle": "Hier wird deine Übersicht angezeigt"
+  },
+  "calendar": {
+    "title": "Kalender",
+    "emptyTitle": "Kalender in Arbeit",
+    "emptySubtitle": "Bald verfügbar"
+  },
+  "moreSheet": {
+    "title": "Mehr",
+    "comingSoon": "Bald"
   },
   "shopping": {
     "title": "Einkaufsliste",
@@ -233,6 +254,8 @@
     "removeMemberError": "Entfernen fehlgeschlagen",
     "adminBadge": "Admin",
     "removed": "Du wurdest aus dem Haushalt entfernt",
+    "youWereRemoved": "Du wurdest aus «{name}» entfernt",
+    "switchedTo": "Gewechselt zu «{name}»",
     "householdLeft": "Du hast den Haushalt verlassen",
     "createNewTitle": "Weiteren Haushalt gründen",
     "createNewButton": "Haushalt erstellen",

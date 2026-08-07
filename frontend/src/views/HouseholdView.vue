@@ -16,7 +16,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
-import { UserMinus, LogOut, Plus, Share2 } from 'lucide-vue-next'
+import { PhUserMinus, PhSignOut, PhPlus, PhShareNetwork } from '@phosphor-icons/vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -322,7 +322,7 @@ watch(() => authStore.currentHouseholdId, () => {
       <!-- Haushalt verlassen -->
       <div class="leave-section">
         <BaseButton variant="danger" size="sm" @click="openLeaveDialog">
-          <LogOut :size="16" />
+          <PhSignOut :size="16" />
           {{ $t('household.leaveTitle') }}
         </BaseButton>
       </div>
@@ -351,7 +351,7 @@ watch(() => authStore.currentHouseholdId, () => {
             :aria-label="$t('household.removeMemberButton')"
             @click="openRemoveMemberDialog(member)"
           >
-            <UserMinus :size="18" />
+            <PhUserMinus :size="18" />
           </button>
         </div>
       </div>
@@ -376,7 +376,7 @@ watch(() => authStore.currentHouseholdId, () => {
             @click="shareInvite"
             :disabled="!inviteCode"
           >
-            <Share2 :size="16" />
+            <PhShareNetwork :size="16" />
             {{ $t('household.shareInvite') }}
           </BaseButton>
           <BaseButton
@@ -416,7 +416,7 @@ watch(() => authStore.currentHouseholdId, () => {
       <!-- Weiteren Haushalt gründen -->
       <div class="create-new-section">
         <BaseButton variant="ghost" size="sm" @click="createDialogOpen = true">
-          <Plus :size="16" />
+          <PhPlus :size="16" />
           {{ $t('household.createNewTitle') }}
         </BaseButton>
       </div>
@@ -538,16 +538,18 @@ watch(() => authStore.currentHouseholdId, () => {
 
 .view-title {
   margin: 0;
+  font-family: var(--font-display);
   font-size: var(--text-xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  color: var(--ink);
 }
 
 .section-title {
   margin: 0 0 var(--space-3);
+  font-family: var(--font-display);
   font-size: var(--text-lg);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text);
+  color: var(--ink);
 }
 
 .subsection-title {

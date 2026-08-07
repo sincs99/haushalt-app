@@ -29,8 +29,9 @@ onMounted(() => {
 
 .view-title {
   margin: 0;
+  font-family: var(--font-display);
   font-size: var(--text-xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  color: var(--ink);
 }
 </style>

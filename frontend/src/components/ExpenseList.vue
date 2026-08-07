@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { formatRappen } from '../utils/money'
 import { formatDate } from '../utils/dates'
 import type { Expense } from '../types'
-import { X, Receipt } from 'lucide-vue-next'
+import { PhX, PhReceipt } from '@phosphor-icons/vue'
 import BaseButton from './ui/BaseButton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseSkeleton from './ui/BaseSkeleton.vue'
@@ -124,7 +124,7 @@ async function handleDelete(expenseId: string) {
             :title="$t('common.delete')"
             :aria-label="$t('common.delete')"
           >
-            <X :size="16" />
+            <PhX :size="16" />
           </button>
         </div>
       </li>
@@ -133,7 +133,7 @@ async function handleDelete(expenseId: string) {
     <!-- Empty State -->
     <BaseEmptyState
       v-if="!expensesStore.loading && expensesStore.expenses.length === 0"
-      :icon="Receipt"
+      :icon="PhReceipt"
       :title="$t('expenses.emptyTitle')"
       :subtitle="$t('expenses.emptySubtitle')"
     />

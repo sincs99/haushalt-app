@@ -6,11 +6,12 @@ import { useAuthStore } from '../stores/auth'
 import { useToast } from '../composables/useToast'
 import { formatDateShort } from '../utils/dates'
 import type { ChoreInfo, ChoreAssignmentInfo, ChoreCreatePayload, ChoreUpdatePayload } from '../types'
-import { Brush, CalendarCheck, Pencil, X } from 'lucide-vue-next'
+import { PhBroom, PhCalendarCheck, PhPencilSimple, PhX } from '@phosphor-icons/vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
+import BasePillTabs from '../components/ui/BasePillTabs.vue'
 
 const choresStore = useChoresStore()
 const authStore = useAuthStore()
@@ -56,12 +57,17 @@ function getChoreName(choreId: string): string {
 }
 
 // ── "Nur meine" Filter ──
-const showOnlyMine = ref(false)
+const filterTab = ref('all')
 
 const filteredAssignments = computed(() => {
-  if (!showOnlyMine.value) return choresStore.assignments
+  if (filterTab.value === 'all') return choresStore.assignments
   return choresStore.assignments.filter(a => a.assigned_user_id === authStore.user?.id)
 })
+
+const filterTabs = computed(() => [
+  { key: 'all', label: t('chores.filterAll') },
+  { key: 'mine', label: t('chores.filterMine') },
+])
 
 // ── Sektion A: Assignments gruppiert nach Tag ──
 interface DayGroup {
@@ -310,26 +316,14 @@ const weekdayOptions = computed(() =>
       <h2 class="section__title">{{ $t('chores.thisWeek') }}</h2>
 
       <!-- Filter-Toggle -->
-      <div class="filter-toggle">
-        <button
-          class="filter-chip"
-          :class="{ 'filter-chip--active': !showOnlyMine }"
-          @click="showOnlyMine = false"
-        >
-          {{ $t('chores.filterAll') }}
-        </button>
-        <button
-          class="filter-chip"
-          :class="{ 'filter-chip--active': showOnlyMine }"
-          @click="showOnlyMine = true"
-        >
-          {{ $t('chores.filterMine') }}
-        </button>
-      </div>
+      <BasePillTabs
+        v-model="filterTab"
+        :tabs="filterTabs"
+      />
 
       <BaseEmptyState
         v-if="!choresStore.loading && assignmentsByDay.length === 0"
-        :icon="CalendarCheck"
+        :icon="PhCalendarCheck"
         :title="$t('chores.noAssignments')"
       >
         <template #action>
@@ -404,7 +398,7 @@ const weekdayOptions = computed(() =>
               <div v-if="reassignDialogId === assignment.id" class="reassign-dropdown">
                 <div class="reassign-dropdown__header">
                   <span>{{ $t('chores.reassignTo') }}</span>
-                  <button class="action-btn" @click="closeReassignDialog"><X :size="16" /></button>
+                  <button class="action-btn" @click="closeReassignDialog"><PhX :size="16" /></button>
                 </div>
                 <button
                   v-for="member in choresStore.members"
@@ -549,7 +543,7 @@ const weekdayOptions = computed(() =>
       <!-- Chore-Liste -->
       <BaseEmptyState
         v-if="!choresStore.loading && choresStore.chores.length === 0 && !showChoreForm"
-        :icon="Brush"
+        :icon="PhBroom"
         :title="$t('chores.noChores')"
         :subtitle="$t('chores.noChoresSubtitle')"
       />
@@ -585,13 +579,13 @@ const weekdayOptions = computed(() =>
               @click="openEditForm(chore)"
               :title="$t('common.edit')"
               :aria-label="$t('common.edit')"
-            ><Pencil :size="16" /></button>
+            ><PhPencilSimple :size="16" /></button>
             <button
               class="action-btn action-btn--danger"
               @click="confirmDelete(chore.id)"
               :title="$t('common.delete')"
               :aria-label="$t('common.delete')"
-            ><X :size="16" /></button>
+            ><PhX :size="16" /></button>
           </div>
 
           <!-- Delete-Bestätigung inline -->
@@ -621,9 +615,10 @@ const weekdayOptions = computed(() =>
 
 .view-title {
   margin: 0;
+  font-family: var(--font-display);
   font-size: var(--text-xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  color: var(--ink);
 }
 
 /* ── Skeleton Loading ── */
@@ -660,9 +655,10 @@ const weekdayOptions = computed(() =>
 
 .section__title {
   margin: 0;
+  font-family: var(--font-display);
   font-size: var(--text-lg);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text);
+  color: var(--ink);
 }
 
 /* ── Sektion A: Tag-Gruppen ── */

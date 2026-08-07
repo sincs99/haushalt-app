@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { Package } from 'lucide-vue-next'
+import { PhPackage } from '@phosphor-icons/vue'
 
 const props = withDefaults(defineProps<{
   icon?: Component
@@ -11,7 +11,7 @@ const props = withDefaults(defineProps<{
 
 <template>
   <div class="base-empty-state">
-    <component :is="icon ?? Package" :size="48" class="base-empty-state__icon" aria-hidden="true" />
+    <component :is="icon ?? PhPackage" :size="48" class="base-empty-state__icon" aria-hidden="true" />
     <p class="base-empty-state__title">{{ title }}</p>
     <p v-if="subtitle" class="base-empty-state__subtitle">{{ subtitle }}</p>
     <div v-if="$slots.action" class="empty-state__action">
@@ -30,7 +30,7 @@ const props = withDefaults(defineProps<{
 }
 
 .base-empty-state__icon {
-  color: var(--color-text-muted);
+  color: var(--sub);
   margin-bottom: var(--space-3);
 }
 
@@ -38,13 +38,13 @@ const props = withDefaults(defineProps<{
   margin: 0 0 var(--space-1) 0;
   font-size: var(--text-lg);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text);
+  color: var(--ink);
 }
 
 .base-empty-state__subtitle {
   margin: 0;
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  color: var(--sub);
   line-height: var(--line-height-normal);
 }
 

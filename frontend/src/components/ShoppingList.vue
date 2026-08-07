@@ -4,10 +4,11 @@ import { useShoppingStore } from '../stores/shopping'
 import { useExpensesStore } from '../stores/expenses'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
-import { X, ShoppingCart, ChevronDown } from 'lucide-vue-next'
+import { PhX, PhShoppingCart, PhCaretDown } from '@phosphor-icons/vue'
 import BaseSkeleton from './ui/BaseSkeleton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
+import BaseCheckCircle from './ui/BaseCheckCircle.vue'
 
 const shoppingStore = useShoppingStore()
 const expensesStore = useExpensesStore()
@@ -134,15 +135,7 @@ async function handleClearDone() {
         class="item-row"
         @click="handleToggle(item.id)"
       >
-        <span class="item-row__check">
-          <input
-            type="checkbox"
-            :checked="item.is_checked"
-            @click.stop
-            @change="handleToggle(item.id)"
-            class="item-row__checkbox"
-          />
-        </span>
+        <BaseCheckCircle :checked="item.is_checked" @toggle="handleToggle(item.id)" />
         <span class="item-row__name">{{ item.name }}</span>
         <span v-if="item.quantity" class="item-row__meta">{{ item.quantity }}</span>
         <BaseAvatar
@@ -157,7 +150,7 @@ async function handleClearDone() {
     <!-- Empty State -->
     <BaseEmptyState
       v-if="!shoppingStore.loading && openItems.length === 0"
-      :icon="ShoppingCart"
+      :icon="PhShoppingCart"
       :title="$t('shopping.emptyOpenTitle')"
       :subtitle="$t('shopping.emptyOpenSubtitle')"
     />
@@ -166,7 +159,7 @@ async function handleClearDone() {
     <div v-if="checkedItems.length > 0" class="done-section">
       <div class="done-section__header">
         <button type="button" class="done-section__toggle" @click="showDone = !showDone">
-          <ChevronDown
+          <PhCaretDown
             :size="18"
             class="done-section__chevron"
             :class="{ 'done-section__chevron--open': showDone }"
@@ -190,15 +183,7 @@ async function handleClearDone() {
             :key="item.id"
             class="item-row item-row--checked"
           >
-            <span class="item-row__check" @click="handleToggle(item.id)">
-              <input
-                type="checkbox"
-                :checked="item.is_checked"
-                @click.stop
-                @change="handleToggle(item.id)"
-                class="item-row__checkbox"
-              />
-            </span>
+            <BaseCheckCircle :checked="item.is_checked" @toggle="handleToggle(item.id)" />
             <span class="item-row__name" @click="handleToggle(item.id)">{{ item.name }}</span>
             <span v-if="item.quantity" class="item-row__meta">{{ item.quantity }}</span>
             <BaseAvatar
@@ -213,7 +198,7 @@ async function handleClearDone() {
               :title="$t('common.delete')"
               :aria-label="$t('common.delete')"
             >
-              <X :size="16" />
+              <PhX :size="16" />
             </button>
           </li>
         </ul>
@@ -234,7 +219,7 @@ async function handleClearDone() {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: var(--color-bg);
+  background: var(--bg);
   padding-bottom: var(--space-2);
 }
 
@@ -247,23 +232,23 @@ async function handleClearDone() {
 .quick-add__input {
   width: 100%;
   padding: var(--space-3);
-  border: 1px solid var(--color-neutral-300);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-btn);
   font-size: var(--text-base); /* 16px — iOS-Zoom-Prevention */
   font-family: var(--font-family);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--card);
+  color: var(--ink);
   transition: border-color var(--transition-fast);
 }
 
 .quick-add__input::placeholder {
-  color: var(--color-text-muted);
+  color: var(--sub);
 }
 
 .quick-add__input:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-light);
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px var(--acc-soft);
 }
 
 /* Skeleton Loading */
@@ -296,7 +281,7 @@ async function handleClearDone() {
   gap: var(--space-3);
   padding: var(--space-3) var(--space-2);
   min-height: 48px; /* Touch-Target */
-  border-bottom: 1px solid var(--color-neutral-200);
+  border-bottom: 1px solid var(--line);
   cursor: pointer;
   transition: background var(--transition-fast);
   -webkit-user-select: none;
@@ -304,58 +289,38 @@ async function handleClearDone() {
 }
 
 .item-row:active {
-  background: var(--color-neutral-50);
+  background: var(--chip);
 }
 
 @media (hover: hover) {
   .item-row:hover {
-    background: var(--color-neutral-50);
+    background: var(--chip);
   }
-}
-
-.item-row__check {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-}
-
-.item-row__checkbox {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--color-primary);
-  cursor: pointer;
 }
 
 .item-row__name {
   flex: 1;
   font-size: var(--text-base);
-  color: var(--color-text);
+  color: var(--ink);
 }
 
 .item-row__meta {
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--sub);
   flex-shrink: 0;
 }
 
-/* Abgehakte Items: gedämpft */
-.item-row--checked {
-  opacity: 0.55;
-}
-
+/* Abgehakte Items: durchgestrichen + sub-Farbe (NICHT opacity) */
 .item-row--checked .item-row__name {
   text-decoration: line-through;
-  color: var(--color-text-muted);
+  color: var(--sub);
 }
 
 /* Löschen-Button */
 .item-row__delete {
   background: none;
   border: none;
-  color: var(--color-text-muted);
+  color: var(--sub);
   cursor: pointer;
   font-size: var(--text-base);
   padding: var(--space-2);
@@ -392,7 +357,7 @@ async function handleClearDone() {
   gap: var(--space-1);
   background: none;
   border: none;
-  color: var(--color-text-muted);
+  color: var(--sub);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
@@ -400,7 +365,7 @@ async function handleClearDone() {
 }
 
 .done-section__toggle:hover {
-  color: var(--color-text-secondary);
+  color: var(--ink);
 }
 
 .done-section__chevron {
@@ -415,7 +380,7 @@ async function handleClearDone() {
 .done-section__clear-btn {
   background: none;
   border: none;
-  color: var(--color-text-muted);
+  color: var(--sub);
   font-size: var(--text-sm);
   cursor: pointer;
   padding: var(--space-1) var(--space-2);

@@ -1,216 +1,258 @@
-# Business-Logik-Lücken: Währung, Admin-Rolle, Register-Flow
+# Design-Foundation Teil 3 — UI auf Design-System bringen
 
-## Überblick
-Drei Business-Logik-Lücken schliessen: erzwungene Haushalts-Währung, echte Admin-Rolle mit Verlassen/Entfernen, und Registrierungs-Flow für Eingeladene.
+## Übersicht
+Bestehende UI-Komponenten und Views auf das Design-System aus den Projekt-Rules umstellen.
+Kein Backend, keine Funktionsänderungen, reine Optik + Icon-Migration.
 
-**Sequenzielle Abarbeitung** — nach jedem Backend-Schritt `pytest`, nach jedem Frontend-Schritt `npx vue-tsc --noEmit` + `npm run check:locales`. Git-Commit pro Aufgabe.
+## Dateien
 
----
+### Neue Dateien
+- `frontend/src/utils/memberColor.ts` — Deterministisches User→Farbe-Mapping
+- `frontend/src/components/ui/BaseCheckCircle.vue` — Runde Checkbox nach Design-System
+- `frontend/src/components/ui/BasePillTabs.vue` — Generische Pill-Filterleiste
 
-## Aufgabe 1: Haushalts-Währung erzwingen
+### Geänderte Dateien (UI-Komponenten)
+- `frontend/src/assets/theme.css` — Neue Tokens ergänzen
+- `frontend/src/components/ui/BaseCard.vue` — Radius 20px, direkte Tokens
+- `frontend/src/components/ui/BaseButton.vue` — Primary=acc, Secondary=chip, Radius-Update
+- `frontend/src/components/ui/BaseAvatar.vue` — memberColor.ts nutzen
+- `frontend/src/components/ui/BaseInput.vue` — Tokens ersetzen (neutral→line/chip)
+- `frontend/src/components/ui/BaseDialog.vue` — Lucide→Phosphor, Tokens
+- `frontend/src/components/ui/BaseEmptyState.vue` — Lucide→Phosphor
+- `frontend/src/components/ui/BaseSkeleton.vue` — Tokens ersetzen
+- `frontend/src/components/ui/BaseSpinner.vue` — Tokens ersetzen
 
-### 1.1 Backend ✅ (erledigt 2026-08-06)
-- [x] `Household.currency: Mapped[str]` (String(3), nullable=False, server_default="CHF") in `app/models.py`
-- [x] Alembic-Migration `a194489b8f0e_add_household_currency.py` (SQLite-kompatibel)
-- [x] Neuer Error-Code `CURRENCY_MISMATCH` in `app/core/error_codes.py`
-- [x] `create_expense`: Currency-Check + Household-Default statt hartem "CHF"
-- [x] `update_expense`: Currency-Check bei PATCH
-- [x] `create_settlement`: Currency-Check + Household-Default
-- [x] `HouseholdOut` in `app/routers/auth.py` um `currency` erweitern (Response von `/api/auth/me`)
-- [x] Tests: 6 neue Tests in `tests/test_currency.py`, alle 125 Tests grün
-- [x] `pytest backend/` ✅
+### Geänderte Dateien (Lucide→Phosphor + CheckCircle + Titel)
+- `frontend/src/App.vue` — 10 Icons migrieren, Titel-Font
+- `frontend/src/components/TheBottomNav.vue` — 5 Icons migrieren
+- `frontend/src/components/MoreSheet.vue` — 5 Icons migrieren
+- `frontend/src/components/ShoppingList.vue` — Icons + BaseCheckCircle
+- `frontend/src/components/TodoList.vue` — Icons + BaseCheckCircle
+- `frontend/src/components/ExpenseList.vue` — 2 Icons migrieren
+- `frontend/src/views/ChoresView.vue` — 4 Icons + BasePillTabs + Titel-Font
+- `frontend/src/views/ExpensesView.vue` — 1 Icon + Titel-Font
+- `frontend/src/views/HouseholdView.vue` — 4 Icons + Titel-Font
+- `frontend/src/views/LoginView.vue` — 1 Icon + Titel-Font
+- `frontend/src/views/RegisterView.vue` — 1 Icon + Titel-Font
+- `frontend/src/views/NoHouseholdView.vue` — 2 Icons + Titel-Font
+- `frontend/src/views/DashboardView.vue` — 1 Icon
+- `frontend/src/views/CalendarView.vue` — 1 Icon
+- `frontend/src/views/ShoppingView.vue` — Titel-Font
+- `frontend/src/views/TodosView.vue` — Titel-Font
 
-> **API-Änderungen für Frontend:**
-> - `GET /api/auth/me` → `households[].currency` ist jetzt im Response (String, z.B. "CHF")
-> - `POST .../expenses/` → `currency` im Body ist jetzt **optional** (default=null → Server nutzt Household-Currency)
-> - `POST .../settlements/` → `currency` im Body ist jetzt **optional** (default=null → Server nutzt Household-Currency)
-> - Mismatch-Currency → `422` mit `detail.code = "CURRENCY_MISMATCH"`
-> - `ExpenseCreate.currency` und `SettlementCreate.currency` akzeptieren weiterhin den Haushaltswert, lehnen aber Fremdwährungen ab
+### Package-Änderung
+- `frontend/package.json` — `lucide-vue-next` entfernen (npm uninstall)
 
-### 1.2 Frontend
-- [ ] `HouseholdInfo` in `types/index.ts` um `currency: string` erweitern
-- [ ] Currency-Felder aus Expense-/Settlement-Formularen entfernen (falls editierbar)
-- [ ] Anzeige nutzt weiterhin Currency aus den Daten
-- [ ] i18n: neue Strings in `de.json` + `en.json` für `CURRENCY_MISMATCH`
-- [ ] `npx vue-tsc --noEmit` ✅
-- [ ] `npm run check:locales` ✅
-- [ ] **Git Commit: "feat: enforce household currency on expenses/settlements"**
-
----
-
-## Aufgabe 2: Admin-Guard als Dependency ✅ (erledigt 2026-08-06)
-
-### 2.1 Backend
-- [x] Neuer Error-Code `ADMIN_REQUIRED` in `app/core/error_codes.py`
-- [x] `verify_household_admin` in `app/core/deps.py`: baut auf `verify_household_access` auf, prüft `membership.role == "admin"`, sonst 403 ADMIN_REQUIRED
-- [x] Test: `tests/test_admin_guard.py` – Admin passiert, Member bekommt 403 ADMIN_REQUIRED
-- [x] `pytest backend/` ✅
-- [x] i18n: `ADMIN_REQUIRED` in `de.json` + `en.json`
-- [ ] **Git Commit: "feat: add verify_household_admin dependency"**
-
----
-
-## Aufgabe 3: Haushalt erstellen, umbenennen, beitreten-Event ✅ (erledigt 2026-08-06)
-
-### 3.1 Backend
-- [x] Invite-Code-Generierung aus `auth.py` in gemeinsame Service-Funktion `app/services/invite_code.py` extrahieren
-- [x] `auth.py` und neue Endpoints nutzen die gemeinsame Funktion
-- [x] `POST /api/households` (201, nur Auth): Body `{name: str (1–100)}` → erstellt Haushalt + Membership role="admin". Response wie in `/me`.
-- [x] `PATCH /api/households/{household_id}` (Admin): Body `{name}` → umbenennen. Socket-Event `household_updated` `{id, name}`
-- [x] Bestehender `POST .../join`: Socket-Event `household_member_joined` `{display_name, user_id, role}` emittieren
-- [x] `HouseholdMemberResponse` um `role` erweitert (GET /members gibt jetzt `role` zurück)
-- [x] Mock-Patch für `emit_to_household_sync` in `conftest.py` um `app.routers.households` erweitern
-- [x] Tests: 8 neue Tests in `tests/test_households.py`, alle 135 Tests grün
-- [x] `pytest backend/` ✅
-- [ ] **Git Commit: "feat: create/rename household endpoints + join event"**
-
-> **API-Änderungen für Frontend:**
-> - **NEU** `POST /api/households/` → Body `{"name": "..."}` → `201` mit `{id, name, role, currency}`
-> - **NEU** `PATCH /api/households/{household_id}` → Body `{"name": "..."}` → `200` mit `{id, name}` (nur Admin)
-> - `GET /api/households/{household_id}/members` → Response enthält jetzt **`role`** pro Mitglied (`"admin"` oder `"member"`)
-> - `POST /api/households/join` → emittiert jetzt Socket-Event `household_member_joined` `{household_id, user_id, display_name, role}`
-> - `PATCH /api/households/{household_id}` → emittiert Socket-Event `household_updated` `{id, name}`
-> - Nicht-Admin auf PATCH → `403` mit `detail.code = "ADMIN_REQUIRED"`
+### Nicht anfassen
+- Backend (gesamter `backend/` Ordner)
+- Stores, Repositories, Composables, Types (keine Funktionsänderungen)
+- i18n-Dateien (keine neuen Keys nötig, außer evtl. für PillTabs-Labels)
+- `frontend/src/components/BalanceSummary.vue` (kein Lucide, keine Token-Probleme)
+- `frontend/src/components/ExpenseFormDialog.vue` (kein Lucide, keine Token-Probleme)
 
 ---
 
-## Aufgabe 4: Verlassen und Entfernen ✅ (Backend erledigt 2026-08-06)
+## Detailspezifikation
 
-### 4.1 Backend — Geschäftsregeln (nicht abweichen!)
-- Verlassen IMMER erlaubt, auch mit Saldo ≠ 0
-- Letztes Mitglied verlässt → Haushalt komplett löschen (CASCADE)
-- Einziger Admin verlässt, Mitglieder bleiben → dienstältestes Mitglied (frühestes `joined_at`, Tiebreaker `user_id`) wird Admin
-- Admin darf `role="member"` entfernen; andere Admins → 403 `CANNOT_REMOVE_ADMIN`
-- Sich selbst entfernen → 422 (Verlassen-Endpoint nutzen)
-- rotation_order NICHT bereinigen (Scheduler überspringt bereits)
+### Phase 1: Theme-Tokens ergänzen
 
-### 4.2 Endpoints
-- [x] Neuer Error-Code `CANNOT_REMOVE_ADMIN` + `CANNOT_REMOVE_SELF` in `error_codes.py`
-- [x] `POST /api/households/{household_id}/leave` (204, jedes Mitglied): Event `household_member_left {household_id, user_id}`
-- [x] `DELETE /api/households/{household_id}/members/{user_id}` (204, Admin): Event `household_member_removed {household_id, user_id}`
-- [x] Socket-Hinweis als Kommentar im Router
-- [x] Tests: 10 Tests in `tests/test_leave_remove.py`, alle 145 Tests grün
-- [x] `pytest backend/` ✅
-- [ ] **Git Commit: "feat: leave/remove household members with business rules"**
+In `frontend/src/assets/theme.css` `:root` hinzufügen:
+```css
+--radius-card: 20px;    /* Karten */
+--radius-btn: 12px;     /* Buttons */
+--radius-dialog: 24px;  /* Dialoge/Sheets */
+```
 
-> **API-Änderungen für Frontend:**
-> - **NEU** `POST /api/households/{household_id}/leave` → `204` (jedes Mitglied). Verlassen immer erlaubt, auch mit Saldo ≠ 0.
->   - Letztes Mitglied → Haushalt wird gelöscht (CASCADE)
->   - Einziger Admin → dienstältestes Mitglied (frühestes `joined_at`) wird automatisch Admin
->   - Socket-Event: `household_member_left` `{household_id, user_id}`
-> - **NEU** `DELETE /api/households/{household_id}/members/{user_id}` → `204` (nur Admin)
->   - Nur Members entfernbar, nicht andere Admins → `403` mit `CANNOT_REMOVE_ADMIN`
->   - Sich selbst entfernen → `422` mit `CANNOT_REMOVE_SELF` (nutze `/leave`)
->   - Nicht-Mitglied als Ziel → `404` mit `NOT_HOUSEHOLD_MEMBER`
->   - Socket-Event: `household_member_removed` `{household_id, user_id}`
-> - **i18n**: `CANNOT_REMOVE_ADMIN` + `CANNOT_REMOVE_SELF` in `de.json` + `en.json` hinzugefügt
-> - Expenses/Balances bleiben nach Verlassen/Entfernen intakt (Ehemaliges-Mitglied-Muster)
+### Phase 2: utils/memberColor.ts
+
+```ts
+/**
+ * Deterministisches Mapping User-ID → CSS-Farb-Variable.
+ * Derselbe User hat überall dieselbe Farbe.
+ */
+const MEMBER_COLORS = [
+  'var(--p1)',       // Teal
+  'var(--p2)',       // Rosa
+  '#94798C',         // Mauve
+  '#8A8272',         // Olive
+  'var(--acc)',       // Braun/Gold
+  'var(--ok)',        // Grün
+] as const
+
+export function getMemberColor(userId: string): string {
+  let hash = 0
+  for (const ch of userId) {
+    hash += ch.charCodeAt(0)
+  }
+  return MEMBER_COLORS[hash % MEMBER_COLORS.length]
+}
+```
+
+### Phase 3: UI-Komponenten-Updates
+
+#### BaseCard.vue
+- `border-radius: var(--radius-md)` → `var(--radius-card)`
+- `background: var(--color-surface)` → `var(--card)` (direkt, nicht Alias)
+
+#### BaseButton.vue
+- `border-radius: var(--radius-sm)` → `var(--radius-btn)`
+- **Primary**: `background: var(--acc)`, `color: #fff` (Light) / `color: var(--card)` (Dark) → einfach `color: #FBF8F3` oder besser `color: var(--card)`
+- **Primary hover**: `filter: brightness(1.08)` statt alter Variable
+- **Secondary**: `background: var(--chip)`, `color: var(--ink)`, `border-color: transparent`
+- **Secondary hover**: `filter: brightness(0.96)`
+- **Ghost**: `color: var(--acc)`, hover `background: var(--acc-soft)`
+- **Danger**: bleibt (--color-danger)
+- Alle `var(--color-neutral-*)` entfernen (existieren nicht im Theme)
+- Focus-Ring: `outline-color: var(--acc)` statt `var(--color-primary)`
+
+#### BaseInput.vue
+- `border: 1px solid var(--color-neutral-300)` → `border: 1px solid var(--line-strong)`
+- `background-color: var(--color-surface)` → `var(--card)`
+- `:focus border-color` → `var(--acc)`
+- `:focus box-shadow` → `0 0 0 3px var(--acc-soft)`
+- Error: `--color-danger-light` → `var(--acc-soft)` (danger bleibt)
+- Disabled bg `var(--color-neutral-100)` → `var(--chip)`
+- `border-radius: var(--radius-sm)` → `var(--radius-btn)` (12px passend für Inputs)
+
+#### BaseDialog.vue
+- `import { X } from 'lucide-vue-next'` → `import { PhX } from '@phosphor-icons/vue'`
+- Template: `<X :size="18" />` → `<PhX :size="18" />`
+- `.dialog-panel border-radius: var(--radius-lg)` → `var(--radius-dialog)`
+- `.dialog-panel box-shadow: var(--shadow-lg)` → `var(--shadow-overlay)`
+- `.dialog-panel background: var(--color-surface)` → `var(--card)`
+- `.dialog-header border-bottom: 1px solid var(--color-neutral-200)` → `var(--line)`
+- `.dialog-footer border-top: 1px solid var(--color-neutral-200)` → `var(--line)`
+- `.dialog-close:hover background: var(--color-neutral-100)` → `var(--chip)`
+- `var(--space-5)` existiert nicht → `var(--space-6)` (24px) verwenden
+
+#### BaseEmptyState.vue
+- `import { Package } from 'lucide-vue-next'` → `import { PhPackage } from '@phosphor-icons/vue'`
+- Default icon: `Package` → `PhPackage`
+- `color: var(--color-text-muted)` → `var(--sub)`
+
+#### BaseSkeleton.vue
+- `background: var(--color-neutral-100)` → `var(--chip)`
+
+#### BaseSpinner.vue
+- `border-color: var(--color-neutral-300)` → `var(--line-strong)`
+- `border-top-color: var(--color-primary)` → `var(--acc)`
+
+### Phase 4: BaseCheckCircle.vue (NEU)
+
+```
+Props: checked: boolean
+Emits: toggle
+```
+
+Design:
+- **Unchecked**: 22×22px Kreis, border 2px `var(--line-strong)`, transparent fill
+- **Checked**: 22×22px Kreis, `var(--ok)` Hintergrund, weisser PhCheck bold-Icon (12px)
+- Transition 150ms ease
+- `cursor: pointer`, `flex-shrink: 0`
+
+Integration **ShoppingList.vue**:
+- Ersetze `<input type="checkbox" ...>` in Item-Zeilen durch `<BaseCheckCircle :checked="item.is_checked" @toggle="handleToggle(item.id)" />`
+- `.item-row--checked .item-row__name`: `text-decoration: line-through; color: var(--sub)` (statt `opacity: 0.55`)
+- Entferne `.item-row__check` wrapper und `.item-row__checkbox` Styling
+
+Integration **TodoList.vue**:
+- Ersetze `<input type="checkbox" ...>` durch `<BaseCheckCircle :checked="todo.is_done" @toggle="handleToggle(todo.id)" />`
+- `.todo-row--done .todo-row__name`: `text-decoration: line-through; color: var(--sub)` (statt `opacity: 0.55`)
+
+### Phase 5: BasePillTabs.vue (NEU)
+
+```ts
+Props:
+  tabs: Array<{ key: string; label: string }>
+  modelValue: string   // aktiver key
+
+Emits:
+  'update:modelValue': [key: string]
+```
+
+Design:
+- Horizontal scrollbar (flex, gap 8px, `overflow-x: auto`, `-webkit-overflow-scrolling: touch`)
+- Jede Pill: `padding: 6px 16px`, `border-radius: var(--radius-full)`, `font-size: var(--text-sm)`, `font-weight: 600`, `white-space: nowrap`, `cursor: pointer`, `transition: all 150ms`
+- **Aktiv**: `background: var(--ink)`, `color: var(--card)`
+- **Inaktiv**: `background: var(--chip)`, `color: var(--ink)`
+- Keine native `<button>`-Border
+
+Exemplarische Nutzung in **ChoresView.vue**:
+- Ersetze den `showOnlyMine`-Toggle durch BasePillTabs mit 2 Tabs: "Alle" / "Meine"
+- i18n-Keys: `chores.filterAll` (de: "Alle", en: "All") / `chores.filterMine` (de: "Meine", en: "Mine") → **in de.json + en.json** ergänzen
+
+### Phase 6: Lucide → Phosphor Icon-Mapping
+
+**WICHTIG**: Phosphor-Icons aus `@phosphor-icons/vue` importieren. Namensschema: `Ph` + Name.
+Standard-Gewicht: regular. Aktive Nav / Status: `weight="fill"`. Checkmarks: `weight="bold"`.
+
+Vollständige Mapping-Tabelle:
+
+| Lucide Icon | Phosphor Icon | Import-Name | Dateien |
+|---|---|---|---|
+| `X` | X | `PhX` | BaseDialog, ShoppingList, TodoList, ExpenseList, ExpensesView, ChoresView |
+| `Package` | Package | `PhPackage` | BaseEmptyState |
+| `ShoppingCart` | ShoppingCart | `PhShoppingCart` | App.vue, TheBottomNav, ShoppingList |
+| `ListChecks` | ListChecks | `PhListChecks` | App.vue, TheBottomNav, TodoList |
+| `Wallet` | Wallet | `PhWallet` | App.vue, MoreSheet |
+| `Home` | House | `PhHouse` | App.vue, TheBottomNav, LoginView, RegisterView, NoHouseholdView |
+| `Brush` | Broom | `PhBroom` | App.vue, ChoresView |
+| `CalendarDays` | CalendarBlank | `PhCalendarBlank` | App.vue, TheBottomNav, CalendarView |
+| `WifiOff` | WifiSlash | `PhWifiSlash` | App.vue |
+| `CheckCircle2` | CheckCircle | `PhCheckCircle` | App.vue |
+| `AlertCircle` | WarningCircle | `PhWarningCircle` | App.vue |
+| `Info` | Info | `PhInfo` | App.vue |
+| `MoreHorizontal` | DotsThree | `PhDotsThree` | TheBottomNav |
+| `Cat` | Cat | `PhCat` | MoreSheet |
+| `UtensilsCrossed` | ForkKnife | `PhForkKnife` | MoreSheet |
+| `StickyNote` | Note | `PhNote` | MoreSheet |
+| `Settings` | Gear | `PhGear` | MoreSheet |
+| `Pencil` | PencilSimple | `PhPencilSimple` | TodoList, ChoresView |
+| `ChevronDown` | CaretDown | `PhCaretDown` | ShoppingList |
+| `Receipt` | Receipt | `PhReceipt` | ExpenseList |
+| `CalendarCheck` | CalendarCheck | `PhCalendarCheck` | ChoresView |
+| `UserMinus` | UserMinus | `PhUserMinus` | HouseholdView |
+| `LogOut` | SignOut | `PhSignOut` | HouseholdView |
+| `Plus` | Plus | `PhPlus` | HouseholdView |
+| `Share2` | ShareNetwork | `PhShareNetwork` | HouseholdView |
+| `Construction` | Wrench | `PhWrench` | DashboardView |
+| `Users` | Users | `PhUsers` | NoHouseholdView |
+
+**Icon-Size-Mapping**: Lucide `:size="N"` → Phosphor `:size="N"` (gleich).
+
+**Nach Migration**: `npm uninstall lucide-vue-next` aus `frontend/`.
+
+### Phase 7: Abschnittstitel → font-display
+
+Alle `.view-title`, `.section-title`, `.auth-title`, `.card-title`, `.dialog-title`, `.no-household-title` Klassen:
+```css
+font-family: var(--font-display);
+font-weight: var(--font-weight-semibold); /* 600 */
+```
+
+Betrifft Dateien mit `<style scoped>`:
+- ShoppingView, TodosView, ExpensesView, ChoresView, HouseholdView, LoginView, RegisterView, NoHouseholdView
+- BaseDialog.vue (`.dialog-title`)
+- ExpenseList.vue und BalanceSummary.vue (falls `.section-title` vorhanden)
+
+### Phase 8: Bereinigung alte Alias-Variablen in theme.css
+
+In `theme.css` die alten Alias-Mappings (`--color-primary`, `--color-surface`, etc.) BEIBEHALTEN für Abwärtskompatibilität, aber in den aktualisierten Komponenten die neuen direkten Tokens verwenden.
 
 ---
 
-## Aufgabe 5: Frontend — Mitglieder-Verwaltung + Selbst-Entfernung
+## Nicht anfassen / Warnung
+- `<script>` in App.vue (Zeilen 1-173): Socket-Logik → NICHT VERÄNDERN, nur Imports ändern
+- Stores, Repositories, Types → keine Änderungen
+- Backend → komplett unberührt
+- Bestehende Funktionalität → keine Regression, nur visuelle Änderungen
 
-### 5.1 Socket-Handler + Store
-- [ ] `auth.ts` Store: Handler für `household_member_left`, `household_member_removed`, `household_member_joined`, `household_updated`
-- [ ] Bindings in `App.vue` nach bestehendem Muster (on/off)
-- [ ] Eigener User betroffen (left/removed): Haushaltsliste neu laden, auf ersten verbleibenden Haushalt wechseln, Socket reconnect; ohne Haushalt → "kein Haushalt"-Zustand
-- [ ] Toast mit Info
-
-### 5.2 HouseholdView.vue Sektionen
-- [ ] Reihenfolge: Haushalt (Name editierbar für Admins), Mitglieder, Einladen, App (Sprache)
-- [ ] Mitglieder-Liste: BaseAvatar (md) + Name + Badge "Admin"
-- [ ] Für Admins: Entfernen-Aktion (Lucide UserMinus) mit Bestätigungs-Dialog
-
-### 5.3 BaseDialog.vue
-- [ ] Teleport, Overlay, Fokus-Falle, Esc schliesst
-- [ ] Wiederverwendbar
-
-### 5.4 Haushalt verlassen
-- [ ] "Haushalt verlassen" als Danger-Aktion am Ende der Haushalt-Sektion
-- [ ] Balances prüfen bei Saldo ≠ 0 → Dialog mit Saldo-Anzeige + Hinweis
-
-### 5.5 i18n + Checks
-- [ ] Alle neuen Strings in `de.json` + `en.json`
-- [ ] `npx vue-tsc --noEmit` ✅
-- [ ] `npm run check:locales` ✅
-- [ ] **Git Commit: "feat: household member management UI + leave/remove"**
-
----
-
-## Aufgabe 6: Onboarding-Zweig für Eingeladene
-
-### 6.1 Backend ✅ (erledigt 2026-08-06)
-- [x] `POST /api/auth/register`: Body-Umbau — `household_name: str | None` und `invite_code: str | None`
-- [x] Pydantic `model_validator`: genau eines von beiden muss gesetzt sein (sonst 422)
-- [x] invite_code-Pfad: Haushalt via Code suchen (404 INVITE_CODE_NOT_FOUND), Membership role="member"
-- [x] household_name-Pfad: neuer Haushalt + Membership role="admin" (wie bisher)
-- [x] 6 neue Tests in `tests/test_register.py`, alle Tests grün
-- [x] `pytest backend/` ✅
-
-> **API-Änderungen für Frontend:**
-> - `POST /api/auth/register` → Body-Felder geändert:
->   - `household_name` ist jetzt **optional** (String | null)
->   - **NEU** `invite_code` (String | null) — Einladungscode eines bestehenden Haushalts
->   - **Genau eines** von `household_name` oder `invite_code` muss gesetzt sein (sonst `422`)
->   - Leere Strings (`""`) zählen als nicht gesetzt → `422`
-> - Pfad A (household_name): Erstellt neuen Haushalt, User wird `admin` (Verhalten wie bisher)
-> - Pfad B (invite_code): User tritt bestehendem Haushalt bei als `member`
->   - Ungültiger Code → `404` mit `detail.code = "INVITE_CODE_NOT_FOUND"`
-
-### 6.2 Frontend
-- [ ] `RegisterView.vue`: Umschalter (Tabs) zwischen "Neuen Haushalt gründen" und "Einladungscode"
-- [ ] Query-Parameter `?code=XYZ` → automatisch Beitreten-Modus
-- [ ] `auth.ts` Store: `register()`-Signatur erweitern
-- [ ] `NoHouseholdView.vue`: zwei Karten — "Haushalt gründen" + "Mit Code beitreten"
-- [ ] Router-Guard: authentifiziert + 0 Haushalte → `/no-household`
-- [ ] HouseholdView: "Weiteren Haushalt gründen" Eintrag
-- [ ] i18n
-- [ ] `npx vue-tsc --noEmit` ✅
-- [ ] `npm run check:locales` ✅
-- [ ] **Git Commit: "feat: register with invite code + no-household flow"**
-
----
-
-## Aufgabe 7: Einladung teilen
-
-- [ ] HouseholdView, Sektion Einladen: Primär-Button "Einladung teilen" (Lucide Share2)
-- [ ] `navigator.share()` mit i18n-Text inkl. Haushaltsname + Code
-- [ ] Fallback: Clipboard + Toast
-- [ ] Bestehender "Code kopieren" bleibt als sekundäre Aktion
-- [ ] Kein Deep-Link, nur Name + Code. TODO-Kommentar für späteren Join-Link
-- [ ] i18n DE+EN
-- [ ] `npx vue-tsc --noEmit` ✅
-- [ ] `npm run check:locales` ✅
-- [ ] **Git Commit: "feat: share invite via Web Share API"**
-
----
-
-## Aufgabe 8: Chores-Feinschliff
-
-- [ ] `BaseEmptyState.vue`: optionalen Action-Slot erweitern
-- [ ] ChoresView: Empty State der Wochenansicht bekommt CTA "Erstes Ämtli anlegen"
-- [ ] Filter-Toggle "Nur meine" (Chip/Segmented, lokal): filtert Assignments auf eingeloggten User
-- [ ] Überfällig-Badge respektiert den Filter
-- [ ] i18n DE+EN
-- [ ] `npx vue-tsc --noEmit` ✅
-- [ ] `npm run check:locales` ✅
-- [ ] **Git Commit: "feat: chores empty-state CTA + my-only filter"**
-
----
-
-## Aufgabe 9: Abschluss
-
-- [ ] `alembic upgrade head` gegen Docker-Postgres verifizieren
-- [ ] `docs/PROJECT-STATUS.md` aktualisieren (Währungsregel, Rollen/Verlassen-Regeln, Register-Flow, Test-Count)
-- [ ] Akzeptanz-Commit-Message dokumentieren: (a) Register mit Invite-Code, (b) Mitglied entfernen → NoHousehold, (c) EUR-Expense via API → 422, (d) Share-Button auf Mobile-Emulation
-- [ ] **Git Commit: "docs: update project status with business rules + acceptance"**
-
----
-
-## Ausdrücklich NICHT in diesem Durchgang
-- Kein Multi-Currency
-- Keine E-Mail-Einladungen / Join-Deep-Links
-- Keine feingranularen Berechtigungen (nur admin/member)
-- Kein manueller Admin-Transfer-Dialog
-- Kein "Heute"-Dashboard
-- Keine Änderung an rotation_order beim Entfernen
+## Abnahmekriterien
+- [x] Alle Views im neuen Look (Karten 20px radius, Buttons mit acc/chip, runde Checkboxen)
+- [x] BaseCheckCircle in Shopping + Todos
+- [x] BasePillTabs bereitgestellt + exemplarisch in ChoresView
+- [x] Kein Lucide-Import mehr in KEINER Datei
+- [x] `lucide-vue-next` nicht mehr in package.json
+- [x] `npm run typecheck` grün
+- [x] `npm run build` grün
+- [x] Dark Mode funktioniert weiterhin korrekt

@@ -51,12 +51,33 @@
     "inviteCodePlaceholder": "e.g. ABCD1234"
   },
   "nav": {
+    "start": "Home",
+    "calendar": "Calendar",
     "shopping": "Shopping",
     "todos": "Tasks",
-    "expenses": "Expenses",
+    "more": "More",
+    "expenses": "Finances",
     "chores": "Chores",
     "household": "Household",
-    "brand": "Household"
+    "brand": "Household",
+    "cats": "Cats",
+    "meals": "Meals",
+    "notes": "Notes",
+    "settings": "Settings"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "emptyTitle": "Dashboard coming soon",
+    "emptySubtitle": "Your overview will appear here"
+  },
+  "calendar": {
+    "title": "Calendar",
+    "emptyTitle": "Calendar in progress",
+    "emptySubtitle": "Coming soon"
+  },
+  "moreSheet": {
+    "title": "More",
+    "comingSoon": "Soon"
   },
   "shopping": {
     "title": "Shopping list",
@@ -233,6 +254,8 @@
     "removeMemberError": "Could not remove member",
     "adminBadge": "Admin",
     "removed": "You have been removed from the household",
+    "youWereRemoved": "You were removed from \"{name}\"",
+    "switchedTo": "Switched to \"{name}\"",
     "householdLeft": "You have left the household",
     "createNewTitle": "Create another household",
     "createNewButton": "Create household",

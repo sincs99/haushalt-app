@@ -1,6 +1,6 @@
 # Haushalt-App — Aktueller Projektstand
 
-**Stand:** 2026-08-06 (aktualisiert)
+**Stand:** 2026-08-07 (aktualisiert)
 **Autor:** Tech Lead (automatisch generiert)
 
 ---
@@ -14,10 +14,11 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | Backend | Python 3.12+, FastAPI 0.141, SQLAlchemy, Alembic |
 | Datenbank | PostgreSQL (via psycopg2) |
 | Realtime | Socket.IO (python-socketio) |
-| Frontend | Vue 3.5, TypeScript 7, Vite 8, Pinia 4 |
+| Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4 |
 | Auth | JWT (Bearer Token), bcrypt-Hashing |
-| i18n | vue-i18n, 255 Keys (DE + EN), Build-gesicherter Key-Sync |
-| UI | Custom Design-System (CSS Custom Properties), Mobile-First |
+| i18n | vue-i18n, 272 Keys (DE + EN), Build-gesicherter Key-Sync |
+| Icons | Phosphor Icons (`@phosphor-icons/vue`) — regular/fill/bold |
+| UI | Custom Design-System (CSS Custom Properties, Nunito + Quicksand), Mobile-First |
 
 ---
 
@@ -106,18 +107,20 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | [`api/client.ts`](../frontend/src/api/client.ts) | Axios-Client mit JWT-Interceptor, 401-Handler | ✅ Fertig |
 | [`types/index.ts`](../frontend/src/types/index.ts) | ShoppingItem, TodoItem, UserInfo, HouseholdInfo (+currency), HouseholdMemberInfo (+role), MeResponse, ChoreInfo, ChoreAssignmentInfo, SettlementInfo | ✅ Fertig |
 | **i18n** | | |
-| [`locales/de.json`](../frontend/src/locales/de.json) | Deutsche Übersetzungen (255 Keys) | ✅ Fertig |
-| [`locales/en.json`](../frontend/src/locales/en.json) | Englische Übersetzungen (255 Keys) | ✅ Fertig |
+| [`locales/de.json`](../frontend/src/locales/de.json) | Deutsche Übersetzungen (272 Keys) | ✅ Fertig |
+| [`locales/en.json`](../frontend/src/locales/en.json) | Englische Übersetzungen (272 Keys) | ✅ Fertig |
 | [`scripts/check-locales.js`](../frontend/scripts/check-locales.js) | Build-Script: Prüft Key-Sync zwischen DE und EN | ✅ Fertig |
 | **Design-System** | | |
-| [`assets/theme.css`](../frontend/src/assets/theme.css) | Design-Token-System: Farben, Typografie, Spacing, Radii, Schatten, Transitions, Global Reset | ✅ Fertig |
-| [`components/ui/BaseButton.vue`](../frontend/src/components/ui/BaseButton.vue) | Button: 4 Varianten (primary/secondary/danger/ghost), 2 Grössen, Loading-State | ✅ Fertig |
-| [`components/ui/BaseInput.vue`](../frontend/src/components/ui/BaseInput.vue) | Input: Label, Error-State, v-model, iOS-Zoom-Prevention (16px) | ✅ Fertig |
-| [`components/ui/BaseCard.vue`](../frontend/src/components/ui/BaseCard.vue) | Card: 3 Padding-Stufen, Surface-Background, Shadow | ✅ Fertig |
-| [`components/ui/BaseEmptyState.vue`](../frontend/src/components/ui/BaseEmptyState.vue) | Empty-State: Icon + Titel + Subtitle, zentriert, + Action-Slot | ✅ Fertig |
-| [`components/ui/BaseDialog.vue`](../frontend/src/components/ui/BaseDialog.vue) | Wiederverwendbarer Dialog (Teleport, Overlay, Esc, Transitions) | ✅ Fertig |
-| [`components/ui/BaseSkeleton.vue`](../frontend/src/components/ui/BaseSkeleton.vue) | Skeleton-Loading-Platzhalter | ✅ Fertig |
-| [`components/ui/BaseSpinner.vue`](../frontend/src/components/ui/BaseSpinner.vue) | CSS-only Spinner: 2 Grössen, accessible | ✅ Fertig |
+| [`assets/theme.css`](../frontend/src/assets/theme.css) | Design-Token-System: Farben (Light/Dark), Typografie (Nunito/Quicksand), Spacing, Radii (card 20px, btn 12px, dialog 24px), Schatten, Transitions, Avatar-Palette, Global Reset | ✅ Fertig |
+| [`components/ui/BaseButton.vue`](../frontend/src/components/ui/BaseButton.vue) | Button: 4 Varianten (primary=acc/secondary=chip/danger/ghost), 2 Grössen, Loading-State, radius 12px | ✅ Fertig |
+| [`components/ui/BaseInput.vue`](../frontend/src/components/ui/BaseInput.vue) | Input: Label, Error-State, v-model, iOS-Zoom-Prevention (16px), acc-Fokus, radius 12px | ✅ Fertig |
+| [`components/ui/BaseCard.vue`](../frontend/src/components/ui/BaseCard.vue) | Card: 3 Padding-Stufen, var(--card) Background, Shadow, radius 20px | ✅ Fertig |
+| [`components/ui/BaseCheckCircle.vue`](../frontend/src/components/ui/BaseCheckCircle.vue) | **NEU:** Runde Checkbox (22px), checked=ok+weisser Haken, Phosphor PhCheck bold | ✅ Fertig |
+| [`components/ui/BasePillTabs.vue`](../frontend/src/components/ui/BasePillTabs.vue) | **NEU:** Generische Pill-Filterleiste (aktiv=ink/card, inaktiv=chip/ink) | ✅ Fertig |
+| [`components/ui/BaseEmptyState.vue`](../frontend/src/components/ui/BaseEmptyState.vue) | Empty-State: Phosphor PhPackage Icon + Titel + Subtitle, zentriert, + Action-Slot | ✅ Fertig |
+| [`components/ui/BaseDialog.vue`](../frontend/src/components/ui/BaseDialog.vue) | Dialog (Teleport, Overlay, Esc, Transitions), Phosphor PhX, radius 24px | ✅ Fertig |
+| [`components/ui/BaseSkeleton.vue`](../frontend/src/components/ui/BaseSkeleton.vue) | Skeleton-Loading-Platzhalter, bg=chip | ✅ Fertig |
+| [`components/ui/BaseSpinner.vue`](../frontend/src/components/ui/BaseSpinner.vue) | CSS-only Spinner: 2 Grössen, accessible, acc-Farbe | ✅ Fertig |
 | **Stores** | | |
 | [`stores/auth.ts`](../frontend/src/stores/auth.ts) | Login, Register (+ invite_code Option), Token-Persistenz, fetchMe, Household-Wechsel, Socket-Handler (household_updated/member_joined/left/removed) | ✅ Fertig |
 | [`stores/shopping.ts`](../frontend/src/stores/shopping.ts) | Shopping CRUD, Optimistic Updates, Repository-Pattern, Race-Condition-Schutz | ✅ Fertig |
@@ -135,6 +138,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | **Utils** | | |
 | [`utils/money.ts`](../frontend/src/utils/money.ts) | formatRappen (Intl.NumberFormat), parseAmountToRappen (String-basiert, kein Float) | ✅ Fertig |
 | [`utils/apiErrors.ts`](../frontend/src/utils/apiErrors.ts) | Error-Code-Extraktion, i18n-Mapping für maschinenlesbare Backend-Codes | ✅ Fertig |
+| [`utils/memberColor.ts`](../frontend/src/utils/memberColor.ts) | **NEU:** Deterministisches User→Farbe-Mapping (6 Farben: p1, p2, #94798C, #8A8272, acc, ok) | ✅ Fertig |
 | **Composables** | | |
 | [`composables/useSocket.ts`](../frontend/src/composables/useSocket.ts) | Socket.IO Client-Wrapper | ✅ Fertig |
 | [`composables/useConnectivity.ts`](../frontend/src/composables/useConnectivity.ts) | Online/Offline-Erkennung (navigator.onLine) | ✅ Fertig |
@@ -146,11 +150,11 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | [`views/TodosView.vue`](../frontend/src/views/TodosView.vue) | Todos-Seite mit Aufgabenliste | ✅ Fertig |
 | [`views/HouseholdView.vue`](../frontend/src/views/HouseholdView.vue) | Haushalt-Verwaltung: 4 Sektionen (Haushalt, Mitglieder, Einladen, App), Leave/Remove, Share-Invite | ✅ Fertig |
 | [`views/ExpensesView.vue`](../frontend/src/views/ExpensesView.vue) | Ausgaben-Seite: BalanceSummary + ExpenseList | ✅ Fertig |
-| [`views/ChoresView.vue`](../frontend/src/views/ChoresView.vue) | Putzplan: "Diese Woche" (Assignments gruppiert nach Tag) + "Ämtli verwalten" (CRUD), "Nur meine" Filter, Empty-State CTA, BaseAvatar/BaseSkeleton | ✅ Fertig |
+| [`views/ChoresView.vue`](../frontend/src/views/ChoresView.vue) | Putzplan: "Diese Woche" (Assignments gruppiert nach Tag) + "Ämtli verwalten" (CRUD), BasePillTabs-Filter (Alle/Meine), Empty-State CTA | ✅ Fertig |
 | [`views/NoHouseholdView.vue`](../frontend/src/views/NoHouseholdView.vue) | Kein-Haushalt-Zustand: Gründen / Beitreten | ✅ Fertig |
 | **Komponenten** | | |
-| [`components/ShoppingList.vue`](../frontend/src/components/ShoppingList.vue) | Shopping-Liste: Touch-optimiert, sticky Quick-Add, Error-Handling | ✅ Fertig |
-| [`components/TodoList.vue`](../frontend/src/components/TodoList.vue) | Todo-Liste: Quick-Add, Detail-Edit, Zuweisung, Fälligkeitsdatum, Überfällig-Badge, Initialen-Chips | ✅ Fertig |
+| [`components/ShoppingList.vue`](../frontend/src/components/ShoppingList.vue) | Shopping-Liste: Touch-optimiert, sticky Quick-Add, BaseCheckCircle, Error-Handling | ✅ Fertig |
+| [`components/TodoList.vue`](../frontend/src/components/TodoList.vue) | Todo-Liste: Quick-Add, Detail-Edit, BaseCheckCircle, Zuweisung, Fälligkeitsdatum, Überfällig-Badge | ✅ Fertig |
 | [`components/ExpenseList.vue`](../frontend/src/components/ExpenseList.vue) | Expense-Liste: Sticky Add-Button, Datum/Bezahlt-von Meta, Edit-Dialog, Optimistic Delete | ✅ Fertig |
 | [`components/BalanceSummary.vue`](../frontend/src/components/BalanceSummary.vue) | Saldo-Übersicht: Salden pro Mitglied, Ausgleichsvorschläge, Inline-Settlement-Erfassung | ✅ Fertig |
 | [`components/ExpenseFormDialog.vue`](../frontend/src/components/ExpenseFormDialog.vue) | Expense-Formular-Dialog: Create/Edit, Even/Custom Split, Betrags-Validierung | ✅ Fertig |
@@ -579,3 +583,23 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 - **Tests:** 5 neue Testdateien (test_currency, test_admin_guard, test_households, test_leave_remove, test_register), ~33 neue Tests, Gesamt: ~151
 - **Migration:** `a194489b8f0e` (add_household_currency)
 - **i18n:** 205 → 255 Keys (50 neue Keys für Household-Management, Rollen, Währung)
+
+### Epic 8: Design-Foundation Teil 3 — UI auf Design-System bringen ✅
+- **Abgeschlossen:** 2026-08-07
+- **Scope:** Rein visuell, kein Backend, keine Funktionsänderungen
+- **Design-System-Umsetzung:**
+  - Theme-Tokens: Neue Radii (`--radius-card: 20px`, `--radius-btn: 12px`, `--radius-dialog: 24px`)
+  - 7 UI-Komponenten auf neue Tokens umgestellt (card, acc, chip, line-strong, ink, sub statt veralteter neutral-Aliases)
+  - Buttons: Primary=`var(--acc)`, Secondary=`var(--chip)`, Ghost=`var(--acc)`/`var(--acc-soft)`
+  - Karten: radius 20px, Dialoge: radius 24px, Inputs/Buttons: radius 12px
+  - Abschnittstitel: `font-family: var(--font-display)` (Quicksand 600)
+- **Neue Komponenten:**
+  - `BaseCheckCircle.vue`: Runde Checkbox (ok-grün + weisser PhCheck bold), ersetzt native Checkboxen
+  - `BasePillTabs.vue`: Generische Pill-Filterleiste (aktiv=ink/card, inaktiv=chip/ink)
+  - `utils/memberColor.ts`: Deterministisches User→Farbe-Mapping (6 Farben)
+- **Icon-Migration:** Lucide → Phosphor (`@phosphor-icons/vue`), 26 Icons in 16 Dateien migriert, `lucide-vue-next` entfernt
+- **Integrationen:**
+  - BaseCheckCircle in ShoppingList + TodoList (erledigte Items: line-through + var(--sub))
+  - BasePillTabs in ChoresView (ersetzt showOnlyMine Toggle)
+- **Validierung:** typecheck ✅, build ✅, 272 i18n-Keys sync ✅
+- **i18n:** 255 → 272 Keys (17 neue Keys für PillTabs-Labels, Chores-Filter)

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { watch, onUnmounted, computed } from 'vue'
+import { watch, onUnmounted, computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import { useShoppingStore } from './stores/shopping'
 import { useTodosStore } from './stores/todos'
@@ -9,11 +10,18 @@ import { useChoresStore } from './stores/chores'
 import { useSocket } from './composables/useSocket'
 import { useConnectivity } from './composables/useConnectivity'
 import BaseAvatar from './components/ui/BaseAvatar.vue'
+import TheBottomNav from './components/TheBottomNav.vue'
+import MoreSheet from './components/MoreSheet.vue'
 import { useToast } from './composables/useToast'
-import { ShoppingCart, ListChecks, Wallet, Home, Brush, WifiOff, CheckCircle2, AlertCircle, Info } from 'lucide-vue-next'
+import { PhShoppingCart, PhListChecks, PhWallet, PhHouse, PhBroom, PhCalendarBlank, PhWifiSlash, PhCheckCircle, PhWarningCircle, PhInfo } from '@phosphor-icons/vue'
 
+const route = useRoute()
 const { isOnline } = useConnectivity()
 const { toasts, dismissToast } = useToast()
+const moreOpen = ref(false)
+const moreActive = computed(() =>
+  moreOpen.value || ['/expenses', '/chores', '/household'].includes(route.path)
+)
 const authStore = useAuthStore()
 const shoppingStore = useShoppingStore()
 const todosStore = useTodosStore()
@@ -168,7 +176,7 @@ onUnmounted(() => {
 <template>
   <!-- Offline-Banner -->
   <div v-if="!isOnline" class="offline-banner" role="alert">
-    <WifiOff :size="16" />
+    <PhWifiSlash :size="16" />
     {{ $t('offline.banner') }}
   </div>
 
@@ -178,22 +186,28 @@ onUnmounted(() => {
     <!-- Desktop Top-Bar (≥768px sichtbar) -->
     <header class="top-bar">
       <div class="top-bar__content">
-        <span class="top-bar__brand"><Home :size="20" /> {{ $t('nav.brand') }}</span>
+        <span class="top-bar__brand"><PhHouse :size="20" /> {{ $t('nav.brand') }}</span>
         <nav class="top-bar__nav">
+          <router-link to="/dashboard" class="top-bar__link" active-class="top-bar__link--active">
+            <PhHouse :size="18" /> {{ $t('nav.start') }}
+          </router-link>
+          <router-link to="/calendar" class="top-bar__link" active-class="top-bar__link--active">
+            <PhCalendarBlank :size="18" /> {{ $t('nav.calendar') }}
+          </router-link>
           <router-link to="/shopping" class="top-bar__link" active-class="top-bar__link--active">
-            <ShoppingCart :size="18" /> {{ $t('nav.shopping') }}
+            <PhShoppingCart :size="18" /> {{ $t('nav.shopping') }}
           </router-link>
           <router-link to="/todos" class="top-bar__link" active-class="top-bar__link--active">
-            <ListChecks :size="18" /> {{ $t('nav.todos') }}
+            <PhListChecks :size="18" /> {{ $t('nav.todos') }}
           </router-link>
           <router-link to="/expenses" class="top-bar__link" active-class="top-bar__link--active">
-            <Wallet :size="18" /> {{ $t('nav.expenses') }}
+            <PhWallet :size="18" /> {{ $t('nav.expenses') }}
           </router-link>
           <router-link to="/chores" class="top-bar__link" active-class="top-bar__link--active">
-            <Brush :size="18" /> {{ $t('nav.chores') }}
+            <PhBroom :size="18" /> {{ $t('nav.chores') }}
           </router-link>
           <router-link to="/household" class="top-bar__link" active-class="top-bar__link--active">
-            <Home :size="18" /> {{ $t('nav.household') }}
+            <PhHouse :size="18" /> {{ $t('nav.household') }}
           </router-link>
         </nav>
         <div class="top-bar__right">
@@ -231,35 +245,13 @@ onUnmounted(() => {
       <router-view />
     </main>
 
-    <!-- Mobile Bottom-Tab-Bar (<768px sichtbar) -->
-    <nav class="tab-bar" :aria-label="$t('nav.brand')">
-      <span
-        class="tab-bar__sync-dot"
-        :class="`sync-dot--${syncStatus}`"
-        :aria-label="$t(`sync.${syncStatus}`)"
-        role="status"
-      />
-      <router-link to="/shopping" class="tab-bar__tab" active-class="tab-bar__tab--active">
-        <ShoppingCart :size="22" class="tab-bar__icon" />
-        <span class="tab-bar__label">{{ $t('nav.shopping') }}</span>
-      </router-link>
-      <router-link to="/todos" class="tab-bar__tab" active-class="tab-bar__tab--active">
-        <ListChecks :size="22" class="tab-bar__icon" />
-        <span class="tab-bar__label">{{ $t('nav.todos') }}</span>
-      </router-link>
-      <router-link to="/expenses" class="tab-bar__tab" active-class="tab-bar__tab--active">
-        <Wallet :size="22" class="tab-bar__icon" />
-        <span class="tab-bar__label">{{ $t('nav.expenses') }}</span>
-      </router-link>
-      <router-link to="/chores" class="tab-bar__tab" active-class="tab-bar__tab--active">
-        <Brush :size="22" class="tab-bar__icon" />
-        <span class="tab-bar__label">{{ $t('nav.chores') }}</span>
-      </router-link>
-      <router-link to="/household" class="tab-bar__tab" active-class="tab-bar__tab--active">
-        <Home :size="22" class="tab-bar__icon" />
-        <span class="tab-bar__label">{{ $t('nav.household') }}</span>
-      </router-link>
-    </nav>
+    <!-- Mobile Bottom-Nav + More-Sheet -->
+    <TheBottomNav
+      :sync-status="syncStatus"
+      :more-active="moreActive"
+      @toggle-more="moreOpen = !moreOpen"
+    />
+    <MoreSheet :open="moreOpen" @close="moreOpen = false" />
   </div>
 
   <!-- Unauthenticated: nur Router-View (Login/Register) -->
@@ -275,9 +267,9 @@ onUnmounted(() => {
           :class="['toast', `toast--${toast.type}`]"
           role="status"
         >
-          <CheckCircle2 v-if="toast.type === 'success'" :size="16" />
-          <AlertCircle v-if="toast.type === 'error'" :size="16" />
-          <Info v-if="toast.type === 'info'" :size="16" />
+          <PhCheckCircle v-if="toast.type === 'success'" :size="16" />
+          <PhWarningCircle v-if="toast.type === 'error'" :size="16" />
+          <PhInfo v-if="toast.type === 'info'" :size="16" />
           <span class="toast__text">{{ toast.text }}</span>
           <button
             v-if="toast.action"
@@ -428,58 +420,6 @@ onUnmounted(() => {
   }
 }
 
-/* ── Mobile Bottom-Tab-Bar ── */
-.tab-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  display: flex;
-  background: var(--color-surface);
-  border-top: 1px solid var(--color-neutral-200);
-  padding-bottom: env(safe-area-inset-bottom, 0);
-}
-
-@media (min-width: 768px) {
-  .tab-bar {
-    display: none;
-  }
-}
-
-.tab-bar__tab {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: var(--space-2) 0;
-  min-height: 56px;
-  text-decoration: none;
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-  transition: color var(--transition-fast);
-}
-
-.tab-bar__tab--active {
-  color: var(--color-primary);
-}
-
-.tab-bar__icon {
-  line-height: 1;
-  width: 22px;
-  height: 22px;
-}
-
-.tab-bar__label {
-  font-weight: var(--font-weight-normal);
-}
-
-.tab-bar__tab--active .tab-bar__label {
-  font-weight: var(--font-weight-medium);
-}
-
 /* ── Sync-Indikator ── */
 .sync-dot {
   width: 8px;
@@ -504,16 +444,6 @@ onUnmounted(() => {
 @keyframes sync-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
-}
-
-/* Tab-Bar Sync-Punkt */
-.tab-bar__sync-dot {
-  position: absolute;
-  top: var(--space-2);
-  right: var(--space-2);
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-full);
 }
 
 /* ── Toast-Container ── */

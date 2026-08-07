@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
@@ -9,13 +9,20 @@ import { translateApiError } from '../utils/apiErrors'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
-import { Home, Users } from 'lucide-vue-next'
+import { PhHouse, PhUsers } from '@phosphor-icons/vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const repo = createOnlineHouseholdsRepository()
 const { showToast } = useToast()
 const { t } = useI18n()
+
+// Sobald Haushalte via Socket/fetchMe erscheinen → weiterleiten
+watch(() => authStore.households.length, (len) => {
+  if (len > 0 && router.currentRoute.value.path === '/no-household') {
+    router.replace('/shopping')
+  }
+})
 
 // Haushalt gründen
 const newHouseholdName = ref('')
@@ -59,13 +66,13 @@ async function joinHousehold() {
 
 <template>
   <div class="no-household-page">
-    <h1 class="no-household-title"><Home :size="24" /> {{ $t('noHousehold.title') }}</h1>
+    <h1 class="no-household-title"><PhHouse :size="24" /> {{ $t('noHousehold.title') }}</h1>
     <p class="no-household-subtitle">{{ $t('noHousehold.subtitle') }}</p>
 
     <div class="no-household-cards">
       <!-- Karte: Haushalt gründen -->
       <BaseCard>
-        <h2 class="card-title"><Home :size="18" /> {{ $t('noHousehold.createTitle') }}</h2>
+        <h2 class="card-title"><PhHouse :size="18" /> {{ $t('noHousehold.createTitle') }}</h2>
         <p class="card-hint">{{ $t('noHousehold.createHint') }}</p>
         <form @submit.prevent="createHousehold" class="card-form">
           <BaseInput
@@ -86,7 +93,7 @@ async function joinHousehold() {
 
       <!-- Karte: Mit Code beitreten -->
       <BaseCard>
-        <h2 class="card-title"><Users :size="18" /> {{ $t('noHousehold.joinTitle') }}</h2>
+        <h2 class="card-title"><PhUsers :size="18" /> {{ $t('noHousehold.joinTitle') }}</h2>
         <p class="card-hint">{{ $t('noHousehold.joinHint') }}</p>
         <form @submit.prevent="joinHousehold" class="card-form">
           <BaseInput
@@ -131,9 +138,10 @@ async function joinHousehold() {
   align-items: center;
   gap: var(--space-2);
   margin: 0 0 var(--space-1);
+  font-family: var(--font-display);
   font-size: var(--text-xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  color: var(--ink);
 }
 
 .no-household-subtitle {
@@ -156,9 +164,10 @@ async function joinHousehold() {
   align-items: center;
   gap: var(--space-2);
   margin: 0 0 var(--space-2);
+  font-family: var(--font-display);
   font-size: var(--text-lg);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text);
+  color: var(--ink);
 }
 
 .card-hint {

@@ -20,8 +20,8 @@ withDefaults(defineProps<{
   display: inline-block;
   border-radius: var(--radius-full);
   border-style: solid;
-  border-color: var(--color-neutral-300);
-  border-top-color: var(--color-primary);
+  border-color: var(--line-strong);
+  border-top-color: var(--acc);
   animation: spin 0.6s linear infinite;
 }
 

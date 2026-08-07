@@ -5,11 +5,12 @@ import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatDateShort } from '../utils/dates'
 import type { TodoItem } from '../types'
-import { Pencil, X, ListChecks } from 'lucide-vue-next'
+import { PhPencilSimple, PhX, PhListChecks } from '@phosphor-icons/vue'
 import BaseButton from './ui/BaseButton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseSkeleton from './ui/BaseSkeleton.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
+import BaseCheckCircle from './ui/BaseCheckCircle.vue'
 
 const todosStore = useTodosStore()
 const { showToast } = useToast()
@@ -208,15 +209,7 @@ async function saveEdit(todoId: string) {
         <!-- Anzeige-Modus -->
         <template v-if="editingId !== todo.id">
           <div class="todo-row__main" @click="handleToggle(todo.id)">
-            <span class="todo-row__check">
-              <input
-                type="checkbox"
-                :checked="todo.is_done"
-                @click.stop
-                @change="handleToggle(todo.id)"
-                class="todo-row__checkbox"
-              />
-            </span>
+            <BaseCheckCircle :checked="todo.is_done" @toggle="handleToggle(todo.id)" />
             <div class="todo-row__content">
               <div class="todo-row__title-line">
                 <span class="todo-row__name">{{ todo.title }}</span>
@@ -237,8 +230,8 @@ async function saveEdit(todoId: string) {
             </div>
           </div>
           <div class="todo-row__actions">
-            <button class="action-btn" @click="startEdit(todo)" :title="$t('common.edit')" :aria-label="$t('common.edit')"><Pencil :size="16" /></button>
-            <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><X :size="16" /></button>
+            <button class="action-btn" @click="startEdit(todo)" :title="$t('common.edit')" :aria-label="$t('common.edit')"><PhPencilSimple :size="16" /></button>
+            <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><PhX :size="16" /></button>
           </div>
         </template>
 
@@ -266,7 +259,7 @@ async function saveEdit(todoId: string) {
     <!-- Empty State -->
     <BaseEmptyState
       v-if="!todosStore.loading && openTodos.length === 0"
-      :icon="ListChecks"
+      :icon="PhListChecks"
       :title="$t('todos.emptyOpenTitle')"
       :subtitle="$t('todos.emptySubtitle')"
     />
@@ -279,15 +272,7 @@ async function saveEdit(todoId: string) {
       <ul v-if="showDone" class="item-list">
         <li v-for="todo in doneTodos" :key="todo.id" class="todo-row todo-row--done">
           <div class="todo-row__main" @click="handleToggle(todo.id)">
-            <span class="todo-row__check">
-              <input
-                type="checkbox"
-                :checked="todo.is_done"
-                @click.stop
-                @change="handleToggle(todo.id)"
-                class="todo-row__checkbox"
-              />
-            </span>
+            <BaseCheckCircle :checked="todo.is_done" @toggle="handleToggle(todo.id)" />
             <div class="todo-row__content">
               <span class="todo-row__name">{{ todo.title }}</span>
               <div v-if="todo.description || todo.due_date || todo.assigned_to_user_id" class="todo-row__meta">
@@ -302,7 +287,7 @@ async function saveEdit(todoId: string) {
               </div>
             </div>
           </div>
-          <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><X :size="16" /></button>
+          <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><PhX :size="16" /></button>
         </li>
       </ul>
     </div>
@@ -321,7 +306,7 @@ async function saveEdit(todoId: string) {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: var(--color-bg);
+  background: var(--bg);
   padding-bottom: var(--space-2);
 }
 
@@ -334,30 +319,30 @@ async function saveEdit(todoId: string) {
 .quick-add__input {
   width: 100%;
   padding: var(--space-3);
-  border: 1px solid var(--color-neutral-300);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-btn);
   font-size: var(--text-base);
   font-family: var(--font-family);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--card);
+  color: var(--ink);
   transition: border-color var(--transition-fast);
 }
 
 .quick-add__input::placeholder {
-  color: var(--color-text-muted);
+  color: var(--sub);
 }
 
 .quick-add__input:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-light);
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px var(--acc-soft);
 }
 
 /* Details-Toggle */
 .details-toggle {
   background: none;
   border: none;
-  color: var(--color-text-muted);
+  color: var(--sub);
   font-size: var(--text-sm);
   cursor: pointer;
   padding: var(--space-1) 0;
@@ -365,7 +350,7 @@ async function saveEdit(todoId: string) {
 }
 
 .details-toggle:hover {
-  color: var(--color-text);
+  color: var(--ink);
 }
 
 /* Erweiterte Felder */
@@ -378,31 +363,31 @@ async function saveEdit(todoId: string) {
 .add-details__textarea {
   width: 100%;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-neutral-300);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-btn);
   font-size: var(--text-sm);
   font-family: var(--font-family);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--card);
+  color: var(--ink);
   resize: vertical;
 }
 
 .add-details__input {
   width: 100%;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-neutral-300);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-btn);
   font-size: var(--text-sm);
   font-family: var(--font-family);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--card);
+  color: var(--ink);
 }
 
 .add-details__textarea:focus,
 .add-details__input:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-light);
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px var(--acc-soft);
 }
 
 /* Skeleton Loading */
@@ -434,7 +419,7 @@ async function saveEdit(todoId: string) {
   align-items: flex-start;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-2);
-  border-bottom: 1px solid var(--color-neutral-200);
+  border-bottom: 1px solid var(--line);
 }
 
 .todo-row--overdue {
@@ -450,23 +435,6 @@ async function saveEdit(todoId: string) {
   min-height: 44px;
   -webkit-user-select: none;
   user-select: none;
-}
-
-.todo-row__check {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.todo-row__checkbox {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--color-primary);
-  cursor: pointer;
 }
 
 .todo-row__content {
@@ -485,7 +453,7 @@ async function saveEdit(todoId: string) {
 
 .todo-row__name {
   font-size: var(--text-base);
-  color: var(--color-text);
+  color: var(--ink);
 }
 
 .overdue-badge {
@@ -501,12 +469,12 @@ async function saveEdit(todoId: string) {
   align-items: center;
   gap: var(--space-2);
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--sub);
   margin-top: 2px;
 }
 
 .todo-row__desc {
-  color: var(--color-text-secondary);
+  color: var(--sub);
 }
 
 .todo-row__date {
@@ -528,7 +496,7 @@ async function saveEdit(todoId: string) {
 .action-btn {
   background: none;
   border: none;
-  color: var(--color-text-muted);
+  color: var(--sub);
   cursor: pointer;
   font-size: var(--text-sm);
   padding: var(--space-1);
@@ -542,8 +510,8 @@ async function saveEdit(todoId: string) {
 }
 
 .action-btn:hover {
-  background: var(--color-neutral-100);
-  color: var(--color-primary);
+  background: var(--chip);
+  color: var(--acc);
 }
 
 .action-btn--danger:hover {
@@ -566,14 +534,10 @@ async function saveEdit(todoId: string) {
   margin-top: var(--space-1);
 }
 
-/* Erledigte Todos */
-.todo-row--done {
-  opacity: 0.55;
-}
-
+/* Erledigte Todos: durchgestrichen + sub-Farbe (NICHT opacity) */
 .todo-row--done .todo-row__name {
   text-decoration: line-through;
-  color: var(--color-text-muted);
+  color: var(--sub);
 }
 
 /* Erledigt-Sektion */
@@ -584,7 +548,7 @@ async function saveEdit(todoId: string) {
 .done-section__toggle {
   background: none;
   border: none;
-  color: var(--color-text-muted);
+  color: var(--sub);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
@@ -592,6 +556,6 @@ async function saveEdit(todoId: string) {
 }
 
 .done-section__toggle:hover {
-  color: var(--color-text);
+  color: var(--ink);
 }
 </style>

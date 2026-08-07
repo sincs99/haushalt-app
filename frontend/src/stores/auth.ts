@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '../api/client'
 import type { UserInfo, HouseholdInfo, MeResponse } from '../types'
+import { useToast } from '../composables/useToast'
+import i18n from '../i18n'
 
 const STORAGE_KEY = 'haushalt_token'
 const HOUSEHOLD_KEY = 'haushalt_household_id'
@@ -15,13 +17,16 @@ export const useAuthStore = defineStore('auth', () => {
 
   // Init: Token aus localStorage wiederherstellen
   const savedToken = localStorage.getItem(STORAGE_KEY)
+  let readyPromise: Promise<void>
   if (savedToken) {
     token.value = savedToken
-    fetchMe().catch(() => {
+    readyPromise = fetchMe().catch(() => {
       // Token expired oder ungültig → sauber ausloggen
       token.value = null
       localStorage.removeItem(STORAGE_KEY)
     })
+  } else {
+    readyPromise = Promise.resolve()
   }
 
   // Init: HouseholdId aus localStorage wiederherstellen
@@ -129,15 +134,27 @@ export const useAuthStore = defineStore('auth', () => {
   function _handleRemoval(householdId: string, userId: string) {
     // Betrifft es den EIGENEN User im AKTUELLEN Haushalt?
     if (userId === user.value?.id && householdId === currentHouseholdId.value) {
+      const removedName = households.value.find(h => h.id === householdId)?.name ?? ''
       // Haushalt aus Liste entfernen
       households.value = households.value.filter(h => h.id !== householdId)
+
+      // Toast + Navigation
+      const { showToast } = useToast()
+      const { t } = i18n.global
+
       if (households.value.length > 0) {
         // Auf ersten verbleibenden Haushalt wechseln
         switchHousehold(households.value[0].id)
+        showToast(t('household.switchedTo', { name: households.value[0].name }), 'info')
       } else {
         // Kein Haushalt mehr → Zustand "kein Haushalt"
         currentHouseholdId.value = null
         localStorage.removeItem(HOUSEHOLD_KEY)
+        showToast(t('household.youWereRemoved', { name: removedName }), 'info')
+        // Navigation analog logout()
+        import('../router').then(({ default: router }) => {
+          router.replace('/no-household')
+        })
       }
     }
   }
@@ -157,6 +174,7 @@ export const useAuthStore = defineStore('auth', () => {
     fetchMe,
     switchHousehold,
     logout,
+    ready: readyPromise,
     // Socket-Event-Handler
     handleHouseholdUpdated,
     handleMemberJoined,

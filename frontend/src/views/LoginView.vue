@@ -7,7 +7,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useI18n } from 'vue-i18n'
 import { translateApiError } from '../utils/apiErrors'
-import { Home } from 'lucide-vue-next'
+import { PhHouse } from '@phosphor-icons/vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -35,7 +35,7 @@ async function handleLogin() {
 <template>
   <div class="auth-page">
     <BaseCard padding="lg" class="auth-card">
-      <h1 class="auth-title"><Home :size="24" /> {{ $t('auth.appTitle') }}</h1>
+      <h1 class="auth-title"><PhHouse :size="24" /> {{ $t('auth.appTitle') }}</h1>
       <p class="auth-subtitle">{{ $t('auth.loginSubtitle') }}</p>
 
       <form @submit.prevent="handleLogin" class="auth-form">
@@ -93,10 +93,11 @@ async function handleLogin() {
 
 .auth-title {
   margin: 0 0 var(--space-1);
+  font-family: var(--font-display);
   font-size: var(--text-xl);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   text-align: center;
-  color: var(--color-text);
+  color: var(--ink);
 }
 
 .auth-subtitle {

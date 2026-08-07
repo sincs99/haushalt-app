@@ -4,42 +4,40 @@
    ============================================ */
 
 :root {
-  /* --- Farbpalette: Primary (Warmes Teal) --- */
-  --color-primary: #2A9D8F;
-  --color-primary-hover: #238577;
-  --color-primary-dark: #238577;
-  --color-primary-light: #E8F5F2;
+  /* --- Neue Design-Token (Light) --- */
+  --bg: #DDE8E4;
+  --card: #FBF8F3;
+  --ink: #3A423F;
+  --sub: #5F6D69;
+  --line: rgba(58,66,63,.10);
+  --line-strong: rgba(58,66,63,.22);
+  --chip: #EAF1EE;
+  --acc: #A0714A;
+  --acc-soft: #F2E8DC;
+  --nav: #E8F0EC;
+  --p1: #3F827A;
+  --p2: #9C6E79;
+  --ok: #6E9273;
 
-  /* --- Farbpalette: Neutral (warm Stone) --- */
-  --color-neutral-50:  #FAF7F2;
-  --color-neutral-100: #F0ECE4;
-  --color-neutral-200: #E9E4DB;
-  --color-neutral-300: #C9C3B8;
-  --color-neutral-400: #A8A296;
-  --color-neutral-500: #8A857C;
-  --color-neutral-600: #6B665E;
-  --color-neutral-700: #4A463F;
-  --color-neutral-800: #2B2925;
-  --color-neutral-900: #1C1A17;
-
-  /* --- Semantische Farben --- */
-  --color-success: #16A34A;
+  /* --- Alias-Mapping (alt → neu) --- */
+  --color-primary: var(--p1);
+  --color-primary-hover: var(--p1);
+  --color-primary-dark: var(--p1);
+  --color-primary-light: var(--chip);
+  --color-bg: var(--bg);
+  --color-surface: var(--card);
+  --color-text: var(--ink);
+  --color-text-secondary: var(--sub);
+  --color-text-muted: var(--sub);
+  --color-success: var(--ok);
   --color-danger: #DC2626;
   --color-danger-hover: #B91C1C;
-  --color-danger-light: #FEF2F2;
-  --color-warning: #F59E0B;
-
-  /* --- Hintergründe --- */
-  --color-bg: #FAF7F2;            /* warmes Off-White */
-  --color-surface: #FFFFFF;
-
-  /* --- Text --- */
-  --color-text: #2B2925;
-  --color-text-secondary: #8A857C;
-  --color-text-muted: #A8A296;
+  --color-danger-light: var(--acc-soft);
+  --color-warning: #C09A62;
 
   /* --- Typografie --- */
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  --font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Quicksand', 'Nunito', sans-serif;
   --text-xs: 0.75rem;     /* 12px */
   --text-sm: 0.875rem;    /* 14px */
   --text-base: 1rem;      /* 16px */
@@ -61,10 +59,13 @@
   --space-8: 32px;
 
   /* --- Border Radius --- */
-  --radius-sm: 6px;       /* Buttons */
-  --radius-md: 8px;       /* Cards */
+  --radius-sm: 6px;       /* Kleine Elemente */
+  --radius-md: 8px;       /* Allgemein */
   --radius-lg: 12px;      /* Modals */
   --radius-full: 999px;   /* Pills / Avatare */
+  --radius-card: 20px;    /* Karten */
+  --radius-btn: 12px;     /* Buttons & Inputs */
+  --radius-dialog: 24px;  /* Dialoge/Sheets */
 
   /* --- Schatten --- */
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
@@ -92,6 +93,35 @@
   --avatar-4-bg: #9FE1CB; --avatar-4-text: #04342C;  /* Teal */
   --avatar-5-bg: #FAC775; --avatar-5-text: #412402;  /* Amber */
   --avatar-6-bg: #B5D4F4; --avatar-6-text: #042C53;  /* Blau */
+}
+
+/* ============================================
+   Dark Theme
+   ============================================ */
+
+html[data-theme="dark"] {
+  --bg: #182220;
+  --card: #22302D;
+  --ink: #E8EFEC;
+  --sub: #93A29E;
+  --line: rgba(255,255,255,.10);
+  --line-strong: rgba(255,255,255,.26);
+  --chip: #2C3B38;
+  --acc: #C79A6E;
+  --acc-soft: #3A2F23;
+  --nav: #1E2A28;
+  --p1: #5FA79E;
+  --p2: #C1919B;
+  --ok: #8AB08F;
+
+  /* Dark-Aliases (Danger bleibt gleich, Warning leicht heller) */
+  --color-danger: #DC2626;
+  --color-danger-hover: #B91C1C;
+  --color-warning: #C09A62;
+
+  /* Schatten im Dark-Mode weicher/dunkler */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.20);
+  --shadow-overlay: 0 4px 12px rgba(0, 0, 0, 0.40);
 }
 
 /* ============================================

@@ -1,13 +1,16 @@
+import calendar
 import uuid
+from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import get_current_user, verify_household_access, verify_household_admin
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import Household, HouseholdMember, User
+from app.models import Budget, Expense, Household, HouseholdMember, RecurringBill, User
 from app.services.invite_code import generate_unique_invite_code
 from app.socket_manager import emit_to_household_sync
 
@@ -225,6 +228,162 @@ def remove_member(
         household_id,
         "household_member_removed",
         {"household_id": str(household_id), "user_id": str(user_id)},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Finance Summary Schemas
+# ---------------------------------------------------------------------------
+
+
+class CategorySummary(BaseModel):
+    category: str | None
+    total_rappen: int
+
+
+class PendingBillInfo(BaseModel):
+    id: uuid.UUID
+    name: str
+    amount_rappen: int
+    day_of_month: int
+    category: str | None
+    is_booked_this_month: bool
+
+
+class FinanceSummaryResponse(BaseModel):
+    month: date
+    budget_rappen: int | None
+    total_spent_rappen: int
+    remaining_rappen: int | None
+    days_elapsed: int
+    days_in_month: int
+    by_category: list[CategorySummary]
+    pending_bills: list[PendingBillInfo]
+
+
+# ---------------------------------------------------------------------------
+# GET /finance-summary  — Monatliche Finanzübersicht
+# ---------------------------------------------------------------------------
+@router.get("/finance-summary", response_model=FinanceSummaryResponse)
+def get_finance_summary(
+    household_id: uuid.UUID,
+    month: date | None = Query(None, description="YYYY-MM-DD, must be 1st of month. Default: current month"),
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    # 1. Monat ermitteln
+    today = date.today()
+    if month is None:
+        month = date(today.year, today.month, 1)
+    elif month.day != 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(ErrorCode.INVALID_MONTH, "month must be the first day of a month"),
+        )
+
+    # Nächsten Monat berechnen
+    if month.month == 12:
+        first_of_next_month = date(month.year + 1, 1, 1)
+    else:
+        first_of_next_month = date(month.year, month.month + 1, 1)
+
+    # 2. Budget laden
+    budget = (
+        db.query(Budget)
+        .filter(Budget.household_id == household_id, Budget.month == month)
+        .first()
+    )
+    budget_rappen = budget.amount_rappen if budget else None
+
+    # 3. Expenses des Monats aggregieren
+    total_spent_row = (
+        db.query(func.coalesce(func.sum(Expense.amount_rappen), 0))
+        .filter(
+            Expense.household_id == household_id,
+            Expense.expense_date >= month,
+            Expense.expense_date < first_of_next_month,
+        )
+        .scalar()
+    )
+    total_spent_rappen = int(total_spent_row)
+
+    # 4. Nach Kategorie gruppiert
+    category_rows = (
+        db.query(Expense.category, func.sum(Expense.amount_rappen))
+        .filter(
+            Expense.household_id == household_id,
+            Expense.expense_date >= month,
+            Expense.expense_date < first_of_next_month,
+        )
+        .group_by(Expense.category)
+        .all()
+    )
+    by_category = [
+        CategorySummary(category=cat, total_rappen=int(total))
+        for cat, total in category_rows
+    ]
+
+    # 5. Tage im Monat + vergangene Tage
+    _, days_in_month = calendar.monthrange(month.year, month.month)
+
+    # Tage vergangen: nur wenn aktueller Monat
+    if month.year == today.year and month.month == today.month:
+        days_elapsed = min(today.day, days_in_month)
+    else:
+        # Vergangener Monat: alle Tage vergangen. Zukünftiger Monat: 0
+        if month < date(today.year, today.month, 1):
+            days_elapsed = days_in_month
+        else:
+            days_elapsed = 0
+
+    # 6. Remaining
+    remaining_rappen = (budget_rappen - total_spent_rappen) if budget_rappen is not None else None
+
+    # 7. Aktive RecurringBills laden
+    active_bills = (
+        db.query(RecurringBill)
+        .filter(
+            RecurringBill.household_id == household_id,
+            RecurringBill.active == True,  # noqa: E712
+        )
+        .all()
+    )
+
+    # 8. Alle gebuchten bill_ids für diesen Monat in einem Query
+    booked_bill_ids_query = (
+        db.query(Expense.recurring_bill_id)
+        .filter(
+            Expense.household_id == household_id,
+            Expense.recurring_bill_id.isnot(None),
+            Expense.expense_date >= month,
+            Expense.expense_date < first_of_next_month,
+        )
+        .all()
+    )
+    booked_bill_ids = {row[0] for row in booked_bill_ids_query}
+
+    pending_bills: list[PendingBillInfo] = []
+    for bill in active_bills:
+        pending_bills.append(
+            PendingBillInfo(
+                id=bill.id,
+                name=bill.name,
+                amount_rappen=bill.amount_rappen,
+                day_of_month=bill.day_of_month,
+                category=bill.category,
+                is_booked_this_month=bill.id in booked_bill_ids,
+            )
+        )
+
+    return FinanceSummaryResponse(
+        month=month,
+        budget_rappen=budget_rappen,
+        total_spent_rappen=total_spent_rappen,
+        remaining_rappen=remaining_rappen,
+        days_elapsed=days_elapsed,
+        days_in_month=days_in_month,
+        by_category=by_category,
+        pending_bills=pending_bills,
     )
 
 

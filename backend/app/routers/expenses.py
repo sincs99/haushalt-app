@@ -29,6 +29,7 @@ class ExpenseCreate(BaseModel):
     currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     paid_by_user_id: uuid.UUID
     expense_date: date | None = None  # Default: heute (server-seitig)
+    category: str | None = Field(None, max_length=50)
     split_type: Literal["even", "custom"]
     shares: list[ExpenseShareInput] | None = None
     participant_ids: list[uuid.UUID] | None = None
@@ -59,6 +60,7 @@ class ExpenseUpdate(BaseModel):
     currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
     paid_by_user_id: uuid.UUID | None = None
     expense_date: date | None = None
+    category: str | None = Field(None, max_length=50)
     split_type: Literal["even", "custom"] | None = None
     shares: list[ExpenseShareInput] | None = None
     participant_ids: list[uuid.UUID] | None = None
@@ -99,6 +101,8 @@ class ExpenseResponse(BaseModel):
     split_type: str
     paid_by_user_id: uuid.UUID | None
     expense_date: date
+    category: str | None
+    recurring_bill_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
     shares: list[ExpenseShareResponse]
@@ -245,101 +249,10 @@ def get_balances(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    from sqlalchemy import func
+    from app.services.balance_service import compute_all_balances
 
-    # 1. paid: Summe pro Payer (nur wo paid_by_user_id NOT NULL)
-    paid_rows = (
-        db.query(Expense.paid_by_user_id, func.sum(Expense.amount_rappen))
-        .filter(
-            Expense.household_id == household_id,
-            Expense.paid_by_user_id.isnot(None),
-        )
-        .group_by(Expense.paid_by_user_id)
-        .all()
-    )
-    paid_map: dict[uuid.UUID, int] = {row[0]: row[1] for row in paid_rows}
-
-    # 2. owed: Summe pro Share-Inhaber
-    owed_rows = (
-        db.query(ExpenseShare.user_id, func.sum(ExpenseShare.amount_rappen))
-        .filter(ExpenseShare.household_id == household_id)
-        .group_by(ExpenseShare.user_id)
-        .all()
-    )
-    owed_map: dict[uuid.UUID, int] = {row[0]: row[1] for row in owed_rows}
-
-    # 3. unassigned: Expenses ohne Payer
-    unassigned_result = (
-        db.query(func.coalesce(func.sum(Expense.amount_rappen), 0))
-        .filter(
-            Expense.household_id == household_id,
-            Expense.paid_by_user_id.is_(None),
-        )
-        .scalar()
-    )
-    unassigned_rappen = int(unassigned_result)
-
-    # 4a. Settlement-Aggregationen
-    # settled_out: Summe pro from_user_id (Schuldner hat gezahlt → verbessert seinen Saldo)
-    settled_out_rows = (
-        db.query(Settlement.from_user_id, func.sum(Settlement.amount_rappen))
-        .filter(Settlement.household_id == household_id)
-        .group_by(Settlement.from_user_id)
-        .all()
-    )
-    settled_out_map: dict[uuid.UUID, int] = {row[0]: row[1] for row in settled_out_rows}
-
-    # settled_in: Summe pro to_user_id (Empfänger hat empfangen → reduziert sein Guthaben)
-    settled_in_rows = (
-        db.query(Settlement.to_user_id, func.sum(Settlement.amount_rappen))
-        .filter(Settlement.household_id == household_id)
-        .group_by(Settlement.to_user_id)
-        .all()
-    )
-    settled_in_map: dict[uuid.UUID, int] = {row[0]: row[1] for row in settled_in_rows}
-
-    # 4b. User-Menge: VEREINIGUNG aus aktuellen Mitgliedern + Payern + Share-Inhabern + Settlement-Beteiligte
-    member_rows = (
-        db.query(HouseholdMember.user_id)
-        .filter(HouseholdMember.household_id == household_id)
-        .all()
-    )
-    all_user_ids = (
-        {m.user_id for m in member_rows}
-        | set(paid_map.keys())
-        | set(owed_map.keys())
-        | set(settled_out_map.keys())
-        | set(settled_in_map.keys())
-    )
-
-    # 5. BalanceEntries berechnen
-    balances = []
-    saldi: dict[uuid.UUID, int] = {}
-    for uid in sorted(all_user_ids, key=str):  # deterministisch
-        paid = paid_map.get(uid, 0)
-        owed = owed_map.get(uid, 0)
-        s_out = settled_out_map.get(uid, 0)
-        s_in = settled_in_map.get(uid, 0)
-        saldo = paid - owed + s_out - s_in
-        saldi[uid] = saldo
-        balances.append(BalanceEntry(
-            user_id=uid,
-            paid_rappen=paid,
-            owed_rappen=owed,
-            settled_out_rappen=s_out,
-            settled_in_rappen=s_in,
-            saldo_rappen=saldo,
-        ))
-
-    # 6. Settlements berechnen
-    settlements_raw = compute_settlements(saldi)
-    settlements = [SettlementEntry(**s) for s in settlements_raw]
-
-    return BalancesResponse(
-        balances=balances,
-        settlements=settlements,
-        unassigned_rappen=unassigned_rappen,
-    )
+    result = compute_all_balances(db, household_id)
+    return BalancesResponse(**result)
 
 
 # ---------------------------------------------------------------------------
@@ -397,6 +310,7 @@ def create_expense(
         paid_by_user_id=body.paid_by_user_id,
         expense_date=body.expense_date or date.today(),
         split_type=body.split_type,
+        category=body.category,
     )
     db.add(expense)
     db.flush()  # ID generieren
@@ -454,7 +368,7 @@ def update_expense(
             )
 
     # Einfache Felder aktualisieren (außer split-spezifische)
-    simple_fields = {"description", "currency", "paid_by_user_id", "expense_date"}
+    simple_fields = {"description", "currency", "paid_by_user_id", "expense_date", "category"}
     for field in simple_fields:
         if field in update_data:
             if field == "paid_by_user_id":

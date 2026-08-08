@@ -3,9 +3,11 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
+from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import HouseholdMember, Todo
 from app.socket_manager import emit_to_household_sync
@@ -20,6 +22,16 @@ class TodoCreate(BaseModel):
     description: str | None = Field(None, max_length=1000)
     assigned_to_user_id: uuid.UUID | None = None
     due_date: datetime | None = None
+    tags: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v: list[str]) -> list[str]:
+        for tag in v:
+            tag_stripped = tag.strip()
+            if len(tag_stripped) == 0 or len(tag_stripped) > 50:
+                raise ValueError("Each tag must be 1-50 characters")
+        return [t.strip() for t in v]
 
     @field_validator("title")
     @classmethod
@@ -42,6 +54,18 @@ class TodoUpdate(BaseModel):
     assigned_to_user_id: uuid.UUID | None = None
     due_date: datetime | None = None
     is_done: bool | None = None
+    tags: list[str] | None = Field(None, max_length=20)
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v):
+        if v is None:
+            return v
+        for tag in v:
+            tag_stripped = tag.strip()
+            if len(tag_stripped) == 0 or len(tag_stripped) > 50:
+                raise ValueError("Each tag must be 1-50 characters")
+        return [t.strip() for t in v]
 
     @field_validator("title")
     @classmethod
@@ -69,6 +93,7 @@ class TodoResponse(BaseModel):
     created_by_user_id: uuid.UUID | None
     created_at: datetime
     done_at: datetime | None
+    tags: list[str]
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -121,6 +146,7 @@ def create_todo(
         description=body.description,
         assigned_to_user_id=body.assigned_to_user_id,
         due_date=body.due_date,
+        tags=body.tags,
         created_by_user_id=membership.user_id,
     )
     db.add(todo)
@@ -201,3 +227,44 @@ def delete_todo(
         "todo_deleted",
         {"id": str(todo_id)},
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /{todo_id}/claim  — Todo für sich beanspruchen
+# ---------------------------------------------------------------------------
+@router.post("/{todo_id}/claim", response_model=TodoResponse)
+def claim_todo(
+    household_id: uuid.UUID,
+    todo_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    item = db.get(Todo, todo_id)
+    if item is None or item.household_id != household_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail(ErrorCode.TODO_NOT_FOUND, "Todo not found in this household"),
+        )
+
+    # Atomares UPDATE: nur wenn assigned_to_user_id noch NULL ist (TOCTOU-sicher)
+    result = db.execute(
+        update(Todo)
+        .where(Todo.id == todo_id, Todo.assigned_to_user_id.is_(None))
+        .values(assigned_to_user_id=membership.user_id)
+    )
+
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=error_detail(ErrorCode.TODO_ALREADY_CLAIMED, "Todo is already assigned"),
+        )
+
+    db.commit()
+    db.refresh(item)
+
+    emit_to_household_sync(
+        household_id,
+        "todo_updated",
+        TodoResponse.model_validate(item).model_dump(mode="json"),
+    )
+    return item

@@ -59,3 +59,9 @@ backend/test_output.txt
 
 # PowerShell artifacts
 $null
+
+# ========================
+# Docker
+# ========================
+.env
+!.env.example

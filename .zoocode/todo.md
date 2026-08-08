@@ -1,258 +1,177 @@
-# Design-Foundation Teil 3 — UI auf Design-System bringen
+# Epic: Notizen-Modul (Notes Module)
 
 ## Übersicht
-Bestehende UI-Komponenten und Views auf das Design-System aus den Projekt-Rules umstellen.
-Kein Backend, keine Funktionsänderungen, reine Optik + Icon-Migration.
-
-## Dateien
-
-### Neue Dateien
-- `frontend/src/utils/memberColor.ts` — Deterministisches User→Farbe-Mapping
-- `frontend/src/components/ui/BaseCheckCircle.vue` — Runde Checkbox nach Design-System
-- `frontend/src/components/ui/BasePillTabs.vue` — Generische Pill-Filterleiste
-
-### Geänderte Dateien (UI-Komponenten)
-- `frontend/src/assets/theme.css` — Neue Tokens ergänzen
-- `frontend/src/components/ui/BaseCard.vue` — Radius 20px, direkte Tokens
-- `frontend/src/components/ui/BaseButton.vue` — Primary=acc, Secondary=chip, Radius-Update
-- `frontend/src/components/ui/BaseAvatar.vue` — memberColor.ts nutzen
-- `frontend/src/components/ui/BaseInput.vue` — Tokens ersetzen (neutral→line/chip)
-- `frontend/src/components/ui/BaseDialog.vue` — Lucide→Phosphor, Tokens
-- `frontend/src/components/ui/BaseEmptyState.vue` — Lucide→Phosphor
-- `frontend/src/components/ui/BaseSkeleton.vue` — Tokens ersetzen
-- `frontend/src/components/ui/BaseSpinner.vue` — Tokens ersetzen
-
-### Geänderte Dateien (Lucide→Phosphor + CheckCircle + Titel)
-- `frontend/src/App.vue` — 10 Icons migrieren, Titel-Font
-- `frontend/src/components/TheBottomNav.vue` — 5 Icons migrieren
-- `frontend/src/components/MoreSheet.vue` — 5 Icons migrieren
-- `frontend/src/components/ShoppingList.vue` — Icons + BaseCheckCircle
-- `frontend/src/components/TodoList.vue` — Icons + BaseCheckCircle
-- `frontend/src/components/ExpenseList.vue` — 2 Icons migrieren
-- `frontend/src/views/ChoresView.vue` — 4 Icons + BasePillTabs + Titel-Font
-- `frontend/src/views/ExpensesView.vue` — 1 Icon + Titel-Font
-- `frontend/src/views/HouseholdView.vue` — 4 Icons + Titel-Font
-- `frontend/src/views/LoginView.vue` — 1 Icon + Titel-Font
-- `frontend/src/views/RegisterView.vue` — 1 Icon + Titel-Font
-- `frontend/src/views/NoHouseholdView.vue` — 2 Icons + Titel-Font
-- `frontend/src/views/DashboardView.vue` — 1 Icon
-- `frontend/src/views/CalendarView.vue` — 1 Icon
-- `frontend/src/views/ShoppingView.vue` — Titel-Font
-- `frontend/src/views/TodosView.vue` — Titel-Font
-
-### Package-Änderung
-- `frontend/package.json` — `lucide-vue-next` entfernen (npm uninstall)
-
-### Nicht anfassen
-- Backend (gesamter `backend/` Ordner)
-- Stores, Repositories, Composables, Types (keine Funktionsänderungen)
-- i18n-Dateien (keine neuen Keys nötig, außer evtl. für PillTabs-Labels)
-- `frontend/src/components/BalanceSummary.vue` (kein Lucide, keine Token-Probleme)
-- `frontend/src/components/ExpenseFormDialog.vue` (kein Lucide, keine Token-Probleme)
+Kompletter Slice für ein Notizen-Modul: Backend (Model, CRUD-API, Socket-Events, Tests) + Frontend (Vue-View mit Pinned-Sektion, Quick-Add, Edit-Dialog, Echtzeit-Sync).
 
 ---
 
-## Detailspezifikation
+## Phase 1: Backend
 
-### Phase 1: Theme-Tokens ergänzen
+### 1.1 Model `Note` + Household-Relationship + Migration
+**Datei:** `backend/app/models.py`
+- Neues Model `Note` mit Feldern:
+  - `id`: UUID PK (wie alle anderen Models)
+  - `household_id`: UUID FK → households.id, NOT NULL, ondelete CASCADE
+  - `title`: String(150), NOT NULL
+  - `body`: Text, NOT NULL, default=""
+  - `tag`: String(50), nullable
+  - `pinned`: Boolean, default False
+  - `created_by_user_id`: UUID FK → users.id, nullable (für gelöschte User)
+  - `created_at`: DateTime(timezone=True), default utcnow
+  - `updated_at`: DateTime(timezone=True), default utcnow, onupdate utcnow
+- In `Household`-Klasse: `notes` Relationship hinzufügen (cascade="all, delete-orphan")
 
-In `frontend/src/assets/theme.css` `:root` hinzufügen:
-```css
---radius-card: 20px;    /* Karten */
---radius-btn: 12px;     /* Buttons */
---radius-dialog: 24px;  /* Dialoge/Sheets */
-```
+**Datei:** `backend/migrations/versions/l6m7n8o9p0q1_add_notes_module.py`
+- Alembic-Migration für `notes`-Tabelle
+- Index auf `household_id`
 
-### Phase 2: utils/memberColor.ts
+### 1.2 Router `notes.py` (CRUD + Socket-Events)
+**Datei:** `backend/app/routers/notes.py`
+- Pattern: Exakt wie `todos.py` — Pydantic-Schemas inline, verify_household_access
+- Schemas:
+  - `NoteCreate`: title (1-150), body (optional, max 5000), tag (optional, max 50), pinned (optional, default false)
+  - `NoteUpdate`: alle Felder optional (partial update)
+  - `NoteResponse`: alle Felder, model_config from_attributes
+- Endpoints:
+  - `GET /api/households/{household_id}/notes/` → Liste, sortiert: pinned DESC, created_at DESC
+  - `POST /api/households/{household_id}/notes/` → Erstellen, emit `note_created`
+  - `PATCH /api/households/{household_id}/notes/{note_id}` → Update, emit `note_updated`
+  - `DELETE /api/households/{household_id}/notes/{note_id}` → Löschen, emit `note_deleted`
 
+**Datei:** `backend/app/main.py`
+- Import `notes` Router
+- `app.include_router(notes.router)` hinzufügen
+
+### 1.3 Test-Fixtures + Scoping-Tests
+**Datei:** `backend/tests/conftest.py`
+- Import `Note` in Model-Import-Zeile
+- Socket-Mock: `app.routers.notes.emit_to_household_sync` patchen
+- Fixtures: `note_a(db, household_a, user_a)` und `note_b(db, household_b, user_b)`
+
+**Datei:** `backend/tests/test_note_scoping.py`
+- Pattern: Exakt wie `test_todo_scoping.py`
+- Tests:
+  1. `test_user_a_can_read_own_notes` (GET → 200, eigene Note enthalten)
+  2. `test_user_a_cannot_read_other_household_notes` (GET → 403)
+  3. `test_user_a_cannot_create_in_other_household` (POST → 403)
+  4. `test_user_a_cannot_patch_other_household_note` (PATCH → 403)
+  5. `test_user_a_cannot_delete_other_household_note` (DELETE → 403)
+
+---
+
+## Phase 2: Frontend
+
+### 2.1 TypeScript-Typen
+**Datei:** `frontend/src/types/index.ts`
 ```ts
-/**
- * Deterministisches Mapping User-ID → CSS-Farb-Variable.
- * Derselbe User hat überall dieselbe Farbe.
- */
-const MEMBER_COLORS = [
-  'var(--p1)',       // Teal
-  'var(--p2)',       // Rosa
-  '#94798C',         // Mauve
-  '#8A8272',         // Olive
-  'var(--acc)',       // Braun/Gold
-  'var(--ok)',        // Grün
-] as const
-
-export function getMemberColor(userId: string): string {
-  let hash = 0
-  for (const ch of userId) {
-    hash += ch.charCodeAt(0)
-  }
-  return MEMBER_COLORS[hash % MEMBER_COLORS.length]
+export interface NoteItem {
+  id: string
+  household_id: string
+  title: string
+  body: string
+  tag: string | null
+  pinned: boolean
+  created_by_user_id: string | null
+  created_at: string
+  updated_at: string
 }
 ```
 
-### Phase 3: UI-Komponenten-Updates
+### 2.2 Repository
+**Datei:** `frontend/src/repositories/notesRepository.ts`
+- Pattern: Exakt wie `todosRepository.ts`
+- Methoden: `fetchAll`, `create`, `update`, `remove`
 
-#### BaseCard.vue
-- `border-radius: var(--radius-md)` → `var(--radius-card)`
-- `background: var(--color-surface)` → `var(--card)` (direkt, nicht Alias)
+### 2.3 Store
+**Datei:** `frontend/src/stores/notes.ts`
+- Pattern: Wie `todos.ts` mit optimistic UI + Socket-Handlern
+- State: `items: NoteItem[]`, `loading: boolean`
+- Actions: `fetchNotes`, `addNote`, `updateNote`, `deleteNote`, `togglePin`
+- Socket-Handler: `handleNoteCreated`, `handleNoteUpdated`, `handleNoteDeleted`
+- Computed-Helper: `pinnedNotes`, `unpinnedNotes`
 
-#### BaseButton.vue
-- `border-radius: var(--radius-sm)` → `var(--radius-btn)`
-- **Primary**: `background: var(--acc)`, `color: #fff` (Light) / `color: var(--card)` (Dark) → einfach `color: #FBF8F3` oder besser `color: var(--card)`
-- **Primary hover**: `filter: brightness(1.08)` statt alter Variable
-- **Secondary**: `background: var(--chip)`, `color: var(--ink)`, `border-color: transparent`
-- **Secondary hover**: `filter: brightness(0.96)`
-- **Ghost**: `color: var(--acc)`, hover `background: var(--acc-soft)`
-- **Danger**: bleibt (--color-danger)
-- Alle `var(--color-neutral-*)` entfernen (existieren nicht im Theme)
-- Focus-Ring: `outline-color: var(--acc)` statt `var(--color-primary)`
+### 2.4 View `NotesView.vue`
+**Datei:** `frontend/src/views/NotesView.vue`
+- Layout:
+  1. PageHeader "Notizen"
+  2. Schnellnotiz-Feld: Input "Notiz schreiben…" → Titel = erste Zeile
+  3. Sektion "Angepinnt" (nur wenn pinned Notes vorhanden):
+     - Karten mit `background: var(--acc-soft)` Tönung
+     - Titel, Body-Preview (erste Zeile), Tag-Chip, Pin-Icon
+  4. Sektion "Alle Notizen":
+     - Karten: Titel, erste Textzeile, Meta (Autor-Avatar · Datum), Tag-Chip
+  5. Edit-Dialog (BaseDialog):
+     - Title-Input, Body-Textarea, Tag-Input, Pin-Toggle
+     - Speichern/Löschen-Buttons
+- Socket-Events: on mount `note_created`/`note_updated`/`note_deleted` registrieren
 
-#### BaseInput.vue
-- `border: 1px solid var(--color-neutral-300)` → `border: 1px solid var(--line-strong)`
-- `background-color: var(--color-surface)` → `var(--card)`
-- `:focus border-color` → `var(--acc)`
-- `:focus box-shadow` → `0 0 0 3px var(--acc-soft)`
-- Error: `--color-danger-light` → `var(--acc-soft)` (danger bleibt)
-- Disabled bg `var(--color-neutral-100)` → `var(--chip)`
-- `border-radius: var(--radius-sm)` → `var(--radius-btn)` (12px passend für Inputs)
+### 2.5 Router + MoreSheet + i18n
+**Datei:** `frontend/src/router/index.ts`
+- Route `/notes` → `NotesView.vue`, meta: requiresAuth
 
-#### BaseDialog.vue
-- `import { X } from 'lucide-vue-next'` → `import { PhX } from '@phosphor-icons/vue'`
-- Template: `<X :size="18" />` → `<PhX :size="18" />`
-- `.dialog-panel border-radius: var(--radius-lg)` → `var(--radius-dialog)`
-- `.dialog-panel box-shadow: var(--shadow-lg)` → `var(--shadow-overlay)`
-- `.dialog-panel background: var(--color-surface)` → `var(--card)`
-- `.dialog-header border-bottom: 1px solid var(--color-neutral-200)` → `var(--line)`
-- `.dialog-footer border-top: 1px solid var(--color-neutral-200)` → `var(--line)`
-- `.dialog-close:hover background: var(--color-neutral-100)` → `var(--chip)`
-- `var(--space-5)` existiert nicht → `var(--space-6)` (24px) verwenden
+**Datei:** `frontend/src/components/MoreSheet.vue`
+- Notes-Eintrag: `disabled: false`, `action: () => navigate('/notes')`
 
-#### BaseEmptyState.vue
-- `import { Package } from 'lucide-vue-next'` → `import { PhPackage } from '@phosphor-icons/vue'`
-- Default icon: `Package` → `PhPackage`
-- `color: var(--color-text-muted)` → `var(--sub)`
-
-#### BaseSkeleton.vue
-- `background: var(--color-neutral-100)` → `var(--chip)`
-
-#### BaseSpinner.vue
-- `border-color: var(--color-neutral-300)` → `var(--line-strong)`
-- `border-top-color: var(--color-primary)` → `var(--acc)`
-
-### Phase 4: BaseCheckCircle.vue (NEU)
-
-```
-Props: checked: boolean
-Emits: toggle
-```
-
-Design:
-- **Unchecked**: 22×22px Kreis, border 2px `var(--line-strong)`, transparent fill
-- **Checked**: 22×22px Kreis, `var(--ok)` Hintergrund, weisser PhCheck bold-Icon (12px)
-- Transition 150ms ease
-- `cursor: pointer`, `flex-shrink: 0`
-
-Integration **ShoppingList.vue**:
-- Ersetze `<input type="checkbox" ...>` in Item-Zeilen durch `<BaseCheckCircle :checked="item.is_checked" @toggle="handleToggle(item.id)" />`
-- `.item-row--checked .item-row__name`: `text-decoration: line-through; color: var(--sub)` (statt `opacity: 0.55`)
-- Entferne `.item-row__check` wrapper und `.item-row__checkbox` Styling
-
-Integration **TodoList.vue**:
-- Ersetze `<input type="checkbox" ...>` durch `<BaseCheckCircle :checked="todo.is_done" @toggle="handleToggle(todo.id)" />`
-- `.todo-row--done .todo-row__name`: `text-decoration: line-through; color: var(--sub)` (statt `opacity: 0.55`)
-
-### Phase 5: BasePillTabs.vue (NEU)
-
-```ts
-Props:
-  tabs: Array<{ key: string; label: string }>
-  modelValue: string   // aktiver key
-
-Emits:
-  'update:modelValue': [key: string]
-```
-
-Design:
-- Horizontal scrollbar (flex, gap 8px, `overflow-x: auto`, `-webkit-overflow-scrolling: touch`)
-- Jede Pill: `padding: 6px 16px`, `border-radius: var(--radius-full)`, `font-size: var(--text-sm)`, `font-weight: 600`, `white-space: nowrap`, `cursor: pointer`, `transition: all 150ms`
-- **Aktiv**: `background: var(--ink)`, `color: var(--card)`
-- **Inaktiv**: `background: var(--chip)`, `color: var(--ink)`
-- Keine native `<button>`-Border
-
-Exemplarische Nutzung in **ChoresView.vue**:
-- Ersetze den `showOnlyMine`-Toggle durch BasePillTabs mit 2 Tabs: "Alle" / "Meine"
-- i18n-Keys: `chores.filterAll` (de: "Alle", en: "All") / `chores.filterMine` (de: "Meine", en: "Mine") → **in de.json + en.json** ergänzen
-
-### Phase 6: Lucide → Phosphor Icon-Mapping
-
-**WICHTIG**: Phosphor-Icons aus `@phosphor-icons/vue` importieren. Namensschema: `Ph` + Name.
-Standard-Gewicht: regular. Aktive Nav / Status: `weight="fill"`. Checkmarks: `weight="bold"`.
-
-Vollständige Mapping-Tabelle:
-
-| Lucide Icon | Phosphor Icon | Import-Name | Dateien |
-|---|---|---|---|
-| `X` | X | `PhX` | BaseDialog, ShoppingList, TodoList, ExpenseList, ExpensesView, ChoresView |
-| `Package` | Package | `PhPackage` | BaseEmptyState |
-| `ShoppingCart` | ShoppingCart | `PhShoppingCart` | App.vue, TheBottomNav, ShoppingList |
-| `ListChecks` | ListChecks | `PhListChecks` | App.vue, TheBottomNav, TodoList |
-| `Wallet` | Wallet | `PhWallet` | App.vue, MoreSheet |
-| `Home` | House | `PhHouse` | App.vue, TheBottomNav, LoginView, RegisterView, NoHouseholdView |
-| `Brush` | Broom | `PhBroom` | App.vue, ChoresView |
-| `CalendarDays` | CalendarBlank | `PhCalendarBlank` | App.vue, TheBottomNav, CalendarView |
-| `WifiOff` | WifiSlash | `PhWifiSlash` | App.vue |
-| `CheckCircle2` | CheckCircle | `PhCheckCircle` | App.vue |
-| `AlertCircle` | WarningCircle | `PhWarningCircle` | App.vue |
-| `Info` | Info | `PhInfo` | App.vue |
-| `MoreHorizontal` | DotsThree | `PhDotsThree` | TheBottomNav |
-| `Cat` | Cat | `PhCat` | MoreSheet |
-| `UtensilsCrossed` | ForkKnife | `PhForkKnife` | MoreSheet |
-| `StickyNote` | Note | `PhNote` | MoreSheet |
-| `Settings` | Gear | `PhGear` | MoreSheet |
-| `Pencil` | PencilSimple | `PhPencilSimple` | TodoList, ChoresView |
-| `ChevronDown` | CaretDown | `PhCaretDown` | ShoppingList |
-| `Receipt` | Receipt | `PhReceipt` | ExpenseList |
-| `CalendarCheck` | CalendarCheck | `PhCalendarCheck` | ChoresView |
-| `UserMinus` | UserMinus | `PhUserMinus` | HouseholdView |
-| `LogOut` | SignOut | `PhSignOut` | HouseholdView |
-| `Plus` | Plus | `PhPlus` | HouseholdView |
-| `Share2` | ShareNetwork | `PhShareNetwork` | HouseholdView |
-| `Construction` | Wrench | `PhWrench` | DashboardView |
-| `Users` | Users | `PhUsers` | NoHouseholdView |
-
-**Icon-Size-Mapping**: Lucide `:size="N"` → Phosphor `:size="N"` (gleich).
-
-**Nach Migration**: `npm uninstall lucide-vue-next` aus `frontend/`.
-
-### Phase 7: Abschnittstitel → font-display
-
-Alle `.view-title`, `.section-title`, `.auth-title`, `.card-title`, `.dialog-title`, `.no-household-title` Klassen:
-```css
-font-family: var(--font-display);
-font-weight: var(--font-weight-semibold); /* 600 */
-```
-
-Betrifft Dateien mit `<style scoped>`:
-- ShoppingView, TodosView, ExpensesView, ChoresView, HouseholdView, LoginView, RegisterView, NoHouseholdView
-- BaseDialog.vue (`.dialog-title`)
-- ExpenseList.vue und BalanceSummary.vue (falls `.section-title` vorhanden)
-
-### Phase 8: Bereinigung alte Alias-Variablen in theme.css
-
-In `theme.css` die alten Alias-Mappings (`--color-primary`, `--color-surface`, etc.) BEIBEHALTEN für Abwärtskompatibilität, aber in den aktualisierten Komponenten die neuen direkten Tokens verwenden.
+**Datei:** `frontend/src/locales/de.json` + `en.json`
+- Neuer Abschnitt `notes`:
+  - title, addPlaceholder, emptyTitle, emptySubtitle, pinnedSection, allSection,
+    editTitle, titleLabel, bodyLabel, tagLabel, tagPlaceholder, pinLabel,
+    deleteConfirm, addError, saveError, deleteError
+- `moreSheet.notesSub` aktualisieren (nicht mehr "Bald verfügbar")
 
 ---
 
-## Nicht anfassen / Warnung
-- `<script>` in App.vue (Zeilen 1-173): Socket-Logik → NICHT VERÄNDERN, nur Imports ändern
-- Stores, Repositories, Types → keine Änderungen
-- Backend → komplett unberührt
-- Bestehende Funktionalität → keine Regression, nur visuelle Änderungen
+## ⚡ API-Schema Update (Backend fertig – 2026-08-08)
 
-## Abnahmekriterien
-- [x] Alle Views im neuen Look (Karten 20px radius, Buttons mit acc/chip, runde Checkboxen)
-- [x] BaseCheckCircle in Shopping + Todos
-- [x] BasePillTabs bereitgestellt + exemplarisch in ChoresView
-- [x] Kein Lucide-Import mehr in KEINER Datei
-- [x] `lucide-vue-next` nicht mehr in package.json
-- [x] `npm run typecheck` grün
-- [x] `npm run build` grün
-- [x] Dark Mode funktioniert weiterhin korrekt
+> **Für Frontend-Entwickler:** Die Notes-API ist vollständig implementiert und getestet.
+
+### Neue Endpoints:
+| Methode | Pfad | Beschreibung |
+|---------|------|-------------|
+| `GET` | `/api/households/{household_id}/notes/` | Liste aller Notizen (sortiert: pinned DESC, created_at DESC) |
+| `POST` | `/api/households/{household_id}/notes/` | Neue Notiz erstellen (201) |
+| `PATCH` | `/api/households/{household_id}/notes/{note_id}` | Notiz teilweise aktualisieren |
+| `DELETE` | `/api/households/{household_id}/notes/{note_id}` | Notiz löschen (204) |
+
+### Request-Body `POST` (`NoteCreate`):
+```json
+{ "title": "string (1-150, required)", "body": "string (max 5000, default '')", "tag": "string|null (max 50)", "pinned": "bool (default false)" }
+```
+
+### Request-Body `PATCH` (`NoteUpdate`):
+Alle Felder optional (partial update), gleiche Validierung.
+
+### Response (`NoteResponse`):
+```json
+{ "id": "uuid", "household_id": "uuid", "title": "string", "body": "string", "tag": "string|null", "pinned": "bool", "created_by_user_id": "uuid|null", "created_at": "datetime", "updated_at": "datetime" }
+```
+
+### Socket-Events:
+- `note_created` → vollständiges NoteResponse-Objekt
+- `note_updated` → vollständiges NoteResponse-Objekt
+- `note_deleted` → `{"id": "uuid-string"}`
+
+---
+
+## Phase 3: Review & Abnahme
+- [x] `pytest` grün (insbes. test_note_scoping.py)
+- [ ] Frontend TypeScript-Check grün
+- [ ] Pin/Unpin synct in Echtzeit über Socket
+- [x] Business-Logic-Review: Scoping, Validierung, Edge-Cases
+
+---
+
+## API-Änderungen für Frontend (2026-08-08)
+
+> **Betrifft:** Notes-Modul — 4 Bugfixes aus Business-Logic-Review
+
+1. **404-Responses enthalten jetzt strukturierte Error-Codes:**
+   `detail` ist nun `{"code": "NOTE_NOT_FOUND", "message": "..."}` statt ein einfacher String.
+   → Frontend sollte `errors.NOTE_NOT_FOUND` in i18n-Dateien (`de.json`, `en.json`) ergänzen.
+
+2. **Tag-Feld: Leere Strings werden serverseitig zu `null` normalisiert.**
+   Ein `tag: ""` oder `tag: "  "` wird vom Backend automatisch zu `null`.
+   → Kein Frontend-Handlungsbedarf, aber gut zu wissen für Validierungslogik.
+
+3. **`NoteUpdate.tag` hat jetzt `max_length=50`** (war vorher unbeschränkt).
+   → Frontend sollte ein `maxlength=50` auf Tag-Inputs setzen.

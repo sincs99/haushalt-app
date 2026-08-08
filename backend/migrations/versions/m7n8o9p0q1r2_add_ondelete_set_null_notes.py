@@ -14,23 +14,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("notes") as batch_op:
-        batch_op.drop_constraint("fk_notes_created_by_user_id", type_="foreignkey")
-        batch_op.create_foreign_key(
-            "fk_notes_created_by_user_id",
-            "users",
-            ["created_by_user_id"],
-            ["id"],
-            ondelete="SET NULL",
-        )
+    # ondelete="SET NULL" is now included in the initial notes table creation
+    # (migration l6m7n8o9p0q1). This migration is kept as a no-op for history.
+    pass
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("notes") as batch_op:
-        batch_op.drop_constraint("fk_notes_created_by_user_id", type_="foreignkey")
-        batch_op.create_foreign_key(
-            "fk_notes_created_by_user_id",
-            "users",
-            ["created_by_user_id"],
-            ["id"],
-        )
+    pass

@@ -33,7 +33,7 @@ def upgrade() -> None:
         sa.Column(
             "created_by_user_id",
             PG_UUID(as_uuid=True),
-            sa.ForeignKey("users.id"),
+            sa.ForeignKey("users.id", ondelete="SET NULL"),
             nullable=True,
         ),
         sa.Column(

@@ -7,7 +7,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run check:locales && vite build
+RUN npm run check:locales && npx vite build
 
 # Stage 2: Serve
 FROM nginx:alpine

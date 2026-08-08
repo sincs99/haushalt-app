@@ -1,6 +1,6 @@
 # Haushalt-App — Aktueller Projektstand
 
-**Stand:** 2026-08-07 (aktualisiert)
+**Stand:** 2026-08-08 (aktualisiert)
 **Autor:** Tech Lead (automatisch generiert)
 
 ---
@@ -16,7 +16,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | Realtime | Socket.IO (python-socketio) |
 | Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4 |
 | Auth | JWT (Bearer Token), bcrypt-Hashing |
-| i18n | vue-i18n, 272 Keys (DE + EN), Build-gesicherter Key-Sync |
+| i18n | vue-i18n, 531 Keys (DE + EN), Build-gesicherter Key-Sync |
 | Icons | Phosphor Icons (`@phosphor-icons/vue`) — regular/fill/bold |
 | UI | Custom Design-System (CSS Custom Properties, Nunito + Quicksand), Mobile-First |
 
@@ -432,7 +432,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Expenses-Modul (CRUD + Split + Saldo) | ✅ | ✅ ExpensesView, ExpenseList, BalanceSummary, ExpenseFormDialog | ✅ Socket |
 | Settlements-Modul | ✅ | ✅ | ✅ Socket |
 | Chores-Modul (Putzplan + Rotation) | ✅ | ✅ | ✅ Socket |
-| i18n (DE + EN, 255 Keys, Locale-Check) | ✅ | ✅ | — |
+| i18n (DE + EN, 531 Keys, Locale-Check) | ✅ | ✅ | — |
 | Error-Code-System (maschinenlesbar) | ✅ | ✅ i18n-Mapping | — |
 | Offline-Banner | — | ✅ | — |
 | Toast-System | — | ✅ | — |
@@ -445,7 +445,17 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Haushalt verlassen / Mitglied entfernen | ✅ POST /leave, DELETE /members/{uid} | ✅ HouseholdView | ✅ Socket |
 | Rollen-System (admin/member) | ✅ verify_household_admin | ✅ UI-Anzeige | — |
 | Währung pro Haushalt | ✅ Household.currency | ✅ /me Response | — |
-| Backend-Tests (Multi-Tenant + Auth) | ✅ 17 Testdateien, ~151 Tests | — | — |
+| Backend-Tests (Multi-Tenant + Auth) | ✅ 32 Testdateien, ~151 Tests | — | — |
+| Dashboard | ✅ | ✅ DashboardView | — |
+| Einkauf 2.0 (Multi-Listen, Stores) | ✅ | ✅ ShoppingView | ✅ Socket |
+| Aufgaben 2.0 (Unified Tasks) | ✅ | ✅ TodosView | ✅ Socket |
+| Finanzen 2.0 (Budget + Bills) | ✅ | ✅ ExpensesView | ✅ Socket |
+| Kalender + Events | ✅ | ✅ CalendarView | ✅ Socket |
+| Abstimmungen (Polls) | ✅ | ✅ (integriert in Calendar/Food) | ✅ Socket |
+| Haustiere (Katzen) | ✅ | ✅ PetsView + PetDetailView | — |
+| Essen (Wochenmenü + Rezepte) | ✅ | ✅ FoodView | — |
+| Notizen | ✅ | ✅ NotesView | — |
+| App-Shell (Bottom-Nav, MoreSheet, Sync-Status) | — | ✅ | — |
 
 ### ❌ Offen (nächste Schritte)
 
@@ -484,7 +494,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 |---|---|---|
 | FastAPI | 0.141.1 | Web-Framework |
 | SQLAlchemy | (via requirements.txt) | ORM |
-| Alembic | 1.18.5 | DB-Migrationen |
+| Alembic | 1.18.5 | DB-Migrationen (23 Versionen) |
 | psycopg2-binary | 2.9.12 | PostgreSQL-Driver |
 | python-socketio | (via requirements.txt) | WebSocket |
 | bcrypt | 4.0.1 | Passwort-Hashing |
@@ -603,3 +613,92 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
   - BasePillTabs in ChoresView (ersetzt showOnlyMine Toggle)
 - **Validierung:** typecheck ✅, build ✅, 272 i18n-Keys sync ✅
 - **i18n:** 255 → 272 Keys (17 neue Keys für PillTabs-Labels, Chores-Filter)
+
+### Epic 9: Dashboard ✅
+- **Abgeschlossen:** 2026-08-07
+- **Umfang:** Dashboard-View mit Tagesgruss, Schnellzugriff-Buttons (Shopping, Task, Expense), Widget-Übersicht (Aufgaben, Einkauf, Finanzen)
+- **Backend:** `app/routers/dashboard.py` – aggregierter Dashboard-Endpunkt
+- **Frontend:** DashboardView.vue, `stores/dashboard.ts`, `repositories/dashboardRepository.ts`
+- **Tests:** `test_dashboard_scoping.py` (Multi-Tenant-Scoping)
+- **i18n:** `dashboard.*` Keys (15+ Keys: greetings, widgets, quick-actions)
+- **Navigation:** Dashboard als Startseite (`/` → `/dashboard`)
+
+### Epic 10: Einkauf 2.0 – Multi-Listen + Stores ✅
+- **Abgeschlossen:** 2026-08-07
+- **Umfang:** ShoppingList-Model (Multiple Listen pro Haushalt), Gruppen nach Geschäft/Kategorie, Zuweisung zu Mitgliedern, Artikel-Detailansicht
+- **Backend:** `ShoppingList` Model, `app/routers/shopping.py` (list_router + router), Socket-Events `shopping_list_created/updated/deleted`
+- **Migration:** `e8f4b2a6c9d3` (add_shopping_lists), `0f34ff355756` (add_ondelete_to_shopping_items_fks)
+- **Frontend:** ShoppingView.vue überarbeitet (Listen-Tabs, Gruppen-Toggle, Artikeldetails), `stores/shopping.ts` erweitert
+- **i18n:** `shopping.lists`, `shopping.newList`, `shopping.groupByStore`, `shopping.groupByCategory`, `shopping.storePlaceholder`, `shopping.assignToMe` etc.
+
+### Epic 11: Aufgaben 2.0 – Unified Tasks ✅
+- **Abgeschlossen:** 2026-08-07
+- **Umfang:** Aufgaben-View vereinigt Todos + Chore-Assignments in einer Timeline-Ansicht (Überfällig / Heute / Diese Woche / Später). Todo-Tags, Todo-Claim, Personen-Filter (PillTabs)
+- **Backend:** `app/routers/tasks.py` – Unified Tasks Endpoint (merges todos + chore assignments), `Todo.tags` JSON-Feld, Claim-Endpoint
+- **Migration:** `e6cbf2921e48` (add_tags_to_todos)
+- **Frontend:** `TodosView.vue` (komplett neu als Unified Tasks), `stores/tasks.ts`, `repositories/tasksRepository.ts`, UnifiedTask-Type
+- **Tests:** `test_todo_tags.py`, `test_todo_claim.py`
+- **i18n:** `tasks.*` Keys (filterAll, filterShared, groupOverdue/Today/ThisWeek/Later, claim, recurring, manageChores)
+
+### Epic 12: Finanzen 2.0 – Budget + Wiederkehrende Rechnungen ✅
+- **Abgeschlossen:** 2026-08-07
+- **Umfang:** Budget pro Monat, wiederkehrende Rechnungen (RecurringBill), Rechnungs-Buchung als Expense, Finanz-Übersicht mit Budget-Balken
+- **Backend:** `Budget` + `RecurringBill` Models, `app/routers/budgets.py`, `app/routers/recurring_bills.py`, Finanz-Summary-Endpoint
+- **Migration:** `f1a2b3c4d5e6` (add_finance_v2_models)
+- **Frontend:** ExpensesView.vue überarbeitet (Budget-Widget, Pending Bills, Recent Expenses, Bill-Management), `stores/finance.ts`, `repositories/financeRepository.ts`
+- **Tests:** `test_budget_scoping.py`, `test_recurring_bill_scoping.py`, `test_recurring_bill_book.py`, `test_finance_summary.py`
+- **i18n:** `finance.*` Keys (available, budgetLine, noBudget, setBudget, pendingBills, recurringBills, addBill etc.)
+- **Socket-Events:** `budget_updated`, `recurring_bill_created/updated/deleted/booked`
+
+### Epic 13: Kalender + Polls ✅
+- **Abgeschlossen:** 2026-08-07
+- **Umfang:** Event-Kalender (Wochenansicht + Liste), Event-CRUD, Ganztägige Events, Kategorien (arbeit, katzen, haushalt, freunde, geburtstage, essen, sonstiges), Abstimmungen (EventPoll) mit Vote + Entscheidung → Event-Erstellung
+- **Backend:** `Event`, `EventPoll`, `EventPollOption`, `EventPollVote` Models, `app/routers/events.py`, `app/routers/polls.py`
+- **Migration:** `4678310121c3` (add_events_table), `d155cbf3f424` (add_event_polls), `k5l6m7n8o9p0` (add_poll_type_and_recipe_id)
+- **Frontend:** CalendarView.vue (Wochen- und Listenansicht), `stores/calendar.ts`, `stores/polls.ts`, `repositories/calendarRepository.ts`, `repositories/pollsRepository.ts`, `utils/categoryColors.ts`
+- **Tests:** `test_event_scoping.py`, `test_poll_scoping.py`
+- **i18n:** `calendar.*` Keys (25+ Keys), `polls.*` Keys (18+ Keys)
+- **Socket-Events:** `event_created/updated/deleted`, `poll_created/voted/decided/deleted`
+
+### Epic 14: Haustiere (Katzen) ✅
+- **Abgeschlossen:** 2026-08-07
+- **Umfang:** Pet-Management (Name, Rasse, Geburtsdatum, Gewicht, Foto-URL), Fütterungs-Log (Morgen/Abend pro Tag), Medikamente-Management + Verabreichungs-Log, Detail-Profil-Seite (Chip-Nr, Versicherung, Tierarzt, Futter-Notizen, Gesundheitseinträge mit Ampel-System)
+- **Backend:** `Pet`, `FeedingLog`, `Medication`, `MedicationLog` Models, `app/routers/pets.py`
+- **Migration:** `g1h2i3j4k5l6` (add_pets_and_feeding_logs), `h2i3j4k5l6m7` (add_medications_module), `i3j4k5l6m7n8` (add_pet_profile_fields)
+- **Frontend:** PetsView.vue (Übersicht mit Fütterungs-Widget), PetDetailView.vue (Profil, Medikamente, Gesundheitseinträge), `stores/pets.ts`, `repositories/petsRepository.ts`
+- **Tests:** `test_pet_scoping.py`, `test_feeding_scoping.py`, `test_medication_scoping.py`
+- **i18n:** `pets.*` Keys (50+ Keys inkl. Medikamente, Gesundheit, Profil)
+
+### Epic 15: Essen (Wochenmenü + Rezepte) ✅
+- **Abgeschlossen:** 2026-08-08
+- **Umfang:** Rezept-Verwaltung (Name, Portionen, Kosten, Dauer, Zutaten-Liste, Favoriten), Wochenmenü-Planung (Rezept oder Freitext pro Tag), "Fehlende Zutaten zur Einkaufsliste"-Button, Essens-Abstimmung (poll_type='meal')
+- **Backend:** `Recipe`, `MealPlanEntry` Models, `app/routers/food.py` (recipe_router + meal_plan_router)
+- **Migration:** `j4k5l6m7n8o9` (add_food_module)
+- **Frontend:** FoodView.vue (Wochenmenü, Rezept-CRUD, Meal-Polls), `stores/food.ts`, `repositories/foodRepository.ts`
+- **Tests:** `test_food_scoping.py`, `test_food_shopping.py`, `test_meal_poll.py`
+- **i18n:** `food.*` Keys (35+ Keys)
+- **Security-Review:** `docs/security-review-food-module.md`, `docs/security/food-module-review.md`
+
+### Epic 16: Notizen ✅
+- **Abgeschlossen:** 2026-08-08
+- **Umfang:** Notiz-CRUD (Titel, Body, Tag, Pinned), Angepinnte Notizen oben, Tag-Filter
+- **Backend:** `Note` Model, `app/routers/notes.py`
+- **Migration:** `l6m7n8o9p0q1` (add_notes_module), `m7n8o9p0q1r2` (add_ondelete_set_null_notes)
+- **Frontend:** NotesView.vue, `stores/notes.ts`, `repositories/notesRepository.ts`
+- **Tests:** `test_note_scoping.py`
+- **i18n:** `notes.*` Keys (15 Keys)
+
+### Epic 17: Feinschliff 0d – App-Shell, Navigation, UI-Polish ✅
+- **Abgeschlossen:** 2026-08-08
+- **Umfang:**
+  - Mobile Bottom-Nav vereinfacht auf 4 Tabs + "Mehr"-Sheet (Start, Kalender, Aufgaben, Einkauf, Mehr)
+  - MoreSheet-Komponente: Overlay-Bottom-Sheet mit 5 Einträgen (Finanzen, Katzen, Essen, Notizen, Einstellungen)
+  - Desktop Top-Bar: 6 direkte Nav-Links (Start, Kalender, Einkauf, Aufgaben, Finanzen, Haushalt) — Putzplan-Link entfernt, stattdessen "Ämtli verwalten"-Link in der Aufgaben-View
+  - Sync-Status-Indikator (grün/gelb/grau) in Bottom-Nav und Top-Bar
+  - BaseAvatar-Komponente mit deterministic User→Farbe-Mapping
+  - PageHeader-Komponente für konsistente Seitenkopfzeilen
+  - `useTheme` Composable
+  - `utils/dates.ts` – formatDateShort Helper
+- **Frontend:** TheBottomNav.vue, MoreSheet.vue, BaseAvatar.vue, PageHeader.vue, `composables/useTheme.ts`, `utils/dates.ts`
+- **i18n:** `nav.*`, `moreSheet.*`, `sync.*` Keys
+- **Navigation-Konsolidierung:** `/chores` aus Desktop-Top-Bar entfernt, "Ämtli verwalten"-Link (PhBroom) in TodosView ergänzt (`tasks.manageChores` Key)

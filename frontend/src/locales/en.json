@@ -202,7 +202,8 @@
     "openCount": "{n} open",
     "createButton": "Create",
     "emptyTitle": "No tasks",
-    "emptySubtitle": "Create a new task or wait for the next chore schedule entry."
+    "emptySubtitle": "Create a new task or wait for the next chore schedule entry.",
+    "manageChores": "Manage chores"
   },
   "expenses": {
     "title": "Expenses",

@@ -19,7 +19,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
-import { PhPlus, PhRepeat, PhListChecks } from '@phosphor-icons/vue'
+import { PhPlus, PhRepeat, PhListChecks, PhBroom } from '@phosphor-icons/vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -281,6 +281,11 @@ onUnmounted(() => {
       :tabs="filterTabs"
       v-model="activeFilter"
     />
+
+    <router-link to="/chores" class="manage-chores-link">
+      <PhBroom :size="16" />
+      {{ $t('tasks.manageChores') }}
+    </router-link>
 
     <!-- Loading -->
     <template v-if="tasksStore.loading && tasksStore.items.length === 0">
@@ -630,5 +635,22 @@ onUnmounted(() => {
   outline: none;
   border-color: var(--acc);
   box-shadow: 0 0 0 3px var(--acc-soft);
+}
+
+/* ── Manage Chores Link ── */
+.manage-chores-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--sub);
+  text-decoration: none;
+  padding: var(--space-1) 0;
+  margin-top: var(--space-1);
+  transition: color var(--transition-fast);
+}
+
+.manage-chores-link:hover {
+  color: var(--acc);
 }
 </style>

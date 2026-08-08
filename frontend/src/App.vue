@@ -16,7 +16,7 @@ import BaseAvatar from './components/ui/BaseAvatar.vue'
 import TheBottomNav from './components/TheBottomNav.vue'
 import MoreSheet from './components/MoreSheet.vue'
 import { useToast } from './composables/useToast'
-import { PhShoppingBagOpen, PhListChecks, PhWallet, PhHouse, PhBroom, PhCalendarDots, PhWifiSlash, PhCheckCircle, PhWarningCircle, PhInfo } from '@phosphor-icons/vue'
+import { PhShoppingBagOpen, PhListChecks, PhWallet, PhHouse, PhCalendarDots, PhWifiSlash, PhCheckCircle, PhWarningCircle, PhInfo } from '@phosphor-icons/vue'
 
 const route = useRoute()
 const { isOnline } = useConnectivity()
@@ -323,9 +323,6 @@ onUnmounted(() => {
           </router-link>
           <router-link to="/expenses" class="top-bar__link" active-class="top-bar__link--active">
             <PhWallet :size="18" /> {{ $t('nav.expenses') }}
-          </router-link>
-          <router-link to="/chores" class="top-bar__link" active-class="top-bar__link--active">
-            <PhBroom :size="18" /> {{ $t('nav.chores') }}
           </router-link>
           <router-link to="/household" class="top-bar__link" active-class="top-bar__link--active">
             <PhHouse :size="18" /> {{ $t('nav.household') }}

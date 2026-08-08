@@ -202,7 +202,8 @@
     "openCount": "{n} offen",
     "createButton": "Erstellen",
     "emptyTitle": "Keine Aufgaben",
-    "emptySubtitle": "Erstelle eine neue Aufgabe oder warte auf den nächsten Putzplan-Eintrag."
+    "emptySubtitle": "Erstelle eine neue Aufgabe oder warte auf den nächsten Putzplan-Eintrag.",
+    "manageChores": "Ämtli verwalten"
   },
   "expenses": {
     "title": "Ausgaben",

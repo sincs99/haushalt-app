@@ -10,6 +10,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 
 
 # revision identifiers, used by Alembic.
@@ -46,7 +47,7 @@ def upgrade() -> None:
         sa.Column('category', sa.String(length=50), nullable=True),
         sa.Column(
             'split_type',
-            sa.Enum('even', 'custom', name='expense_split_type', create_type=False),
+            PgEnum('even', 'custom', name='expense_split_type', create_type=False),
             server_default='even',
             nullable=False,
         ),

@@ -55,4 +55,7 @@ Desktop.ini
 *.log
 *.sqlite3
 *.db
-backend/test_output.txt 
+backend/test_output.txt
+
+# PowerShell artifacts
+$null

@@ -13,6 +13,7 @@ export interface TodosRepository {
       description?: string
       assigned_to_user_id?: string
       due_date?: string
+      tags?: string[]
     },
   ): Promise<TodoItem>
   update(
@@ -46,6 +47,7 @@ export function createOnlineTodosRepository(): TodosRepository {
           description: payload.description ?? null,
           assigned_to_user_id: payload.assigned_to_user_id ?? null,
           due_date: payload.due_date ?? null,
+          tags: payload.tags ?? [],
         },
       )
       return data

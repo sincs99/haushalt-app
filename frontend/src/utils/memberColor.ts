@@ -7,8 +7,6 @@ const MEMBER_COLORS = [
   'var(--p2)',       // Rosa
   '#94798C',         // Mauve
   '#8A8272',         // Olive
-  'var(--acc)',       // Braun/Gold
-  'var(--ok)',        // Grün
 ] as const
 
 export function getMemberColor(userId: string): string {

@@ -56,6 +56,30 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/pets',
+      name: 'pets',
+      component: () => import('../views/PetsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/pets/:id',
+      name: 'pet-detail',
+      component: () => import('../views/PetDetailView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/food',
+      name: 'food',
+      component: () => import('../views/FoodView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/notes',
+      name: 'notes',
+      component: () => import('../views/NotesView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/household',
       name: 'household',
       component: () => import('../views/HouseholdView.vue'),

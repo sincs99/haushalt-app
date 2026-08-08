@@ -46,6 +46,7 @@ export const useTodosStore = defineStore('todos', () => {
     description?: string,
     assignedToUserId?: string,
     dueDate?: string,
+    tags?: string[],
   ) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
@@ -64,6 +65,7 @@ export const useTodosStore = defineStore('todos', () => {
       created_by_user_id: authStore.user?.id ?? null,
       created_at: new Date().toISOString(),
       done_at: null,
+      tags: tags ?? [],
     }
     items.value.push(tempItem)
     pendingTempIds.add(tempId)
@@ -75,6 +77,7 @@ export const useTodosStore = defineStore('todos', () => {
         description,
         assigned_to_user_id: assignedToUserId,
         due_date: dueDate,
+        tags,
       })
       pendingTempIds.delete(tempId)
 

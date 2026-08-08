@@ -85,14 +85,6 @@
 
   /* --- Erweiterte Radien --- */
   --radius-xl: 16px;
-
-  /* --- Avatar-Palette (6er) --- */
-  --avatar-1-bg: #CECBF6; --avatar-1-text: #26215C;  /* Violett */
-  --avatar-2-bg: #F5C4B3; --avatar-2-text: #4A1B0C;  /* Koralle */
-  --avatar-3-bg: #F4C0D1; --avatar-3-text: #4B1528;  /* Rosa */
-  --avatar-4-bg: #9FE1CB; --avatar-4-text: #04342C;  /* Teal */
-  --avatar-5-bg: #FAC775; --avatar-5-text: #412402;  /* Amber */
-  --avatar-6-bg: #B5D4F4; --avatar-6-text: #042C53;  /* Blau */
 }
 
 /* ============================================

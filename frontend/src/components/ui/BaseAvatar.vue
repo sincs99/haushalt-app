@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { getMemberColor } from '../../utils/memberColor'
 
 const props = withDefaults(defineProps<{
   name: string
@@ -18,15 +19,6 @@ const initials = computed(() => {
   return props.name.trim().substring(0, 2).toUpperCase()
 })
 
-// Deterministischer Farb-Index aus userId (1-6)
-const colorIndex = computed(() => {
-  let hash = 0
-  for (const ch of props.userId) {
-    hash += ch.charCodeAt(0)
-  }
-  return (hash % 6) + 1
-})
-
 const sizeClass = computed(() => `base-avatar--${props.size}`)
 </script>
 
@@ -35,8 +27,8 @@ const sizeClass = computed(() => `base-avatar--${props.size}`)
     class="base-avatar"
     :class="sizeClass"
     :style="{
-      backgroundColor: `var(--avatar-${colorIndex}-bg)`,
-      color: `var(--avatar-${colorIndex}-text)`,
+      backgroundColor: getMemberColor(props.userId),
+      color: '#fff',
     }"
     aria-hidden="true"
     :title="name"

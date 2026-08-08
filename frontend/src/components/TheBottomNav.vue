@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
 import { computed } from 'vue'
-import { PhHouse, PhCalendarBlank, PhListChecks, PhShoppingCart, PhDotsThree } from '@phosphor-icons/vue'
+import { PhHouse, PhCalendarDots, PhListChecks, PhShoppingBagOpen, PhDotsThreeCircle } from '@phosphor-icons/vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
@@ -18,9 +18,9 @@ const { t } = useI18n()
 
 const tabs = computed(() => [
   { to: '/dashboard', icon: PhHouse, label: t('nav.start'), key: 'dashboard' },
-  { to: '/calendar', icon: PhCalendarBlank, label: t('nav.calendar'), key: 'calendar' },
+  { to: '/calendar', icon: PhCalendarDots, label: t('nav.calendar'), key: 'calendar' },
   { to: '/todos', icon: PhListChecks, label: t('nav.todos'), key: 'todos' },
-  { to: '/shopping', icon: PhShoppingCart, label: t('nav.shopping'), key: 'shopping' },
+  { to: '/shopping', icon: PhShoppingBagOpen, label: t('nav.shopping'), key: 'shopping' },
 ])
 
 const isTabActive = (to: string) => route.path === to
@@ -35,7 +35,7 @@ const isTabActive = (to: string) => route.path === to
       class="bottom-nav__tab"
       :class="{ 'bottom-nav__tab--active': isTabActive(tab.to) }"
     >
-      <component :is="tab.icon" :size="22" class="bottom-nav__icon" />
+      <component :is="tab.icon" :size="22" :weight="isTabActive(tab.to) ? 'fill' : 'regular'" class="bottom-nav__icon" />
       <span class="bottom-nav__label">{{ tab.label }}</span>
     </router-link>
 
@@ -45,7 +45,7 @@ const isTabActive = (to: string) => route.path === to
       @click="emit('toggle-more')"
     >
       <span class="bottom-nav__icon-wrap">
-        <PhDotsThree :size="22" class="bottom-nav__icon" />
+        <PhDotsThreeCircle :size="22" :weight="moreActive ? 'fill' : 'regular'" class="bottom-nav__icon" />
         <span
           class="bottom-nav__sync-dot sync-dot"
           :class="`sync-dot--${syncStatus}`"
@@ -97,7 +97,7 @@ const isTabActive = (to: string) => route.path === to
 }
 
 .bottom-nav__tab--active {
-  color: var(--p1);
+  color: var(--acc);
 }
 
 .bottom-nav__icon {

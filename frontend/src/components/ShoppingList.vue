@@ -1,23 +1,46 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useShoppingStore } from '../stores/shopping'
 import { useExpensesStore } from '../stores/expenses'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { PhX, PhShoppingCart, PhCaretDown } from '@phosphor-icons/vue'
+import type { ShoppingItem } from '../types'
 import BaseSkeleton from './ui/BaseSkeleton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
 import BaseCheckCircle from './ui/BaseCheckCircle.vue'
+import BasePillTabs from './ui/BasePillTabs.vue'
 
 const shoppingStore = useShoppingStore()
 const expensesStore = useExpensesStore()
 const { showToast } = useToast()
 const { t } = useI18n()
 
+const props = withDefaults(defineProps<{
+  autoFocus?: boolean
+}>(), {
+  autoFocus: false,
+})
+
 const newItemName = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
 const showDone = ref(false)
+
+// ── Gruppierung ──
+type GroupBy = 'store' | 'category'
+const groupBy = ref<GroupBy>('category')
+
+const groupTabs = computed(() => [
+  { key: 'category', label: t('shopping.groupByCategory') },
+  { key: 'store', label: t('shopping.groupByStore') },
+])
+
+onMounted(() => {
+  if (props.autoFocus) {
+    nextTick(() => inputRef.value?.focus())
+  }
+})
 
 function resolveUserName(userId: string | null): string | null {
   if (!userId) return null
@@ -25,14 +48,36 @@ function resolveUserName(userId: string | null): string | null {
   return member?.display_name ?? null
 }
 
-// Getrennte Listen: offen vs. abgehakt
+// ── Items gefiltert nach aktiver Liste ──
 const openItems = computed(() =>
-  shoppingStore.items.filter((item) => !item.is_checked)
-)
-const checkedItems = computed(() =>
-  shoppingStore.items.filter((item) => item.is_checked)
+  shoppingStore.activeListItems.filter(item => !item.is_checked),
 )
 
+const checkedItems = computed(() =>
+  shoppingStore.activeListItems.filter(item => item.is_checked),
+)
+
+// ── Gruppierte offene Items ──
+const groupedItems = computed(() => {
+  const items = openItems.value
+  const groups = new Map<string, ShoppingItem[]>()
+
+  for (const item of items) {
+    const key = groupBy.value === 'store'
+      ? (item.store || t('shopping.miscGroup'))
+      : (item.category || t('shopping.miscGroup'))
+
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(item)
+  }
+
+  return groups
+})
+
+// Prüfe ob Gruppierung sinnvoll ist (mindestens 2 verschiedene Gruppen)
+const hasMultipleGroups = computed(() => groupedItems.value.size > 1)
+
+// ── Actions ──
 async function handleAddItem() {
   const name = newItemName.value.trim()
   if (!name) return
@@ -41,9 +86,8 @@ async function handleAddItem() {
   try {
     await shoppingStore.addItem(name)
   } catch {
-    showToast(t('shopping.addError'))
+    showToast(t('shopping.addError'), 'error')
   }
-  // Fokus bleibt im Feld — UX-Prinzip "Quick-Add in unter 3 Sekunden"
   inputRef.value?.focus()
 }
 
@@ -51,7 +95,15 @@ async function handleToggle(itemId: string) {
   try {
     await shoppingStore.toggleChecked(itemId)
   } catch {
-    showToast(t('shopping.toggleError'))
+    showToast(t('shopping.toggleError'), 'error')
+  }
+}
+
+async function handleAssignToggle(itemId: string) {
+  try {
+    await shoppingStore.toggleAssigned(itemId)
+  } catch {
+    showToast(t('shopping.toggleError'), 'error')
   }
 }
 
@@ -68,13 +120,14 @@ async function handleDelete(itemId: string) {
           item.name,
           item.quantity ?? undefined,
           item.category ?? undefined,
+          item.store ?? undefined,
         ).catch(() => {
           showToast(t('shopping.addError'), 'error')
         })
       },
     })
   } catch {
-    showToast(t('shopping.deleteError'))
+    showToast(t('shopping.deleteError'), 'error')
   }
 }
 
@@ -82,12 +135,10 @@ async function handleClearDone() {
   const itemsToDelete = [...checkedItems.value]
   if (itemsToDelete.length === 0) return
 
-  // Lösche alle abgehakten Items
   await Promise.all(
-    itemsToDelete.map(item => shoppingStore.deleteItem(item.id).catch(() => {}))
+    itemsToDelete.map(item => shoppingStore.deleteItem(item.id).catch(() => {})),
   )
 
-  // Undo-Toast: alle gelöschten Items wieder anlegen
   showToast(t('common.listCleared'), 'success', undefined, {
     label: t('common.undo'),
     onAction: () => {
@@ -97,8 +148,9 @@ async function handleClearDone() {
             item.name,
             item.quantity ?? undefined,
             item.category ?? undefined,
-          ).catch(() => {})
-        )
+            item.store ?? undefined,
+          ).catch(() => {}),
+        ),
       )
     },
   })
@@ -119,6 +171,15 @@ async function handleClearDone() {
       />
     </form>
 
+    <!-- Gruppierungs-Umschalter -->
+    <div v-if="openItems.length > 0" class="group-toggle">
+      <BasePillTabs
+        :tabs="groupTabs"
+        :model-value="groupBy"
+        @update:model-value="groupBy = ($event as GroupBy)"
+      />
+    </div>
+
     <!-- Skeleton Loading -->
     <div v-if="shoppingStore.loading && shoppingStore.items.length === 0" class="skeleton-list">
       <div class="skeleton-row" v-for="n in 3" :key="n">
@@ -127,25 +188,42 @@ async function handleClearDone() {
       </div>
     </div>
 
-    <!-- Offene Items -->
-    <ul v-if="openItems.length > 0" class="item-list">
-      <li
-        v-for="item in openItems"
-        :key="item.id"
-        class="item-row"
-        @click="handleToggle(item.id)"
+    <!-- Gruppierte offene Items -->
+    <div v-if="openItems.length > 0" class="item-groups">
+      <div
+        v-for="[groupName, groupItems] in groupedItems"
+        :key="groupName"
+        class="group"
       >
-        <BaseCheckCircle :checked="item.is_checked" @toggle="handleToggle(item.id)" />
-        <span class="item-row__name">{{ item.name }}</span>
-        <span v-if="item.quantity" class="item-row__meta">{{ item.quantity }}</span>
-        <BaseAvatar
-          v-if="item.added_by_user_id && resolveUserName(item.added_by_user_id)"
-          :name="resolveUserName(item.added_by_user_id)!"
-          :user-id="item.added_by_user_id"
-          size="sm"
-        />
-      </li>
-    </ul>
+        <h3 v-if="hasMultipleGroups" class="group-header">{{ groupName }}</h3>
+        <ul class="item-list">
+          <li
+            v-for="item in groupItems"
+            :key="item.id"
+            class="item-row"
+            @click="handleToggle(item.id)"
+          >
+            <BaseCheckCircle :checked="item.is_checked" @toggle="handleToggle(item.id)" />
+            <span class="item-row__name">{{ item.name }}</span>
+            <span v-if="item.quantity" class="item-row__meta">{{ item.quantity }}</span>
+            <button
+              type="button"
+              class="item-row__assign"
+              :title="item.assigned_to_user_id ? $t('shopping.unassign') : $t('shopping.assignToMe')"
+              @click.stop="handleAssignToggle(item.id)"
+            >
+              <BaseAvatar
+                v-if="item.assigned_to_user_id && resolveUserName(item.assigned_to_user_id)"
+                :name="resolveUserName(item.assigned_to_user_id)!"
+                :user-id="item.assigned_to_user_id"
+                size="sm"
+              />
+              <span v-else class="assign-circle" />
+            </button>
+          </li>
+        </ul>
+      </div>
+    </div>
 
     <!-- Empty State -->
     <BaseEmptyState
@@ -251,6 +329,11 @@ async function handleClearDone() {
   box-shadow: 0 0 0 3px var(--acc-soft);
 }
 
+/* Gruppierungs-Umschalter */
+.group-toggle {
+  display: flex;
+}
+
 /* Skeleton Loading */
 .skeleton-list {
   display: flex;
@@ -263,6 +346,22 @@ async function handleClearDone() {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+}
+
+/* Gruppen */
+.item-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.group-header {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--sub);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-1) var(--space-2);
 }
 
 /* Item-Liste */
@@ -307,6 +406,27 @@ async function handleClearDone() {
 .item-row__meta {
   font-size: var(--text-sm);
   color: var(--sub);
+  flex-shrink: 0;
+}
+
+/* Zuweisungs-Button */
+.item-row__assign {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.assign-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-full);
+  border: 2px dashed var(--line-strong);
+  display: block;
   flex-shrink: 0;
 }
 

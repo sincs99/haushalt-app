@@ -23,6 +23,16 @@ const authStore = useAuthStore()
 const { showToast } = useToast()
 const { t } = useI18n()
 
+// Kategorie-Konstanten
+const CATEGORIES = [
+  { key: 'groceries', emoji: '🛒' },
+  { key: 'housing', emoji: '🏠' },
+  { key: 'cats', emoji: '🐈' },
+  { key: 'leisure', emoji: '🎮' },
+  { key: 'health', emoji: '💊' },
+  { key: 'other', emoji: '📦' },
+] as const
+
 // Form State
 const description = ref('')
 const amountText = ref('')
@@ -30,10 +40,19 @@ const amountError = ref('')
 const expenseDate = ref('')
 const paidByUserId = ref('')
 const splitType = ref<SplitType>('even')
+const selectedCategory = ref<string | null>(null)
 const participantIds = ref<string[]>([])
 const customShares = ref<Record<string, string>>({})
 const serverError = ref('')
 const submitting = ref(false)
+
+// Kategorie-Labels
+const categories = computed(() =>
+  CATEGORIES.map(c => ({
+    ...c,
+    label: t(`expenses.categories.${c.key}`),
+  }))
+)
 
 const isEditMode = computed(() => !!props.expense)
 const dialogTitle = computed(() => isEditMode.value ? t('expenses.editExpense') : t('expenses.newExpense'))
@@ -81,6 +100,7 @@ function initForm() {
     amountText.value = (props.expense.amount_rappen / 100).toFixed(2)
     expenseDate.value = props.expense.expense_date
     paidByUserId.value = props.expense.paid_by_user_id ?? ''
+    selectedCategory.value = props.expense.category ?? null
     // Gespeicherten split_type aus dem Backend vorauswählen
     splitType.value = props.expense.split_type
     customShares.value = {}
@@ -95,6 +115,7 @@ function initForm() {
     expenseDate.value = new Date().toISOString().slice(0, 10)
     paidByUserId.value = authStore.user?.id ?? ''
     splitType.value = 'even'
+    selectedCategory.value = null
     participantIds.value = expensesStore.members.map(m => m.id)
     customShares.value = {}
     for (const m of expensesStore.members) {
@@ -164,6 +185,7 @@ async function handleSubmit() {
         paid_by_user_id: paidByUserId.value,
         expense_date: expenseDate.value,
         split_type: splitType.value,
+        category: selectedCategory.value || undefined,
         ...(splitType.value === 'even'
           ? { participant_ids: participantIds.value }
           : { shares }),
@@ -186,6 +208,7 @@ async function handleSubmit() {
         paid_by_user_id: paidByUserId.value,
         expense_date: expenseDate.value,
         split_type: splitType.value,
+        category: selectedCategory.value || undefined,
         ...(splitType.value === 'even'
           ? { participant_ids: participantIds.value }
           : { shares }),
@@ -240,6 +263,23 @@ async function handleSubmit() {
               type="date"
               class="form-field__input"
             />
+          </div>
+
+          <!-- Kategorie -->
+          <div class="form-field">
+            <label class="form-field__label">{{ $t('expenses.category') }}</label>
+            <div class="category-chips">
+              <button
+                v-for="cat in categories"
+                :key="cat.key"
+                type="button"
+                class="category-chip"
+                :class="{ 'category-chip--active': selectedCategory === cat.key }"
+                @click="selectedCategory = selectedCategory === cat.key ? null : cat.key"
+              >
+                {{ cat.emoji }} {{ cat.label }}
+              </button>
+            </div>
           </div>
 
           <!-- Bezahlt von -->
@@ -545,5 +585,37 @@ async function handleSubmit() {
 
 .dialog-actions > * {
   flex: 1;
+}
+
+/* ── Kategorie-Chips ── */
+.category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: var(--card);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  color: var(--ink);
+  font-family: var(--font-family);
+}
+
+.category-chip:hover {
+  border-color: var(--p1);
+}
+
+.category-chip--active {
+  background: var(--p1);
+  color: white;
+  border-color: var(--p1);
 }
 </style>

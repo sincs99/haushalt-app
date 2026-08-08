@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useTodosStore } from '../stores/todos'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
@@ -15,6 +15,12 @@ import BaseCheckCircle from './ui/BaseCheckCircle.vue'
 const todosStore = useTodosStore()
 const { showToast } = useToast()
 const { t } = useI18n()
+
+const props = withDefaults(defineProps<{
+  autoFocus?: boolean
+}>(), {
+  autoFocus: false,
+})
 
 // Quick-Add
 const newTodoTitle = ref('')
@@ -35,6 +41,12 @@ const editAssignedTo = ref('')
 
 // Eingeklappte Erledigt-Sektion
 const showDone = ref(false)
+
+onMounted(() => {
+  if (props.autoFocus) {
+    nextTick(() => inputRef.value?.focus())
+  }
+})
 
 // Getrennte Listen: offen vs. erledigt
 const openTodos = computed(() =>

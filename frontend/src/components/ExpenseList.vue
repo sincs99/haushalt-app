@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useExpensesStore } from '../stores/expenses'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
@@ -17,6 +17,12 @@ const expensesStore = useExpensesStore()
 const { showToast } = useToast()
 const { t } = useI18n()
 
+const props = withDefaults(defineProps<{
+  autoOpen?: boolean
+}>(), {
+  autoOpen: false,
+})
+
 // Dialog State
 const showDialog = ref(false)
 const editingExpense = ref<Expense | undefined>(undefined)
@@ -30,6 +36,12 @@ function openEditDialog(expense: Expense) {
   editingExpense.value = expense
   showDialog.value = true
 }
+
+onMounted(() => {
+  if (props.autoOpen) {
+    openAddDialog()
+  }
+})
 
 function resolveUserName(userId: string | null): string {
   if (!userId) return t('common.formerMember')

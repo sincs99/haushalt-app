@@ -17,6 +17,7 @@ import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
 import { PhUserMinus, PhSignOut, PhPlus, PhShareNetwork } from '@phosphor-icons/vue'
+import PageHeader from '../components/ui/PageHeader.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -289,7 +290,7 @@ watch(() => authStore.currentHouseholdId, () => {
 
 <template>
   <div class="view-page">
-    <h1 class="view-title">{{ $t('household.title') }}</h1>
+    <PageHeader :title="$t('household.title')" />
 
     <!-- ══ Sektion: Haushalt ══ -->
     <BaseCard>
@@ -534,14 +535,6 @@ watch(() => authStore.currentHouseholdId, () => {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-}
-
-.view-title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: var(--text-xl);
-  font-weight: var(--font-weight-semibold);
-  color: var(--ink);
 }
 
 .section-title {

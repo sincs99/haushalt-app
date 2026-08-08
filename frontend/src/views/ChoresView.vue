@@ -12,6 +12,7 @@ import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
 import BasePillTabs from '../components/ui/BasePillTabs.vue'
+import PageHeader from '../components/ui/PageHeader.vue'
 
 const choresStore = useChoresStore()
 const authStore = useAuthStore()
@@ -298,7 +299,7 @@ const weekdayOptions = computed(() =>
 
 <template>
   <div class="view-page">
-    <h1 class="view-title">{{ $t('chores.title') }}</h1>
+    <PageHeader :title="$t('chores.title')" />
 
     <!-- Loading -->
     <div v-if="choresStore.loading" class="skeleton-list">
@@ -611,14 +612,6 @@ const weekdayOptions = computed(() =>
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-}
-
-.view-title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: var(--text-xl);
-  font-weight: var(--font-weight-semibold);
-  color: var(--ink);
 }
 
 /* ── Skeleton Loading ── */

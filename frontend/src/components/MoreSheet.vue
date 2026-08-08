@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PhWallet, PhCat, PhForkKnife, PhNote, PhGear } from '@phosphor-icons/vue'
+import { PhWallet, PhCat, PhForkKnife, PhNote, PhGear, PhCaretRight } from '@phosphor-icons/vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
@@ -40,11 +40,11 @@ watch(() => props.open, (isOpen) => {
 })
 
 const entries = [
-  { label: 'nav.expenses', icon: PhWallet, action: () => navigate('/expenses'), disabled: false },
-  { label: 'nav.cats', icon: PhCat, action: undefined, disabled: true },
-  { label: 'nav.meals', icon: PhForkKnife, action: undefined, disabled: true },
-  { label: 'nav.notes', icon: PhNote, action: undefined, disabled: true },
-  { label: 'nav.settings', icon: PhGear, action: () => navigate('/household'), disabled: false },
+  { label: 'nav.expenses', sub: 'moreSheet.expensesSub', icon: PhWallet, action: () => navigate('/expenses'), disabled: false, highlight: true },
+  { label: 'nav.cats', sub: 'moreSheet.catsSub', icon: PhCat, action: () => navigate('/pets'), disabled: false, highlight: false },
+  { label: 'nav.meals', sub: 'moreSheet.mealsSub', icon: PhForkKnife, action: () => navigate('/food'), disabled: false, highlight: false },
+  { label: 'nav.notes', sub: 'moreSheet.notesSub', icon: PhNote, action: () => navigate('/notes'), disabled: false, highlight: false },
+  { label: 'nav.settings', sub: 'moreSheet.settingsSub', icon: PhGear, action: () => navigate('/household'), disabled: false, highlight: false },
 ]
 </script>
 
@@ -59,6 +59,7 @@ const entries = [
         <Transition name="sheet" appear>
           <div class="more-sheet" role="dialog" aria-modal="true" :aria-label="t('moreSheet.title')">
             <div class="more-sheet__handle" />
+            <h2 class="more-sheet__title">{{ t('moreSheet.title') }}</h2>
             <ul class="more-sheet__list">
               <li
                 v-for="entry in entries"
@@ -67,11 +68,14 @@ const entries = [
                 :class="{ 'more-sheet__item--disabled': entry.disabled }"
                 @click="entry.action?.()"
               >
-                <component :is="entry.icon" :size="20" class="more-sheet__icon" />
-                <span class="more-sheet__label">{{ t(entry.label) }}</span>
-                <span v-if="entry.disabled" class="more-sheet__badge">
-                  {{ t('moreSheet.comingSoon') }}
+                <span class="more-sheet__icon-tile" :class="{ 'more-sheet__icon-tile--accent': entry.highlight }">
+                  <component :is="entry.icon" :size="20" />
                 </span>
+                <div class="more-sheet__text">
+                  <span class="more-sheet__label">{{ t(entry.label) }}</span>
+                  <span class="more-sheet__sub">{{ t(entry.sub) }}</span>
+                </div>
+                <PhCaretRight :size="16" class="more-sheet__chevron" />
               </li>
             </ul>
           </div>
@@ -104,13 +108,24 @@ const entries = [
   height: 4px;
   border-radius: var(--radius-full);
   background: var(--line-strong);
-  margin: 0 auto var(--space-4);
+  margin: 0 auto var(--space-3);
+}
+
+.more-sheet__title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  margin: 0 0 var(--space-3);
+  color: var(--ink);
 }
 
 .more-sheet__list {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .more-sheet__item {
@@ -129,29 +144,49 @@ const entries = [
 }
 
 .more-sheet__item--disabled {
-  opacity: 0.4;
+  opacity: 0.5;
   pointer-events: none;
   cursor: default;
 }
 
-.more-sheet__icon {
+.more-sheet__icon-tile {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--chip);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  color: var(--sub);
+}
+
+.more-sheet__icon-tile--accent {
+  background: var(--acc-soft);
+  color: var(--acc);
+}
+
+.more-sheet__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .more-sheet__label {
-  flex: 1;
   font-size: var(--text-base);
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-semibold);
 }
 
-.more-sheet__badge {
+.more-sheet__sub {
   font-size: var(--text-xs);
-  font-weight: var(--font-weight-semibold);
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--acc-soft);
-  color: var(--acc);
+  color: var(--sub);
+}
+
+.more-sheet__chevron {
+  color: var(--sub);
+  flex-shrink: 0;
 }
 
 /* --- Backdrop Transition --- */

@@ -550,7 +550,11 @@
     "severityRed": "Critical",
     "addHealthEntry": "Add health entry",
     "birthdateLabel": "Age",
-    "noProfileData": "No profile data available"
+    "noProfileData": "No profile data available",
+    "photoUploading": "Uploading photo…",
+    "photoUploadSuccess": "Photo updated",
+    "photoUploadError": "Could not upload photo",
+    "photoDeleteError": "Could not remove old photo"
   },
   "petCare": {
     "title": "Care & Schedule",
@@ -626,6 +630,13 @@
     "addError": "Could not create note.",
     "saveError": "Could not save changes.",
     "deleteError": "Could not delete note."
+  },
+  "files": {
+    "FILE_TOO_LARGE": "File is too large (max 10 MB)",
+    "FILE_TYPE_NOT_ALLOWED": "File type not allowed",
+    "FILE_NOT_FOUND": "File not found",
+    "FILE_IN_USE": "File is still in use",
+    "FILE_MISMATCH": "File mismatch (wrong household or not an image)"
   },
   "sync": {
     "connected": "Connected",

@@ -521,6 +521,7 @@ export interface Pet {
   birthdate: string | null  // ISO date string
   weight_grams: number | null
   photo_url: string | null
+  photo_file_id: string | null
   notes: string | null
   // Slice 3 Profil-Felder
   chip_number: string | null
@@ -559,6 +560,7 @@ export interface PetUpdatePayload {
   vet_name?: string
   food_notes?: string
   health_entries?: HealthEntry[]
+  photo_file_id?: string | null
 }
 
 export interface FeedingLog {
@@ -690,4 +692,14 @@ export interface AddToShoppingResponse {
   added: string[]
   skipped: string[]
   list_id: string
+}
+
+// ── Files ──
+
+export interface StoredFile {
+  id: string
+  original_name: string
+  mime_type: string
+  size_bytes: number
+  created_at: string
 }

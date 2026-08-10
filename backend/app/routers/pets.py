@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import FeedingLog, Household, HouseholdMember, Medication, MedicationLog, Pet, PetCareTask
+from app.models import FeedingLog, Household, HouseholdMember, Medication, MedicationLog, Pet, PetCareTask, StoredFile
+from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -55,6 +56,7 @@ class PetUpdate(BaseModel):
     birthdate: date | None = None
     weight_grams: int | None = Field(None, ge=0)
     notes: str | None = Field(None, max_length=1000)
+    photo_file_id: uuid.UUID | None = None
     # Slice 3
     chip_number: str | None = Field(None, max_length=50)
     insurance: str | None = Field(None, max_length=100)
@@ -72,6 +74,7 @@ class PetResponse(BaseModel):
     birthdate: date | None
     weight_grams: int | None
     photo_url: str | None
+    photo_file_id: uuid.UUID | None
     notes: str | None
     # Slice 3 Profil-Felder
     chip_number: str | None
@@ -450,6 +453,23 @@ def update_pet(
     pet = _get_pet_or_404(db, pet_id, household_id)
     update_data = body.model_dump(exclude_unset=True)
 
+    # photo_file_id Validierung
+    if "photo_file_id" in update_data and update_data["photo_file_id"] is not None:
+        file_id = update_data["photo_file_id"]
+        stored_file = db.get(StoredFile, file_id)
+        if (
+            stored_file is None
+            or stored_file.household_id != household_id
+            or not stored_file.mime_type.startswith("image/")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=error_detail(
+                    ErrorCode.FILE_MISMATCH,
+                    "File not found, does not belong to this household, or is not an image",
+                ),
+            )
+
     for key, value in update_data.items():
         setattr(pet, key, value)
 
@@ -473,6 +493,17 @@ def delete_pet(
     db: Session = Depends(get_db),
 ):
     pet = _get_pet_or_404(db, pet_id, household_id)
+
+    # Wenn Pet ein Foto hat, physische Datei aufräumen
+    if pet.photo_file_id:
+        stored_file = db.query(StoredFile).filter(StoredFile.id == pet.photo_file_id).first()
+        if stored_file:
+            try:
+                _pet_storage = LocalStorageService()
+                _pet_storage.delete(stored_file.storage_path)
+            except Exception:
+                pass  # Best-effort cleanup
+
     db.delete(pet)
     db.commit()
 

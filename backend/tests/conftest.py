@@ -38,7 +38,7 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.database import Base, get_db  # noqa: E402
-from app.models import Household, User, HouseholdMember, ShoppingItem, ShoppingList, Todo, TodoReminder, Expense, ExpenseShare, Settlement, Budget, RecurringBill, Chore, ChoreAssignment, Calendar, Event, EventPoll, EventPollOption, EventPollVote, Pet, FeedingLog, Medication, MedicationLog, PetCareTask, Recipe, MealPlanEntry, Note  # noqa: E402
+from app.models import Household, User, HouseholdMember, ShoppingItem, ShoppingList, Todo, TodoReminder, Expense, ExpenseShare, Settlement, Budget, RecurringBill, Chore, ChoreAssignment, Calendar, Event, EventPoll, EventPollOption, EventPollVote, Pet, FeedingLog, Medication, MedicationLog, PetCareTask, Recipe, MealPlanEntry, Note, StoredFile  # noqa: E402
 from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -93,7 +93,8 @@ def _mock_socket_emit():
                                                     with patch("app.routers.food.emit_to_household_sync", mock_emit):
                                                         with patch("app.routers.notes.emit_to_household_sync", mock_emit):
                                                             with patch("app.routers.calendars.emit_to_household_sync", mock_emit):
-                                                                yield mock_emit
+                                                                with patch("app.routers.files.emit_to_household_sync", mock_emit):
+                                                                    yield mock_emit
 
 
 @pytest.fixture()
@@ -651,6 +652,43 @@ def pet_b(db, household_b) -> Pet:
     db.commit()
     db.refresh(pet)
     return pet
+
+
+# --- Stored Files ---
+
+
+@pytest.fixture()
+def stored_file_a(db, household_a, user_a) -> StoredFile:
+    sf = StoredFile(
+        id=uuid.uuid4(),
+        household_id=household_a.id,
+        original_name="cat.jpg",
+        mime_type="image/jpeg",
+        size_bytes=12345,
+        storage_path=f"{household_a.id}/test-cat.jpeg",
+        uploaded_by_user_id=user_a.id,
+    )
+    db.add(sf)
+    db.commit()
+    db.refresh(sf)
+    return sf
+
+
+@pytest.fixture()
+def stored_file_b(db, household_b, user_b) -> StoredFile:
+    sf = StoredFile(
+        id=uuid.uuid4(),
+        household_id=household_b.id,
+        original_name="dog.jpg",
+        mime_type="image/jpeg",
+        size_bytes=54321,
+        storage_path=f"{household_b.id}/test-dog.jpeg",
+        uploaded_by_user_id=user_b.id,
+    )
+    db.add(sf)
+    db.commit()
+    db.refresh(sf)
+    return sf
 
 
 # --- Recipes ---

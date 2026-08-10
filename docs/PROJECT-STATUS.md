@@ -1,6 +1,6 @@
 # Haushalt-App — Aktueller Projektstand
 
-**Stand:** 2026-08-08 (aktualisiert)
+**Stand:** 2026-08-10 (aktualisiert)
 **Autor:** Tech Lead (automatisch generiert)
 
 ---
@@ -16,7 +16,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | Realtime | Socket.IO (python-socketio) |
 | Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4 |
 | Auth | JWT (Bearer Token), bcrypt-Hashing |
-| i18n | vue-i18n, 531 Keys (DE + EN), Build-gesicherter Key-Sync |
+| i18n | vue-i18n, 588 Keys (DE + EN), Build-gesicherter Key-Sync |
 | Icons | Phosphor Icons (`@phosphor-icons/vue`) — regular/fill/bold |
 | UI | Custom Design-System (CSS Custom Properties, Nunito + Quicksand), Mobile-First |
 
@@ -702,3 +702,20 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 - **Frontend:** TheBottomNav.vue, MoreSheet.vue, BaseAvatar.vue, PageHeader.vue, `composables/useTheme.ts`, `utils/dates.ts`
 - **i18n:** `nav.*`, `moreSheet.*`, `sync.*` Keys
 - **Navigation-Konsolidierung:** `/chores` aus Desktop-Top-Bar entfernt, "Ämtli verwalten"-Link (PhBroom) in TodosView ergänzt (`tasks.manageChores` Key)
+
+### Epic 18: Upload-Infrastruktur + Katzenfotos ✅
+- **Abgeschlossen:** 2026-08-10
+- **Umfang:**
+  - Wiederverwendbare Datei-Upload-Infrastruktur (lokal, später Supabase-Adapter)
+  - StoredFile Model + LocalStorageService (data/uploads/{household_id}/{uuid}{ext})
+  - Files Router: POST (Upload + Pillow-Resize auf 1600px), GET (JWT-geschützter Download), DELETE (mit FILE_IN_USE-Schutz)
+  - Pet-Foto-Integration: PATCH pet mit photo_file_id, Validierung Household+MIME
+  - Frontend: JWT-geschützter Blob-Download via ObjectURL, useProtectedImage Composable
+  - PetPhotoAvatar Component (sm/md/lg), Upload-Flow in PetDetailView, Thumbnails in PetsView
+  - Docker: uploaddata Volume für Persistenz
+  - Security-Härtung: Chunk-basiertes Lesen, MAX_IMAGE_PIXELS, PDF Magic-Byte, EXIF-Rotation, Path-Traversal-Defense, Content-Disposition-Sanitisierung
+- **Backend:** `routers/files.py`, `services/storage.py`, `models.py` (StoredFile), `routers/pets.py` (photo_file_id)
+- **Frontend:** `repositories/filesRepository.ts`, `composables/useProtectedImage.ts`, `components/PetPhotoAvatar.vue`, PetDetailView, PetsView
+- **Tests:** 14 neue Tests in `test_files_scoping.py` (Cross-Tenant, Validation, Upload/Download/Delete)
+- **Reviews:** Security-Review (`docs/security/epic8-upload-review.md`), Business-Logic-Review (`docs/review-epic8-upload.md`)
+- **i18n:** 9 neue Keys (pets.photo*, files.*) → 588 Keys total

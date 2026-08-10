@@ -8,6 +8,7 @@ import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
 import type { Pet, PetCreatePayload, FeedingSlot, FeedingLog } from '../types'
 import { PhCat, PhSun, PhMoon, PhPlus } from '@phosphor-icons/vue'
+import PetPhotoAvatar from '../components/PetPhotoAvatar.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
@@ -343,7 +344,13 @@ function navigateToPet(petId: string) {
           @click="navigateToPet(pet.id)"
         >
           <div class="pet-card__header">
-            <span class="pet-card__emoji">{{ speciesEmoji(pet.species) }}</span>
+            <PetPhotoAvatar
+              v-if="pet.photo_file_id"
+              :photo-file-id="pet.photo_file_id"
+              :pet-name="pet.name"
+              size="sm"
+            />
+            <span v-else class="pet-card__emoji">{{ speciesEmoji(pet.species) }}</span>
             <span class="pet-card__name">{{ pet.name }}</span>
           </div>
           <div class="pet-card__details">

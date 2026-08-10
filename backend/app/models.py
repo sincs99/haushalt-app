@@ -95,6 +95,9 @@ class Household(Base):
     calendars: Mapped[list["Calendar"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
+    stored_files: Mapped[list["StoredFile"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
 
 
 class User(Base):
@@ -687,6 +690,9 @@ class Pet(Base):
     birthdate: Mapped[date | None] = mapped_column(Date, nullable=True)
     weight_grams: Mapped[int | None] = mapped_column(Integer, nullable=True)
     photo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    photo_file_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("stored_files.id", ondelete="SET NULL"), nullable=True
+    )
     notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     # Profil-Erweiterungen (Slice 3)
     chip_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -908,3 +914,26 @@ class Note(Base):
     )
 
     household: Mapped["Household"] = relationship(back_populates="notes")
+
+
+class StoredFile(Base):
+    __tablename__ = "stored_files"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    original_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    uploaded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    household: Mapped["Household"] = relationship(back_populates="stored_files")

@@ -109,6 +109,9 @@ watch(
     off('pet_care_task_created', petsStore.handleCareTaskCreated)
     off('pet_care_task_updated', petsStore.handleCareTaskUpdated)
     off('pet_care_task_deleted', petsStore.handleCareTaskDeleted)
+    off('pet_care_task_created', dashboardStore.invalidate)
+    off('pet_care_task_updated', dashboardStore.invalidate)
+    off('pet_care_task_deleted', dashboardStore.invalidate)
 
     // Wenn Token weg (Logout): Socket disconnecten
     if (!token) {
@@ -206,6 +209,9 @@ watch(
       on('pet_care_task_created', petsStore.handleCareTaskCreated)
       on('pet_care_task_updated', petsStore.handleCareTaskUpdated)
       on('pet_care_task_deleted', petsStore.handleCareTaskDeleted)
+      on('pet_care_task_created', dashboardStore.invalidate)
+      on('pet_care_task_updated', dashboardStore.invalidate)
+      on('pet_care_task_deleted', dashboardStore.invalidate)
 
       shoppingStore.fetchLists()
       shoppingStore.fetchItems()
@@ -300,6 +306,9 @@ onUnmounted(() => {
  off('pet_care_task_created', petsStore.handleCareTaskCreated)
  off('pet_care_task_updated', petsStore.handleCareTaskUpdated)
  off('pet_care_task_deleted', petsStore.handleCareTaskDeleted)
+  off('pet_care_task_created', dashboardStore.invalidate)
+  off('pet_care_task_updated', dashboardStore.invalidate)
+  off('pet_care_task_deleted', dashboardStore.invalidate)
  offReconnect(handleReconnect)
   disconnect()
 })

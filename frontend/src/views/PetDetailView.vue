@@ -6,14 +6,17 @@ import { usePetsStore } from '../stores/pets'
 import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
+import { useProtectedImage } from '../composables/useProtectedImage'
+import { createOnlineFilesRepository } from '../repositories/filesRepository'
 import type {
   Pet, FeedingLog, FeedingSlot, Medication, MedicationCreatePayload,
   MedicationUpdatePayload, MedicationLog, PetUpdatePayload, HealthEntry,
   PetCareTask, PetCareTaskCreatePayload, PetCareTaskUpdatePayload,
+  StoredFile,
 } from '../types'
 import {
   PhArrowLeft, PhPencilSimple, PhSun, PhMoon, PhPlus, PhPill,
-  PhCheck, PhTrash, PhCalendarCheck,
+  PhCheck, PhTrash, PhCalendarCheck, PhCamera, PhCat,
 } from '@phosphor-icons/vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
@@ -37,6 +40,66 @@ const loading = ref(true)
 const pet = computed<Pet | undefined>(() =>
   petsStore.pets.find(p => p.id === petId.value),
 )
+
+// ── Photo Upload ──
+
+const filesRepo = createOnlineFilesRepository()
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const photoUploading = ref(false)
+
+const householdId = computed(() => authStore.currentHouseholdId)
+const photoFileId = computed(() => pet.value?.photo_file_id ?? null)
+const { objectUrl: photoObjectUrl } = useProtectedImage(householdId, photoFileId)
+
+const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 MB
+
+async function handlePhotoUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !householdId.value) return
+
+  // Reset input damit dasselbe Bild erneut gewählt werden kann
+  input.value = ''
+
+  // Client-seitige Dateigrössen-Prüfung
+  if (file.size > MAX_PHOTO_SIZE) {
+    showToast(t('files.FILE_TOO_LARGE'), 'error')
+    return
+  }
+
+  photoUploading.value = true
+  const oldFileId = pet.value?.photo_file_id ?? null
+  let uploadedFile: StoredFile | null = null
+
+  try {
+    // 1. Upload
+    uploadedFile = await filesRepo.uploadFile(householdId.value, file)
+
+    // 2. Pet aktualisieren
+    await petsStore.updatePet(petId.value, { photo_file_id: uploadedFile.id })
+
+    // 3. Altes Foto aufräumen (best-effort)
+    if (oldFileId) {
+      try {
+        await filesRepo.deleteFile(householdId.value, oldFileId)
+      } catch {
+        // Ignorieren – kann FILE_IN_USE sein
+      }
+    }
+
+    showToast(t('pets.photoUploadSuccess'), 'success')
+  } catch {
+    // PATCH fehlgeschlagen → hochgeladene Datei aufräumen (best-effort)
+    if (uploadedFile) {
+      try {
+        await filesRepo.deleteFile(householdId.value, uploadedFile.id)
+      } catch { /* best effort */ }
+    }
+    showToast(t('pets.photoUploadError'), 'error')
+  } finally {
+    photoUploading.value = false
+  }
+}
 
 const feedingStatus = computed(() =>
   petsStore.feedingStatus.find(s => s.pet_id === petId.value),
@@ -542,6 +605,39 @@ async function handleDeleteCareTask() {
     </div>
 
     <template v-else>
+      <!-- ═══ Foto-Bereich ═══ -->
+      <div class="flex flex-col items-center mb-4">
+        <div class="relative">
+          <div class="w-24 h-24 rounded-full overflow-hidden bg-surface-variant flex items-center justify-center">
+            <img
+              v-if="photoObjectUrl"
+              :src="photoObjectUrl"
+              :alt="pet.name"
+              class="w-full h-full object-cover"
+            />
+            <PhCat v-else :size="48" class="text-on-surface-variant" />
+          </div>
+          <button
+            class="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-md"
+            @click="fileInputRef?.click()"
+            :disabled="photoUploading"
+            :aria-label="$t('pets.photoUploading')"
+          >
+            <PhCamera :size="16" />
+          </button>
+        </div>
+        <span v-if="photoUploading" class="text-xs text-on-surface-variant mt-1">
+          {{ $t('pets.photoUploading') }}
+        </span>
+      </div>
+      <input
+        ref="fileInputRef"
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        class="hidden"
+        @change="handlePhotoUpload"
+      />
+
       <!-- ═══ Header ═══ -->
       <div class="detail-header">
         <button class="back-btn" @click="router.back()" :aria-label="$t('common.back')">

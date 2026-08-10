@@ -100,8 +100,8 @@ def upgrade() -> None:
         "AND INITCAP(events.category) = c.name"
     ))
 
-    # Sonderfall: NULL/leere/unbekannte categories → Fallback-Kalender
-    # (höchste position = zuletzt eingefügt, typischerweise "Sonstiges")
+    # Defensiver Fallback – greift bei validen Alt-Daten nie, da category
+    # NOT NULL + CheckConstraint war und der INITCAP-Backfill jedes Event matcht.
     connection.execute(sa.text(
         "UPDATE events SET calendar_id = ("
         "  SELECT c.id FROM calendars c "

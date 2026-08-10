@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routers import auth, shopping, todos, households, expenses, settlements, chores, dashboard, tasks, budgets, recurring_bills, events, calendars, polls, pets, food, notes
+from app.routers import auth, shopping, todos, households, expenses, settlements, chores, dashboard, tasks, budgets, recurring_bills, events, calendars, polls, pets, food, notes, files
 from app.socket_manager import socket_app, set_event_loop
 
 _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
@@ -48,6 +48,7 @@ app.include_router(pets.router)
 app.include_router(food.recipe_router)
 app.include_router(food.meal_plan_router)
 app.include_router(notes.router)
+app.include_router(files.router)
 
 # Socket.IO unter /socket.io mounten
 app.mount("/socket.io", socket_app)

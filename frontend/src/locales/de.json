@@ -550,7 +550,11 @@
     "severityRed": "Kritisch",
     "addHealthEntry": "Gesundheitseintrag hinzufügen",
     "birthdateLabel": "Alter",
-    "noProfileData": "Keine Profil-Daten hinterlegt"
+    "noProfileData": "Keine Profil-Daten hinterlegt",
+    "photoUploading": "Foto wird hochgeladen…",
+    "photoUploadSuccess": "Foto aktualisiert",
+    "photoUploadError": "Foto konnte nicht hochgeladen werden",
+    "photoDeleteError": "Altes Foto konnte nicht entfernt werden"
   },
   "petCare": {
     "title": "Pflege & Termine",
@@ -626,6 +630,13 @@
     "addError": "Notiz konnte nicht erstellt werden.",
     "saveError": "Änderung konnte nicht gespeichert werden.",
     "deleteError": "Notiz konnte nicht gelöscht werden."
+  },
+  "files": {
+    "FILE_TOO_LARGE": "Datei ist zu gross (max. 10 MB)",
+    "FILE_TYPE_NOT_ALLOWED": "Dateityp nicht erlaubt",
+    "FILE_NOT_FOUND": "Datei nicht gefunden",
+    "FILE_IN_USE": "Datei wird noch verwendet",
+    "FILE_MISMATCH": "Datei passt nicht (falscher Haushalt oder kein Bild)"
   },
   "sync": {
     "connected": "Verbunden",

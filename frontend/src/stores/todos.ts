@@ -66,6 +66,7 @@ export const useTodosStore = defineStore('todos', () => {
       created_at: new Date().toISOString(),
       done_at: null,
       tags: tags ?? [],
+      reminders: [],
     }
     items.value.push(tempItem)
     pendingTempIds.add(tempId)
@@ -220,6 +221,72 @@ export const useTodosStore = defineStore('todos', () => {
     items.value = items.value.filter(i => i.id !== data.id)
   }
 
+  async function addReminder(todoId: string, remindAt: string) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+
+    const item = items.value.find(i => i.id === todoId)
+    if (!item) return
+
+    // Optimistic: Temp-Reminder einfügen
+    const tempId = crypto.randomUUID()
+    const tempReminder = {
+      id: tempId,
+      todo_id: todoId,
+      remind_at: remindAt,
+      notified_at: null,
+      created_at: new Date().toISOString(),
+    }
+    item.reminders = [...item.reminders, tempReminder].sort(
+      (a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime(),
+    )
+
+    try {
+      const serverReminder = await repo.addReminder(householdId, todoId, remindAt)
+      // Server-Reminder ersetzt Temp
+      const currentItem = items.value.find(i => i.id === todoId)
+      if (currentItem) {
+        currentItem.reminders = currentItem.reminders
+          .map(r => (r.id === tempId ? serverReminder : r))
+          .sort((a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime())
+      }
+    } catch (error) {
+      // Rollback
+      const currentItem = items.value.find(i => i.id === todoId)
+      if (currentItem) {
+        currentItem.reminders = currentItem.reminders.filter(r => r.id !== tempId)
+      }
+      throw error
+    }
+  }
+
+  async function deleteReminder(todoId: string, reminderId: string) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+
+    const item = items.value.find(i => i.id === todoId)
+    if (!item) return
+
+    // Snapshot für Rollback
+    const snapshot = [...item.reminders]
+
+    // Optimistic: sofort entfernen
+    item.reminders = item.reminders.filter(r => r.id !== reminderId)
+
+    try {
+      await repo.deleteReminder(householdId, todoId, reminderId)
+    } catch (error) {
+      // Rollback
+      const currentItem = items.value.find(i => i.id === todoId)
+      if (currentItem) {
+        currentItem.reminders = snapshot
+      }
+      throw error
+    }
+  }
+
   return {
     // State
     items,
@@ -232,6 +299,8 @@ export const useTodosStore = defineStore('todos', () => {
     toggleDone,
     updateTodo,
     deleteTodo,
+    addReminder,
+    deleteReminder,
     // Socket-Handlers
     handleTodoCreated,
     handleTodoUpdated,

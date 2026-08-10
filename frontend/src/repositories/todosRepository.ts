@@ -1,5 +1,5 @@
 import api from '../api/client'
-import type { TodoItem } from '../types'
+import type { TodoItem, TodoReminder } from '../types'
 
 export interface TodosRepository {
   fetchAll(
@@ -22,6 +22,8 @@ export interface TodosRepository {
     data: Partial<TodoItem>,
   ): Promise<TodoItem>
   remove(householdId: string, todoId: string): Promise<void>
+  addReminder(householdId: string, todoId: string, remindAt: string): Promise<TodoReminder>
+  deleteReminder(householdId: string, todoId: string, reminderId: string): Promise<void>
 }
 
 export function createOnlineTodosRepository(): TodosRepository {
@@ -64,6 +66,20 @@ export function createOnlineTodosRepository(): TodosRepository {
     async remove(householdId, todoId) {
       await api.delete(
         `/api/households/${householdId}/todos/${todoId}`,
+      )
+    },
+
+    async addReminder(householdId, todoId, remindAt) {
+      const { data } = await api.post<TodoReminder>(
+        `/api/households/${householdId}/todos/${todoId}/reminders/`,
+        { remind_at: remindAt },
+      )
+      return data
+    },
+
+    async deleteReminder(householdId, todoId, reminderId) {
+      await api.delete(
+        `/api/households/${householdId}/todos/${todoId}/reminders/${reminderId}`,
       )
     },
   }

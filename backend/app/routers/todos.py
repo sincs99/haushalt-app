@@ -4,17 +4,43 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import HouseholdMember, Todo
+from app.models import HouseholdMember, Todo, TodoReminder
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
 # ---------------------------------------------------------------------------
+
+
+class TodoReminderResponse(BaseModel):
+    id: uuid.UUID
+    todo_id: uuid.UUID
+    remind_at: datetime
+    notified_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReminderCreate(BaseModel):
+    remind_at: datetime
+
+    @field_validator("remind_at")
+    @classmethod
+    def remind_at_must_be_future(cls, v: datetime) -> datetime:
+        # Timezone-aware machen falls nötig
+        if v.tzinfo is None:
+            from datetime import timezone as tz
+
+            v = v.replace(tzinfo=tz.utc)
+        if v <= datetime.now(timezone.utc):
+            raise ValueError("remind_at must be in the future")
+        return v
 
 
 class TodoCreate(BaseModel):
@@ -94,8 +120,19 @@ class TodoResponse(BaseModel):
     created_at: datetime
     done_at: datetime | None
     tags: list[str]
+    reminders: list[TodoReminderResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _todo_response(todo: Todo) -> dict:
+    """Konsistente JSON-Serialisierung eines Todo-Objekts für Socket-Events."""
+    return TodoResponse.model_validate(todo).model_dump(mode="json")
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +156,11 @@ def list_todos(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Todo).filter(Todo.household_id == household_id)
+    query = (
+        db.query(Todo)
+        .options(selectinload(Todo.reminders))
+        .filter(Todo.household_id == household_id)
+    )
 
     if not include_done:
         query = query.filter(Todo.is_done == False)  # noqa: E712
@@ -152,12 +193,9 @@ def create_todo(
     db.add(todo)
     db.commit()
     db.refresh(todo)
+    db.refresh(todo, attribute_names=["reminders"])
 
-    emit_to_household_sync(
-        household_id,
-        "todo_created",
-        TodoResponse.model_validate(todo).model_dump(mode="json"),
-    )
+    emit_to_household_sync(household_id, "todo_created", _todo_response(todo))
     return todo
 
 
@@ -172,8 +210,13 @@ def update_todo(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    item = db.get(Todo, todo_id)
-    if item is None or item.household_id != household_id:
+    item = (
+        db.query(Todo)
+        .options(selectinload(Todo.reminders))
+        .filter(Todo.id == todo_id, Todo.household_id == household_id)
+        .first()
+    )
+    if item is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Todo not found in this household",
@@ -188,17 +231,18 @@ def update_todo(
     if "is_done" in update_data:
         if update_data["is_done"] is True:
             item.done_at = datetime.now(timezone.utc)
+            # F-04 Fix: Offene Reminders als notified markieren
+            for reminder in item.reminders:
+                if reminder.notified_at is None:
+                    reminder.notified_at = datetime.now(timezone.utc)
         else:
             item.done_at = None
 
     db.commit()
     db.refresh(item)
+    db.refresh(item, attribute_names=["reminders"])
 
-    emit_to_household_sync(
-        household_id,
-        "todo_updated",
-        TodoResponse.model_validate(item).model_dump(mode="json"),
-    )
+    emit_to_household_sync(household_id, "todo_updated", _todo_response(item))
     return item
 
 
@@ -239,8 +283,13 @@ def claim_todo(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    item = db.get(Todo, todo_id)
-    if item is None or item.household_id != household_id:
+    item = (
+        db.query(Todo)
+        .options(selectinload(Todo.reminders))
+        .filter(Todo.id == todo_id, Todo.household_id == household_id)
+        .first()
+    )
+    if item is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=error_detail(ErrorCode.TODO_NOT_FOUND, "Todo not found in this household"),
@@ -261,10 +310,95 @@ def claim_todo(
 
     db.commit()
     db.refresh(item)
+    db.refresh(item, attribute_names=["reminders"])
 
-    emit_to_household_sync(
-        household_id,
-        "todo_updated",
-        TodoResponse.model_validate(item).model_dump(mode="json"),
-    )
+    emit_to_household_sync(household_id, "todo_updated", _todo_response(item))
     return item
+
+
+# ---------------------------------------------------------------------------
+# POST /{todo_id}/reminders/  — Neue Erinnerung erstellen
+# ---------------------------------------------------------------------------
+@router.post("/{todo_id}/reminders/", response_model=TodoReminderResponse, status_code=status.HTTP_201_CREATED)
+def create_reminder(
+    household_id: uuid.UUID,
+    todo_id: uuid.UUID,
+    body: ReminderCreate,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    # 1. Todo prüfen
+    todo = (
+        db.query(Todo)
+        .options(selectinload(Todo.reminders))
+        .filter(Todo.id == todo_id, Todo.household_id == household_id)
+        .first()
+    )
+    if not todo:
+        raise HTTPException(
+            status_code=404,
+            detail=error_detail(ErrorCode.TODO_NOT_FOUND, "Todo not found"),
+        )
+
+    # 2. Max 5 prüfen
+    if len(todo.reminders) >= 5:
+        raise HTTPException(
+            status_code=422,
+            detail=error_detail(ErrorCode.TOO_MANY_REMINDERS, "Maximum 5 reminders per todo"),
+        )
+
+    # 3. Erstellen
+    reminder = TodoReminder(
+        household_id=household_id,
+        todo_id=todo_id,
+        remind_at=body.remind_at,
+    )
+    db.add(reminder)
+    db.commit()
+    db.refresh(reminder)
+
+    # 4. Todo neu laden für Socket-Event
+    db.refresh(todo, attribute_names=["reminders"])
+    emit_to_household_sync(household_id, "todo_updated", _todo_response(todo))
+
+    return reminder
+
+
+# ---------------------------------------------------------------------------
+# DELETE /{todo_id}/reminders/{reminder_id}  — Erinnerung löschen
+# ---------------------------------------------------------------------------
+@router.delete("/{todo_id}/reminders/{reminder_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_reminder(
+    household_id: uuid.UUID,
+    todo_id: uuid.UUID,
+    reminder_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    # 1. Todo prüfen
+    todo = (
+        db.query(Todo)
+        .filter(Todo.id == todo_id, Todo.household_id == household_id)
+        .first()
+    )
+    if not todo:
+        raise HTTPException(
+            status_code=404,
+            detail=error_detail(ErrorCode.TODO_NOT_FOUND, "Todo not found"),
+        )
+
+    # 2. Reminder prüfen
+    reminder = db.get(TodoReminder, reminder_id)
+    if not reminder or reminder.todo_id != todo_id:
+        raise HTTPException(
+            status_code=404,
+            detail=error_detail(ErrorCode.REMINDER_NOT_FOUND, "Reminder not found"),
+        )
+
+    # 3. Löschen
+    db.delete(reminder)
+    db.commit()
+
+    # 4. Todo neu laden
+    db.refresh(todo, attribute_names=["reminders"])
+    emit_to_household_sync(household_id, "todo_updated", _todo_response(todo))

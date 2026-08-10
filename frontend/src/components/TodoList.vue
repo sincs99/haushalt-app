@@ -5,7 +5,7 @@ import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatDateShort } from '../utils/dates'
 import type { TodoItem } from '../types'
-import { PhPencilSimple, PhX, PhListChecks } from '@phosphor-icons/vue'
+import { PhPencilSimple, PhX, PhListChecks, PhBell } from '@phosphor-icons/vue'
 import BaseButton from './ui/BaseButton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseSkeleton from './ui/BaseSkeleton.vue'
@@ -31,6 +31,7 @@ const showAddDetails = ref(false)
 const newDescription = ref('')
 const newDueDate = ref('')
 const newAssignedTo = ref('')
+const newReminders = ref<string[]>([])
 
 // Bearbeitungs-Toggle pro Todo
 const editingId = ref<string | null>(null)
@@ -38,6 +39,7 @@ const editTitle = ref('')
 const editDescription = ref('')
 const editDueDate = ref('')
 const editAssignedTo = ref('')
+const editNewReminders = ref<string[]>([])
 
 // Eingeklappte Erledigt-Sektion
 const showDone = ref(false)
@@ -70,6 +72,31 @@ function getMemberName(userId: string | null): string | null {
 }
 
 
+// Reminder-Datum formatieren
+function formatReminderDate(isoString: string): string {
+  const d = new Date(isoString)
+  return d.toLocaleString(undefined, {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
+// Nächste zukünftige Erinnerung eines Todos
+function getNextReminder(todo: TodoItem): string | null {
+  const now = new Date()
+  const future = todo.reminders.filter(r => new Date(r.remind_at) > now)
+  return future.length > 0 ? future[0].remind_at : null
+}
+
+// Reminder löschen
+async function handleDeleteReminder(todoId: string, reminderId: string) {
+  try {
+    await todosStore.deleteReminder(todoId, reminderId)
+  } catch {
+    showToast(t('todos.deleteReminderError'))
+  }
+}
+
 // Quick-Add Handler
 async function handleAddTodo() {
   const title = newTodoTitle.value.trim()
@@ -79,19 +106,34 @@ async function handleAddTodo() {
   const description = newDescription.value.trim() || undefined
   const dueDate = newDueDate.value || undefined
   const assignedTo = newAssignedTo.value || undefined
+  const remindersToAdd = newReminders.value.filter(r => r.trim() !== '')
 
   // Details zurücksetzen
   newDescription.value = ''
   newDueDate.value = ''
   newAssignedTo.value = ''
+  newReminders.value = []
   showAddDetails.value = false
 
   try {
     await todosStore.addTodo(title, description, assignedTo, dueDate)
+
+    // Reminders nachträglich hinzufügen (braucht die Todo-ID vom Server)
+    if (remindersToAdd.length > 0) {
+      const newItem = todosStore.items[todosStore.items.length - 1]
+      if (newItem) {
+        for (const remindAt of remindersToAdd) {
+          try {
+            await todosStore.addReminder(newItem.id, new Date(remindAt).toISOString())
+          } catch {
+            showToast(t('todos.reminderError'))
+          }
+        }
+      }
+    }
   } catch {
     showToast(t('todos.addError'))
   }
-  // Fokus bleibt im Feld — UX-Prinzip "Quick-Add in unter 3 Sekunden"
   inputRef.value?.focus()
 }
 
@@ -134,6 +176,7 @@ function startEdit(todo: TodoItem) {
   editDescription.value = todo.description ?? ''
   editDueDate.value = todo.due_date ?? ''
   editAssignedTo.value = todo.assigned_to_user_id ?? ''
+  editNewReminders.value = []
 }
 
 function cancelEdit() {
@@ -151,6 +194,16 @@ async function saveEdit(todoId: string) {
       due_date: editDueDate.value || null,
       assigned_to_user_id: editAssignedTo.value || null,
     })
+
+    // Neue Reminders hinzufügen
+    for (const remindAt of editNewReminders.value.filter(r => r.trim() !== '')) {
+      try {
+        await todosStore.addReminder(todoId, new Date(remindAt).toISOString())
+      } catch {
+        showToast(t('todos.reminderError'))
+      }
+    }
+
     editingId.value = null
   } catch {
     showToast(t('todos.saveError'))
@@ -197,6 +250,29 @@ async function saveEdit(todoId: string) {
           {{ member.display_name }}
         </option>
       </select>
+      <!-- Erinnerungen -->
+      <div class="reminder-section">
+        <label class="reminder-section__label">{{ $t('todos.reminders') }}</label>
+        <div v-for="(rem, idx) in newReminders" :key="idx" class="reminder-row">
+          <input
+            v-model="newReminders[idx]"
+            type="datetime-local"
+            class="add-details__input reminder-row__input"
+          />
+          <button type="button" class="action-btn action-btn--danger" @click="newReminders.splice(idx, 1)">
+            <PhX :size="14" />
+          </button>
+        </div>
+        <button
+          v-if="newReminders.length < 5"
+          type="button"
+          class="reminder-add-btn"
+          @click="newReminders.push('')"
+        >
+          + {{ $t('todos.addReminder') }}
+        </button>
+        <span v-else class="reminder-max-hint">{{ $t('todos.maxReminders') }}</span>
+      </div>
     </div>
 
     <!-- Skeleton Loading -->
@@ -238,6 +314,11 @@ async function saveEdit(todoId: string) {
                   :user-id="todo.assigned_to_user_id"
                   size="sm"
                 />
+                <!-- Nächste Erinnerung Badge -->
+                <span v-if="getNextReminder(todo)" class="reminder-badge">
+                  <PhBell :size="12" weight="fill" />
+                  {{ formatReminderDate(getNextReminder(todo)!) }}
+                </span>
               </div>
             </div>
           </div>
@@ -259,6 +340,36 @@ async function saveEdit(todoId: string) {
                 {{ member.display_name }}
               </option>
             </select>
+            <!-- Bestehende Reminders anzeigen/löschen -->
+            <div class="reminder-section">
+              <label class="reminder-section__label">{{ $t('todos.reminders') }}</label>
+              <div v-for="rem in todo.reminders" :key="rem.id" class="reminder-row">
+                <span class="reminder-row__text">{{ formatReminderDate(rem.remind_at) }}</span>
+                <button type="button" class="action-btn action-btn--danger" @click="handleDeleteReminder(todo.id, rem.id)">
+                  <PhX :size="14" />
+                </button>
+              </div>
+              <!-- Neue Reminders hinzufügen -->
+              <div v-for="(rem, idx) in editNewReminders" :key="'new-' + idx" class="reminder-row">
+                <input
+                  v-model="editNewReminders[idx]"
+                  type="datetime-local"
+                  class="add-details__input reminder-row__input"
+                />
+                <button type="button" class="action-btn action-btn--danger" @click="editNewReminders.splice(idx, 1)">
+                  <PhX :size="14" />
+                </button>
+              </div>
+              <button
+                v-if="(todo.reminders.length + editNewReminders.length) < 5"
+                type="button"
+                class="reminder-add-btn"
+                @click="editNewReminders.push('')"
+              >
+                + {{ $t('todos.addReminder') }}
+              </button>
+              <span v-else class="reminder-max-hint">{{ $t('todos.maxReminders') }}</span>
+            </div>
             <div class="edit-form__actions">
               <BaseButton type="submit" variant="primary" size="sm">{{ $t('common.save') }}</BaseButton>
               <BaseButton type="button" variant="secondary" size="sm" @click="cancelEdit">{{ $t('common.cancel') }}</BaseButton>
@@ -296,6 +407,11 @@ async function saveEdit(todoId: string) {
                   :user-id="todo.assigned_to_user_id"
                   size="sm"
                 />
+                <!-- Nächste Erinnerung Badge -->
+                <span v-if="getNextReminder(todo)" class="reminder-badge">
+                  <PhBell :size="12" weight="fill" />
+                  {{ formatReminderDate(getNextReminder(todo)!) }}
+                </span>
               </div>
             </div>
           </div>
@@ -569,5 +685,66 @@ async function saveEdit(todoId: string) {
 
 .done-section__toggle:hover {
   color: var(--ink);
+}
+
+/* Reminder Section */
+.reminder-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.reminder-section__label {
+  font-size: var(--text-sm);
+  color: var(--sub);
+  font-weight: var(--font-weight-medium);
+}
+
+.reminder-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.reminder-row__input {
+  flex: 1;
+}
+
+.reminder-row__text {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+.reminder-add-btn {
+  background: none;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-btn);
+  padding: var(--space-2) var(--space-3);
+  color: var(--acc);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.reminder-add-btn:hover {
+  background: var(--acc-soft);
+  border-color: var(--acc);
+}
+
+.reminder-max-hint {
+  font-size: var(--text-xs);
+  color: var(--sub);
+  font-style: italic;
+}
+
+/* Bell Badge in Todo Row */
+.reminder-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--text-xs);
+  color: var(--acc);
+  white-space: nowrap;
 }
 </style>

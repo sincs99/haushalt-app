@@ -8,16 +8,8 @@ from sqlalchemy.orm import Session
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import Event, HouseholdMember
+from app.models import Calendar, Event, HouseholdMember
 from app.socket_manager import emit_to_household_sync
-
-# ---------------------------------------------------------------------------
-# Erlaubte Kategorien
-# ---------------------------------------------------------------------------
-ALLOWED_CATEGORIES = {
-    "arbeit", "katzen", "haushalt", "freunde",
-    "geburtstage", "essen", "sonstiges",
-}
 
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
@@ -29,7 +21,7 @@ class EventCreate(BaseModel):
     starts_at: datetime
     ends_at: datetime | None = None
     all_day: bool = False
-    category: str = Field(default="sonstiges", max_length=50)
+    calendar_id: uuid.UUID
     participant_ids: list[uuid.UUID] = Field(default_factory=list)
     note: str | None = Field(None, max_length=500)
 
@@ -39,15 +31,6 @@ class EventCreate(BaseModel):
         if not v.strip():
             raise ValueError("Title must not be blank")
         return v.strip()
-
-    @field_validator("category")
-    @classmethod
-    def validate_category(cls, v: str) -> str:
-        if v not in ALLOWED_CATEGORIES:
-            raise ValueError(
-                f"category must be one of: {', '.join(sorted(ALLOWED_CATEGORIES))}"
-            )
-        return v
 
     @field_validator("note", mode="before")
     @classmethod
@@ -62,7 +45,7 @@ class EventUpdate(BaseModel):
     starts_at: datetime | None = None
     ends_at: datetime | None = None
     all_day: bool | None = None
-    category: str | None = Field(None, max_length=50)
+    calendar_id: uuid.UUID | None = None
     participant_ids: list[uuid.UUID] | None = None
     note: str | None = Field(None, max_length=500)
 
@@ -72,15 +55,6 @@ class EventUpdate(BaseModel):
         if v is not None and not v.strip():
             raise ValueError("Title must not be blank")
         return v.strip() if v is not None else v
-
-    @field_validator("category")
-    @classmethod
-    def validate_category(cls, v):
-        if v is not None and v not in ALLOWED_CATEGORIES:
-            raise ValueError(
-                f"category must be one of: {', '.join(sorted(ALLOWED_CATEGORIES))}"
-            )
-        return v
 
     @field_validator("note", mode="before")
     @classmethod
@@ -93,11 +67,11 @@ class EventUpdate(BaseModel):
 class EventResponse(BaseModel):
     id: uuid.UUID
     household_id: uuid.UUID
+    calendar_id: uuid.UUID
     title: str
     starts_at: datetime
     ends_at: datetime | None
     all_day: bool
-    category: str
     participant_ids: list[uuid.UUID]
     note: str | None
     created_by_user_id: uuid.UUID
@@ -149,13 +123,27 @@ def create_event(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
+    if body.ends_at is not None and body.ends_at < body.starts_at:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(ErrorCode.EVENT_END_BEFORE_START, "ends_at must not be before starts_at"),
+        )
+
+    # Calendar muss zum gleichen Haushalt gehören
+    calendar = db.get(Calendar, body.calendar_id)
+    if calendar is None or calendar.household_id != household_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(ErrorCode.CALENDAR_MISMATCH, "Calendar does not belong to this household"),
+        )
+
     event = Event(
         household_id=household_id,
+        calendar_id=body.calendar_id,
         title=body.title,
         starts_at=body.starts_at,
         ends_at=body.ends_at,
         all_day=body.all_day,
-        category=body.category,
         participant_ids=[str(pid) for pid in body.participant_ids],
         note=body.note,
         created_by_user_id=membership.user_id,
@@ -210,6 +198,26 @@ def update_event(
         )
 
     update_data = body.model_dump(exclude_unset=True)
+
+    # Bestimme die effektiven Werte (gesendet oder bestehend)
+    effective_starts = update_data.get("starts_at", item.starts_at)
+    effective_ends = update_data.get("ends_at", item.ends_at)
+
+    # Validierung nur wenn ends_at gesetzt ist (nicht None)
+    if effective_ends is not None and effective_ends < effective_starts:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(ErrorCode.EVENT_END_BEFORE_START, "ends_at must not be before starts_at"),
+        )
+
+    # calendar_id Validierung falls mitgesendet
+    if "calendar_id" in update_data and update_data["calendar_id"] is not None:
+        calendar = db.get(Calendar, update_data["calendar_id"])
+        if calendar is None or calendar.household_id != household_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=error_detail(ErrorCode.CALENDAR_MISMATCH, "Calendar does not belong to this household"),
+            )
 
     # participant_ids als String-Liste speichern
     if "participant_ids" in update_data and update_data["participant_ids"] is not None:

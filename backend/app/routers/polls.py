@@ -10,6 +10,7 @@ from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import (
+    Calendar,
     Event,
     EventPoll,
     EventPollOption,
@@ -78,7 +79,7 @@ class VoteRequest(BaseModel):
 class DecideRequest(BaseModel):
     option_id: uuid.UUID
     event_title: str = Field(..., min_length=1, max_length=150)
-    event_category: str = Field(default="sonstiges", max_length=50)
+    calendar_id: uuid.UUID
 
 
 class MealDecideRequest(BaseModel):
@@ -341,14 +342,22 @@ def decide_poll(
             detail=error_detail(ErrorCode.POLL_OPTION_INVALID, "Option does not belong to this poll"),
         )
 
+    # Calendar validieren
+    calendar = db.get(Calendar, body.calendar_id)
+    if calendar is None or calendar.household_id != household_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(ErrorCode.CALENDAR_MISMATCH, "Calendar does not belong to this household"),
+        )
+
     # Event erstellen
     event_starts_at = chosen_option.starts_at or datetime.now(timezone.utc)
     event = Event(
         household_id=household_id,
+        calendar_id=body.calendar_id,
         title=body.event_title,
         starts_at=event_starts_at,
         all_day=False,
-        category=body.event_category,
         participant_ids=[],
         created_by_user_id=membership.user_id,
     )

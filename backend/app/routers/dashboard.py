@@ -7,7 +7,7 @@ für die Dashboard-View im Frontend.
 
 import uuid
 import zoneinfo
-from datetime import datetime, time as dt_time, timezone
+from datetime import date, datetime, time as dt_time, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -22,8 +22,11 @@ from app.models import (
     Event,
     Household,
     HouseholdMember,
+    Pet,
+    PetCareTask,
     ShoppingItem,
     Todo,
+    TodoReminder,
 )
 from app.services.balance_service import compute_user_saldo
 from app.services.chore_scheduler import today_in_tz
@@ -72,11 +75,27 @@ class DashboardEventItem(BaseModel):
     title: str
     starts_at: datetime
     all_day: bool
-    category: str
+    calendar_id: uuid.UUID
 
 
 class DashboardEventSection(BaseModel):
     items: list[DashboardEventItem]  # max 5 Events von heute
+
+
+class DashboardPetCareItem(BaseModel):
+    id: uuid.UUID
+    name: str            # Task-Name (z.B. "Wurmkur")
+    pet_name: str        # Name des Tieres (von Pet.name)
+    pet_id: uuid.UUID
+    next_due_at: date    # Fälligkeitsdatum
+    is_overdue: bool
+
+
+class DashboardReminderItem(BaseModel):
+    id: uuid.UUID
+    todo_id: uuid.UUID
+    todo_title: str
+    remind_at: datetime
 
 
 class DashboardResponse(BaseModel):
@@ -85,6 +104,8 @@ class DashboardResponse(BaseModel):
     shopping: DashboardShoppingSection
     finance: DashboardFinanceSection
     events: DashboardEventSection
+    pet_care_due: list[DashboardPetCareItem] = []
+    upcoming_reminders: list[DashboardReminderItem] = []
 
 
 # ---------------------------------------------------------------------------
@@ -230,11 +251,65 @@ def get_dashboard(
                 title=ev.title,
                 starts_at=ev.starts_at,
                 all_day=ev.all_day,
-                category=ev.category,
+                calendar_id=ev.calendar_id,
             )
             for ev in today_events
         ]
     )
+
+    # ------------------------------------------------------------------
+    # 6. Pet Care (nächste 5 Termine)
+    # ------------------------------------------------------------------
+    care_tasks = (
+        db.query(PetCareTask, Pet.name.label("pet_name"))
+        .join(Pet, PetCareTask.pet_id == Pet.id)
+        .filter(PetCareTask.household_id == household_id)
+        .order_by(
+            case((PetCareTask.next_due_at < today, 0), else_=1),  # Überfällige zuerst
+            PetCareTask.next_due_at.asc(),
+        )
+        .limit(5)
+        .all()
+    )
+
+    pet_care_items = [
+        DashboardPetCareItem(
+            id=task.id,
+            name=task.name,
+            pet_name=pet_name,
+            pet_id=task.pet_id,
+            next_due_at=task.next_due_at,
+            is_overdue=task.next_due_at < today,
+        )
+        for task, pet_name in care_tasks
+    ]
+
+    # ------------------------------------------------------------------
+    # 7. Upcoming Reminders (nächste 5 Erinnerungen)
+    # ------------------------------------------------------------------
+    upcoming_reminders_query = (
+        db.query(TodoReminder, Todo.title.label("todo_title"))
+        .join(Todo, TodoReminder.todo_id == Todo.id)
+        .filter(
+            TodoReminder.household_id == household_id,
+            TodoReminder.remind_at > now,
+            TodoReminder.notified_at.is_(None),
+            Todo.is_done == False,  # F-03 Fix: Keine Reminders für erledigte Todos  # noqa: E712
+        )
+        .order_by(TodoReminder.remind_at.asc())
+        .limit(5)
+        .all()
+    )
+
+    reminder_items = [
+        DashboardReminderItem(
+            id=reminder.id,
+            todo_id=reminder.todo_id,
+            todo_title=todo_title,
+            remind_at=reminder.remind_at,
+        )
+        for reminder, todo_title in upcoming_reminders_query
+    ]
 
     return DashboardResponse(
         todos=DashboardTodoSection(
@@ -252,4 +327,6 @@ def get_dashboard(
             currency=household.currency,
         ),
         events=event_section,
+        pet_care_due=pet_care_items,
+        upcoming_reminders=reminder_items,
     )

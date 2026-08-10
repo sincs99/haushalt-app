@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routers import auth, shopping, todos, households, expenses, settlements, chores, dashboard, tasks, budgets, recurring_bills, events, polls, pets, food, notes
+from app.routers import auth, shopping, todos, households, expenses, settlements, chores, dashboard, tasks, budgets, recurring_bills, events, calendars, polls, pets, food, notes
 from app.socket_manager import socket_app, set_event_loop
 
 _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
@@ -42,6 +42,7 @@ app.include_router(tasks.router)
 app.include_router(budgets.router)
 app.include_router(recurring_bills.router)
 app.include_router(events.router)
+app.include_router(calendars.router)
 app.include_router(polls.router)
 app.include_router(pets.router)
 app.include_router(food.recipe_router)

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.deps import get_current_user, verify_household_access, verify_household_admin
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import Budget, Expense, Household, HouseholdMember, RecurringBill, User
+from app.models import Budget, Calendar, Expense, Household, HouseholdMember, RecurringBill, User
 from app.services.invite_code import generate_unique_invite_code
 from app.socket_manager import emit_to_household_sync
 
@@ -414,6 +414,15 @@ def create_household(
         role="admin",
     )
     db.add(membership)
+
+    # Default-Kalender "Allgemein" anlegen, damit Events sofort möglich sind
+    default_calendar = Calendar(
+        household_id=household.id,
+        name="Allgemein",
+        color="#5B8DEF",
+        position=0,
+    )
+    db.add(default_calendar)
 
     # Werte vor Commit sichern
     result = HouseholdCreateResponse(

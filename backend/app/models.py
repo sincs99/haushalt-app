@@ -86,6 +86,15 @@ class Household(Base):
     notes: Mapped[list["Note"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
+    care_tasks: Mapped[list["PetCareTask"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
+    todo_reminders: Mapped[list["TodoReminder"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
+    calendars: Mapped[list["Calendar"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
 
 
 class User(Base):
@@ -224,6 +233,39 @@ class Todo(Base):
     tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, server_default="[]")
 
     household: Mapped["Household"] = relationship(back_populates="todos")
+    reminders: Mapped[list["TodoReminder"]] = relationship(
+        back_populates="todo", cascade="all, delete-orphan",
+        order_by="TodoReminder.remind_at",
+    )
+
+
+class TodoReminder(Base):
+    __tablename__ = "todo_reminders"
+    __table_args__ = (
+        Index("ix_todo_reminders_household_remind", "household_id", "remind_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    todo_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("todos.id", ondelete="CASCADE"), nullable=False
+    )
+    remind_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # Push-Vorbereitung
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    todo: Mapped["Todo"] = relationship(back_populates="reminders")
+    household: Mapped["Household"] = relationship(back_populates="todo_reminders")
 
 
 class Expense(Base):
@@ -478,13 +520,34 @@ class ChoreAssignment(Base):
     chore: Mapped["Chore"] = relationship(back_populates="assignments")
 
 
+class Calendar(Base):
+    __tablename__ = "calendars"
+    __table_args__ = (
+        Index("ix_calendars_household", "household_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(50), nullable=False)
+    color: Mapped[str] = mapped_column(String(7), nullable=False)  # Hex "#RRGGBB"
+    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    household: Mapped["Household"] = relationship(back_populates="calendars")
+    events: Mapped[list["Event"]] = relationship(
+        back_populates="calendar", cascade="all, delete-orphan"
+    )
+
+
 class Event(Base):
     __tablename__ = "events"
     __table_args__ = (
-        CheckConstraint(
-            "category IN ('arbeit','katzen','haushalt','freunde','geburtstage','essen','sonstiges')",
-            name="ck_event_category_valid",
-        ),
         Index("ix_events_household_starts", "household_id", "starts_at"),
     )
 
@@ -494,6 +557,9 @@ class Event(Base):
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
     )
+    calendar_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("calendars.id", ondelete="CASCADE"), nullable=False
+    )
     title: Mapped[str] = mapped_column(String(150), nullable=False)
     starts_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
@@ -502,9 +568,6 @@ class Event(Base):
         DateTime(timezone=True), nullable=True
     )
     all_day: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    category: Mapped[str] = mapped_column(
-        String(50), nullable=False, server_default="sonstiges"
-    )
     participant_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_by_user_id: Mapped[uuid.UUID] = mapped_column(
@@ -515,6 +578,7 @@ class Event(Base):
     )
 
     household: Mapped["Household"] = relationship(back_populates="events")
+    calendar: Mapped["Calendar"] = relationship(back_populates="events")
 
 
 class EventPoll(Base):
@@ -643,6 +707,9 @@ class Pet(Base):
     medications: Mapped[list["Medication"]] = relationship(
         back_populates="pet", cascade="all, delete-orphan"
     )
+    care_tasks: Mapped[list["PetCareTask"]] = relationship(
+        back_populates="pet", cascade="all, delete-orphan"
+    )
 
 
 class FeedingLog(Base):
@@ -725,6 +792,36 @@ class MedicationLog(Base):
 
     household: Mapped["Household"] = relationship(back_populates="medication_logs")
     medication: Mapped["Medication"] = relationship(back_populates="logs")
+
+
+class PetCareTask(Base):
+    __tablename__ = "pet_care_tasks"
+    __table_args__ = (
+        Index("ix_pet_care_tasks_household_due", "household_id", "next_due_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    pet_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("pets.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    interval_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    next_due_at: Mapped[date] = mapped_column(Date, nullable=False)
+    last_done_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # Push-Vorbereitung
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    household: Mapped["Household"] = relationship(back_populates="care_tasks")
+    pet: Mapped["Pet"] = relationship(back_populates="care_tasks")
 
 
 class Recipe(Base):

@@ -38,7 +38,7 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.database import Base, get_db  # noqa: E402
-from app.models import Household, User, HouseholdMember, ShoppingItem, ShoppingList, Todo, Expense, ExpenseShare, Settlement, Budget, RecurringBill, Chore, ChoreAssignment, Event, EventPoll, EventPollOption, EventPollVote, Pet, FeedingLog, Medication, MedicationLog, Recipe, MealPlanEntry, Note  # noqa: E402
+from app.models import Household, User, HouseholdMember, ShoppingItem, ShoppingList, Todo, TodoReminder, Expense, ExpenseShare, Settlement, Budget, RecurringBill, Chore, ChoreAssignment, Calendar, Event, EventPoll, EventPollOption, EventPollVote, Pet, FeedingLog, Medication, MedicationLog, PetCareTask, Recipe, MealPlanEntry, Note  # noqa: E402
 from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -92,7 +92,8 @@ def _mock_socket_emit():
                                                 with patch("app.routers.pets.emit_to_household_sync", mock_emit):
                                                     with patch("app.routers.food.emit_to_household_sync", mock_emit):
                                                         with patch("app.routers.notes.emit_to_household_sync", mock_emit):
-                                                            yield mock_emit
+                                                            with patch("app.routers.calendars.emit_to_household_sync", mock_emit):
+                                                                yield mock_emit
 
 
 @pytest.fixture()
@@ -457,19 +458,50 @@ def bill_b(db, household_b) -> RecurringBill:
     return b
 
 
+# --- Calendars ---
+
+
+@pytest.fixture()
+def calendar_a(db, household_a) -> Calendar:
+    cal = Calendar(
+        household_id=household_a.id,
+        name="Allgemein",
+        color="#5B8DEF",
+        position=0,
+    )
+    db.add(cal)
+    db.commit()
+    db.refresh(cal)
+    return cal
+
+
+@pytest.fixture()
+def calendar_b(db, household_b) -> Calendar:
+    cal = Calendar(
+        household_id=household_b.id,
+        name="Allgemein",
+        color="#5B8DEF",
+        position=0,
+    )
+    db.add(cal)
+    db.commit()
+    db.refresh(cal)
+    return cal
+
+
 # --- Events ---
 
 
 @pytest.fixture()
-def event_a(db, household_a, user_a) -> Event:
+def event_a(db, household_a, user_a, calendar_a) -> Event:
     from datetime import datetime, timezone as tz
     e = Event(
         id=uuid.uuid4(),
         household_id=household_a.id,
+        calendar_id=calendar_a.id,
         title="Team-Meeting",
         starts_at=datetime(2026, 8, 7, 10, 0, tzinfo=tz.utc),
         all_day=False,
-        category="arbeit",
         participant_ids=[],
         created_by_user_id=user_a.id,
     )
@@ -480,15 +512,15 @@ def event_a(db, household_a, user_a) -> Event:
 
 
 @pytest.fixture()
-def event_b(db, household_b, user_b) -> Event:
+def event_b(db, household_b, user_b, calendar_b) -> Event:
     from datetime import datetime, timezone as tz
     e = Event(
         id=uuid.uuid4(),
         household_id=household_b.id,
+        calendar_id=calendar_b.id,
         title="Geburtstagsfeier",
         starts_at=datetime(2026, 8, 10, 18, 0, tzinfo=tz.utc),
         all_day=False,
-        category="geburtstage",
         participant_ids=[],
         created_by_user_id=user_b.id,
     )
@@ -718,3 +750,36 @@ def meal_plan_entry_b(db, household_b, recipe_b) -> MealPlanEntry:
     db.commit()
     db.refresh(entry)
     return entry
+
+
+# --- Todo Reminders ---
+
+
+@pytest.fixture()
+def reminder_a(db, household_a, todo_a) -> TodoReminder:
+    from datetime import datetime, timezone, timedelta
+    reminder = TodoReminder(
+        id=uuid.uuid4(),
+        household_id=household_a.id,
+        todo_id=todo_a.id,
+        remind_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db.add(reminder)
+    db.commit()
+    db.refresh(reminder)
+    return reminder
+
+
+@pytest.fixture()
+def reminder_b(db, household_b, todo_b) -> TodoReminder:
+    from datetime import datetime, timezone, timedelta
+    reminder = TodoReminder(
+        id=uuid.uuid4(),
+        household_id=household_b.id,
+        todo_id=todo_b.id,
+        remind_at=datetime.now(timezone.utc) + timedelta(hours=2),
+    )
+    db.add(reminder)
+    db.commit()
+    db.refresh(reminder)
+    return reminder

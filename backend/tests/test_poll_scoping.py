@@ -172,7 +172,7 @@ def test_vote_switches_existing_vote(client, household_a, token_a, poll_a, db):
 
 
 def test_decide_creates_event_and_closes_poll(
-    client, household_a, token_a, poll_a, db
+    client, household_a, token_a, poll_a, calendar_a, db
 ):
     """POST decide erstellt ein Event, setzt status=entschieden und decided_event_id."""
     # Poll-Optionen laden
@@ -191,7 +191,7 @@ def test_decide_creates_event_and_closes_poll(
         json={
             "option_id": opt_id,
             "event_title": "Treffen am Montag",
-            "event_category": "sonstiges",
+            "calendar_id": str(calendar_a.id),
         },
     )
     assert resp2.status_code == 200
@@ -206,7 +206,7 @@ def test_decide_creates_event_and_closes_poll(
         json={
             "option_id": opt_id,
             "event_title": "Nochmal",
-            "event_category": "sonstiges",
+            "calendar_id": str(calendar_a.id),
         },
     )
     assert resp3.status_code == 400

@@ -50,7 +50,7 @@ def test_user_a_cannot_read_other_household_events(
 
 
 def test_user_a_cannot_create_in_other_household(
-    client, household_b, token_a, user_b
+    client, household_b, token_a, user_b, calendar_a
 ):
     """POST in fremden Household liefert 403 Forbidden."""
     resp = client.post(
@@ -59,7 +59,7 @@ def test_user_a_cannot_create_in_other_household(
         json={
             "title": "Hacker-Event",
             "starts_at": "2026-08-15T10:00:00Z",
-            "category": "sonstiges",
+            "calendar_id": str(calendar_a.id),
         },
     )
     assert resp.status_code == 403
@@ -126,3 +126,50 @@ def test_from_to_filter_works(client, household_a, token_a, event_a):
     data2 = resp2.json()
     assert len(data2) == 1
     assert data2[0]["id"] == str(event_a.id)
+
+
+# ---------------------------------------------------------------------------
+# Validierung: ends_at < starts_at → 422
+# ---------------------------------------------------------------------------
+
+
+def test_create_event_ends_before_starts_rejected(
+    client, household_a, token_a, calendar_a
+):
+    """POST mit ends_at < starts_at liefert 422 mit EVENT_END_BEFORE_START."""
+    resp = client.post(
+        f"/api/households/{household_a.id}/events/",
+        headers={"Authorization": f"Bearer {token_a}"},
+        json={
+            "title": "Rückwärts-Event",
+            "starts_at": "2026-08-15T14:00:00Z",
+            "ends_at": "2026-08-15T10:00:00Z",
+            "calendar_id": str(calendar_a.id),
+        },
+    )
+    assert resp.status_code == 422
+    detail = resp.json().get("detail", {})
+    assert detail.get("code") == "EVENT_END_BEFORE_START"
+
+
+# ---------------------------------------------------------------------------
+# Negativ: Event mit calendar_id aus anderem Haushalt → 422 CALENDAR_MISMATCH
+# ---------------------------------------------------------------------------
+
+
+def test_create_event_with_foreign_calendar_rejected(
+    client, household_a, token_a, calendar_b
+):
+    """POST mit calendar_id aus anderem Haushalt liefert 422 CALENDAR_MISMATCH."""
+    resp = client.post(
+        f"/api/households/{household_a.id}/events/",
+        headers={"Authorization": f"Bearer {token_a}"},
+        json={
+            "title": "Cross-Calendar-Event",
+            "starts_at": "2026-08-20T10:00:00Z",
+            "calendar_id": str(calendar_b.id),
+        },
+    )
+    assert resp.status_code == 422
+    detail = resp.json().get("detail", {})
+    assert detail.get("code") == "CALENDAR_MISMATCH"

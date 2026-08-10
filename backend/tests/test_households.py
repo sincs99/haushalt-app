@@ -37,6 +37,26 @@ class TestCreateHousehold:
         )
         assert resp.status_code == 422
 
+    def test_create_creates_default_calendar(self, client, db, user_a, token_a):
+        """Neuer Haushalt hat automatisch einen Default-Kalender 'Allgemein'."""
+        from app.models import Calendar
+
+        resp = client.post(
+            "/api/households/",
+            json={"name": "Mit Kalender"},
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert resp.status_code == 201
+        hid = uuid.UUID(resp.json()["id"])
+
+        calendars = (
+            db.query(Calendar).filter(Calendar.household_id == hid).all()
+        )
+        assert len(calendars) == 1
+        assert calendars[0].name == "Allgemein"
+        assert calendars[0].color == "#5B8DEF"
+        assert calendars[0].position == 0
+
 
 class TestRenameHousehold:
     def test_rename_as_admin(self, client, db, household_a, user_a, token_a, _mock_socket_emit):

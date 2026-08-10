@@ -78,16 +78,16 @@ def test_dashboard_contains_shopping_data(
 # ---------------------------------------------------------------------------
 
 
-def test_dashboard_contains_event_data(client, household_a, token_a, user_a, db):
+def test_dashboard_contains_event_data(client, household_a, token_a, user_a, calendar_a, db):
     """Ein Event mit starts_at=jetzt muss in der events-Sektion erscheinen."""
     now = datetime.now(tz.utc)
     event = Event(
         id=uuid.uuid4(),
         household_id=household_a.id,
+        calendar_id=calendar_a.id,
         title="Dashboard-Test-Event",
         starts_at=now,
         all_day=False,
-        category="sonstiges",
         participant_ids=[],
         created_by_user_id=user_a.id,
     )

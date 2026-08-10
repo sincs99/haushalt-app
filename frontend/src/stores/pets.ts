@@ -6,6 +6,7 @@ import { createOnlineHouseholdsRepository } from '../repositories/householdsRepo
 import type {
   Pet, PetCreatePayload, PetUpdatePayload, PetFeedingStatus, FeedingLog, FeedingSlot,
   HouseholdMemberInfo, Medication, MedicationCreatePayload, MedicationUpdatePayload, MedicationLog,
+  PetCareTask, PetCareTaskCreatePayload, PetCareTaskUpdatePayload,
 } from '../types'
 
 export const usePetsStore = defineStore('pets', () => {
@@ -19,6 +20,7 @@ export const usePetsStore = defineStore('pets', () => {
   const loading = ref(false)
   const medications = ref<Medication[]>([])
   const medicationLogs = ref<Record<string, MedicationLog[]>>({})  // medication_id → logs
+  const careTasks = ref<PetCareTask[]>([])
 
   // Mutex für Toggle-Operationen
   const pendingToggles = new Set<string>()
@@ -310,6 +312,117 @@ export const usePetsStore = defineStore('pets', () => {
     medicationLogs.value[log.medication_id] = [log, ...logs].slice(0, 10)
   }
 
+  // ── Care Task Actions ──
+
+  async function fetchCareTasks(petId: string) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+
+    try {
+      careTasks.value = await repo.fetchCareTasks(householdId, petId)
+    } catch {
+      // Silently fail
+    }
+  }
+
+  async function createCareTask(petId: string, payload: PetCareTaskCreatePayload) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+
+    const created = await repo.createCareTask(householdId, petId, payload)
+    const idx = careTasks.value.findIndex(t => t.id === created.id)
+    if (idx === -1) {
+      careTasks.value.push(created)
+    } else {
+      careTasks.value[idx] = created
+    }
+    return created
+  }
+
+  async function updateCareTask(petId: string, taskId: string, payload: PetCareTaskUpdatePayload) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+
+    const updated = await repo.updateCareTask(householdId, petId, taskId, payload)
+    const idx = careTasks.value.findIndex(t => t.id === taskId)
+    if (idx !== -1) {
+      careTasks.value[idx] = updated
+    }
+    return updated
+  }
+
+  async function completeCareTask(petId: string, taskId: string) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+
+    // Vollständiger Snapshot für Rollback
+    const snapshot = careTasks.value.map(t => ({ ...t }))
+
+    // Optimistic: Datum sofort berechnen
+    const idx = careTasks.value.findIndex(t => t.id === taskId)
+    if (idx !== -1) {
+      const today = new Date().toISOString().slice(0, 10)
+      const nextDue = new Date()
+      nextDue.setDate(nextDue.getDate() + careTasks.value[idx].interval_days)
+      careTasks.value[idx] = {
+        ...careTasks.value[idx],
+        last_done_at: today,
+        next_due_at: nextDue.toISOString().slice(0, 10),
+        notified_at: null,
+      }
+    }
+
+    try {
+      const updated = await repo.completeCareTask(householdId, petId, taskId)
+      // Server-Wahrheit übernehmen
+      const i = careTasks.value.findIndex(t => t.id === taskId)
+      if (i !== -1) careTasks.value[i] = updated
+    } catch (error) {
+      // Vollständiger Rollback
+      careTasks.value = snapshot
+      throw error
+    }
+  }
+
+  async function removeCareTask(petId: string, taskId: string) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+
+    // Optimistic Delete
+    const snapshot = careTasks.value.map(t => ({ ...t }))
+    careTasks.value = careTasks.value.filter(t => t.id !== taskId)
+
+    try {
+      await repo.removeCareTask(householdId, petId, taskId)
+    } catch (error) {
+      // Rollback
+      careTasks.value = snapshot
+      throw error
+    }
+  }
+
+  // ── Care Task Socket-Handler ──
+
+  function handleCareTaskCreated(task: PetCareTask) {
+    const idx = careTasks.value.findIndex(t => t.id === task.id)
+    if (idx !== -1) careTasks.value[idx] = task
+    else careTasks.value.push(task)
+  }
+
+  function handleCareTaskUpdated(task: PetCareTask) {
+    const idx = careTasks.value.findIndex(t => t.id === task.id)
+    if (idx !== -1) careTasks.value[idx] = task
+  }
+
+  function handleCareTaskDeleted(data: { id: string }) {
+    careTasks.value = careTasks.value.filter(t => t.id !== data.id)
+  }
+
   return {
     // State
     pets,
@@ -318,6 +431,7 @@ export const usePetsStore = defineStore('pets', () => {
     loading,
     medications,
     medicationLogs,
+    careTasks,
     // Actions
     fetchPets,
     fetchFeedingStatus,
@@ -333,6 +447,11 @@ export const usePetsStore = defineStore('pets', () => {
     removeMedication,
     giveMedication,
     fetchMedicationLog,
+    fetchCareTasks,
+    createCareTask,
+    updateCareTask,
+    completeCareTask,
+    removeCareTask,
     // Socket-Handlers
     handlePetCreated,
     handlePetUpdated,
@@ -343,5 +462,8 @@ export const usePetsStore = defineStore('pets', () => {
     handleMedicationUpdated,
     handleMedicationDeleted,
     handleMedicationGiven,
+    handleCareTaskCreated,
+    handleCareTaskUpdated,
+    handleCareTaskDeleted,
   }
 })

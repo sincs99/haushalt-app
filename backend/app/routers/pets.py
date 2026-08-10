@@ -1,6 +1,6 @@
 import uuid
 import zoneinfo
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import FeedingLog, Household, HouseholdMember, Medication, MedicationLog, Pet
+from app.models import FeedingLog, Household, HouseholdMember, Medication, MedicationLog, Pet, PetCareTask
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -125,6 +125,32 @@ class FeedAllCreate(BaseModel):
         return v
 
 
+class CareTaskCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    interval_days: int = Field(..., ge=1, le=3650)
+    next_due_at: date
+
+
+class CareTaskUpdate(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=100)
+    interval_days: int | None = Field(None, ge=1, le=3650)
+    next_due_at: date | None = None
+
+
+class CareTaskResponse(BaseModel):
+    id: uuid.UUID
+    household_id: uuid.UUID
+    pet_id: uuid.UUID
+    name: str
+    interval_days: int
+    next_due_at: date
+    last_done_at: date | None
+    notified_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class MedicationCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     dosage: str | None = Field(None, max_length=50)
@@ -202,6 +228,25 @@ def _get_medication_or_404(
             ),
         )
     return med
+
+
+def _get_care_task_or_404(
+    db: Session,
+    task_id: uuid.UUID,
+    pet_id: uuid.UUID,
+    household_id: uuid.UUID,
+) -> PetCareTask:
+    """Holt einen PetCareTask oder wirft 404."""
+    task = db.get(PetCareTask, task_id)
+    if task is None or task.pet_id != pet_id or task.household_id != household_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail(
+                ErrorCode.PET_CARE_TASK_NOT_FOUND,
+                "Care task not found for this pet in this household",
+            ),
+        )
+    return task
 
 
 def _get_pet_or_404(
@@ -706,4 +751,151 @@ def get_medication_log(
         .order_by(MedicationLog.given_at.desc())
         .limit(10)
         .all()
+    )
+
+
+# ---------------------------------------------------------------------------
+# Care Task Endpoints
+# ---------------------------------------------------------------------------
+
+
+# GET /{pet_id}/care-tasks/ — Pflegeaufgaben auflisten
+@router.get("/{pet_id}/care-tasks/", response_model=list[CareTaskResponse])
+def list_care_tasks(
+    household_id: uuid.UUID,
+    pet_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    _get_pet_or_404(db, pet_id, household_id)
+
+    return (
+        db.query(PetCareTask)
+        .filter(
+            PetCareTask.pet_id == pet_id,
+            PetCareTask.household_id == household_id,
+        )
+        .order_by(PetCareTask.next_due_at.asc())
+        .all()
+    )
+
+
+# POST /{pet_id}/care-tasks/ — Pflegeaufgabe erstellen
+@router.post(
+    "/{pet_id}/care-tasks/",
+    response_model=CareTaskResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_care_task(
+    household_id: uuid.UUID,
+    pet_id: uuid.UUID,
+    body: CareTaskCreate,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    _get_pet_or_404(db, pet_id, household_id)
+
+    task = PetCareTask(
+        household_id=household_id,
+        pet_id=pet_id,
+        name=body.name,
+        interval_days=body.interval_days,
+        next_due_at=body.next_due_at,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    emit_to_household_sync(
+        household_id,
+        "pet_care_task_created",
+        CareTaskResponse.model_validate(task).model_dump(mode="json"),
+    )
+    return task
+
+
+# PATCH /{pet_id}/care-tasks/{task_id} — Pflegeaufgabe aktualisieren
+@router.patch(
+    "/{pet_id}/care-tasks/{task_id}",
+    response_model=CareTaskResponse,
+)
+def update_care_task(
+    household_id: uuid.UUID,
+    pet_id: uuid.UUID,
+    task_id: uuid.UUID,
+    body: CareTaskUpdate,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    _get_pet_or_404(db, pet_id, household_id)
+    task = _get_care_task_or_404(db, task_id, pet_id, household_id)
+
+    update_data = body.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(task, key, value)
+
+    db.commit()
+    db.refresh(task)
+
+    emit_to_household_sync(
+        household_id,
+        "pet_care_task_updated",
+        CareTaskResponse.model_validate(task).model_dump(mode="json"),
+    )
+    return task
+
+
+# POST /{pet_id}/care-tasks/{task_id}/complete — Pflegeaufgabe als erledigt markieren
+@router.post(
+    "/{pet_id}/care-tasks/{task_id}/complete",
+    response_model=CareTaskResponse,
+)
+def complete_care_task(
+    household_id: uuid.UUID,
+    pet_id: uuid.UUID,
+    task_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    _get_pet_or_404(db, pet_id, household_id)
+    task = _get_care_task_or_404(db, task_id, pet_id, household_id)
+
+    today = _get_household_today(db, household_id)
+    task.last_done_at = today
+    task.next_due_at = today + timedelta(days=task.interval_days)
+    task.notified_at = None
+
+    db.commit()
+    db.refresh(task)
+
+    emit_to_household_sync(
+        household_id,
+        "pet_care_task_updated",
+        CareTaskResponse.model_validate(task).model_dump(mode="json"),
+    )
+    return task
+
+
+# DELETE /{pet_id}/care-tasks/{task_id} — Pflegeaufgabe löschen
+@router.delete(
+    "/{pet_id}/care-tasks/{task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_care_task(
+    household_id: uuid.UUID,
+    pet_id: uuid.UUID,
+    task_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    _get_pet_or_404(db, pet_id, household_id)
+    task = _get_care_task_or_404(db, task_id, pet_id, household_id)
+
+    db.delete(task)
+    db.commit()
+
+    emit_to_household_sync(
+        household_id,
+        "pet_care_task_deleted",
+        {"id": str(task.id), "pet_id": str(task.pet_id)},
     )

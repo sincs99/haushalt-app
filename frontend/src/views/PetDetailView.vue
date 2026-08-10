@@ -9,10 +9,11 @@ import { useToast } from '../composables/useToast'
 import type {
   Pet, FeedingLog, FeedingSlot, Medication, MedicationCreatePayload,
   MedicationUpdatePayload, MedicationLog, PetUpdatePayload, HealthEntry,
+  PetCareTask, PetCareTaskCreatePayload, PetCareTaskUpdatePayload,
 } from '../types'
 import {
   PhArrowLeft, PhPencilSimple, PhSun, PhMoon, PhPlus, PhPill,
-  PhCheck, PhTrash,
+  PhCheck, PhTrash, PhCalendarCheck,
 } from '@phosphor-icons/vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
@@ -49,6 +50,10 @@ const inactiveMedications = computed(() =>
   petsStore.medications.filter(m => !m.active),
 )
 
+const sortedCareTasks = computed(() =>
+  [...petsStore.careTasks].sort((a, b) => a.next_due_at.localeCompare(b.next_due_at)),
+)
+
 // ── Lifecycle ──
 
 onMounted(async () => {
@@ -59,6 +64,7 @@ onMounted(async () => {
       petsStore.fetchFeedingStatus(),
       petsStore.fetchMembers(),
       petsStore.fetchMedications(petId.value),
+      petsStore.fetchCareTasks(petId.value),
     ])
     // Load medication logs for all medications
     await loadAllMedicationLogs()
@@ -75,6 +81,9 @@ onMounted(async () => {
   on('medication_updated', handleSocketMedicationUpdated)
   on('medication_deleted', handleSocketMedicationDeleted)
   on('medication_given', handleSocketMedicationGiven)
+  on('pet_care_task_created', handleSocketCareTaskCreated)
+  on('pet_care_task_updated', handleSocketCareTaskUpdated)
+  on('pet_care_task_deleted', handleSocketCareTaskDeleted)
   onReconnect(handleReconnect)
 })
 
@@ -87,6 +96,9 @@ onUnmounted(() => {
   off('medication_updated', handleSocketMedicationUpdated)
   off('medication_deleted', handleSocketMedicationDeleted)
   off('medication_given', handleSocketMedicationGiven)
+  off('pet_care_task_created', handleSocketCareTaskCreated)
+  off('pet_care_task_updated', handleSocketCareTaskUpdated)
+  off('pet_care_task_deleted', handleSocketCareTaskDeleted)
   offReconnect(handleReconnect)
 })
 
@@ -137,11 +149,24 @@ function handleSocketMedicationGiven(log: MedicationLog) {
   petsStore.handleMedicationGiven(log)
 }
 
+function handleSocketCareTaskCreated(task: PetCareTask) {
+  petsStore.handleCareTaskCreated(task)
+}
+
+function handleSocketCareTaskUpdated(task: PetCareTask) {
+  petsStore.handleCareTaskUpdated(task)
+}
+
+function handleSocketCareTaskDeleted(data: { id: string }) {
+  petsStore.handleCareTaskDeleted(data)
+}
+
 async function handleReconnect() {
   await Promise.all([
     petsStore.fetchPets(),
     petsStore.fetchFeedingStatus(),
     petsStore.fetchMedications(petId.value),
+    petsStore.fetchCareTasks(petId.value),
   ])
   await loadAllMedicationLogs()
 }
@@ -408,6 +433,94 @@ function speciesEmoji(species: string): string {
     default: return '🐾'
   }
 }
+
+// ── Care Task Helpers ──
+
+function isOverdue(task: PetCareTask): boolean {
+  return task.next_due_at < new Date().toISOString().slice(0, 10)
+}
+
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+// ── Add Care Task Dialog ──
+
+const showCareTaskDialog = ref(false)
+const careTaskName = ref('')
+const careTaskInterval = ref('')
+const careTaskDueDate = ref('')
+const careTaskSaving = ref(false)
+
+function openAddCareTaskDialog() {
+  careTaskName.value = ''
+  careTaskInterval.value = ''
+  careTaskDueDate.value = ''
+  showCareTaskDialog.value = true
+}
+
+function closeCareTaskDialog() {
+  showCareTaskDialog.value = false
+}
+
+async function handleSaveCareTask() {
+  const name = careTaskName.value.trim()
+  const interval = parseInt(careTaskInterval.value, 10)
+  if (!name || !interval || interval < 1 || interval > 3650 || !careTaskDueDate.value) return
+
+  careTaskSaving.value = true
+  try {
+    await petsStore.createCareTask(petId.value, {
+      name,
+      interval_days: interval,
+      next_due_at: careTaskDueDate.value,
+    })
+    showToast(t('petCare.taskCreated'), 'success')
+    showCareTaskDialog.value = false
+  } catch {
+    showToast(t('common.error'))
+  } finally {
+    careTaskSaving.value = false
+  }
+}
+
+// ── Complete Care Task ──
+
+async function handleCompleteCareTask(taskId: string) {
+  try {
+    await petsStore.completeCareTask(petId.value, taskId)
+    const task = petsStore.careTasks.find(t => t.id === taskId)
+    if (task) {
+      showToast(t('petCare.completed', { date: formatDate(task.next_due_at) }), 'success')
+    }
+  } catch {
+    showToast(t('common.error'))
+  }
+}
+
+// ── Delete Care Task ──
+
+const deletingCareTaskId = ref<string | null>(null)
+
+function confirmDeleteCareTask(taskId: string) {
+  deletingCareTaskId.value = taskId
+}
+
+function cancelDeleteCareTask() {
+  deletingCareTaskId.value = null
+}
+
+async function handleDeleteCareTask() {
+  if (!deletingCareTaskId.value) return
+  try {
+    await petsStore.removeCareTask(petId.value, deletingCareTaskId.value)
+    deletingCareTaskId.value = null
+    showToast(t('petCare.taskDeleted'), 'success')
+  } catch {
+    showToast(t('common.error'))
+  }
+}
 </script>
 
 <template>
@@ -634,6 +747,57 @@ function speciesEmoji(species: string): string {
         </BaseCard>
       </section>
 
+      <!-- ═══ Pflege & Termine ═══ -->
+      <section class="section">
+        <div class="section-header">
+          <h3 class="section-title">{{ $t('petCare.title') }}</h3>
+          <button class="icon-btn" @click="openAddCareTaskDialog" :aria-label="$t('petCare.addTask')">
+            <PhPlus :size="20" weight="bold" />
+          </button>
+        </div>
+
+        <div v-if="sortedCareTasks.length === 0" class="empty-hint">
+          {{ $t('petCare.noTasks') }}
+        </div>
+
+        <BaseCard v-for="task in sortedCareTasks" :key="task.id" class="care-task-card">
+          <div class="care-task-card__content">
+            <div class="care-task-card__info">
+              <span class="care-task-card__name">{{ task.name }}</span>
+              <span class="care-task-card__meta">
+                {{ $t('petCare.interval', { days: task.interval_days }) }}
+              </span>
+              <span
+                class="care-task-card__due"
+                :class="{ 'care-task-card__due--overdue': isOverdue(task) }"
+              >
+                {{ $t('petCare.dueAt', { date: formatDate(task.next_due_at) }) }}
+                <span v-if="isOverdue(task)" class="overdue-badge">
+                  {{ $t('petCare.overdue') }}
+                </span>
+              </span>
+            </div>
+            <div class="care-task-card__actions">
+              <BaseButton
+                variant="primary"
+                size="sm"
+                @click="handleCompleteCareTask(task.id)"
+              >
+                <PhCheck :size="18" weight="bold" />
+                {{ $t('petCare.complete') }}
+              </BaseButton>
+              <button
+                class="icon-btn icon-btn--danger"
+                @click="confirmDeleteCareTask(task.id)"
+                :aria-label="$t('common.delete')"
+              >
+                <PhTrash :size="18" />
+              </button>
+            </div>
+          </div>
+        </BaseCard>
+      </section>
+
       <!-- ═══ Über {Name} ═══ -->
       <section class="section">
         <BaseCard>
@@ -750,6 +914,66 @@ function speciesEmoji(species: string): string {
             {{ $t('common.cancel') }}
           </BaseButton>
           <BaseButton variant="danger" @click="handleDeleteMed">
+            {{ $t('common.delete') }}
+          </BaseButton>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- ═══ Add Care Task Dialog ═══ -->
+    <BaseDialog
+      :open="showCareTaskDialog"
+      :title="$t('petCare.addTask')"
+      @close="closeCareTaskDialog"
+    >
+      <form class="dialog-form" @submit.prevent="handleSaveCareTask">
+        <BaseInput
+          v-model="careTaskName"
+          :label="$t('petCare.name')"
+          :placeholder="$t('petCare.name')"
+        />
+        <BaseInput
+          v-model="careTaskInterval"
+          :label="$t('petCare.intervalDays')"
+          :placeholder="$t('petCare.intervalDays')"
+          inputmode="numeric"
+        />
+        <BaseInput
+          v-model="careTaskDueDate"
+          :label="$t('petCare.nextDueDate')"
+          type="date"
+        />
+      </form>
+      <template #footer>
+        <div class="dialog-actions">
+          <BaseButton variant="ghost" @click="closeCareTaskDialog">
+            {{ $t('common.cancel') }}
+          </BaseButton>
+          <BaseButton
+            variant="primary"
+            :disabled="!careTaskName.trim() || !careTaskInterval || !careTaskDueDate || careTaskSaving"
+            :loading="careTaskSaving"
+            @click="handleSaveCareTask"
+          >
+            {{ $t('common.save') }}
+          </BaseButton>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- ═══ Delete Care Task Confirm ═══ -->
+    <BaseDialog
+      :open="!!deletingCareTaskId"
+      :title="$t('petCare.deleteConfirm')"
+      danger
+      @close="cancelDeleteCareTask"
+    >
+      <template #footer>
+        <div class="dialog-actions">
+          <BaseButton variant="ghost" @click="cancelDeleteCareTask">
+            {{ $t('common.cancel') }}
+          </BaseButton>
+          <BaseButton variant="danger" @click="handleDeleteCareTask">
             {{ $t('common.delete') }}
           </BaseButton>
         </div>
@@ -1462,5 +1686,110 @@ function speciesEmoji(species: string): string {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+/* ── Section Header (Care Tasks) ── */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--ink);
+  margin: 0;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--sub);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+}
+
+.icon-btn:hover {
+  color: var(--ink);
+  background: var(--chip);
+}
+
+.icon-btn--danger:hover {
+  color: var(--color-danger, #ef4444);
+}
+
+.empty-hint {
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--sub);
+  padding: var(--space-4) 0;
+  font-style: italic;
+}
+
+/* ── Care Task Cards ── */
+.care-task-card {
+  margin-bottom: var(--space-2);
+}
+
+.care-task-card__content {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.care-task-card__info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.care-task-card__name {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--ink);
+}
+
+.care-task-card__meta {
+  font-size: var(--text-xs);
+  color: var(--sub);
+}
+
+.care-task-card__due {
+  font-size: var(--text-xs);
+  color: var(--sub);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.care-task-card__due--overdue {
+  color: #C75B39;
+  font-weight: var(--font-weight-semibold);
+}
+
+.overdue-badge {
+  background: #C75B39;
+  color: white;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-medium);
+}
+
+.care-task-card__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
 }
 </style>

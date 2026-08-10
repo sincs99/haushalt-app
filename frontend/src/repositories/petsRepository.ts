@@ -2,6 +2,7 @@ import api from '../api/client'
 import type {
   Pet, PetCreatePayload, PetUpdatePayload, FeedingLog, PetFeedingStatus,
   Medication, MedicationCreatePayload, MedicationUpdatePayload, MedicationLog,
+  PetCareTask, PetCareTaskCreatePayload, PetCareTaskUpdatePayload,
 } from '../types'
 
 export interface PetsRepository {
@@ -21,6 +22,12 @@ export interface PetsRepository {
   removeMedication(householdId: string, petId: string, medicationId: string): Promise<void>
   giveMedication(householdId: string, petId: string, medicationId: string): Promise<MedicationLog>
   fetchMedicationLog(householdId: string, petId: string, medicationId: string): Promise<MedicationLog[]>
+  // Care Tasks
+  fetchCareTasks(householdId: string, petId: string): Promise<PetCareTask[]>
+  createCareTask(householdId: string, petId: string, data: PetCareTaskCreatePayload): Promise<PetCareTask>
+  updateCareTask(householdId: string, petId: string, taskId: string, data: PetCareTaskUpdatePayload): Promise<PetCareTask>
+  completeCareTask(householdId: string, petId: string, taskId: string): Promise<PetCareTask>
+  removeCareTask(householdId: string, petId: string, taskId: string): Promise<void>
 }
 
 export function createOnlinePetsRepository(): PetsRepository {
@@ -135,6 +142,44 @@ export function createOnlinePetsRepository(): PetsRepository {
         `/api/households/${householdId}/pets/${petId}/medications/${medicationId}/log`,
       )
       return data
+    },
+
+    // ── Care Tasks ──
+
+    async fetchCareTasks(householdId, petId) {
+      const { data } = await api.get<PetCareTask[]>(
+        `/api/households/${householdId}/pets/${petId}/care-tasks/`,
+      )
+      return data
+    },
+
+    async createCareTask(householdId, petId, payload) {
+      const { data } = await api.post<PetCareTask>(
+        `/api/households/${householdId}/pets/${petId}/care-tasks/`,
+        payload,
+      )
+      return data
+    },
+
+    async updateCareTask(householdId, petId, taskId, payload) {
+      const { data } = await api.patch<PetCareTask>(
+        `/api/households/${householdId}/pets/${petId}/care-tasks/${taskId}`,
+        payload,
+      )
+      return data
+    },
+
+    async completeCareTask(householdId, petId, taskId) {
+      const { data } = await api.post<PetCareTask>(
+        `/api/households/${householdId}/pets/${petId}/care-tasks/${taskId}/complete`,
+      )
+      return data
+    },
+
+    async removeCareTask(householdId, petId, taskId) {
+      await api.delete(
+        `/api/households/${householdId}/pets/${petId}/care-tasks/${taskId}`,
+      )
     },
   }
 }

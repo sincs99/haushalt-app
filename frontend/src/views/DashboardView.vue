@@ -9,13 +9,14 @@ import { useTodosStore } from '../stores/todos'
 import { useChoresStore } from '../stores/chores'
 import { useTasksStore } from '../stores/tasks'
 import { usePetsStore } from '../stores/pets'
+import { useCalendarStore } from '../stores/calendar'
 import { formatRappen } from '../utils/money'
-import { PhShoppingBagOpen, PhListChecks, PhWallet, PhCalendarDots, PhCat, PhForkKnife, PhCaretRight } from '@phosphor-icons/vue'
+import { PhShoppingBagOpen, PhListChecks, PhWallet, PhCalendarDots, PhCat, PhForkKnife, PhCaretRight, PhPawPrint, PhBell } from '@phosphor-icons/vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseCheckCircle from '../components/ui/BaseCheckCircle.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
-import { categoryColors } from '../utils/categoryColors'
-import type { DashboardTodoItem, DashboardEventItem } from '../types'
+import BaseAvatar from '../components/ui/BaseAvatar.vue'
+import type { DashboardTodoItem, DashboardEventItem, DashboardPetCareItem, DashboardReminderItem } from '../types'
 
 const router = useRouter()
 const { t, locale } = useI18n()
@@ -26,6 +27,10 @@ const choresStore = useChoresStore()
 const tasksStore = useTasksStore()
 const pollsStore = usePollsStore()
 const petsStore = usePetsStore()
+const calendarStore = useCalendarStore()
+
+// Kalender laden für Farbzuordnung
+calendarStore.fetchCalendars()
 
 // Polls laden
 pollsStore.fetchPolls('offen')
@@ -145,14 +150,43 @@ async function handleToggleTask(item: DashboardTodoItem) {
   dashboardStore.invalidate()
   tasksStore.invalidate()
 }
+
+// ── Pet Care Due ──
+const petCareDue = computed(() => data.value?.pet_care_due ?? [])
+
+function formatPetCareDue(item: DashboardPetCareItem): string {
+  const dueDate = new Date(item.next_due_at + 'T00:00:00')
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const diffDays = Math.round((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  if (diffDays < 0) return t('dashboard.petCareOverdue')
+  if (diffDays === 0) return t('dashboard.petCareDueToday')
+  return t('dashboard.petCareDueIn', { n: diffDays })
+}
+
+function formatReminderDate(isoString: string): string {
+  const d = new Date(isoString)
+  const intlLocale = locale.value === 'de' ? 'de-CH' : 'en-GB'
+  return new Intl.DateTimeFormat(intlLocale, {
+    day: '2-digit', month: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  }).format(d)
+}
 </script>
 
 <template>
   <div class="dashboard">
     <!-- Greeting -->
     <div class="greeting">
-      <h1 class="greeting__title">{{ greeting }}, {{ firstName }}</h1>
-      <p class="greeting__date">{{ formattedDate }}</p>
+      <BaseAvatar
+        :name="authStore.user?.display_name ?? ''"
+        :user-id="authStore.user?.id ?? ''"
+        size="md"
+      />
+      <div class="greeting__text">
+        <h1 class="greeting__title">{{ greeting }}, {{ firstName }}</h1>
+        <p class="greeting__date">{{ formattedDate }}</p>
+      </div>
     </div>
 
     <!-- Loading Skeleton -->
@@ -186,7 +220,7 @@ async function handleToggleTask(item: DashboardTodoItem) {
           <li v-for="ev in todayEvents" :key="ev.id" class="event-item">
             <span
               class="event-item__bar"
-              :style="{ backgroundColor: categoryColors[ev.category as keyof typeof categoryColors] || '#8B8B8B' }"
+              :style="{ backgroundColor: calendarStore.getCalendarColor(ev.calendar_id) }"
             />
             <span class="event-item__time">{{ formatEventTime(ev) }}</span>
             <span class="event-item__title">{{ ev.title }}</span>
@@ -240,6 +274,59 @@ async function handleToggleTask(item: DashboardTodoItem) {
         <p class="card-stat">{{ t('pets.feedingWidget', { fed: petsFedCount, total: petsTotalSlots }) }}</p>
       </BaseCard>
 
+      <!-- Karte: Katzen-Pflegetermine -->
+      <BaseCard v-if="petCareDue.length > 0">
+        <h2 class="card-title">
+           <PhPawPrint :size="18" style="vertical-align: -2px; margin-right: 4px" />
+           {{ t('dashboard.petCareTitle') }}
+        </h2>
+        <ul class="pet-care-list">
+          <li
+            v-for="item in petCareDue"
+            :key="item.id"
+            class="pet-care-item"
+            :class="{ 'pet-care-item--overdue': item.is_overdue }"
+            @click="router.push('/pets/' + item.pet_id)"
+          >
+            <div class="pet-care-item__info">
+              <span class="pet-care-item__name">{{ item.name }}</span>
+              <span class="pet-care-item__pet">{{ item.pet_name }}</span>
+            </div>
+            <span
+              class="pet-care-item__due"
+              :class="{
+                'pet-care-item__due--overdue': item.is_overdue,
+                'pet-care-item__due--today': !item.is_overdue && formatPetCareDue(item) === t('dashboard.petCareDueToday')
+              }"
+            >
+              {{ formatPetCareDue(item) }}
+            </span>
+          </li>
+        </ul>
+      </BaseCard>
+
+      <!-- Upcoming Reminders -->
+      <BaseCard v-if="data && data.upcoming_reminders && data.upcoming_reminders.length > 0" class="dashboard-card">
+        <div class="card-header">
+          <PhBell :size="20" weight="duotone" />
+          <span class="card-title">{{ $t('dashboard.remindersTitle') }}</span>
+        </div>
+        <ul class="card-list">
+          <li
+            v-for="reminder in data.upcoming_reminders"
+            :key="reminder.id"
+            class="reminder-item"
+            @click="router.push('/todos')"
+          >
+            <div class="reminder-item__content">
+              <span class="reminder-item__time">{{ formatReminderDate(reminder.remind_at) }}</span>
+              <span class="reminder-item__title">{{ reminder.todo_title }}</span>
+            </div>
+            <PhCaretRight :size="16" class="caret" />
+          </li>
+        </ul>
+      </BaseCard>
+
       <!-- Karte: Essen-Abstimmung (nur wenn offene Meal-Polls existieren) -->
       <BaseCard v-if="openMealPollCount > 0" class="clickable-card" @click="router.push('/food')">
         <div class="dash-card__row">
@@ -284,11 +371,24 @@ async function handleToggleTask(item: DashboardTodoItem) {
 }
 
 /* ── Greeting ── */
+.greeting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.greeting__text {
+  min-width: 0;
+}
+
 .greeting__title {
   font-family: var(--font-display);
   font-size: var(--text-xl);
   color: var(--ink);
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .greeting__date {
@@ -489,5 +589,117 @@ async function handleToggleTask(item: DashboardTodoItem) {
 .dash-card__chevron {
   color: var(--sub);
   flex-shrink: 0;
+}
+
+/* ── Pet Care Widget ── */
+.pet-care-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.pet-care-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) 0;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+
+@media (hover: hover) {
+  .pet-care-item:hover {
+    background: var(--line);
+  }
+}
+
+.pet-care-item:active {
+  background: var(--line);
+}
+
+.pet-care-item--overdue {
+  border-left: 3px solid var(--color-danger);
+  padding-left: var(--space-2);
+}
+
+.pet-care-item__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.pet-care-item__name {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pet-care-item__pet {
+  font-size: var(--text-xs);
+  color: var(--sub);
+}
+
+.pet-care-item__due {
+  font-size: var(--text-xs);
+  color: var(--sub);
+  flex-shrink: 0;
+  margin-left: var(--space-3);
+}
+
+.pet-care-item__due--overdue {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-semibold);
+}
+
+.pet-care-item__due--today {
+  color: var(--color-warning);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ── Reminder Widget ── */
+.reminder-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) 0;
+  cursor: pointer;
+  border-bottom: 1px solid var(--line);
+}
+
+.reminder-item:last-child {
+  border-bottom: none;
+}
+
+.reminder-item:active {
+  opacity: 0.7;
+}
+
+.reminder-item__content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reminder-item__time {
+  font-size: var(--text-sm);
+  color: var(--acc);
+  font-weight: var(--font-weight-medium);
+}
+
+.reminder-item__title {
+  font-size: var(--text-sm);
+  color: var(--sub);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

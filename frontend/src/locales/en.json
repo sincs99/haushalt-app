@@ -81,7 +81,15 @@
     "settled": "All settled",
     "quickShopping": "Shopping",
     "quickTask": "Task",
-    "quickExpense": "Expense"
+    "quickExpense": "Expense",
+    "petCareTitle": "Upcoming Pet Care",
+    "petCareEmpty": "No upcoming appointments",
+    "petCareOverdue": "Overdue",
+    "petCareDueIn": "in {n} days",
+    "petCareDueToday": "Due today",
+    "remindersTitle": "Upcoming Reminders",
+    "remindersEmpty": "No upcoming reminders",
+    "reminderFor": "for \"{title}\""
   },
   "calendar": {
     "title": "Calendar",
@@ -99,7 +107,7 @@
     "startTime": "Start time",
     "endTime": "End time",
     "allDayToggle": "All day",
-    "categoryLabel": "Category",
+    "calendarLabel": "Calendar",
     "participantsLabel": "Participants",
     "noteLabel": "Note",
     "notePlaceholder": "Optional note…",
@@ -110,7 +118,27 @@
     "deleteConfirm": "Really delete this event?",
     "addError": "Could not create event.",
     "updateError": "Could not update event.",
-    "deleteError": "Could not delete event."
+    "deleteError": "Could not delete event.",
+    "endDate": "End date",
+    "endBeforeStart": "End date must not be before start date",
+    "dayOfSpan": "Day {current}/{total}"
+  },
+  "calendars": {
+    "manage": "Manage calendars",
+    "add": "New calendar",
+    "name": "Name",
+    "color": "Color",
+    "delete": "Delete calendar",
+    "deleteConfirm": "Really delete this calendar?",
+    "deleteError": "Calendar could not be deleted.",
+    "lastCalendar": "The last calendar cannot be deleted.",
+    "notEmpty": "This calendar still has events. Delete or move them first.",
+    "created": "Calendar created",
+    "updated": "Calendar updated",
+    "deleted": "Calendar deleted",
+    "selectCalendar": "Select calendar",
+    "allCalendars": "All",
+    "default": "General"
   },
   "moreSheet": {
     "title": "More",
@@ -178,7 +206,13 @@
     "noneAssigned": "– Nobody assigned –",
     "emptyOpenTitle": "No open tasks",
     "doneToggle": "{count} done",
-    "openCount": "{n} open"
+    "openCount": "{n} open",
+    "reminders": "Reminders",
+    "addReminder": "Add reminder",
+    "maxReminders": "Maximum 5 reminders",
+    "reminderError": "Could not save reminder.",
+    "deleteReminderError": "Could not delete reminder.",
+    "nextReminder": "Next reminder"
   },
   "tasks": {
     "title": "Tasks",
@@ -422,7 +456,9 @@
     "CURRENCY_MISMATCH": "Currency does not match household currency",
     "ADMIN_REQUIRED": "Admin role required",
     "CANNOT_REMOVE_ADMIN": "Cannot remove admin members",
-    "CANNOT_REMOVE_SELF": "Cannot remove yourself - use Leave household instead"
+    "CANNOT_REMOVE_SELF": "Cannot remove yourself - use Leave household instead",
+    "TOO_MANY_REMINDERS": "Maximum 5 reminders per task",
+    "REMINDER_NOT_FOUND": "Reminder not found"
   },
   "offline": {
     "banner": "No connection – changes cannot be saved right now."
@@ -444,7 +480,7 @@
     "deleteConfirm": "Really delete this poll?",
     "decidePollTitle": "Accept as event",
     "decideEventTitle": "Event title",
-    "decideCategory": "Category",
+    "decideCalendar": "Calendar",
     "voteError": "Could not submit vote.",
     "decideError": "Could not accept poll."
   },
@@ -515,6 +551,22 @@
     "addHealthEntry": "Add health entry",
     "birthdateLabel": "Age",
     "noProfileData": "No profile data available"
+  },
+  "petCare": {
+    "title": "Care & Schedule",
+    "dueAt": "due on {date}",
+    "overdue": "overdue",
+    "interval": "every {days} days",
+    "complete": "Done",
+    "addTask": "Add care task",
+    "name": "Name",
+    "intervalDays": "Interval (days)",
+    "nextDueDate": "Next due date",
+    "noTasks": "No care tasks yet",
+    "completed": "Done! Next due: {date}",
+    "taskCreated": "Care task created",
+    "taskDeleted": "Care task deleted",
+    "deleteConfirm": "Really delete this care task?"
   },
   "food": {
     "title": "Food",

@@ -7,6 +7,9 @@ import type {
   CalendarEvent,
   CalendarEventCreatePayload,
   CalendarEventUpdatePayload,
+  CalendarInfo,
+  CalendarCreatePayload,
+  CalendarUpdatePayload,
   HouseholdMemberInfo,
 } from '../types'
 
@@ -40,16 +43,138 @@ export const useCalendarStore = defineStore('calendar', () => {
   const repo = createOnlineCalendarRepository()
   const householdRepo = createOnlineHouseholdsRepository()
 
-  // State
+  // State — Events
   const events = ref<CalendarEvent[]>([])
   const members = ref<HouseholdMemberInfo[]>([])
   const loading = ref(false)
   const currentWeekStart = ref<string>(getMondayOfWeek(new Date()))
 
+  // State — Calendars
+  const calendars = ref<CalendarInfo[]>([])
+
   // Interner State für Race-Condition-Schutz
   const pendingTempIds = new Set<string>()
 
-  // Actions
+  // ── Calendar Helpers ──
+
+  function getCalendarColor(calendarId: string): string {
+    return calendars.value.find(c => c.id === calendarId)?.color ?? '#8B8B8B'
+  }
+
+  function getCalendarName(calendarId: string): string {
+    return calendars.value.find(c => c.id === calendarId)?.name ?? '?'
+  }
+
+  // ── Calendar Actions ──
+
+  async function fetchCalendars() {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+
+    calendars.value = await repo.fetchCalendars(householdId)
+  }
+
+  async function addCalendar(payload: CalendarCreatePayload) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+
+    // Optimistic: Temp-Eintrag
+    const tempId = crypto.randomUUID()
+    const tempCal: CalendarInfo = {
+      id: tempId,
+      household_id: householdId,
+      name: payload.name,
+      color: payload.color,
+      position: payload.position ?? calendars.value.length,
+      created_at: new Date().toISOString(),
+    }
+    calendars.value.push(tempCal)
+
+    try {
+      const serverCal = await repo.createCalendar(householdId, payload)
+      // Duplikat-Prüfung: Socket könnte schneller gewesen sein
+      const serverIdx = calendars.value.findIndex(c => c.id === serverCal.id)
+      const tempIdx = calendars.value.findIndex(c => c.id === tempId)
+
+      if (serverIdx !== -1 && tempIdx !== -1) {
+        calendars.value.splice(tempIdx, 1)
+      } else if (tempIdx !== -1) {
+        calendars.value[tempIdx] = serverCal
+      }
+    } catch (error) {
+      calendars.value = calendars.value.filter(c => c.id !== tempId)
+      throw error
+    }
+  }
+
+  async function updateCalendar(calendarId: string, payload: CalendarUpdatePayload) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+
+    const item = calendars.value.find(c => c.id === calendarId)
+    if (!item) return
+
+    // Snapshot für Rollback
+    const snapshot = { ...item }
+
+    // Optimistic
+    Object.assign(item, payload)
+
+    try {
+      await repo.updateCalendar(householdId, calendarId, payload)
+    } catch (error) {
+      Object.assign(item, snapshot)
+      throw error
+    }
+  }
+
+  async function deleteCalendar(calendarId: string) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+
+    const idx = calendars.value.findIndex(c => c.id === calendarId)
+    if (idx === -1) return
+    const removed = calendars.value[idx]
+
+    // Optimistic
+    calendars.value.splice(idx, 1)
+
+    try {
+      await repo.deleteCalendar(householdId, calendarId)
+    } catch (error) {
+      calendars.value.splice(idx, 0, removed)
+      throw error
+    }
+  }
+
+  // ── Calendar Socket-Handler ──
+
+  function handleCalendarCreated(cal: CalendarInfo) {
+    const existingIdx = calendars.value.findIndex(c => c.id === cal.id)
+    if (existingIdx !== -1) {
+      calendars.value[existingIdx] = cal
+    } else {
+      calendars.value.push(cal)
+    }
+  }
+
+  function handleCalendarUpdated(cal: CalendarInfo) {
+    const idx = calendars.value.findIndex(c => c.id === cal.id)
+    if (idx !== -1) {
+      calendars.value[idx] = cal
+    }
+  }
+
+  function handleCalendarDeleted(data: { id: string }) {
+    calendars.value = calendars.value.filter(c => c.id !== data.id)
+  }
+
+  // ── Event Actions ──
+
   async function fetchEvents() {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
@@ -88,7 +213,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       starts_at: payload.starts_at,
       ends_at: payload.ends_at ?? null,
       all_day: payload.all_day ?? false,
-      category: payload.category ?? 'sonstiges',
+      calendar_id: payload.calendar_id,
       participant_ids: payload.participant_ids ?? [],
       note: payload.note ?? null,
       created_by_user_id: authStore.user?.id ?? '',
@@ -173,7 +298,8 @@ export const useCalendarStore = defineStore('calendar', () => {
     fetchEvents()
   }
 
-  // Socket-Handler — Idempotente Merges (Server gewinnt immer)
+  // ── Event Socket-Handler — Idempotente Merges (Server gewinnt immer) ──
+
   function handleEventCreated(serverEvent: CalendarEvent) {
     if (pendingTempIds.size > 0) {
       const existingIdx = events.value.findIndex(e => e.id === serverEvent.id)
@@ -209,14 +335,27 @@ export const useCalendarStore = defineStore('calendar', () => {
     members,
     loading,
     currentWeekStart,
-    // Actions
+    calendars,
+    // Calendar Helpers
+    getCalendarColor,
+    getCalendarName,
+    // Calendar Actions
+    fetchCalendars,
+    addCalendar,
+    updateCalendar,
+    deleteCalendar,
+    // Calendar Socket-Handlers
+    handleCalendarCreated,
+    handleCalendarUpdated,
+    handleCalendarDeleted,
+    // Event Actions
     fetchEvents,
     fetchMembers,
     addEvent,
     updateEvent,
     deleteEvent,
     navigateWeek,
-    // Socket-Handlers
+    // Event Socket-Handlers
     handleEventCreated,
     handleEventUpdated,
     handleEventDeleted,

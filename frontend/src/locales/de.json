@@ -81,7 +81,15 @@
     "settled": "Alles ausgeglichen",
     "quickShopping": "Einkauf",
     "quickTask": "Aufgabe",
-    "quickExpense": "Ausgabe"
+    "quickExpense": "Ausgabe",
+    "petCareTitle": "Nächste Katzen-Termine",
+    "petCareEmpty": "Keine anstehenden Termine",
+    "petCareOverdue": "Überfällig",
+    "petCareDueIn": "in {n} Tagen",
+    "petCareDueToday": "Heute fällig",
+    "remindersTitle": "Nächste Erinnerungen",
+    "remindersEmpty": "Keine anstehenden Erinnerungen",
+    "reminderFor": "für \"{title}\""
   },
   "calendar": {
     "title": "Kalender",
@@ -99,7 +107,7 @@
     "startTime": "Startzeit",
     "endTime": "Endzeit",
     "allDayToggle": "Ganztägig",
-    "categoryLabel": "Kategorie",
+    "calendarLabel": "Kalender",
     "participantsLabel": "Teilnehmer",
     "noteLabel": "Notiz",
     "notePlaceholder": "Optionale Notiz…",
@@ -110,7 +118,27 @@
     "deleteConfirm": "Termin wirklich löschen?",
     "addError": "Termin konnte nicht erstellt werden.",
     "updateError": "Termin konnte nicht aktualisiert werden.",
-    "deleteError": "Termin konnte nicht gelöscht werden."
+    "deleteError": "Termin konnte nicht gelöscht werden.",
+    "endDate": "Enddatum",
+    "endBeforeStart": "Enddatum darf nicht vor dem Startdatum liegen",
+    "dayOfSpan": "Tag {current}/{total}"
+  },
+  "calendars": {
+    "manage": "Kalender verwalten",
+    "add": "Neuer Kalender",
+    "name": "Name",
+    "color": "Farbe",
+    "delete": "Kalender löschen",
+    "deleteConfirm": "Diesen Kalender wirklich löschen?",
+    "deleteError": "Kalender konnte nicht gelöscht werden.",
+    "lastCalendar": "Der letzte Kalender kann nicht gelöscht werden.",
+    "notEmpty": "Der Kalender enthält noch Termine. Lösche oder verschiebe diese zuerst.",
+    "created": "Kalender erstellt",
+    "updated": "Kalender aktualisiert",
+    "deleted": "Kalender gelöscht",
+    "selectCalendar": "Kalender wählen",
+    "allCalendars": "Alle",
+    "default": "Allgemein"
   },
   "moreSheet": {
     "title": "Mehr",
@@ -178,7 +206,13 @@
     "noneAssigned": "– Niemand zugewiesen –",
     "emptyOpenTitle": "Keine offenen Aufgaben",
     "doneToggle": "{count} erledigt",
-    "openCount": "{n} offen"
+    "openCount": "{n} offen",
+    "reminders": "Erinnerungen",
+    "addReminder": "Erinnerung hinzufügen",
+    "maxReminders": "Maximal 5 Erinnerungen",
+    "reminderError": "Erinnerung konnte nicht gespeichert werden.",
+    "deleteReminderError": "Erinnerung konnte nicht gelöscht werden.",
+    "nextReminder": "Nächste Erinnerung"
   },
   "tasks": {
     "title": "Aufgaben",
@@ -422,7 +456,9 @@
     "CURRENCY_MISMATCH": "Währung stimmt nicht mit der Haushaltswährung überein",
     "ADMIN_REQUIRED": "Admin-Berechtigung erforderlich",
     "CANNOT_REMOVE_ADMIN": "Admins können nicht entfernt werden",
-    "CANNOT_REMOVE_SELF": "Du kannst dich nicht selbst entfernen – nutze Haushalt verlassen"
+    "CANNOT_REMOVE_SELF": "Du kannst dich nicht selbst entfernen – nutze Haushalt verlassen",
+    "TOO_MANY_REMINDERS": "Maximal 5 Erinnerungen pro Aufgabe",
+    "REMINDER_NOT_FOUND": "Erinnerung nicht gefunden"
   },
   "offline": {
     "banner": "Kein Netz – Änderungen können aktuell nicht gespeichert werden."
@@ -444,7 +480,7 @@
     "deleteConfirm": "Abstimmung wirklich löschen?",
     "decidePollTitle": "Termin übernehmen",
     "decideEventTitle": "Terminname",
-    "decideCategory": "Kategorie",
+    "decideCalendar": "Kalender",
     "voteError": "Stimme konnte nicht abgegeben werden.",
     "decideError": "Abstimmung konnte nicht übernommen werden."
   },
@@ -515,6 +551,22 @@
     "addHealthEntry": "Gesundheitseintrag hinzufügen",
     "birthdateLabel": "Alter",
     "noProfileData": "Keine Profil-Daten hinterlegt"
+  },
+  "petCare": {
+    "title": "Pflege & Termine",
+    "dueAt": "fällig am {date}",
+    "overdue": "überfällig",
+    "interval": "alle {days} Tage",
+    "complete": "Erledigt",
+    "addTask": "Pflegeaufgabe hinzufügen",
+    "name": "Bezeichnung",
+    "intervalDays": "Intervall (Tage)",
+    "nextDueDate": "Nächste Fälligkeit",
+    "noTasks": "Noch keine Pflegeaufgaben",
+    "completed": "Erledigt! Nächster Termin: {date}",
+    "taskCreated": "Pflegeaufgabe erstellt",
+    "taskDeleted": "Pflegeaufgabe gelöscht",
+    "deleteConfirm": "Pflegeaufgabe wirklich löschen?"
   },
   "food": {
     "title": "Essen",

@@ -6,8 +6,15 @@ import { usePollsStore } from '../stores/polls'
 import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
-import { categoryColors, ALL_CATEGORIES } from '../utils/categoryColors'
-import type { CalendarEvent, CalendarEventCreatePayload, EventCategory, EventPoll } from '../types'
+import { DEFAULT_CALENDAR_PALETTE } from '../utils/categoryColors'
+import { expandEventToDays } from '../utils/dates'
+import type { ExpandedEventDay } from '../utils/dates'
+import type { CalendarEvent, CalendarEventCreatePayload, CalendarInfo, EventPoll } from '../types'
+
+interface DisplayEvent extends CalendarEvent {
+  /** Nur gesetzt bei mehrtägigen Events: "Tag 2/3" */
+  spanBadge?: string
+}
 
 import BasePillTabs from '../components/ui/BasePillTabs.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
@@ -23,6 +30,7 @@ import {
   PhCaretRight,
   PhCalendarBlank,
   PhTrash,
+  PhGear,
 } from '@phosphor-icons/vue'
 
 const { t, locale } = useI18n()
@@ -39,8 +47,73 @@ const tabs = computed(() => [
   { key: 'list', label: t('calendar.list') },
 ])
 
+// ── Calendar Filter ──
+const STORAGE_KEY = computed(() => `calendar-filter-${authStore.currentHouseholdId}`)
+const activeCalendarIds = ref<string[]>([])
+
+function initCalendarFilter() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY.value)
+    if (stored) {
+      activeCalendarIds.value = JSON.parse(stored)
+    } else {
+      // Default: alle aktiv
+      activeCalendarIds.value = store.calendars.map((c: CalendarInfo) => c.id)
+    }
+  } catch {
+    activeCalendarIds.value = store.calendars.map((c: CalendarInfo) => c.id)
+  }
+}
+
+// Watcher: Stale Calendar-IDs entfernen + neue IDs automatisch aktivieren (BUG-2 / BUG-6)
+watch(
+  () => store.calendars,
+  (newCalendars) => {
+    const validIds = new Set(newCalendars.map((c: CalendarInfo) => c.id))
+
+    // 1. Gelöschte IDs entfernen
+    const cleaned = activeCalendarIds.value.filter(id => validIds.has(id))
+
+    // 2. Neue IDs automatisch hinzufügen (die noch nicht im Filter sind)
+    const currentSet = new Set(cleaned)
+    for (const cal of newCalendars) {
+      if (!currentSet.has(cal.id)) {
+        cleaned.push(cal.id)
+      }
+    }
+
+    // 3. Falls leer, alle aktivieren
+    if (cleaned.length === 0 && newCalendars.length > 0) {
+      activeCalendarIds.value = newCalendars.map((c: CalendarInfo) => c.id)
+    } else {
+      activeCalendarIds.value = cleaned
+    }
+
+    localStorage.setItem(STORAGE_KEY.value, JSON.stringify(activeCalendarIds.value))
+  },
+  { deep: true },
+)
+
+function toggleCalendarFilter(calId: string) {
+  const idx = activeCalendarIds.value.indexOf(calId)
+  if (idx !== -1) {
+    // Nicht den letzten deaktivieren
+    if (activeCalendarIds.value.length > 1) {
+      activeCalendarIds.value.splice(idx, 1)
+    }
+  } else {
+    activeCalendarIds.value.push(calId)
+  }
+  localStorage.setItem(STORAGE_KEY.value, JSON.stringify(activeCalendarIds.value))
+}
+
 // ── Selected Day ──
 const selectedDay = ref<string>('')
+
+// ── Filtered events helper ──
+const filteredEvents = computed(() =>
+  store.events.filter((e: CalendarEvent) => activeCalendarIds.value.includes(e.calendar_id)),
+)
 
 // ── Wochenstreifen ──
 const weekDays = computed(() => {
@@ -79,30 +152,43 @@ const weekLabel = computed(() => {
   return `${first.num}. ${fMonth} – ${last.num}. ${lMonth} ${lDate.getFullYear()}`
 })
 
-// ── Category dots for a day ──
-function categoryDotsForDay(dateStr: string): string[] {
-  const dayEvents = store.events.filter((e: CalendarEvent) => {
-    const eventDate = e.starts_at.substring(0, 10)
-    return eventDate === dateStr
+// ── Calendar color dots for a day ──
+function calendarDotsForDay(dateStr: string): string[] {
+  const dayEvents = filteredEvents.value.filter((e: CalendarEvent) => {
+    const days = expandEventToDays(e.starts_at, e.ends_at)
+    return days.some((d: ExpandedEventDay) => d.date === dateStr)
   })
-  const uniqueCategories = [...new Set(dayEvents.map((e: CalendarEvent) => e.category))]
-  return uniqueCategories.slice(0, 3).map((cat: EventCategory) => categoryColors[cat])
+  const uniqueCalendarIds = [...new Set(dayEvents.map((e: CalendarEvent) => e.calendar_id))]
+  return uniqueCalendarIds.slice(0, 3).map((calId: string) => store.getCalendarColor(calId))
 }
 
 // ── Events grouped by date (for week view) ──
 const eventsGroupedByDate = computed(() => {
-  const groups: { date: string; label: string; events: CalendarEvent[] }[] = []
+  const groups: { date: string; label: string; events: DisplayEvent[] }[] = []
   const todayStr = formatDateLocal(new Date())
   const tomorrowStr = addDaysToDate(todayStr, 1)
 
   for (const day of weekDays.value) {
-    const dayEvents = store.events
-      .filter((e: CalendarEvent) => e.starts_at.substring(0, 10) === day.date)
-      .sort((a: CalendarEvent, b: CalendarEvent) => {
-        if (a.all_day && !b.all_day) return -1
-        if (!a.all_day && b.all_day) return 1
-        return a.starts_at.localeCompare(b.starts_at)
-      })
+    const dayEvents: DisplayEvent[] = []
+
+    for (const event of filteredEvents.value) {
+      const expandedDays = expandEventToDays(event.starts_at, event.ends_at)
+      const match = expandedDays.find((d: ExpandedEventDay) => d.date === day.date)
+      if (match) {
+        const displayEvent: DisplayEvent = { ...event }
+        if (match.totalDays > 1) {
+          displayEvent.spanBadge = t('calendar.dayOfSpan', { current: match.dayIndex, total: match.totalDays })
+        }
+        dayEvents.push(displayEvent)
+      }
+    }
+
+    // Sortierung: all_day zuerst, dann nach starts_at
+    dayEvents.sort((a, b) => {
+      if (a.all_day && !b.all_day) return -1
+      if (!a.all_day && b.all_day) return 1
+      return a.starts_at.localeCompare(b.starts_at)
+    })
 
     if (dayEvents.length === 0) continue
 
@@ -122,7 +208,19 @@ const eventsGroupedByDate = computed(() => {
 
 // ── All events chronologically (for list view) ──
 const allEventsSorted = computed(() => {
-  return [...store.events].sort((a: CalendarEvent, b: CalendarEvent) => {
+  const result: DisplayEvent[] = []
+  for (const event of filteredEvents.value) {
+    const expandedDays = expandEventToDays(event.starts_at, event.ends_at)
+    if (expandedDays.length <= 1) {
+      result.push({ ...event })
+    } else {
+      // Mehrtägiges Event: nur einmal anzeigen, aber mit Badge
+      const displayEvent: DisplayEvent = { ...event }
+      displayEvent.spanBadge = t('calendar.dayOfSpan', { current: 1, total: expandedDays.length })
+      result.push(displayEvent)
+    }
+  }
+  return result.sort((a, b) => {
     if (a.all_day && !b.all_day) return -1
     if (!a.all_day && b.all_day) return 1
     return a.starts_at.localeCompare(b.starts_at)
@@ -165,19 +263,6 @@ function formatTime(isoStr: string): string {
     minute: '2-digit',
     hour12: false,
   })
-}
-
-function getCategoryLabel(cat: EventCategory): string {
-  const labels: Record<EventCategory, string> = {
-    arbeit: 'Arbeit',
-    katzen: 'Katzen',
-    haushalt: 'Haushalt',
-    freunde: 'Freunde',
-    geburtstage: 'Geburtstage',
-    essen: 'Essen',
-    sonstiges: 'Sonstiges',
-  }
-  return labels[cat] ?? cat
 }
 
 function getParticipantNames(event: CalendarEvent): string {
@@ -241,9 +326,11 @@ const formDate = ref('')
 const formAllDay = ref(false)
 const formStartTime = ref('09:00')
 const formEndTime = ref('10:00')
-const formCategory = ref<EventCategory>('sonstiges')
+const formCalendarId = ref<string>('')
 const formParticipants = ref<string[]>([])
 const formNote = ref('')
+const formEndDate = ref('')
+const formEndDateError = ref('')
 const formSubmitting = ref(false)
 
 function openCreateDialog() {
@@ -251,10 +338,12 @@ function openCreateDialog() {
   formTitle.value = ''
   // Default: heute oder selectedDay
   formDate.value = selectedDay.value || formatDateLocal(new Date())
+  formEndDate.value = formDate.value  // Default: Enddatum = Startdatum
+  formEndDateError.value = ''
   formAllDay.value = false
   formStartTime.value = '09:00'
   formEndTime.value = '10:00'
-  formCategory.value = 'sonstiges'
+  formCalendarId.value = localStorage.getItem('last-calendar-' + authStore.currentHouseholdId) || store.calendars[0]?.id || ''
   formParticipants.value = []
   formNote.value = ''
   dialogOpen.value = true
@@ -264,6 +353,8 @@ function openEditDialog(event: CalendarEvent) {
   editingEvent.value = event
   formTitle.value = event.title
   formDate.value = event.starts_at.substring(0, 10)
+  formEndDate.value = event.ends_at ? event.ends_at.substring(0, 10) : formDate.value
+  formEndDateError.value = ''
   formAllDay.value = event.all_day
   if (!event.all_day) {
     formStartTime.value = formatTime(event.starts_at)
@@ -272,7 +363,7 @@ function openEditDialog(event: CalendarEvent) {
     formStartTime.value = '09:00'
     formEndTime.value = '10:00'
   }
-  formCategory.value = event.category
+  formCalendarId.value = event.calendar_id
   formParticipants.value = [...event.participant_ids]
   formNote.value = event.note ?? ''
   dialogOpen.value = true
@@ -293,7 +384,7 @@ function toggleParticipant(userId: string) {
 }
 
 async function submitForm() {
-  if (!formTitle.value.trim()) return
+  if (!formTitle.value.trim() || !formCalendarId.value) return
   formSubmitting.value = true
 
   try {
@@ -301,10 +392,20 @@ async function submitForm() {
       ? `${formDate.value}T00:00:00`
       : `${formDate.value}T${formStartTime.value}:00`
 
+    // Validierung: Enddatum >= Startdatum
+    if (formEndDate.value && formEndDate.value < formDate.value) {
+      formEndDateError.value = t('calendar.endBeforeStart')
+      formSubmitting.value = false
+      return
+    }
+    formEndDateError.value = ''
+
+    const effectiveEndDate = formEndDate.value || formDate.value
+
     const endsAt = formAllDay.value
-      ? null
+      ? (effectiveEndDate !== formDate.value ? `${effectiveEndDate}T23:59:00` : null)
       : formEndTime.value
-        ? `${formDate.value}T${formEndTime.value}:00`
+        ? `${effectiveEndDate}T${formEndTime.value}:00`
         : null
 
     if (editingEvent.value) {
@@ -314,7 +415,7 @@ async function submitForm() {
         starts_at: startsAt,
         ends_at: endsAt,
         all_day: formAllDay.value,
-        category: formCategory.value,
+        calendar_id: formCalendarId.value,
         participant_ids: formParticipants.value,
         note: formNote.value.trim() || null,
       })
@@ -325,12 +426,14 @@ async function submitForm() {
         starts_at: startsAt,
         ends_at: endsAt,
         all_day: formAllDay.value,
-        category: formCategory.value,
+        calendar_id: formCalendarId.value,
         participant_ids: formParticipants.value,
         note: formNote.value.trim() || null,
       }
       await store.addEvent(payload)
     }
+    // Letzten Kalender merken
+    localStorage.setItem('last-calendar-' + authStore.currentHouseholdId, formCalendarId.value)
     closeDialog()
   } catch {
     toast.show(
@@ -380,7 +483,7 @@ async function handleVote(pollId: string, optionId: string) {
 const decideDialogOpen = ref(false)
 const decidingPoll = ref<EventPoll | null>(null)
 const decideEventTitle = ref('')
-const decideCategory = ref<EventCategory>('sonstiges')
+const decideCalendarId = ref<string>('')
 const decideOptionId = ref('')
 const decideSubmitting = ref(false)
 
@@ -398,7 +501,8 @@ function openDecideDialog(poll: EventPoll) {
     }
   }
   decideOptionId.value = bestOptionId
-  decideCategory.value = 'sonstiges'
+  decideCalendarId.value = localStorage.getItem('last-calendar-' + authStore.currentHouseholdId)
+    || store.calendars[0]?.id || ''
   decideDialogOpen.value = true
 }
 
@@ -408,14 +512,14 @@ function closeDecideDialog() {
 }
 
 async function submitDecide() {
-  if (!decidingPoll.value || !decideOptionId.value || !decideEventTitle.value.trim()) return
+  if (!decidingPoll.value || !decideOptionId.value || !decideEventTitle.value.trim() || !decideCalendarId.value) return
 
   decideSubmitting.value = true
   try {
     await pollsStore.decidePoll(decidingPoll.value.id, {
       option_id: decideOptionId.value,
       event_title: decideEventTitle.value.trim(),
-      event_category: decideCategory.value,
+      calendar_id: decideCalendarId.value,
     })
     closeDecideDialog()
     // Neues Event wurde erstellt → Events nachladen
@@ -427,9 +531,46 @@ async function submitDecide() {
   }
 }
 
+// ── Manage Calendars Dialog ──
+const manageDialogOpen = ref(false)
+const newCalendarName = ref('')
+const newCalendarColor = ref('#5B8DEF')
+
+async function handleAddCalendar() {
+  if (!newCalendarName.value.trim()) return
+  await store.addCalendar({ name: newCalendarName.value.trim(), color: newCalendarColor.value })
+  newCalendarName.value = ''
+  // Filter-Update wird automatisch vom Watcher auf store.calendars übernommen (BUG-6)
+}
+
+async function handleRename(calId: string, newName: string) {
+  if (newName.trim()) await store.updateCalendar(calId, { name: newName.trim() })
+}
+
+async function handleColorChange(calId: string, event: Event) {
+  const color = (event.target as HTMLInputElement).value
+  await store.updateCalendar(calId, { color })
+}
+
+async function handleDeleteCalendar(calId: string) {
+  if (!confirm(t('calendars.deleteConfirm'))) return
+  try {
+    await store.deleteCalendar(calId)
+    // Aus Filter entfernen
+    activeCalendarIds.value = activeCalendarIds.value.filter(id => id !== calId)
+    localStorage.setItem(STORAGE_KEY.value, JSON.stringify(activeCalendarIds.value))
+  } catch (err: any) {
+    const code = err?.response?.data?.detail?.code
+    if (code === 'LAST_CALENDAR') toast.show(t('calendars.lastCalendar'), 'error')
+    else if (code === 'CALENDAR_NOT_EMPTY') toast.show(t('calendars.notEmpty'), 'error')
+    else toast.show(t('calendars.deleteError'), 'error')
+  }
+}
+
 // ── Socket-Listener Setup ──
 function handleReconnect() {
   store.fetchEvents()
+  store.fetchCalendars()
   pollsStore.fetchPolls('offen')
 }
 
@@ -438,12 +579,19 @@ onMounted(async () => {
   await Promise.all([
     store.fetchEvents(),
     store.fetchMembers(),
+    store.fetchCalendars(),
     pollsStore.fetchPolls('offen'),
   ])
+
+  // Kalender-Filter initialisieren nachdem Kalender geladen
+  initCalendarFilter()
 
   on('event_created', store.handleEventCreated)
   on('event_updated', store.handleEventUpdated)
   on('event_deleted', store.handleEventDeleted)
+  on('calendar_created', store.handleCalendarCreated)
+  on('calendar_updated', store.handleCalendarUpdated)
+  on('calendar_deleted', store.handleCalendarDeleted)
   on('poll_created', pollsStore.handleSocketCreated)
   on('poll_voted', pollsStore.handleSocketVoted)
   on('poll_decided', pollsStore.handleSocketDecided)
@@ -455,6 +603,9 @@ onUnmounted(() => {
   off('event_created', store.handleEventCreated)
   off('event_updated', store.handleEventUpdated)
   off('event_deleted', store.handleEventDeleted)
+  off('calendar_created', store.handleCalendarCreated)
+  off('calendar_updated', store.handleCalendarUpdated)
+  off('calendar_deleted', store.handleCalendarDeleted)
   off('poll_created', pollsStore.handleSocketCreated)
   off('poll_voted', pollsStore.handleSocketVoted)
   off('poll_decided', pollsStore.handleSocketDecided)
@@ -468,6 +619,7 @@ watch(
   () => {
     store.fetchEvents()
     store.fetchMembers()
+    store.fetchCalendars().then(() => initCalendarFilter())
     pollsStore.fetchPolls('offen')
   },
 )
@@ -475,7 +627,13 @@ watch(
 
 <template>
   <div class="calendar-view">
-    <PageHeader :title="t('calendar.title')" />
+    <PageHeader :title="t('calendar.title')">
+      <template #actions>
+        <button class="manage-btn" @click="manageDialogOpen = true" :aria-label="t('calendars.manage')">
+          <PhGear :size="20" />
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- PillTabs -->
     <div class="calendar-tabs">
@@ -484,6 +642,22 @@ watch(
         :model-value="activeTab"
         @update:model-value="activeTab = $event as 'week' | 'list'"
       />
+    </div>
+
+    <!-- Calendar Filter Chips -->
+    <div v-if="store.calendars.length > 0" class="calendar-filter-chips">
+      <button
+        v-for="cal in store.calendars"
+        :key="cal.id"
+        class="filter-chip"
+        :class="{ 'filter-chip--active': activeCalendarIds.includes(cal.id) }"
+        :style="activeCalendarIds.includes(cal.id)
+          ? { background: cal.color, color: '#fff', borderColor: cal.color }
+          : { borderColor: cal.color, color: cal.color }"
+        @click="toggleCalendarFilter(cal.id)"
+      >
+        {{ cal.name }}
+      </button>
     </div>
 
     <!-- Week Strip (nur im Woche-Modus) -->
@@ -513,7 +687,7 @@ watch(
           <span class="week-strip__num">{{ day.num }}</span>
           <span class="week-strip__dots">
             <span
-              v-for="(color, idx) in categoryDotsForDay(day.date)"
+              v-for="(color, idx) in calendarDotsForDay(day.date)"
               :key="idx"
               class="week-strip__dot"
               :style="{ background: color }"
@@ -584,16 +758,19 @@ watch(
           >
             <span
               class="event-card__bar"
-              :style="{ background: categoryColors[event.category] }"
+              :style="{ background: store.getCalendarColor(event.calendar_id) }"
             />
             <div class="event-card__body">
               <div class="event-card__content">
                 <span class="event-card__time">
                   {{ event.all_day ? t('calendar.allDay') : formatTime(event.starts_at) }}
+                  <span v-if="event.spanBadge" class="event-card__span-badge">
+                    {{ event.spanBadge }}
+                  </span>
                 </span>
                 <span class="event-card__title">{{ event.title }}</span>
                 <span class="event-card__meta">
-                  {{ getCategoryLabel(event.category) }}
+                  {{ store.getCalendarName(event.calendar_id) }}
                   · {{ getParticipantNames(event) }}
                 </span>
               </div>
@@ -645,7 +822,7 @@ watch(
         >
           <span
             class="event-card__bar"
-            :style="{ background: categoryColors[event.category] }"
+            :style="{ background: store.getCalendarColor(event.calendar_id) }"
           />
           <div class="event-card__body">
             <div class="event-card__content">
@@ -654,10 +831,13 @@ watch(
                 <span class="event-card__date-badge">
                   {{ formatDayHeader(event.starts_at.substring(0, 10)) }}
                 </span>
+                <span v-if="event.spanBadge" class="event-card__span-badge">
+                  {{ event.spanBadge }}
+                </span>
               </span>
               <span class="event-card__title">{{ event.title }}</span>
               <span class="event-card__meta">
-                {{ getCategoryLabel(event.category) }}
+                {{ store.getCalendarName(event.calendar_id) }}
                 · {{ getParticipantNames(event) }}
               </span>
             </div>
@@ -718,6 +898,19 @@ watch(
           />
         </div>
 
+        <!-- Enddatum -->
+        <div class="form-field">
+          <label class="form-label">{{ t('calendar.endDate') }}</label>
+          <input
+            v-model="formEndDate"
+            type="date"
+            class="form-input"
+            :class="{ 'form-input--error': formEndDateError }"
+            :min="formDate"
+          />
+          <p v-if="formEndDateError" class="form-error">{{ formEndDateError }}</p>
+        </div>
+
         <!-- Ganztägig Toggle -->
         <div class="form-field form-field--toggle">
           <label class="form-label">{{ t('calendar.allDayToggle') }}</label>
@@ -739,20 +932,20 @@ watch(
           </div>
         </div>
 
-        <!-- Kategorie -->
+        <!-- Kalender (Pflichtfeld) -->
         <div class="form-field">
-          <label class="form-label">{{ t('calendar.categoryLabel') }}</label>
+          <label class="form-label">{{ t('calendar.calendarLabel') }}</label>
           <div class="category-chips">
             <button
-              v-for="cat in ALL_CATEGORIES"
-              :key="cat"
+              v-for="cal in store.calendars"
+              :key="cal.id"
               type="button"
               class="category-chip"
-              :class="{ 'category-chip--active': formCategory === cat }"
-              @click="formCategory = cat"
+              :class="{ 'category-chip--active': formCalendarId === cal.id }"
+              @click="formCalendarId = cal.id"
             >
-              <span class="category-chip__dot" :style="{ background: categoryColors[cat] }" />
-              {{ getCategoryLabel(cat) }}
+              <span class="category-chip__dot" :style="{ background: cal.color }" />
+              {{ cal.name }}
             </button>
           </div>
         </div>
@@ -812,7 +1005,7 @@ watch(
             <BaseButton
               variant="primary"
               :loading="formSubmitting"
-              :disabled="!formTitle.trim()"
+              :disabled="!formTitle.trim() || !formCalendarId"
               @click="submitForm"
             >
               {{ t('common.save') }}
@@ -857,20 +1050,20 @@ watch(
           </div>
         </div>
 
-        <!-- Kategorie -->
+        <!-- Kalender -->
         <div class="form-field">
-          <label class="form-label">{{ t('polls.decideCategory') }}</label>
+          <label class="form-label">{{ t('polls.decideCalendar') }}</label>
           <div class="category-chips">
             <button
-              v-for="cat in ALL_CATEGORIES"
-              :key="cat"
+              v-for="cal in store.calendars"
+              :key="cal.id"
               type="button"
               class="category-chip"
-              :class="{ 'category-chip--active': decideCategory === cat }"
-              @click="decideCategory = cat"
+              :class="{ 'category-chip--active': decideCalendarId === cal.id }"
+              @click="decideCalendarId = cal.id"
             >
-              <span class="category-chip__dot" :style="{ background: categoryColors[cat] }" />
-              {{ getCategoryLabel(cat) }}
+              <span class="category-chip__dot" :style="{ background: cal.color }" />
+              {{ cal.name }}
             </button>
           </div>
         </div>
@@ -886,13 +1079,46 @@ watch(
             <BaseButton
               variant="primary"
               :loading="decideSubmitting"
-              :disabled="!decideEventTitle.trim() || !decideOptionId"
+              :disabled="!decideEventTitle.trim() || !decideOptionId || !decideCalendarId"
               @click="submitDecide"
             >
               {{ t('polls.decide') }}
             </BaseButton>
           </div>
         </div>
+      </template>
+    </BaseDialog>
+
+    <!-- Manage Calendars Dialog -->
+    <BaseDialog :open="manageDialogOpen" :title="t('calendars.manage')" @close="manageDialogOpen = false">
+      <div class="calendar-manage-list">
+        <div v-for="cal in store.calendars" :key="cal.id" class="calendar-manage-item">
+          <input type="color" :value="cal.color" @change="handleColorChange(cal.id, $event)" class="color-picker" />
+          <input
+            :value="cal.name"
+            @blur="handleRename(cal.id, ($event.target as HTMLInputElement).value)"
+            class="calendar-name-input"
+            maxlength="50"
+          />
+          <button @click="handleDeleteCalendar(cal.id)" class="delete-btn" :aria-label="t('calendars.delete')">
+            <PhTrash :size="16" />
+          </button>
+        </div>
+      </div>
+
+      <!-- Neuer Kalender -->
+      <div class="calendar-manage-add">
+        <input v-model="newCalendarName" :placeholder="t('calendars.name')" class="calendar-name-input" maxlength="50" />
+        <input type="color" v-model="newCalendarColor" class="color-picker" />
+        <BaseButton size="sm" variant="primary" :disabled="!newCalendarName.trim()" @click="handleAddCalendar">
+          <PhPlus :size="16" />
+        </BaseButton>
+      </div>
+
+      <template #footer>
+        <BaseButton variant="secondary" @click="manageDialogOpen = false">
+          {{ t('common.close') }}
+        </BaseButton>
       </template>
     </BaseDialog>
   </div>
@@ -905,6 +1131,57 @@ watch(
 
 .calendar-tabs {
   padding: 0 var(--space-4) var(--space-3);
+}
+
+/* ── Manage Button ── */
+.manage-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--sub);
+  padding: var(--space-2);
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.manage-btn:hover {
+  color: var(--ink);
+  background: var(--chip);
+}
+
+/* ── Calendar Filter Chips ── */
+.calendar-filter-chips {
+  display: flex;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-3);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.calendar-filter-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 14px;
+  border: 2px solid;
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-family: var(--font-family);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+  background: var(--card);
+}
+
+.filter-chip--active {
+  font-weight: var(--font-weight-semibold);
 }
 
 /* ── Week Navigation ── */
@@ -1282,7 +1559,7 @@ watch(
   transform: translateX(20px);
 }
 
-/* ── Category Chips ── */
+/* ── Category Chips (now Calendar Chips) ── */
 .category-chips {
   display: flex;
   flex-wrap: wrap;
@@ -1433,5 +1710,104 @@ watch(
   margin-top: var(--space-3);
   display: flex;
   justify-content: flex-end;
+}
+
+/* ── Form Error ── */
+.form-input--error {
+  border-color: var(--color-danger);
+}
+
+.form-error {
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+}
+
+/* ── Span Badge ── */
+.event-card__span-badge {
+  font-size: var(--text-xs);
+  color: var(--acc);
+  background: var(--acc-soft);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+/* ── Calendar Manage Dialog ── */
+.calendar-manage-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.calendar-manage-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.color-picker {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  background: none;
+  flex-shrink: 0;
+}
+
+.color-picker::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.color-picker::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+.calendar-name-input {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-btn);
+  font-family: var(--font-family);
+  font-size: var(--text-sm);
+  color: var(--ink);
+  background-color: var(--card);
+  min-width: 0;
+}
+
+.calendar-name-input:focus {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px var(--acc-soft);
+}
+
+.delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--sub);
+  padding: var(--space-2);
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.delete-btn:hover {
+  color: var(--color-danger);
+  background: var(--chip);
+}
+
+.calendar-manage-add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 </style>

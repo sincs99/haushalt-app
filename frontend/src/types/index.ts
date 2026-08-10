@@ -36,6 +36,14 @@ export interface ShoppingItem {
   assigned_to_user_id: string | null
 }
 
+export interface TodoReminder {
+  id: string
+  todo_id: string
+  remind_at: string       // ISO 8601
+  notified_at: string | null
+  created_at: string
+}
+
 export interface TodoItem {
   id: string
   household_id: string
@@ -48,6 +56,7 @@ export interface TodoItem {
   created_at: string
   done_at: string | null
   tags: string[]
+  reminders: TodoReminder[]
 }
 
 // ── Notes ──
@@ -353,11 +362,27 @@ export interface DashboardEventItem {
   title: string
   starts_at: string
   all_day: boolean
-  category: string
+  calendar_id: string
 }
 
 export interface DashboardEventSection {
   items: DashboardEventItem[]
+}
+
+export interface DashboardPetCareItem {
+  id: string
+  name: string          // Task-Name (z.B. "Wurmkur")
+  pet_name: string      // Name des Tieres
+  pet_id: string
+  next_due_at: string   // "YYYY-MM-DD"
+  is_overdue: boolean
+}
+
+export interface DashboardReminderItem {
+  id: string
+  todo_id: string
+  todo_title: string
+  remind_at: string   // ISO 8601
 }
 
 export interface DashboardResponse {
@@ -366,11 +391,34 @@ export interface DashboardResponse {
   shopping: DashboardShoppingSection
   finance: DashboardFinanceSection
   events: DashboardEventSection
+  pet_care_due: DashboardPetCareItem[]
+  upcoming_reminders: DashboardReminderItem[]
+}
+
+// ── Calendars ──
+
+export interface CalendarInfo {
+  id: string
+  household_id: string
+  name: string
+  color: string      // Hex "#RRGGBB"
+  position: number
+  created_at: string
+}
+
+export interface CalendarCreatePayload {
+  name: string
+  color: string
+  position?: number
+}
+
+export interface CalendarUpdatePayload {
+  name?: string
+  color?: string
+  position?: number
 }
 
 // ── Calendar Events ──
-
-export type EventCategory = 'arbeit' | 'katzen' | 'haushalt' | 'freunde' | 'geburtstage' | 'essen' | 'sonstiges'
 
 export interface CalendarEvent {
   id: string
@@ -379,7 +427,7 @@ export interface CalendarEvent {
   starts_at: string          // ISO 8601
   ends_at: string | null
   all_day: boolean
-  category: EventCategory
+  calendar_id: string
   participant_ids: string[]  // leer = ganzer Haushalt
   note: string | null
   created_by_user_id: string
@@ -391,7 +439,7 @@ export interface CalendarEventCreatePayload {
   starts_at: string
   ends_at?: string | null
   all_day?: boolean
-  category?: EventCategory
+  calendar_id: string
   participant_ids?: string[]
   note?: string | null
 }
@@ -447,7 +495,7 @@ export interface PollVotePayload {
 export interface PollDecidePayload {
   option_id: string
   event_title: string
-  event_category?: string
+  calendar_id: string
 }
 
 export interface MealDecidePayload {
@@ -564,6 +612,32 @@ export interface MedicationLog {
   given_at: string
   given_by_user_id: string
   created_at: string
+}
+
+// ── Pet Care Tasks ──
+
+export interface PetCareTask {
+  id: string
+  household_id: string
+  pet_id: string
+  name: string
+  interval_days: number
+  next_due_at: string       // ISO date "YYYY-MM-DD"
+  last_done_at: string | null
+  notified_at: string | null
+  created_at: string
+}
+
+export interface PetCareTaskCreatePayload {
+  name: string
+  interval_days: number
+  next_due_at: string
+}
+
+export interface PetCareTaskUpdatePayload {
+  name?: string
+  interval_days?: number
+  next_due_at?: string
 }
 
 // ── Recipes & Meal Plan ──

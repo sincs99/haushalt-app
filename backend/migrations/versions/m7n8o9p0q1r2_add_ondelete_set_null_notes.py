@@ -14,10 +14,25 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # ondelete="SET NULL" is now included in the initial notes table creation
-    # (migration l6m7n8o9p0q1). This migration is kept as a no-op for history.
-    pass
+    """Add ondelete='SET NULL' to notes.created_by_user_id FK."""
+    op.drop_constraint("notes_created_by_user_id_fkey", "notes", type_="foreignkey")
+    op.create_foreign_key(
+        "notes_created_by_user_id_fkey",
+        "notes",
+        "users",
+        ["created_by_user_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
 
 
 def downgrade() -> None:
-    pass
+    """Remove ondelete='SET NULL' from notes.created_by_user_id FK."""
+    op.drop_constraint("notes_created_by_user_id_fkey", "notes", type_="foreignkey")
+    op.create_foreign_key(
+        "notes_created_by_user_id_fkey",
+        "notes",
+        "users",
+        ["created_by_user_id"],
+        ["id"],
+    )

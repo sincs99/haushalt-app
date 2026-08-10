@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+defineOptions({ inheritAttrs: false })
+
 const props = withDefaults(defineProps<{
   modelValue: string
   label?: string
@@ -28,6 +30,7 @@ const inputId = computed(() => props.id ?? (props.label ? `input-${props.label.t
     </label>
     <input
       :id="inputId"
+      v-bind="$attrs"
       class="base-input__field"
       :class="{ 'base-input__field--error': !!error }"
       :type="type"

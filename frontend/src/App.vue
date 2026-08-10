@@ -10,6 +10,7 @@ import { useChoresStore } from './stores/chores'
 import { useFinanceStore } from './stores/finance'
 import { useDashboardStore } from './stores/dashboard'
 import { usePollsStore } from './stores/polls'
+import { usePetsStore } from './stores/pets'
 import { useSocket } from './composables/useSocket'
 import { useConnectivity } from './composables/useConnectivity'
 import BaseAvatar from './components/ui/BaseAvatar.vue'
@@ -34,6 +35,7 @@ const choresStore = useChoresStore()
 const financeStore = useFinanceStore()
 const dashboardStore = useDashboardStore()
 const pollsStore = usePollsStore()
+const petsStore = usePetsStore()
 const { connect, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect, isConnected } = useSocket()
 
 // Sync-Status für Indikator
@@ -104,6 +106,9 @@ watch(
     off('poll_decided', pollsStore.handleSocketDecided)
     off('poll_deleted', pollsStore.handleSocketDeleted)
     off('poll_decided', dashboardStore.invalidate)
+    off('pet_care_task_created', petsStore.handleCareTaskCreated)
+    off('pet_care_task_updated', petsStore.handleCareTaskUpdated)
+    off('pet_care_task_deleted', petsStore.handleCareTaskDeleted)
 
     // Wenn Token weg (Logout): Socket disconnecten
     if (!token) {
@@ -198,6 +203,9 @@ watch(
       on('poll_decided', pollsStore.handleSocketDecided)
       on('poll_deleted', pollsStore.handleSocketDeleted)
       on('poll_decided', dashboardStore.invalidate)
+      on('pet_care_task_created', petsStore.handleCareTaskCreated)
+      on('pet_care_task_updated', petsStore.handleCareTaskUpdated)
+      on('pet_care_task_deleted', petsStore.handleCareTaskDeleted)
 
       shoppingStore.fetchLists()
       shoppingStore.fetchItems()
@@ -285,11 +293,14 @@ onUnmounted(() => {
   off('chore_assignment_created', dashboardStore.invalidate)
   off('chore_assignment_updated', dashboardStore.invalidate)
   off('poll_created', pollsStore.handleSocketCreated)
-  off('poll_voted', pollsStore.handleSocketVoted)
-  off('poll_decided', pollsStore.handleSocketDecided)
-  off('poll_deleted', pollsStore.handleSocketDeleted)
-  off('poll_decided', dashboardStore.invalidate)
-  offReconnect(handleReconnect)
+ off('poll_voted', pollsStore.handleSocketVoted)
+ off('poll_decided', pollsStore.handleSocketDecided)
+ off('poll_deleted', pollsStore.handleSocketDeleted)
+ off('poll_decided', dashboardStore.invalidate)
+ off('pet_care_task_created', petsStore.handleCareTaskCreated)
+ off('pet_care_task_updated', petsStore.handleCareTaskUpdated)
+ off('pet_care_task_deleted', petsStore.handleCareTaskDeleted)
+ offReconnect(handleReconnect)
   disconnect()
 })
 </script>

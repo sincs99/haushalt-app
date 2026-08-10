@@ -14,7 +14,7 @@ import BaseDialog from '../components/ui/BaseDialog.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
-import { PhPushPin, PhNote, PhTrash } from '@phosphor-icons/vue'
+import { PhPushPin, PhNote, PhTrash, PhPlus } from '@phosphor-icons/vue'
 
 const { t } = useI18n()
 const { showToast } = useToast()
@@ -152,7 +152,16 @@ onUnmounted(() => {
         v-model="quickAddTitle"
         :placeholder="$t('notes.addPlaceholder')"
         autocomplete="off"
+        enterkeyhint="done"
       />
+      <button
+        type="submit"
+        class="quick-add__btn"
+        :disabled="!quickAddTitle.trim()"
+        :aria-label="$t('common.add')"
+      >
+        <PhPlus :size="20" weight="bold" />
+      </button>
     </form>
 
     <!-- Loading -->
@@ -290,7 +299,40 @@ onUnmounted(() => {
 
 <style scoped>
 .quick-add {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
   margin-bottom: var(--space-4);
+}
+
+/* BaseInput soll den verfügbaren Platz einnehmen */
+.quick-add :deep(.base-input) {
+  flex: 1;
+}
+
+.quick-add__btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--acc);
+  color: var(--card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  margin-top: 0; /* Alignment mit Input */
+}
+
+.quick-add__btn:active {
+  transform: scale(0.92);
+}
+
+.quick-add__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .skeleton-list {

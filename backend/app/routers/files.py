@@ -288,12 +288,16 @@ def delete_file(
             ),
         )
 
-    # Datei vom Filesystem löschen
-    _storage.delete(stored_file.storage_path)
-
-    # DB-Eintrag löschen
+    # Pfad merken, dann DB-Eintrag zuerst löschen
+    storage_path = stored_file.storage_path
     db.delete(stored_file)
     db.commit()
+
+    # Best-effort: Physische Datei nach erfolgreichem Commit entfernen
+    try:
+        _storage.delete(storage_path)
+    except Exception:
+        pass  # Datei wird ggf. zum Waisen, aber DB ist konsistent
 
     emit_to_household_sync(
         household_id,

@@ -34,3 +34,4 @@ docker compose restart backend
 1. **Vor jedem `alembic upgrade`** ein Backup erstellen
 2. **Wöchentlich** manuell ein Backup erstellen
 3. Backup-Datei zusätzlich in einen **Cloud-Speicher** (z.B. OneDrive, Google Drive) kopieren
+4. **Nach der Ersteinrichtung** einmal den kompletten Zyklus testen: Backup erstellen → Restore ausführen → App prüfen

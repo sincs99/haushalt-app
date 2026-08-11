@@ -494,18 +494,24 @@ def delete_pet(
 ):
     pet = _get_pet_or_404(db, pet_id, household_id)
 
-    # Wenn Pet ein Foto hat, physische Datei aufräumen
+    # StoredFile-Referenz merken für späteres physisches Löschen
+    storage_path_to_delete = None
     if pet.photo_file_id:
         stored_file = db.query(StoredFile).filter(StoredFile.id == pet.photo_file_id).first()
         if stored_file:
-            try:
-                _pet_storage = LocalStorageService()
-                _pet_storage.delete(stored_file.storage_path)
-            except Exception:
-                pass  # Best-effort cleanup
+            storage_path_to_delete = stored_file.storage_path
+            db.delete(stored_file)
 
     db.delete(pet)
     db.commit()
+
+    # Best-effort: Physische Datei nach erfolgreichem Commit entfernen
+    if storage_path_to_delete:
+        try:
+            _pet_storage = LocalStorageService()
+            _pet_storage.delete(storage_path_to_delete)
+        except Exception:
+            pass  # Best-effort cleanup
 
     emit_to_household_sync(
         household_id,

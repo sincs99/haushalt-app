@@ -28,6 +28,14 @@ if ($fileInfo.Length -eq 0) {
     exit 1
 }
 
+# Magic-Byte-Check
+$magicBytes = [System.IO.File]::ReadAllBytes($DumpFile)[0..4]
+$magic = [System.Text.Encoding]::ASCII.GetString($magicBytes)
+if ($magic -ne "PGDMP") {
+    Write-Error "Die Datei '$DumpFile' ist kein gültiger PostgreSQL Custom-Format-Dump (Magic Bytes: '$magic' statt 'PGDMP')."
+    exit 1
+}
+
 Write-Host "Dump-Datei: $($fileInfo.FullName) ($([math]::Round($fileInfo.Length / 1KB, 1)) KB)" -ForegroundColor Cyan
 
 # --- 2. Prüfe ob Postgres-Container läuft ---
@@ -65,17 +73,31 @@ if ($antwort -ne "j") {
     exit 0
 }
 
-# --- 4. pg_restore ausführen ---
+# --- 4. Dump in Container kopieren und pg_restore ausführen ---
 Write-Host ""
 Write-Host "Stelle Datenbank wieder her..." -ForegroundColor Cyan
 
 try {
-    Get-Content -Path $DumpFile -AsByteStream -ReadCount 0 | docker compose exec -T $ServiceName pg_restore --clean --if-exists -U $DbUser -d $DbName
+    # Dump byte-sicher in den Container kopieren
+    docker compose cp $DumpFile "${ServiceName}:/tmp/casa-restore.dump"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "docker compose cp fehlgeschlagen."
+        exit 1
+    }
+
+    # Restore aus Datei im Container (kein stdin-Piping)
+    docker compose exec -T $ServiceName pg_restore --clean --if-exists -U $DbUser -d $DbName /tmp/casa-restore.dump
     $restoreExitCode = $LASTEXITCODE
 }
 catch {
+    # Aufräumen bei Fehler
+    docker compose exec -T $ServiceName rm -f /tmp/casa-restore.dump 2>$null
     Write-Error "Fehler beim Restore: $_"
     exit 1
+}
+finally {
+    # Temp-Datei im Container immer aufräumen
+    docker compose exec -T $ServiceName rm -f /tmp/casa-restore.dump 2>$null
 }
 
 # --- 5. Ergebnis prüfen ---

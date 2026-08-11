@@ -44,34 +44,49 @@ if (-not (Test-Path $BackupDir)) {
 $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm"
 $dumpFile  = Join-Path $BackupDir "casa-backup-${timestamp}.dump"
 
-# --- 4. pg_dump ausführen ---
+# --- 4. pg_dump ausführen (byte-sicher via docker compose cp) ---
 Write-Host "Erstelle Backup: $dumpFile ..." -ForegroundColor Cyan
 
-try {
-    docker compose exec -T $ServiceName pg_dump -U $DbUser -d $DbName -F c > $dumpFile
-    if ($LASTEXITCODE -ne 0) {
-        # Fehlerhaften Dump entfernen
-        if (Test-Path $dumpFile) { Remove-Item $dumpFile -Force }
-        Write-Error "pg_dump ist mit Exit-Code $LASTEXITCODE fehlgeschlagen."
-        exit 1
-    }
-}
-catch {
-    if (Test-Path $dumpFile) { Remove-Item $dumpFile -Force }
-    Write-Error "Fehler beim Erstellen des Backups: $_"
+# Dump IM Container erstellen:
+docker compose exec -T $ServiceName pg_dump -U $DbUser -d $DbName -F c -f /tmp/casa-backup.dump
+if ($LASTEXITCODE -ne 0) {
+    # Temp-Datei im Container aufräumen
+    docker compose exec -T $ServiceName rm -f /tmp/casa-backup.dump
+    Write-Error "pg_dump ist mit Exit-Code $LASTEXITCODE fehlgeschlagen."
     exit 1
 }
 
-# --- 5. Prüfe ob Dump erfolgreich war ---
+# Byte-sicher aus dem Container kopieren:
+docker compose cp "${ServiceName}:/tmp/casa-backup.dump" $dumpFile
+if ($LASTEXITCODE -ne 0) {
+    docker compose exec -T $ServiceName rm -f /tmp/casa-backup.dump
+    if (Test-Path $dumpFile) { Remove-Item $dumpFile -Force }
+    Write-Error "docker compose cp fehlgeschlagen."
+    exit 1
+}
+
+# Temp-Datei im Container entfernen:
+docker compose exec -T $ServiceName rm -f /tmp/casa-backup.dump
+
+# --- 5. Plausibilitätsprüfung ---
 if (-not (Test-Path $dumpFile)) {
     Write-Error "Dump-Datei wurde nicht erstellt."
     exit 1
 }
 
 $fileSize = (Get-Item $dumpFile).Length
-if ($fileSize -eq 0) {
+if ($fileSize -lt 1024) {
     Remove-Item $dumpFile -Force
-    Write-Error "Dump-Datei ist leer (0 Bytes). Backup fehlgeschlagen."
+    Write-Error "Dump-Datei ist zu klein ($fileSize Bytes). Backup fehlgeschlagen."
+    exit 1
+}
+
+# Magic-Byte-Check: Custom-Format beginnt mit PGDMP
+$magicBytes = [System.IO.File]::ReadAllBytes($dumpFile)[0..4]
+$magic = [System.Text.Encoding]::ASCII.GetString($magicBytes)
+if ($magic -ne "PGDMP") {
+    Remove-Item $dumpFile -Force
+    Write-Error "Dump-Datei hat ungültige Magic Bytes ('$magic' statt 'PGDMP'). Dump ist korrupt."
     exit 1
 }
 

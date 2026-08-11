@@ -21,7 +21,7 @@ class LocalStorageService:
         """Stellt sicher, dass der Pfad innerhalb des Upload-Verzeichnisses liegt."""
         abs_path = (self.upload_dir / storage_path).resolve()
         upload_root = self.upload_dir.resolve()
-        if not str(abs_path).startswith(str(upload_root)):
+        if not abs_path.is_relative_to(upload_root):
             raise ValueError(f"Path traversal detected: {storage_path}")
         return abs_path
 

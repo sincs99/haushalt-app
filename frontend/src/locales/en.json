@@ -121,7 +121,13 @@
     "deleteError": "Could not delete event.",
     "endDate": "End date",
     "endBeforeStart": "End date must not be before start date",
-    "dayOfSpan": "Day {current}/{total}"
+    "dayOfSpan": "Day {current}/{total}",
+    "viewWeek": "Week",
+    "viewMonth": "Month",
+    "noEventsMonth": "No events this month",
+    "moreEvents": "+{n} more",
+    "nextMonth": "Next month",
+    "prevMonth": "Previous month"
   },
   "calendars": {
     "manage": "Manage calendars",

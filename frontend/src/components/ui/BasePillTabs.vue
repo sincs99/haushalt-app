@@ -36,10 +36,10 @@ defineEmits<{
   padding: 6px 16px;
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   white-space: nowrap;
   cursor: pointer;
-  transition: all 150ms;
+  transition: background var(--transition-fast), color var(--transition-fast);
   border: none;
   font-family: var(--font-family);
   background: var(--chip);

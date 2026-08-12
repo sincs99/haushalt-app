@@ -121,7 +121,13 @@
     "deleteError": "Termin konnte nicht gelöscht werden.",
     "endDate": "Enddatum",
     "endBeforeStart": "Enddatum darf nicht vor dem Startdatum liegen",
-    "dayOfSpan": "Tag {current}/{total}"
+    "dayOfSpan": "Tag {current}/{total}",
+    "viewWeek": "Woche",
+    "viewMonth": "Monat",
+    "noEventsMonth": "Keine Termine in diesem Monat",
+    "moreEvents": "+{n} weitere",
+    "nextMonth": "Nächster Monat",
+    "prevMonth": "Vorheriger Monat"
   },
   "calendars": {
     "manage": "Kalender verwalten",

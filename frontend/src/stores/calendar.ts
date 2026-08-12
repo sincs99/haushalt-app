@@ -175,17 +175,17 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   // ── Event Actions ──
 
-  async function fetchEvents() {
+  async function fetchEvents(fromDate?: string, toDate?: string) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    const fromDate = currentWeekStart.value
-    const toDate = addDays(fromDate, 6) // Sonntag
+    const from = fromDate ?? currentWeekStart.value
+    const to = toDate ?? addDays(from, 6) // Sonntag der Woche
 
     loading.value = true
     try {
-      events.value = await repo.fetchByRange(householdId, fromDate, toDate)
+      events.value = await repo.fetchByRange(householdId, from, to)
     } finally {
       loading.value = false
     }

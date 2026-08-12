@@ -10,6 +10,7 @@ import { DEFAULT_CALENDAR_PALETTE } from '../utils/categoryColors'
 import { expandEventToDays } from '../utils/dates'
 import type { ExpandedEventDay } from '../utils/dates'
 import type { CalendarEvent, CalendarEventCreatePayload, CalendarInfo, EventPoll } from '../types'
+import CalendarMonthGrid from '../components/CalendarMonthGrid.vue'
 
 interface DisplayEvent extends CalendarEvent {
   /** Nur gesetzt bei mehrtägigen Events: "Tag 2/3" */
@@ -41,11 +42,60 @@ const { on, off, onReconnect, offReconnect } = useSocket()
 const toast = useToast()
 
 // ── Tabs ──
-const activeTab = ref<'week' | 'list'>('week')
+const activeTab = ref<'week' | 'month' | 'list'>('week')
 const tabs = computed(() => [
-  { key: 'week', label: t('calendar.week') },
+  { key: 'week', label: t('calendar.viewWeek') },
+  { key: 'month', label: t('calendar.viewMonth') },
   { key: 'list', label: t('calendar.list') },
 ])
+
+// ── Tab Persistence ──
+const VIEW_STORAGE_KEY = computed(() => `calendar-view-${authStore.currentHouseholdId}`)
+
+// ── Month State ──
+const currentMonthDate = ref(new Date())
+
+function getMonthGridRange(year: number, month: number): { from: string; to: string } {
+  const firstOfMonth = new Date(year, month, 1)
+  const dayOfWeek = firstOfMonth.getDay()
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+  const gridStart = new Date(firstOfMonth)
+  gridStart.setDate(gridStart.getDate() + diffToMonday)
+
+  const lastOfMonth = new Date(year, month + 1, 0)
+  const lastDow = lastOfMonth.getDay()
+  const diffToSunday = lastDow === 0 ? 0 : 7 - lastDow
+  const gridEnd = new Date(lastOfMonth)
+  gridEnd.setDate(gridEnd.getDate() + diffToSunday)
+
+  return { from: formatDateLocal(gridStart), to: formatDateLocal(gridEnd) }
+}
+
+function loadMonthEvents() {
+  const range = getMonthGridRange(currentMonthDate.value.getFullYear(), currentMonthDate.value.getMonth())
+  store.fetchEvents(range.from, range.to)
+}
+
+function handleMonthNavigate(offset: number) {
+  const d = new Date(currentMonthDate.value)
+  d.setMonth(d.getMonth() + offset)
+  currentMonthDate.value = d
+  loadMonthEvents()
+}
+
+function handleGoToday() {
+  currentMonthDate.value = new Date()
+  loadMonthEvents()
+}
+
+watch(activeTab, (newTab) => {
+  localStorage.setItem(VIEW_STORAGE_KEY.value, newTab)
+  if (newTab === 'month') {
+    loadMonthEvents()
+  } else if (newTab === 'week') {
+    store.fetchEvents()
+  }
+})
 
 // ── Calendar Filter ──
 const STORAGE_KEY = computed(() => `calendar-filter-${authStore.currentHouseholdId}`)
@@ -569,15 +619,29 @@ async function handleDeleteCalendar(calId: string) {
 
 // ── Socket-Listener Setup ──
 function handleReconnect() {
-  store.fetchEvents()
+  if (activeTab.value === 'month') {
+    loadMonthEvents()
+  } else {
+    store.fetchEvents()
+  }
   store.fetchCalendars()
   pollsStore.fetchPolls('offen')
 }
 
 onMounted(async () => {
   selectedDay.value = formatDateLocal(new Date())
+
+  // Tab aus localStorage wiederherstellen
+  const savedView = localStorage.getItem(VIEW_STORAGE_KEY.value)
+  if (savedView && ['week', 'month', 'list'].includes(savedView)) {
+    activeTab.value = savedView as typeof activeTab.value
+  }
+
+  // Events je nach aktiver Ansicht laden
+  const eventsFetch = activeTab.value === 'month' ? loadMonthEvents() : store.fetchEvents()
+
   await Promise.all([
-    store.fetchEvents(),
+    eventsFetch,
     store.fetchMembers(),
     store.fetchCalendars(),
     pollsStore.fetchPolls('offen'),
@@ -617,7 +681,11 @@ onUnmounted(() => {
 watch(
   () => authStore.currentHouseholdId,
   () => {
-    store.fetchEvents()
+    if (activeTab.value === 'month') {
+      loadMonthEvents()
+    } else {
+      store.fetchEvents()
+    }
     store.fetchMembers()
     store.fetchCalendars().then(() => initCalendarFilter())
     pollsStore.fetchPolls('offen')
@@ -640,7 +708,7 @@ watch(
       <BasePillTabs
         :tabs="tabs"
         :model-value="activeTab"
-        @update:model-value="activeTab = $event as 'week' | 'list'"
+        @update:model-value="activeTab = $event as 'week' | 'month' | 'list'"
       />
     </div>
 
@@ -696,6 +764,22 @@ watch(
         </button>
       </div>
     </div>
+
+    <!-- Month Grid -->
+    <CalendarMonthGrid
+      v-if="activeTab === 'month'"
+      :events="filteredEvents"
+      :get-calendar-color="store.getCalendarColor"
+      :get-calendar-name="store.getCalendarName"
+      :members="store.members"
+      :selected-date="formatDateLocal(currentMonthDate)"
+      :loading="store.loading"
+      @select-day="(d: string) => selectedDay = d"
+      @create-event="(d: string) => { selectedDay = d; openCreateDialog() }"
+      @edit-event="openEditDialog"
+      @navigate="handleMonthNavigate"
+      @go-today="handleGoToday"
+    />
 
     <!-- Offene Abstimmungen -->
     <div v-if="pollsStore.openPolls.length > 0" class="poll-section">
@@ -1159,6 +1243,7 @@ watch(
   padding: 0 var(--space-4) var(--space-3);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
 
 .calendar-filter-chips::-webkit-scrollbar {

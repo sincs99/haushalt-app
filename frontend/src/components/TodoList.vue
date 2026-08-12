@@ -5,7 +5,7 @@ import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatDateShort } from '../utils/dates'
 import type { TodoItem } from '../types'
-import { PhPencilSimple, PhX, PhListChecks, PhBell } from '@phosphor-icons/vue'
+import { PhPencilSimple, PhX, PhListChecks, PhBell, PhPlus } from '@phosphor-icons/vue'
 import BaseButton from './ui/BaseButton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseSkeleton from './ui/BaseSkeleton.vue'
@@ -18,8 +18,10 @@ const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   autoFocus?: boolean
+  filterUserId?: string
 }>(), {
   autoFocus: false,
+  filterUserId: undefined,
 })
 
 // Quick-Add
@@ -50,13 +52,21 @@ onMounted(() => {
   }
 })
 
-// Getrennte Listen: offen vs. erledigt
-const openTodos = computed(() =>
-  todosStore.items.filter((t) => !t.is_done),
-)
-const doneTodos = computed(() =>
-  todosStore.items.filter((t) => t.is_done),
-)
+// Getrennte Listen: offen vs. erledigt (mit optionalem Member-Filter)
+const openTodos = computed(() => {
+  let list = todosStore.items.filter((t) => !t.is_done)
+  if (props.filterUserId !== undefined) {
+    list = list.filter((t) => t.assigned_to_user_id === props.filterUserId)
+  }
+  return list
+})
+const doneTodos = computed(() => {
+  let list = todosStore.items.filter((t) => t.is_done)
+  if (props.filterUserId !== undefined) {
+    list = list.filter((t) => t.assigned_to_user_id === props.filterUserId)
+  }
+  return list
+})
 
 // Überfällig-Check
 function isOverdue(todo: TodoItem): boolean {
@@ -223,6 +233,14 @@ async function saveEdit(todoId: string) {
         class="quick-add__input"
         autofocus
       />
+      <button
+        type="submit"
+        class="quick-add__btn"
+        :disabled="!newTodoTitle.trim()"
+        :aria-label="$t('common.add')"
+      >
+        <PhPlus :size="20" weight="bold" />
+      </button>
     </form>
 
     <!-- Details Toggle -->
@@ -431,6 +449,9 @@ async function saveEdit(todoId: string) {
 
 /* Quick-Add: sticky */
 .quick-add {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
   position: sticky;
   top: 0;
   z-index: 10;
@@ -445,7 +466,8 @@ async function saveEdit(todoId: string) {
 }
 
 .quick-add__input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-btn);
@@ -464,6 +486,28 @@ async function saveEdit(todoId: string) {
   outline: none;
   border-color: var(--acc);
   box-shadow: 0 0 0 3px var(--acc-soft);
+}
+
+.quick-add__btn {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--acc);
+  color: var(--card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.quick-add__btn:active {
+  transform: scale(0.92);
+}
+.quick-add__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* Details-Toggle */

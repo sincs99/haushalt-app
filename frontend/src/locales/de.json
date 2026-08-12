@@ -237,7 +237,9 @@
     "createButton": "Erstellen",
     "emptyTitle": "Keine Aufgaben",
     "emptySubtitle": "Erstelle eine neue Aufgabe oder warte auf den nächsten Putzplan-Eintrag.",
-    "manageChores": "Ämtli verwalten"
+    "manageChores": "Ämtli verwalten",
+    "segmentTodos": "Aufgaben",
+    "segmentChores": "Ämtli"
   },
   "expenses": {
     "title": "Ausgaben",
@@ -369,7 +371,9 @@
     "completedBy": "Erledigt von {name}",
     "createFirst": "Erstes Ämtli anlegen",
     "filterAll": "Alle",
-    "filterMine": "Nur meine"
+    "filterMine": "Nur meine",
+    "dayOfMonthPlaceholder": "1–31",
+    "dayOfMonthError": "Bitte einen Tag zwischen 1 und 31 eingeben"
   },
   "household": {
     "title": "Haushalt",
@@ -554,7 +558,8 @@
     "photoUploading": "Foto wird hochgeladen…",
     "photoUploadSuccess": "Foto aktualisiert",
     "photoUploadError": "Foto konnte nicht hochgeladen werden",
-    "photoDeleteError": "Altes Foto konnte nicht entfernt werden"
+    "photoDeleteError": "Altes Foto konnte nicht entfernt werden",
+    "invalidWeight": "Bitte ein gültiges Gewicht eingeben"
   },
   "petCare": {
     "title": "Pflege & Termine",

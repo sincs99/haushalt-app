@@ -209,7 +209,7 @@ async function handleCreatePet() {
       name,
       breed: formBreed.value.trim() || undefined,
       birthdate: formBirthdate.value || undefined,
-      weight_grams: formWeightGrams.value ? parseInt(formWeightGrams.value) : undefined,
+      weight_grams: formWeightGrams.value ? parseFloat(formWeightGrams.value) : undefined,
       notes: formNotes.value.trim() || undefined,
     }
     await petsStore.createPet(payload)
@@ -400,7 +400,8 @@ function navigateToPet(petId: string) {
           v-model="formWeightGrams"
           :label="$t('pets.weight')"
           :placeholder="$t('pets.weight')"
-          type="number"
+          type="text"
+          inputmode="decimal"
         />
         <BaseInput
           v-model="formNotes"

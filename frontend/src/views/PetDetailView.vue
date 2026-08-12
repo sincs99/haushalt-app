@@ -449,7 +449,7 @@ async function handleUpdatePet() {
       name,
       breed: editFormBreed.value.trim() || undefined,
       birthdate: editFormBirthdate.value || undefined,
-      weight_grams: editFormWeightGrams.value ? parseInt(editFormWeightGrams.value) : undefined,
+      weight_grams: editFormWeightGrams.value ? parseFloat(editFormWeightGrams.value) : undefined,
       notes: editFormNotes.value.trim() || undefined,
       chip_number: editFormChipNumber.value.trim() || undefined,
       insurance: editFormInsurance.value.trim() || undefined,
@@ -1102,7 +1102,8 @@ async function handleDeleteCareTask() {
           v-model="editFormWeightGrams"
           :label="$t('pets.weight')"
           :placeholder="$t('pets.weight')"
-          type="number"
+          type="text"
+          inputmode="decimal"
         />
         <BaseInput
           v-model="editFormChipNumber"

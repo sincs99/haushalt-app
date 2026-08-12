@@ -4,7 +4,7 @@ import { useShoppingStore } from '../stores/shopping'
 import { useExpensesStore } from '../stores/expenses'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
-import { PhX, PhShoppingCart, PhCaretDown } from '@phosphor-icons/vue'
+import { PhX, PhShoppingCart, PhCaretDown, PhPlus } from '@phosphor-icons/vue'
 import type { ShoppingItem } from '../types'
 import BaseSkeleton from './ui/BaseSkeleton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
@@ -169,6 +169,14 @@ async function handleClearDone() {
         class="quick-add__input"
         autofocus
       />
+      <button
+        type="submit"
+        class="quick-add__btn"
+        :disabled="!newItemName.trim()"
+        :aria-label="$t('common.add')"
+      >
+        <PhPlus :size="20" weight="bold" />
+      </button>
     </form>
 
     <!-- Gruppierungs-Umschalter -->
@@ -294,6 +302,9 @@ async function handleClearDone() {
 
 /* Quick-Add: sticky auf Mobile */
 .quick-add {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
   position: sticky;
   top: 0;
   z-index: 10;
@@ -308,7 +319,8 @@ async function handleClearDone() {
 }
 
 .quick-add__input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-btn);
@@ -327,6 +339,28 @@ async function handleClearDone() {
   outline: none;
   border-color: var(--acc);
   box-shadow: 0 0 0 3px var(--acc-soft);
+}
+
+.quick-add__btn {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--acc);
+  color: var(--card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.quick-add__btn:active {
+  transform: scale(0.92);
+}
+.quick-add__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* Gruppierungs-Umschalter */

@@ -11,7 +11,7 @@ import { useTasksStore } from '../stores/tasks'
 import { usePetsStore } from '../stores/pets'
 import { useCalendarStore } from '../stores/calendar'
 import { formatRappen } from '../utils/money'
-import { PhShoppingBagOpen, PhListChecks, PhWallet, PhCalendarDots, PhCat, PhForkKnife, PhCaretRight, PhPawPrint, PhBell } from '@phosphor-icons/vue'
+import { PhShoppingBagOpen, PhListChecks, PhBroom, PhWallet, PhCalendarDots, PhCat, PhForkKnife, PhCaretRight, PhPawPrint, PhBell } from '@phosphor-icons/vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseCheckCircle from '../components/ui/BaseCheckCircle.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
@@ -240,10 +240,21 @@ function formatReminderDate(isoString: string): string {
         <h2 class="card-title">{{ t('dashboard.tasks') }}</h2>
         <p v-if="overdueBadge" class="overdue-badge">{{ overdueBadge }}</p>
         <ul class="task-list">
-          <li v-for="item in combinedTasks" :key="item.id" class="task-item">
+          <li
+            v-for="item in combinedTasks"
+            :key="item.id"
+            class="task-item"
+            @click="router.push(item.type === 'chore' ? '/chores' : '/todos')"
+          >
             <BaseCheckCircle
               :checked="false"
               @toggle="handleToggleTask(item)"
+              @click.stop
+            />
+            <component
+              :is="item.type === 'chore' ? PhBroom : PhListChecks"
+              :size="14"
+              class="task-item__type-icon"
             />
             <span
               class="task-item__title"
@@ -419,7 +430,20 @@ function formatReminderDate(isoString: string): string {
 .task-item {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  cursor: pointer;
+  padding: var(--space-1) 0;
+  border-radius: var(--radius-sm);
+  transition: opacity var(--transition-fast);
+}
+
+.task-item:active {
+  opacity: 0.7;
+}
+
+.task-item__type-icon {
+  flex-shrink: 0;
+  color: var(--sub);
 }
 
 .task-item__title--overdue {

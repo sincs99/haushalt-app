@@ -237,7 +237,9 @@
     "createButton": "Create",
     "emptyTitle": "No tasks",
     "emptySubtitle": "Create a new task or wait for the next chore schedule entry.",
-    "manageChores": "Manage chores"
+    "manageChores": "Manage chores",
+    "segmentTodos": "Tasks",
+    "segmentChores": "Chores"
   },
   "expenses": {
     "title": "Expenses",
@@ -369,7 +371,9 @@
     "completedBy": "Completed by {name}",
     "createFirst": "Create first chore",
     "filterAll": "All",
-    "filterMine": "Only mine"
+    "filterMine": "Only mine",
+    "dayOfMonthPlaceholder": "1–31",
+    "dayOfMonthError": "Please enter a day between 1 and 31"
   },
   "household": {
     "title": "Household",
@@ -554,7 +558,8 @@
     "photoUploading": "Uploading photo…",
     "photoUploadSuccess": "Photo updated",
     "photoUploadError": "Could not upload photo",
-    "photoDeleteError": "Could not remove old photo"
+    "photoDeleteError": "Could not remove old photo",
+    "invalidWeight": "Please enter a valid weight"
   },
   "petCare": {
     "title": "Care & Schedule",

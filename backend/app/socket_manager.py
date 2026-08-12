@@ -40,21 +40,26 @@ async def connect(sid, environ, auth):
         logger.warning("Socket connect rejected – no auth token (sid=%s)", sid)
         return False
 
-    db = SessionLocal()
+    # --- Token dekodieren (kein DB-Zugriff nötig) ---
     try:
         user_id_str = decode_access_token(auth["token"])
-        user = db.get(User, uuid.UUID(user_id_str))
-        if user is None:
-            logger.warning("Socket connect rejected – user not found (sid=%s)", sid)
-            return False
-
-        await sio.save_session(sid, {"user_id": str(user.id)})
-        logger.info("Socket connected (sid=%s, user=%s)", sid, user.id)
+        uid = uuid.UUID(user_id_str)
     except (JWTError, KeyError, ValueError) as exc:
         logger.warning("Socket connect rejected – token error (sid=%s): %s", sid, exc)
         return False
-    finally:
-        db.close()
+
+    # --- DB-Zugriff in minimalem Scope ---
+    with SessionLocal() as db:
+        user = db.get(User, uid)
+        user_id = str(user.id) if user else None
+
+    # Session ist geschlossen – jetzt async weiterarbeiten
+    if user_id is None:
+        logger.warning("Socket connect rejected – user not found (sid=%s)", sid)
+        return False
+
+    await sio.save_session(sid, {"user_id": user_id})
+    logger.info("Socket connected (sid=%s, user=%s)", sid, user_id)
 
 
 @sio.event
@@ -75,33 +80,35 @@ async def join_household(sid, data):
         await sio.emit("error", {"message": "household_id is required"}, to=sid)
         return
 
-    db = SessionLocal()
+    # --- UUID-Parsing vor DB-Zugriff ---
     try:
         household_id = uuid.UUID(household_id_str)
         user_id = uuid.UUID(user_id_str)
+    except ValueError:
+        await sio.emit("error", {"message": "Invalid household_id"}, to=sid)
+        return
 
+    # --- DB-Zugriff in minimalem Scope ---
+    with SessionLocal() as db:
         membership = (
             db.query(HouseholdMember)
             .filter_by(household_id=household_id, user_id=user_id)
             .first()
         )
 
-        if membership is None:
-            await sio.emit(
-                "error",
-                {"message": "Not a member of this household"},
-                to=sid,
-            )
-            return
-
-        await sio.enter_room(sid, f"household_{household_id}")
-        logger.info(
-            "User %s joined room household_%s (sid=%s)", user_id, household_id, sid
+    # Session ist geschlossen – jetzt async weiterarbeiten
+    if membership is None:
+        await sio.emit(
+            "error",
+            {"message": "Not a member of this household"},
+            to=sid,
         )
-    except ValueError:
-        await sio.emit("error", {"message": "Invalid household_id"}, to=sid)
-    finally:
-        db.close()
+        return
+
+    await sio.enter_room(sid, f"household_{household_id}")
+    logger.info(
+        "User %s joined room household_%s (sid=%s)", user_id, household_id, sid
+    )
 
 
 @sio.event

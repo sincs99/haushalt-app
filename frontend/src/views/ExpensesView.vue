@@ -312,10 +312,8 @@ onMounted(() => {
           <div class="budget-edit">
             <input
               v-model="budgetInput"
-              type="number"
+              type="text"
               inputmode="decimal"
-              step="0.01"
-              min="0"
               class="budget-edit__input"
               :placeholder="$t('expenses.amountPlaceholder')"
               @keyup.enter="saveBudget"

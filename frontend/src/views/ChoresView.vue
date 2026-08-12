@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useChoresStore } from '../stores/chores'
 import { useAuthStore } from '../stores/auth'
@@ -14,6 +15,7 @@ import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
 import BasePillTabs from '../components/ui/BasePillTabs.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 
+const route = useRoute()
 const choresStore = useChoresStore()
 const authStore = useAuthStore()
 const { showToast } = useToast()
@@ -146,7 +148,7 @@ const formTitle = ref('')
 const formDescription = ref('')
 const formRecurrence = ref<'weekly' | 'biweekly' | 'monthly'>('weekly')
 const formWeekday = ref(0)
-const formDayOfMonth = ref(1)
+const formDayOfMonth = ref('1')
 const formRotationOrder = ref<string[]>([])
 const formActive = ref(true)
 const formSaving = ref(false)
@@ -156,7 +158,7 @@ function resetForm() {
   formDescription.value = ''
   formRecurrence.value = 'weekly'
   formWeekday.value = 0
-  formDayOfMonth.value = 1
+  formDayOfMonth.value = '1'
   formRotationOrder.value = choresStore.members.map(m => m.id)
   formActive.value = true
   editingChoreId.value = null
@@ -173,7 +175,7 @@ function openEditForm(chore: ChoreInfo) {
   formDescription.value = chore.description ?? ''
   formRecurrence.value = chore.recurrence
   formWeekday.value = chore.weekday ?? 0
-  formDayOfMonth.value = chore.day_of_month ?? 1
+  formDayOfMonth.value = String(chore.day_of_month ?? 1)
   formRotationOrder.value = [...chore.rotation_order]
   formActive.value = chore.active
   showChoreForm.value = true
@@ -188,6 +190,17 @@ async function handleSaveChore() {
   const title = formTitle.value.trim()
   if (!title || formSaving.value) return
 
+  // Validate day of month when monthly recurrence
+  let parsedDayOfMonth: number | undefined
+  if (formRecurrence.value === 'monthly') {
+    const day = parseInt(formDayOfMonth.value, 10)
+    if (isNaN(day) || day < 1 || day > 31) {
+      showToast(t('chores.dayOfMonthError'))
+      return
+    }
+    parsedDayOfMonth = day
+  }
+
   formSaving.value = true
   try {
     if (editingChoreId.value) {
@@ -197,7 +210,7 @@ async function handleSaveChore() {
         description: formDescription.value.trim() || undefined,
         recurrence: formRecurrence.value,
         weekday: formRecurrence.value !== 'monthly' ? formWeekday.value : undefined,
-        day_of_month: formRecurrence.value === 'monthly' ? formDayOfMonth.value : undefined,
+        day_of_month: parsedDayOfMonth,
         rotation_order: formRotationOrder.value,
         active: formActive.value,
       }
@@ -209,7 +222,7 @@ async function handleSaveChore() {
         description: formDescription.value.trim() || undefined,
         recurrence: formRecurrence.value,
         weekday: formRecurrence.value !== 'monthly' ? formWeekday.value : undefined,
-        day_of_month: formRecurrence.value === 'monthly' ? formDayOfMonth.value : undefined,
+        day_of_month: parsedDayOfMonth,
         rotation_order: formRotationOrder.value,
         active: formActive.value,
       }
@@ -299,6 +312,16 @@ const weekdayOptions = computed(() =>
 
 <template>
   <div class="view-page">
+    <!-- Segment Control: Aufgaben | Ämtli -->
+    <div class="segment-control">
+      <router-link to="/todos" :class="{ active: route.path === '/todos' }">
+        {{ $t('tasks.segmentTodos') }}
+      </router-link>
+      <router-link to="/chores" :class="{ active: route.path === '/chores' }">
+        {{ $t('tasks.segmentChores') }}
+      </router-link>
+    </div>
+
     <PageHeader :title="$t('chores.title')" />
 
     <!-- Loading -->
@@ -481,11 +504,11 @@ const weekdayOptions = computed(() =>
           <div v-if="formRecurrence === 'monthly'" class="form-field">
             <label class="form-label">{{ $t('chores.dayOfMonthLabel') }}</label>
             <input
-              v-model.number="formDayOfMonth"
-              type="number"
-              min="1"
-              max="31"
+              v-model="formDayOfMonth"
+              type="text"
+              inputmode="numeric"
               class="form-input"
+              :placeholder="$t('chores.dayOfMonthPlaceholder')"
             />
           </div>
 
@@ -1120,6 +1143,33 @@ const weekdayOptions = computed(() =>
 .filter-chip--active {
   background: var(--color-surface);
   color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Segment Control ── */
+.segment-control {
+  display: flex;
+  background: var(--chip);
+  border-radius: var(--radius-btn);
+  padding: 3px;
+  gap: 2px;
+}
+
+.segment-control a {
+  flex: 1;
+  text-align: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: calc(var(--radius-btn) - 2px);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--sub);
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+
+.segment-control a.active {
+  background: var(--card);
+  color: var(--ink);
   box-shadow: var(--shadow-sm);
 }
 </style>

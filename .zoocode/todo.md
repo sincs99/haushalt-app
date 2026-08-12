@@ -1,77 +1,83 @@
-# Epic 10 — Kritische Bugfixes (Backup, StoredFile-Leichen, Pfadprüfung)
+# Epic 13: Mobile-Eingabe-Fixes (Budget + Quick-Add-Buttons)
 
-## Status: ✅ Abgeschlossen
-
----
-
-## 10.1 KRITISCH: Backup-Skripte erzeugen korrupte Dumps unter Windows PowerShell
-
-### Problem
-- `scripts/backup-db.ps1` Zeile 51: `> $dumpFile` leitet Binärdaten durch PowerShell-Pipeline → Encoding-Zerstörung
-- `scripts/restore-db.ps1` Zeile 73: `Get-Content -AsByteStream` existiert erst ab PS 6, bricht auf Windows PS 5.1 ab
-
-### Fix
-**backup-db.ps1** — Umstellen auf `docker compose cp`:
-1. `docker compose exec -T $ServiceName pg_dump -U $DbUser -d $DbName -F c -f /tmp/casa-backup.dump`
-2. `docker compose cp "${ServiceName}:/tmp/casa-backup.dump" $dumpFile`
-3. `docker compose exec -T $ServiceName rm -f /tmp/casa-backup.dump`
-4. Plausibilitätsprüfung: Datei existiert und > 1 KB, sonst Fehler + Datei löschen
-5. Magic-Byte-Check: erste 5 Bytes müssen `PGDMP` sein, sonst Abbruch
-6. Rotationslogik unverändert lassen
-
-**restore-db.ps1** — Umstellen auf `docker compose cp`:
-1. Vor Kopieren: Datei muss existieren und mit `PGDMP` beginnen, sonst Abbruch
-2. `docker compose cp $DumpFile "${ServiceName}:/tmp/casa-restore.dump"`
-3. `docker compose exec -T $ServiceName pg_restore --clean --if-exists -U $DbUser -d $DbName /tmp/casa-restore.dump`
-4. `docker compose exec -T $ServiceName rm -f /tmp/casa-restore.dump`
-5. Sicherheitsabfrage beibehalten
-
-**README.md** Abschnitt „Datensicherung":
-- Satz ergänzen: „Nach der Ersteinrichtung einmal den kompletten Zyklus testen: Backup erstellen → Restore ausführen → App prüfen."
-
-### Dateien
-- `scripts/backup-db.ps1`
-- `scripts/restore-db.ps1`
-- `README.md`
+**Status:** ✅ Abgeschlossen
+**Typ:** Reines Frontend-Epic – KEINE Backend-/Store-Änderungen  
+**Erstellt:** 2026-08-12
 
 ---
 
-## 10.2 Verwaister StoredFile-Datensatz beim Pet-Löschen
+## 13.1 – `type="number"` projektweit eliminieren
 
-### Problem
-- `backend/app/routers/pets.py` Zeile 497–508: Beim Pet-Löschen wird nur die physische Datei entfernt, der `StoredFile`-DB-Datensatz bleibt als Leiche
-- `backend/app/routers/files.py` Zeile 291–296: Löscht erst Datei, dann DB — bei Commit-Fehler bleibt Datensatz-Leiche
+### Projektregel (ab sofort)
+> Geld- und Zahlenfelder sind IMMER `type="text"` mit `inputmode="decimal"` (Dezimalwerte) bzw. `inputmode="numeric"` (Ganzzahlen). NIEMALS `type="number"`.
 
-### Fix
-**pets.py** `delete_pet()`:
-1. `db.delete(stored_file)` vor dem Commit hinzufügen
-2. Reihenfolge: erst Pet + StoredFile-Zeile löschen & committen, danach Best-effort physische Datei entfernen
+### Fundstellen (4 Stück)
 
-**files.py** `delete_file()`:
-1. Reihenfolge umdrehen: erst DB-Commit, dann physisches Löschen
-2. Physisches Löschen als Best-effort (try/except)
+| # | Datei | Zeile | Feld | Aktion |
+|---|-------|-------|------|--------|
+| 1 | `frontend/src/views/ExpensesView.vue` | ~315 | Budget-Inline-Edit | `type="text"` + `inputmode="decimal"`, `step`/`min` entfernen. `v-model` bleibt String (wird via `parseAmountToRappen` geparst). `@keyup.enter`/`@keyup.escape` und Save/Cancel-Buttons bleiben. |
+| 2 | `frontend/src/views/ChoresView.vue` | ~497 | Monatstag (formDayOfMonth) | `type="text"` + `inputmode="numeric"`, `min`/`max` entfernen, `v-model.number` → `v-model` (String). parseInt-Validierung (1–31) im Submit-Handler, Fehlermeldung bei ungültigem Wert. |
+| 3 | `frontend/src/views/PetsView.vue` | ~403 | Gewicht (formWeightGrams) | `type="text"` + `inputmode="decimal"`. `v-model` bleibt String. Parsing im Submit-Handler mit parseFloat + Validierung. |
+| 4 | `frontend/src/views/PetDetailView.vue` | ~1105 | Gewicht (editFormWeightGrams) | Analog PetsView.vue. |
 
-### Dateien
-- `backend/app/routers/pets.py`
-- `backend/app/routers/files.py`
-
----
-
-## 10.3 Pfadprüfung härten
-
-### Problem
-- `backend/app/services/storage.py` Zeile 24: `str.startswith` lässt Geschwister-Verzeichnisse wie `data/uploads-x` durch
-
-### Fix
-- Ersetze `if not str(abs_path).startswith(str(upload_root)):` durch `if not abs_path.is_relative_to(upload_root):`
-- Kein weiterer Umbau
-
-### Dateien
-- `backend/app/services/storage.py`
+### Abnahmekriterium
+```bash
+grep -rn 'type="number"' frontend/src  # Muss LEER sein
+```
 
 ---
 
-## Abnahme-Kriterien
-- [x] pytest grün — **317 passed, 0 failed** (bestehende Mocks kompatibel)
-- [ ] Manuell auf Windows: `.\scripts\backup-db.ps1` → Dump beginnt mit PGDMP
-- [ ] `.\scripts\restore-db.ps1` mit Dump → App läuft, Daten vorhanden
+## 13.2 – Quick-Add überall mit sichtbarem Plus-Button
+
+### Referenz-Pattern: NotesView.vue (Zeile 150–165)
+```vue
+<form class="quick-add" @submit.prevent="handleQuickAdd">
+  <BaseInput v-model="..." :placeholder="..." autocomplete="off" enterkeyhint="done" />
+  <button type="submit" class="quick-add__btn" :disabled="!input.trim()" :aria-label="$t('common.add')">
+    <PhPlus :size="20" weight="bold" />
+  </button>
+</form>
+```
+
+CSS (min. 44×44px Touch-Target, `var(--acc)` Background, `var(--radius-full)`):
+```css
+.quick-add { display: flex; gap: var(--space-2); align-items: flex-start; }
+.quick-add :deep(.base-input) { flex: 1; }  /* oder .quick-add__input { flex: 1; } */
+.quick-add__btn {
+  flex-shrink: 0; width: 44px; height: 44px;
+  border-radius: var(--radius-full); border: none;
+  background: var(--acc); color: var(--card);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.quick-add__btn:active { transform: scale(0.92); }
+.quick-add__btn:disabled { opacity: 0.4; cursor: not-allowed; }
+```
+
+### Zu fixende Stellen (2 Stück)
+
+| # | Datei | Zeile | Aktueller Stand | Aktion |
+|---|-------|-------|-----------------|--------|
+| 1 | `frontend/src/components/ShoppingList.vue` | ~163 | `<form>` mit `<input>`, KEIN Button | Plus-Button ergänzen, `PhPlus` importieren, `:disabled="!newItemName.trim()"`, Enter bleibt. CSS-Anpassung für flex-Layout. Button min 44×44px. |
+| 2 | `frontend/src/components/TodoList.vue` | ~227 | `<form>` mit `<input>`, KEIN Button | Plus-Button ergänzen, `PhPlus` importieren, `:disabled="!newTodoTitle.trim()"`, Enter bleibt. CSS-Anpassung für flex-Layout. Button min 44×44px. |
+
+### NICHT zu ändern (kein Quick-Add-Input-Pattern)
+- `ExpenseList.vue` – hat bereits einen separaten "Add"-Dialog-Button (kein Inline-Input)
+- `ShoppingView.vue:122` – Listenerstellung (kein Item-Quick-Add)
+- `CalendarView`, `ChoresView`, `HouseholdView`, `NoHouseholdView` – komplexe Formulare
+- `LoginView`, `RegisterView` – Auth-Formulare
+
+---
+
+## Locale-Pflege
+Beide Locale-Dateien (`de.json`, `en.json`) müssen synchron bleiben. Falls neue Keys nötig (z.B. Validierungsmeldungen), in BEIDEN Dateien hinzufügen.
+
+---
+
+## Abnahme-Checkliste
+- [ ] Budget auf Handy mit „50,00" UND „50.00" UND „50" setzbar
+- [ ] Einkaufsliste: Artikel per Tap auf Plus hinzufügbar, ohne Tastatur-Enter
+- [ ] Todo-Liste: Todo per Tap auf Plus hinzufügbar
+- [ ] `npm run build` grün
+- [ ] `npm run check:locales` grün
+- [ ] `grep -rn 'type="number"' frontend/src` liefert keine Treffer

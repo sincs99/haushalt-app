@@ -6,6 +6,7 @@ import { usePetsStore } from '../stores/pets'
 import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
+import { parseWeightGrams } from '../utils/money'
 import type { Pet, PetCreatePayload, FeedingSlot, FeedingLog } from '../types'
 import { PhCat, PhSun, PhMoon, PhPlus } from '@phosphor-icons/vue'
 import PetPhotoAvatar from '../components/PetPhotoAvatar.vue'
@@ -204,12 +205,20 @@ async function handleCreatePet() {
   if (!name || formSaving.value) return
 
   formSaving.value = true
+
+  const weightResult = parseWeightGrams(formWeightGrams.value)
+  if (weightResult === null) {
+    showToast(t('pets.invalidWeight'))
+    formSaving.value = false
+    return
+  }
+
   try {
     const payload: PetCreatePayload = {
       name,
       breed: formBreed.value.trim() || undefined,
       birthdate: formBirthdate.value || undefined,
-      weight_grams: formWeightGrams.value ? parseFloat(formWeightGrams.value) : undefined,
+      weight_grams: weightResult,
       notes: formNotes.value.trim() || undefined,
     }
     await petsStore.createPet(payload)

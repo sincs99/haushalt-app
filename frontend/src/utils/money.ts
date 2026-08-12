@@ -38,3 +38,21 @@ export function parseAmountToRappen(input: string): number | null {
 
   return rappen
 }
+
+/**
+ * Parst eine Gewichts-Eingabe (Gramm) zu einer ganzen Zahl.
+ * Normalisiert Komma → Punkt, rundet auf ganze Gramm.
+ * Gibt null zurück bei ungültiger Eingabe.
+ * Leerstring → undefined (kein Gewicht = gültig).
+ */
+export function parseWeightGrams(input: string): number | null | undefined {
+  const trimmed = input.trim()
+  if (!trimmed) return undefined // Leeres Feld = kein Gewicht, gültig
+
+  const normalized = trimmed.replace(',', '.')
+  const value = parseFloat(normalized)
+
+  if (!Number.isFinite(value) || value <= 0 || value > 50_000) return null // ungültig
+
+  return Math.round(value) // Ganze Gramm
+}

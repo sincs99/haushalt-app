@@ -6,6 +6,7 @@ import { usePetsStore } from '../stores/pets'
 import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
+import { parseWeightGrams } from '../utils/money'
 import { useProtectedImage } from '../composables/useProtectedImage'
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
 import type {
@@ -441,6 +442,14 @@ async function handleUpdatePet() {
   if (!name || editPetSaving.value) return
 
   editPetSaving.value = true
+
+  const weightResult = parseWeightGrams(editFormWeightGrams.value)
+  if (weightResult === null) {
+    showToast(t('pets.invalidWeight'))
+    editPetSaving.value = false
+    return
+  }
+
   try {
     // Filter out empty health entries
     const validEntries = editFormHealthEntries.value.filter(e => e.title.trim())
@@ -449,7 +458,7 @@ async function handleUpdatePet() {
       name,
       breed: editFormBreed.value.trim() || undefined,
       birthdate: editFormBirthdate.value || undefined,
-      weight_grams: editFormWeightGrams.value ? parseFloat(editFormWeightGrams.value) : undefined,
+      weight_grams: weightResult,
       notes: editFormNotes.value.trim() || undefined,
       chip_number: editFormChipNumber.value.trim() || undefined,
       insurance: editFormInsurance.value.trim() || undefined,

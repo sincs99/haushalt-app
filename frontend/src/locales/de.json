@@ -190,7 +190,22 @@
     "updateListError": "Liste konnte nicht aktualisiert werden.",
     "noListsTitle": "Noch keine Einkaufsliste",
     "noListsSubtitle": "Erstelle deine erste Liste, um loszulegen.",
-    "createFirstList": "Erste Liste erstellen"
+    "createFirstList": "Erste Liste erstellen",
+    "allStores": "Alle",
+    "renameStore": "Geschäft umbenennen",
+    "dissolveStore": "Geschäft auflösen",
+    "dissolveConfirm": "Alle Artikel von \"{store}\" verlieren die Geschäftszuordnung. Die Artikel bleiben erhalten.",
+    "renameStorePlaceholder": "Neuer Name…",
+    "storeRenamed": "Geschäft umbenannt",
+    "storeDissolved": "Geschäft aufgelöst",
+    "reassignError": "Geschäft konnte nicht geändert werden.",
+    "editItem": "Artikel bearbeiten",
+    "itemName": "Artikelname",
+    "itemQuantity": "Menge",
+    "itemStore": "Geschäft",
+    "itemCategory": "Abteilung",
+    "newStore": "Neues Geschäft…",
+    "mergeStoreConfirm": "\"{to}\" existiert bereits mit {count} Artikeln. Möchtest du die Geschäfte zusammenführen?"
   },
   "todos": {
     "title": "Aufgaben",

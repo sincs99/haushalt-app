@@ -121,6 +121,27 @@ class ShoppingItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ReassignStoreRequest(BaseModel):
+    from_store: str = Field(..., min_length=1, max_length=100)
+    to_store: str | None = Field(None, max_length=100)
+
+    @field_validator("to_store", mode="before")
+    @classmethod
+    def empty_string_to_none(cls, v):
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator("from_store")
+    @classmethod
+    def strip_from_store(cls, v: str) -> str:
+        return v.strip()
+
+
+class ReassignStoreResponse(BaseModel):
+    updated: int
+
+
 # ---------------------------------------------------------------------------
 # Router — Shopping Lists
 # ---------------------------------------------------------------------------
@@ -304,6 +325,66 @@ def list_shopping_items(
         query = query.filter(ShoppingItem.is_checked == False)  # noqa: E712
 
     return query.order_by(ShoppingItem.created_at).all()
+
+
+# ---------------------------------------------------------------------------
+# GET  /stores  — Distinct Store-Werte des Haushalts (alphabetisch, ohne null)
+# ---------------------------------------------------------------------------
+@router.get("/stores", response_model=list[str])
+def list_stores(
+    household_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(ShoppingItem.store)
+        .filter(
+            ShoppingItem.household_id == household_id,
+            ShoppingItem.store.isnot(None),
+            ShoppingItem.store != "",
+        )
+        .distinct()
+        .order_by(ShoppingItem.store)
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# POST /reassign-store  — Store-Wert für alle Items umbenennen / auflösen
+# ---------------------------------------------------------------------------
+@router.post("/reassign-store", response_model=ReassignStoreResponse)
+def reassign_store(
+    household_id: uuid.UUID,
+    body: ReassignStoreRequest,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    affected_items = (
+        db.query(ShoppingItem)
+        .filter(
+            ShoppingItem.household_id == household_id,
+            ShoppingItem.store == body.from_store,
+        )
+        .all()
+    )
+
+    for item in affected_items:
+        item.store = body.to_store
+
+    db.commit()
+
+    if affected_items:
+        emit_to_household_sync(
+            household_id,
+            "shopping_items_bulk_updated",
+            {
+                "item_ids": [str(item.id) for item in affected_items],
+                "changes": {"store": body.to_store},
+            },
+        )
+
+    return ReassignStoreResponse(updated=len(affected_items))
 
 
 # ---------------------------------------------------------------------------

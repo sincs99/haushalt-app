@@ -59,6 +59,7 @@ watch(
     off('shopping_list_created', shoppingStore.handleListCreated)
     off('shopping_list_updated', shoppingStore.handleListUpdated)
     off('shopping_list_deleted', shoppingStore.handleListDeleted)
+    off('shopping_items_bulk_updated', shoppingStore.handleBulkUpdated)
     off('todo_created', todosStore.handleTodoCreated)
     off('todo_updated', todosStore.handleTodoUpdated)
     off('todo_deleted', todosStore.handleTodoDeleted)
@@ -91,6 +92,7 @@ watch(
     off('shopping_item_deleted', dashboardStore.invalidate)
     off('shopping_list_created', dashboardStore.invalidate)
     off('shopping_list_deleted', dashboardStore.invalidate)
+    off('shopping_items_bulk_updated', dashboardStore.invalidate)
     off('expense_created', dashboardStore.invalidate)
     off('expense_updated', dashboardStore.invalidate)
     off('expense_deleted', dashboardStore.invalidate)
@@ -132,6 +134,8 @@ watch(
         shoppingStore.items = []
         shoppingStore.lists = []
         shoppingStore.activeListId = null
+        shoppingStore.stores = []
+        shoppingStore.activeStoreFilter = null
         todosStore.items = []
         todosStore.members = []
         expensesStore.expenses = []
@@ -157,6 +161,7 @@ watch(
       on('shopping_list_created', shoppingStore.handleListCreated)
       on('shopping_list_updated', shoppingStore.handleListUpdated)
       on('shopping_list_deleted', shoppingStore.handleListDeleted)
+      on('shopping_items_bulk_updated', shoppingStore.handleBulkUpdated)
       on('todo_created', todosStore.handleTodoCreated)
       on('todo_updated', todosStore.handleTodoUpdated)
       on('todo_deleted', todosStore.handleTodoDeleted)
@@ -191,6 +196,7 @@ watch(
       on('shopping_item_deleted', dashboardStore.invalidate)
       on('shopping_list_created', dashboardStore.invalidate)
       on('shopping_list_deleted', dashboardStore.invalidate)
+      on('shopping_items_bulk_updated', dashboardStore.invalidate)
       on('expense_created', dashboardStore.invalidate)
       on('expense_updated', dashboardStore.invalidate)
       on('expense_deleted', dashboardStore.invalidate)
@@ -215,6 +221,7 @@ watch(
 
       shoppingStore.fetchLists()
       shoppingStore.fetchItems()
+      shoppingStore.fetchStores()
       todosStore.fetchTodos()
       expensesStore.fetchExpenses()
       expensesStore.fetchBalances()
@@ -237,6 +244,7 @@ function handleReconnect() {
     joinHousehold(householdId)
     shoppingStore.fetchLists()
     shoppingStore.fetchItems()
+    shoppingStore.fetchStores()
     todosStore.fetchTodos()
     expensesStore.fetchExpenses()
     expensesStore.fetchBalances()
@@ -259,6 +267,7 @@ onUnmounted(() => {
   off('shopping_list_created', shoppingStore.handleListCreated)
   off('shopping_list_updated', shoppingStore.handleListUpdated)
   off('shopping_list_deleted', shoppingStore.handleListDeleted)
+  off('shopping_items_bulk_updated', shoppingStore.handleBulkUpdated)
   off('todo_created', todosStore.handleTodoCreated)
   off('todo_updated', todosStore.handleTodoUpdated)
   off('todo_deleted', todosStore.handleTodoDeleted)
@@ -291,6 +300,7 @@ onUnmounted(() => {
   off('shopping_item_deleted', dashboardStore.invalidate)
   off('shopping_list_created', dashboardStore.invalidate)
   off('shopping_list_deleted', dashboardStore.invalidate)
+  off('shopping_items_bulk_updated', dashboardStore.invalidate)
   off('expense_created', dashboardStore.invalidate)
   off('expense_updated', dashboardStore.invalidate)
   off('expense_deleted', dashboardStore.invalidate)

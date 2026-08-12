@@ -19,6 +19,9 @@ export interface ShoppingRepository {
     data: Partial<ShoppingItem>,
   ): Promise<ShoppingItem>
   remove(householdId: string, itemId: string): Promise<void>
+  // Stores
+  fetchStores(householdId: string): Promise<string[]>
+  reassignStore(householdId: string, fromStore: string, toStore: string | null): Promise<{ updated: number }>
 }
 
 export function createOnlineShoppingRepository(): ShoppingRepository {
@@ -92,6 +95,22 @@ export function createOnlineShoppingRepository(): ShoppingRepository {
       await api.delete(
         `/api/households/${householdId}/shopping-items/${itemId}`,
       )
+    },
+
+    // ── Stores ──
+    async fetchStores(householdId) {
+      const { data } = await api.get<string[]>(
+        `/api/households/${householdId}/shopping-items/stores`,
+      )
+      return data
+    },
+
+    async reassignStore(householdId, fromStore, toStore) {
+      const { data } = await api.post<{ updated: number }>(
+        `/api/households/${householdId}/shopping-items/reassign-store`,
+        { from_store: fromStore, to_store: toStore },
+      )
+      return data
     },
   }
 }

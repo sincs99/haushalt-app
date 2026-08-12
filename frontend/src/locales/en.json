@@ -190,7 +190,22 @@
     "updateListError": "Could not update list.",
     "noListsTitle": "No shopping lists yet",
     "noListsSubtitle": "Create your first list to get started.",
-    "createFirstList": "Create first list"
+    "createFirstList": "Create first list",
+    "allStores": "All",
+    "renameStore": "Rename store",
+    "dissolveStore": "Remove store",
+    "dissolveConfirm": "All items from \"{store}\" will lose their store assignment. Items will be kept.",
+    "renameStorePlaceholder": "New name…",
+    "storeRenamed": "Store renamed",
+    "storeDissolved": "Store removed",
+    "reassignError": "Could not change store.",
+    "editItem": "Edit item",
+    "itemName": "Item name",
+    "itemQuantity": "Quantity",
+    "itemStore": "Store",
+    "itemCategory": "Category",
+    "newStore": "New store…",
+    "mergeStoreConfirm": "\"{to}\" already exists with {count} items. Do you want to merge the stores?"
   },
   "todos": {
     "title": "Tasks",

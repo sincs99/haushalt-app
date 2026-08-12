@@ -14,6 +14,20 @@ function storeActiveListId(householdId: string, listId: string) {
   localStorage.setItem(`shopping_activeList_${householdId}`, listId)
 }
 
+// ── localStorage-Persistenz für Store-Filter ──
+
+function getStoredStoreFilter(householdId: string): string | null {
+  return localStorage.getItem(`shopping_storeFilter_${householdId}`)
+}
+
+function storeStoreFilter(householdId: string, store: string | null) {
+  if (store) {
+    localStorage.setItem(`shopping_storeFilter_${householdId}`, store)
+  } else {
+    localStorage.removeItem(`shopping_storeFilter_${householdId}`)
+  }
+}
+
 export const useShoppingStore = defineStore('shopping', () => {
   // Repository — einmal im Store-Setup erstellen
   const repo = createOnlineShoppingRepository()
@@ -23,6 +37,8 @@ export const useShoppingStore = defineStore('shopping', () => {
   const lists = ref<ShoppingList[]>([])
   const loading = ref(false)
   const activeListId = ref<string | null>(null)
+  const stores = ref<string[]>([])
+  const activeStoreFilter = ref<string | null>(null) // null = "Alle"
 
   // Interner State für Race-Condition-Schutz
   const pendingTempIds = new Set<string>()
@@ -111,6 +127,73 @@ export const useShoppingStore = defineStore('shopping', () => {
       items.value = await repo.fetchAll(householdId)
     } finally {
       loading.value = false
+    }
+  }
+
+  // ── Store-Filter Actions ──
+
+  async function fetchStores() {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+    stores.value = await repo.fetchStores(householdId)
+
+    // Aktiven Filter aus localStorage validieren
+    const stored = getStoredStoreFilter(householdId)
+    if (stored && stores.value.includes(stored)) {
+      activeStoreFilter.value = stored
+    } else {
+      activeStoreFilter.value = null
+    }
+  }
+
+  function setStoreFilter(store: string | null) {
+    const authStore = useAuthStore()
+    activeStoreFilter.value = store
+    if (authStore.currentHouseholdId) {
+      storeStoreFilter(authStore.currentHouseholdId, store)
+    }
+  }
+
+  async function reassignStore(fromStore: string, toStore: string | null) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return { updated: 0 }
+
+    const result = await repo.reassignStore(householdId, fromStore, toStore)
+
+    // Optimistisch lokalen State patchen
+    for (const item of items.value) {
+      if (item.store === fromStore) {
+        item.store = toStore
+      }
+    }
+
+    // Stores-Liste aktualisieren
+    await fetchStores()
+
+    // Filter resetten falls der aktive Store umbenannt/aufgelöst wurde
+    if (activeStoreFilter.value === fromStore) {
+      setStoreFilter(toStore)
+    }
+
+    return result
+  }
+
+  async function updateItem(itemId: string, data: Partial<ShoppingItem>) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+
+    const updated = await repo.update(householdId, itemId, data)
+    const idx = items.value.findIndex(i => i.id === itemId)
+    if (idx !== -1) {
+      items.value[idx] = updated
+    }
+
+    // Stores-Liste neu laden falls sich Store geändert hat
+    if ('store' in data) {
+      await fetchStores()
     }
   }
 
@@ -313,12 +396,29 @@ export const useShoppingStore = defineStore('shopping', () => {
     items.value = items.value.filter(i => i.id !== data.id)
   }
 
+  // ── Socket-Handler: Bulk-Update (Store-Reassign) ──
+
+  function handleBulkUpdated(data: { item_ids: string[]; changes: { store: string | null } }) {
+    const idSet = new Set(data.item_ids)
+    for (const item of items.value) {
+      if (idSet.has(item.id)) {
+        if ('store' in data.changes) {
+          item.store = data.changes.store
+        }
+      }
+    }
+    // Stores-Liste asynchron aktualisieren
+    fetchStores()
+  }
+
   return {
     // State
     items,
     lists,
     loading,
     activeListId,
+    stores,
+    activeStoreFilter,
     // Computed
     activeListItems,
     // Actions (Listen)
@@ -333,6 +433,11 @@ export const useShoppingStore = defineStore('shopping', () => {
     toggleChecked,
     deleteItem,
     toggleAssigned,
+    updateItem,
+    // Actions (Stores)
+    fetchStores,
+    setStoreFilter,
+    reassignStore,
     // Socket-Handlers (Listen)
     handleListCreated,
     handleListUpdated,
@@ -341,5 +446,6 @@ export const useShoppingStore = defineStore('shopping', () => {
     handleItemCreated,
     handleItemUpdated,
     handleItemDeleted,
+    handleBulkUpdated,
   }
 })

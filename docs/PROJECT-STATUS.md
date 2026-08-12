@@ -1,6 +1,6 @@
 # Haushalt-App — Aktueller Projektstand
 
-**Stand:** 2026-08-10 (aktualisiert)
+**Stand:** 2026-08-12 (aktualisiert)
 **Autor:** Tech Lead (automatisch generiert)
 
 ---
@@ -16,7 +16,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | Realtime | Socket.IO (python-socketio) |
 | Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4 |
 | Auth | JWT (Bearer Token), bcrypt-Hashing |
-| i18n | vue-i18n, 588 Keys (DE + EN), Build-gesicherter Key-Sync |
+| i18n | vue-i18n, 615 Keys (DE + EN), Build-gesicherter Key-Sync |
 | Icons | Phosphor Icons (`@phosphor-icons/vue`) — regular/fill/bold |
 | UI | Custom Design-System (CSS Custom Properties, Nunito + Quicksand), Mobile-First |
 
@@ -64,7 +64,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | [`app/core/deps.py`](../backend/app/core/deps.py) | Dependencies: get_current_user, verify_household_access, verify_household_admin | ✅ Fertig |
 | [`app/core/error_codes.py`](../backend/app/core/error_codes.py) | Maschinenlesbare Error-Codes (+ Chore-Codes + CURRENCY_MISMATCH, ADMIN_REQUIRED, CANNOT_REMOVE_ADMIN, CANNOT_REMOVE_SELF) | ✅ Fertig |
 | [`app/routers/auth.py`](../backend/app/routers/auth.py) | POST /register (household_name ODER invite_code), POST /login, GET /me (inkl. household.currency) | ✅ Fertig |
-| [`app/routers/shopping.py`](../backend/app/routers/shopping.py) | CRUD Shopping-Items + Socket-Events | ✅ Fertig |
+| [`app/routers/shopping.py`](../backend/app/routers/shopping.py) | CRUD Shopping-Items + Shopping-Lists + Store-Verwaltung (GET /stores, POST /reassign-store) + Socket-Events | ✅ Fertig |
 | [`app/routers/todos.py`](../backend/app/routers/todos.py) | CRUD Todos + Socket-Events | ✅ Fertig |
 | [`app/routers/households.py`](../backend/app/routers/households.py) | GET /members (inkl. role), GET /invite-code, POST /join (+Event), POST / (create), PATCH (rename, Admin), POST /leave, DELETE /members/{user_id} | ✅ Fertig |
 | [`app/routers/expenses.py`](../backend/app/routers/expenses.py) | CRUD Expenses + Split-Logik (even/custom), Pydantic-Schemas inline | ✅ Fertig |
@@ -82,6 +82,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | [`conftest.py`](../backend/tests/conftest.py) | SQLite in-memory DB (StaticPool), Multi-Tenant Fixtures (2 Households, 3 User), Socket-Mock | ✅ Fertig |
 | [`test_auth_guard.py`](../backend/tests/test_auth_guard.py) | Kein Token → 401, Ungültiger Token → 401, Abgelaufener Token → 401 | ✅ Fertig |
 | [`test_shopping_scoping.py`](../backend/tests/test_shopping_scoping.py) | Multi-Tenant Shopping: Eigene Items lesen ✅, Cross-Household GET/POST/PATCH/DELETE → 403 | ✅ Fertig |
+| [`test_shopping_stores.py`](../backend/tests/test_shopping_stores.py) | Store-Verwaltung: Distinct Stores, Rename, Dissolve, Cross-Tenant → 403 (9 Tests) | ✅ Fertig |
 | [`test_todo_scoping.py`](../backend/tests/test_todo_scoping.py) | Multi-Tenant Todos: Eigene Todos lesen ✅, Cross-Household GET/POST/PATCH/DELETE → 403 | ✅ Fertig |
 | [`test_household_join.py`](../backend/tests/test_household_join.py) | Join mit gültigem Code → 200, Ungültiger Code → 404, Bereits Mitglied → 409, Case-insensitiv | ✅ Fertig |
 | [`test_expense_scoping.py`](../backend/tests/test_expense_scoping.py) | Multi-Tenant Expenses: Eigene lesen ✅, Cross-Household GET/POST/PATCH/DELETE/Balances → 403 | ✅ Fertig |
@@ -123,7 +124,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | [`components/ui/BaseSpinner.vue`](../frontend/src/components/ui/BaseSpinner.vue) | CSS-only Spinner: 2 Grössen, accessible, acc-Farbe | ✅ Fertig |
 | **Stores** | | |
 | [`stores/auth.ts`](../frontend/src/stores/auth.ts) | Login, Register (+ invite_code Option), Token-Persistenz, fetchMe, Household-Wechsel, Socket-Handler (household_updated/member_joined/left/removed) | ✅ Fertig |
-| [`stores/shopping.ts`](../frontend/src/stores/shopping.ts) | Shopping CRUD, Optimistic Updates, Repository-Pattern, Race-Condition-Schutz | ✅ Fertig |
+| [`stores/shopping.ts`](../frontend/src/stores/shopping.ts) | Shopping CRUD, Optimistic Updates, Repository-Pattern, Race-Condition-Schutz, Store-Verwaltung (fetchStores, reassignStore, activeStoreFilter) | ✅ Fertig |
 | [`stores/todos.ts`](../frontend/src/stores/todos.ts) | Todos CRUD, Optimistic Updates, Repository-Pattern, Race-Condition-Schutz | ✅ Fertig |
 | [`stores/expenses.ts`](../frontend/src/stores/expenses.ts) | Expenses CRUD, Socket-Handler, debounced Balances-Refetch, Optimistic Delete | ✅ Fertig |
 | [`stores/settlements.ts`](../frontend/src/stores/settlements.ts) | Settlements CRUD, Socket-Handler | ✅ Fertig |
@@ -153,7 +154,8 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | [`views/ChoresView.vue`](../frontend/src/views/ChoresView.vue) | Putzplan: "Diese Woche" (Assignments gruppiert nach Tag) + "Ämtli verwalten" (CRUD), BasePillTabs-Filter (Alle/Meine), Empty-State CTA | ✅ Fertig |
 | [`views/NoHouseholdView.vue`](../frontend/src/views/NoHouseholdView.vue) | Kein-Haushalt-Zustand: Gründen / Beitreten | ✅ Fertig |
 | **Komponenten** | | |
-| [`components/ShoppingList.vue`](../frontend/src/components/ShoppingList.vue) | Shopping-Liste: Touch-optimiert, sticky Quick-Add, BaseCheckCircle, Error-Handling | ✅ Fertig |
+| [`components/ShoppingList.vue`](../frontend/src/components/ShoppingList.vue) | Shopping-Liste: Store-Chips-Filter, Gruppierung nach Geschäft, Quick-Add mit Store-Übernahme, Kebab-Menü (Rename/Dissolve), Edit-Sheet | ✅ Fertig |
+| [`components/ShoppingItemEditSheet.vue`](../frontend/src/components/ShoppingItemEditSheet.vue) | Item-Bearbeitung: Name, Menge, Geschäft (Chips + Freitext), Abteilung (Datalist) | ✅ Fertig |
 | [`components/TodoList.vue`](../frontend/src/components/TodoList.vue) | Todo-Liste: Quick-Add, Detail-Edit, BaseCheckCircle, Zuweisung, Fälligkeitsdatum, Überfällig-Badge | ✅ Fertig |
 | [`components/ExpenseList.vue`](../frontend/src/components/ExpenseList.vue) | Expense-Liste: Sticky Add-Button, Datum/Bezahlt-von Meta, Edit-Dialog, Optimistic Delete | ✅ Fertig |
 | [`components/BalanceSummary.vue`](../frontend/src/components/BalanceSummary.vue) | Saldo-Übersicht: Salden pro Mitglied, Ausgleichsvorschläge, Inline-Settlement-Erfassung | ✅ Fertig |
@@ -179,7 +181,9 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | DELETE | `/api/households/{id}/members/{uid}` | ✅ Admin | **NEU:** Mitglied entfernen |
 | **Shopping** | | | |
 | GET | `/api/households/{id}/shopping-items/` | ✅ | Einkaufsliste |
+| GET | `/api/households/{id}/shopping-items/stores` | ✅ | Distinct Store-Werte |
 | POST | `/api/households/{id}/shopping-items/` | ✅ | Item hinzufügen |
+| POST | `/api/households/{id}/shopping-items/reassign-store` | ✅ | Store umbenennen/auflösen |
 | PATCH | `/api/households/{id}/shopping-items/{item_id}` | ✅ | Item aktualisieren |
 | DELETE | `/api/households/{id}/shopping-items/{item_id}` | ✅ | Item löschen |
 | **Todos** | | | |
@@ -219,6 +223,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | `shopping_item_created` | Server → Room | `ShoppingItem` |
 | `shopping_item_updated` | Server → Room | `ShoppingItem` |
 | `shopping_item_deleted` | Server → Room | `{ id }` |
+| `shopping_items_bulk_updated` | Server → Room | `{ item_ids, changes: { store } }` |
 | **Todos** | | |
 | `todo_created` | Server → Room | `TodoItem` |
 | `todo_updated` | Server → Room | `TodoItem` |
@@ -719,3 +724,21 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 - **Tests:** 14 neue Tests in `test_files_scoping.py` (Cross-Tenant, Validation, Upload/Download/Delete)
 - **Reviews:** Security-Review (`docs/security/epic8-upload-review.md`), Business-Logic-Review (`docs/review-epic8-upload.md`)
 - **i18n:** 9 neue Keys (pets.photo*, files.*) → 588 Keys total
+
+### Epic 19: Einkaufsliste „nach Geschäft" (Redesign + Verwaltung) ✅
+- **Abgeschlossen:** 2026-08-12
+- **Umfang:**
+  - Geschäft als primäres Ordnungskonzept (ersetzt Abteilung/Geschäft-Tabs)
+  - Store-Chips-Filter oberhalb der Liste (Alle + je Geschäft mit Badge-Counter)
+  - Quick-Add übernimmt automatisch aktiven Store-Filter
+  - Item-Edit-Sheet (Bottom-Sheet): Name, Menge, Geschäft (Chips + Freitext), Abteilung
+  - Store-Verwaltung: Umbenennen und Auflösen via Gruppen-Header Kebab-Menü
+  - Merge-Warnung wenn Ziel-Store bereits existiert
+  - Echtzeit-Sync: `shopping_items_bulk_updated` Socket-Event
+  - Keine neue DB-Tabelle, keine Migration (Stores bleiben abgeleitete Freitext-Werte)
+- **Backend:** 2 neue Endpoints in `routers/shopping.py`: `GET /stores` (distinct), `POST /reassign-store` (Bulk-Update)
+- **Frontend:** `ShoppingList.vue` (Hauptumbau), `ShoppingItemEditSheet.vue` (neu), `stores/shopping.ts`, `repositories/shoppingRepository.ts`, `App.vue` (Socket-Registrierung)
+- **Tests:** 9 neue Tests in `test_shopping_stores.py` (GET stores, reassign rename/dissolve, cross-tenant, edge cases)
+- **Reviews:** Security-Review (`docs/security/epic18-shopping-stores-review.md` — bestanden), Business-Logic-Review (2 Findings behoben: Merge-Warnung + maxlength)
+- **i18n:** 15 neue Keys (shopping.allStores, renameStore, dissolveStore, editItem etc.) → 615 Keys total
+- **Offener Punkt (nächster Sprint):** Case-insensitive Store-Normalisierung (Backend-Änderung)

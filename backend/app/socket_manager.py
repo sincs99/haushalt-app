@@ -4,6 +4,7 @@ import uuid
 
 import socketio
 from jwt import PyJWTError as JWTError
+from starlette.concurrency import run_in_threadpool
 
 from app.core.security import decode_access_token
 from app.database import SessionLocal
@@ -23,6 +24,29 @@ _event_loop = None
 def set_event_loop(loop):
     global _event_loop
     _event_loop = loop
+
+
+# ---------------------------------------------------------------------------
+# Synchrone DB-Hilfsfunktionen (geben nur Primitives zurück, keine ORM-Objekte)
+# ---------------------------------------------------------------------------
+
+
+def _load_user_id(uid: uuid.UUID) -> str | None:
+    """Lädt die User-ID als String — Session wird sofort geschlossen."""
+    with SessionLocal() as db:
+        user = db.get(User, uid)
+        return str(user.id) if user else None
+
+
+def _is_household_member(household_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    """Prüft Haushaltsmitgliedschaft — Session wird sofort geschlossen."""
+    with SessionLocal() as db:
+        return (
+            db.query(HouseholdMember)
+            .filter_by(household_id=household_id, user_id=user_id)
+            .first()
+            is not None
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -48,12 +72,13 @@ async def connect(sid, environ, auth):
         logger.warning("Socket connect rejected – token error (sid=%s): %s", sid, exc)
         return False
 
-    # --- DB-Zugriff in minimalem Scope ---
-    with SessionLocal() as db:
-        user = db.get(User, uid)
-        user_id = str(user.id) if user else None
+    # --- DB-Zugriff im Threadpool, damit der Event-Loop nicht blockiert ---
+    try:
+        user_id = await run_in_threadpool(_load_user_id, uid)
+    except Exception:
+        logger.error("Socket connect – DB error (sid=%s)", sid, exc_info=True)
+        return False
 
-    # Session ist geschlossen – jetzt async weiterarbeiten
     if user_id is None:
         logger.warning("Socket connect rejected – user not found (sid=%s)", sid)
         return False
@@ -88,16 +113,22 @@ async def join_household(sid, data):
         await sio.emit("error", {"message": "Invalid household_id"}, to=sid)
         return
 
-    # --- DB-Zugriff in minimalem Scope ---
-    with SessionLocal() as db:
-        membership = (
-            db.query(HouseholdMember)
-            .filter_by(household_id=household_id, user_id=user_id)
-            .first()
+    # --- DB-Zugriff im Threadpool, damit der Event-Loop nicht blockiert ---
+    try:
+        is_member = await run_in_threadpool(
+            _is_household_member, household_id, user_id
         )
+    except Exception:
+        logger.error(
+            "join_household – DB error (sid=%s, household=%s)",
+            sid,
+            household_id,
+            exc_info=True,
+        )
+        await sio.emit("error", {"message": "Internal server error"}, to=sid)
+        return
 
-    # Session ist geschlossen – jetzt async weiterarbeiten
-    if membership is None:
+    if not is_member:
         await sio.emit(
             "error",
             {"message": "Not a member of this household"},

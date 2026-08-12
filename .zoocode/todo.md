@@ -1,3 +1,22 @@
+# Epic 11 (REVISED): Fix event-loop blocking + undersized connection pool
+
+## Status: ✅ ABGESCHLOSSEN (2026-08-12)
+
+### Zusammenfassung
+- **Kein API-Schema-Change** → Frontend muss nichts ändern
+- `database.py`: Engine-Pool explizit konfiguriert (pool_size=20, max_overflow=10, pool_timeout=10, pool_pre_ping, pool_recycle)
+- `socket_manager.py`: Sync-DB-Calls via `run_in_threadpool` vom Event-Loop entkoppelt, fail-safe try/except um connect() und join_household()
+- Neuer Test: `test_pool_contention.py` (5 Tests für Pool-Regression + Socket-Helpers)
+
+### Geänderte Dateien
+| Datei | Änderung |
+|-------|----------|
+| `backend/app/database.py` | Engine-Pool-Parameter explizit gesetzt |
+| `backend/app/socket_manager.py` | `_load_user_id()` + `_is_household_member()` extrahiert, `run_in_threadpool`, fail-safe Exception-Handling |
+| `backend/tests/test_pool_contention.py` | **Neue Datei** — Regressionstests Pool-Contention |
+
+---
+
 # Epic 18: Einkaufsliste — „nach Geschäft" (Redesign + Verwaltung)
 
 ## Status: ✅ ABGESCHLOSSEN (2026-08-12)

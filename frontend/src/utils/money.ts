@@ -40,19 +40,19 @@ export function parseAmountToRappen(input: string): number | null {
 }
 
 /**
- * Parst eine Gewichts-Eingabe (Gramm) zu einer ganzen Zahl.
- * Normalisiert Komma → Punkt, rundet auf ganze Gramm.
- * Gibt null zurück bei ungültiger Eingabe.
+ * Parst eine Gewichts-Eingabe in Kilogramm zu Gramm (Integer).
+ * Komma → Punkt, Bereich 0,1–50 kg, ×1000, auf ganze Gramm gerundet.
  * Leerstring → undefined (kein Gewicht = gültig).
+ * Ungültig → null.
  */
-export function parseWeightGrams(input: string): number | null | undefined {
+export function parseWeightKgToGrams(input: string): number | null | undefined {
   const trimmed = input.trim()
-  if (!trimmed) return undefined // Leeres Feld = kein Gewicht, gültig
+  if (!trimmed) return undefined
 
   const normalized = trimmed.replace(',', '.')
-  const value = parseFloat(normalized)
+  const kg = parseFloat(normalized)
 
-  if (!Number.isFinite(value) || value <= 0 || value > 50_000) return null // ungültig
+  if (!Number.isFinite(kg) || kg < 0.1 || kg > 50) return null
 
-  return Math.round(value) // Ganze Gramm
+  return Math.round(kg * 1000)
 }

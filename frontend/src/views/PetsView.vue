@@ -6,7 +6,7 @@ import { usePetsStore } from '../stores/pets'
 import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
-import { parseWeightGrams } from '../utils/money'
+import { parseWeightKgToGrams } from '../utils/money'
 import type { Pet, PetCreatePayload, FeedingSlot, FeedingLog } from '../types'
 import { PhCat, PhSun, PhMoon, PhPlus } from '@phosphor-icons/vue'
 import PetPhotoAvatar from '../components/PetPhotoAvatar.vue'
@@ -206,7 +206,7 @@ async function handleCreatePet() {
 
   formSaving.value = true
 
-  const weightResult = parseWeightGrams(formWeightGrams.value)
+  const weightResult = parseWeightKgToGrams(formWeightGrams.value)
   if (weightResult === null) {
     showToast(t('pets.invalidWeight'))
     formSaving.value = false
@@ -408,7 +408,7 @@ function navigateToPet(petId: string) {
         <BaseInput
           v-model="formWeightGrams"
           :label="$t('pets.weight')"
-          :placeholder="$t('pets.weight')"
+          :placeholder="$t('pets.weightPlaceholder')"
           type="text"
           inputmode="decimal"
         />

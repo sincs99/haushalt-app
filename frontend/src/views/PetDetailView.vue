@@ -6,7 +6,7 @@ import { usePetsStore } from '../stores/pets'
 import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
-import { parseWeightGrams } from '../utils/money'
+import { parseWeightKgToGrams } from '../utils/money'
 import { useProtectedImage } from '../composables/useProtectedImage'
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
 import type {
@@ -413,7 +413,9 @@ function openEditPetDialog() {
   editFormName.value = pet.value.name
   editFormBreed.value = pet.value.breed ?? ''
   editFormBirthdate.value = pet.value.birthdate ?? ''
-  editFormWeightGrams.value = pet.value.weight_grams ? String(pet.value.weight_grams) : ''
+  editFormWeightGrams.value = pet.value.weight_grams
+    ? (pet.value.weight_grams / 1000).toFixed(1).replace('.', ',')
+    : ''
   editFormNotes.value = pet.value.notes ?? ''
   editFormChipNumber.value = pet.value.chip_number ?? ''
   editFormInsurance.value = pet.value.insurance ?? ''
@@ -443,7 +445,7 @@ async function handleUpdatePet() {
 
   editPetSaving.value = true
 
-  const weightResult = parseWeightGrams(editFormWeightGrams.value)
+  const weightResult = parseWeightKgToGrams(editFormWeightGrams.value)
   if (weightResult === null) {
     showToast(t('pets.invalidWeight'))
     editPetSaving.value = false
@@ -615,19 +617,14 @@ async function handleDeleteCareTask() {
 
     <template v-else>
       <!-- ═══ Foto-Bereich ═══ -->
-      <div class="flex flex-col items-center mb-4">
-        <div class="relative">
-          <div class="w-24 h-24 rounded-full overflow-hidden bg-surface-variant flex items-center justify-center">
-            <img
-              v-if="photoObjectUrl"
-              :src="photoObjectUrl"
-              :alt="pet.name"
-              class="w-full h-full object-cover"
-            />
-            <PhCat v-else :size="48" class="text-on-surface-variant" />
+      <div class="pet-photo-section">
+        <div class="pet-photo-wrapper">
+          <div class="pet-photo" :class="{ 'pet-photo--placeholder': !photoObjectUrl }">
+            <img v-if="photoObjectUrl" :src="photoObjectUrl" :alt="pet.name" class="pet-photo__img" />
+            <PhCat v-else :size="48" class="pet-photo__placeholder-icon" />
           </div>
           <button
-            class="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-md"
+            class="pet-photo__camera-btn"
             @click="fileInputRef?.click()"
             :disabled="photoUploading"
             :aria-label="$t('pets.photoUploading')"
@@ -635,7 +632,7 @@ async function handleDeleteCareTask() {
             <PhCamera :size="16" />
           </button>
         </div>
-        <span v-if="photoUploading" class="text-xs text-on-surface-variant mt-1">
+        <span v-if="photoUploading" class="pet-photo__upload-status">
           {{ $t('pets.photoUploading') }}
         </span>
       </div>
@@ -643,7 +640,7 @@ async function handleDeleteCareTask() {
         ref="fileInputRef"
         type="file"
         accept="image/jpeg,image/png,image/webp"
-        class="hidden"
+        class="pet-photo__input"
         @change="handlePhotoUpload"
       />
 
@@ -1110,7 +1107,7 @@ async function handleDeleteCareTask() {
         <BaseInput
           v-model="editFormWeightGrams"
           :label="$t('pets.weight')"
-          :placeholder="$t('pets.weight')"
+          :placeholder="$t('pets.weightPlaceholder')"
           type="text"
           inputmode="decimal"
         />
@@ -1897,5 +1894,78 @@ async function handleDeleteCareTask() {
   align-items: center;
   gap: var(--space-1);
   flex-shrink: 0;
+}
+/* ── Pet Photo ── */
+.pet-photo-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+
+.pet-photo-wrapper {
+  position: relative;
+}
+
+.pet-photo {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pet-photo--placeholder {
+  background: var(--chip);
+}
+
+.pet-photo__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.pet-photo__placeholder-icon {
+  color: var(--sub);
+}
+
+.pet-photo__camera-btn {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--color-primary, var(--acc));
+  color: #fff;
+  border: 2px solid var(--surface, #fff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+  transition: transform var(--transition-fast);
+}
+
+.pet-photo__camera-btn:active {
+  transform: scale(0.92);
+}
+
+.pet-photo__camera-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pet-photo__input {
+  display: none;
+}
+
+.pet-photo__upload-status {
+  font-size: var(--text-xs);
+  color: var(--sub);
+  margin-top: var(--space-1);
 }
 </style>

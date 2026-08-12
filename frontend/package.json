@@ -7,7 +7,9 @@
     "build": "npm run check:locales && vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
-    "check:locales": "node scripts/check-locales.js"
+    "check:locales": "node scripts/check-locales.js",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts"
   },
   "dependencies": {
     "@phosphor-icons/vue": "^2.2.1",
@@ -23,6 +25,7 @@
     "@vitejs/plugin-vue": "^6.0.8",
     "typescript": "~5.8.3",
     "vite": "^8.2.0",
+    "vitest": "^4.1.10",
     "vue-tsc": "^2.2.0"
   }
 }

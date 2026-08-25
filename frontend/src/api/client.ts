@@ -1,7 +1,9 @@
 import axios from 'axios'
 
+export const API_BASE = import.meta.env.VITE_API_URL || ''
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
+  baseURL: API_BASE,
 })
 
 // URLs die NICHT refresht werden sollen (kein Retry bei 401)

@@ -4,7 +4,23 @@
 # Erstellt einen komprimierten PostgreSQL-Dump via Docker Compose.
 # =============================================================================
 
+param(
+    [Parameter(HelpMessage = "Docker-Compose-Datei (default: docker-compose.yml)")]
+    [string]$ComposeFile = "docker-compose.yml",
+
+    [Parameter(HelpMessage = "Env-Datei für Docker Compose (optional)")]
+    [string]$EnvFile,
+
+    [Parameter(HelpMessage = "Docker-Compose-Projektname (optional)")]
+    [string]$ProjectName
+)
+
 $ErrorActionPreference = "Stop"
+
+# --- Compose-Befehlsbasis zusammenbauen ---
+$composeArgs = @("-f", $ComposeFile)
+if ($EnvFile)     { $composeArgs += @("--env-file", $EnvFile) }
+if ($ProjectName) { $composeArgs += @("--project-name", $ProjectName) }
 
 # --- Konfiguration ---
 $DbUser       = "haushalt"
@@ -17,13 +33,13 @@ $MaxBackups   = 14
 Write-Host "Prüfe ob Postgres-Container läuft..." -ForegroundColor Cyan
 
 try {
-    $containerStatus = docker compose ps --status running --format "{{.Service}}" 2>&1
+    $containerStatus = docker compose @composeArgs ps --status running --format "{{.Service}}" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Fehler beim Abfragen des Container-Status. Läuft Docker?"
         exit 1
     }
     if ($containerStatus -notmatch $ServiceName) {
-        Write-Error "Der Postgres-Container '$ServiceName' läuft nicht. Starte ihn zuerst mit: docker compose up -d $ServiceName"
+        Write-Error "Der Postgres-Container '$ServiceName' läuft nicht. Starte ihn zuerst mit: docker compose @composeArgs up -d $ServiceName"
         exit 1
     }
 }
@@ -48,25 +64,25 @@ $dumpFile  = Join-Path $BackupDir "casa-backup-${timestamp}.dump"
 Write-Host "Erstelle Backup: $dumpFile ..." -ForegroundColor Cyan
 
 # Dump IM Container erstellen:
-docker compose exec -T $ServiceName pg_dump -U $DbUser -d $DbName -F c -f /tmp/casa-backup.dump
+docker compose @composeArgs exec -T $ServiceName pg_dump -U $DbUser -d $DbName -F c -f /tmp/casa-backup.dump
 if ($LASTEXITCODE -ne 0) {
     # Temp-Datei im Container aufräumen
-    docker compose exec -T $ServiceName rm -f /tmp/casa-backup.dump
+    docker compose @composeArgs exec -T $ServiceName rm -f /tmp/casa-backup.dump
     Write-Error "pg_dump ist mit Exit-Code $LASTEXITCODE fehlgeschlagen."
     exit 1
 }
 
 # Byte-sicher aus dem Container kopieren:
-docker compose cp "${ServiceName}:/tmp/casa-backup.dump" $dumpFile
+docker compose @composeArgs cp "${ServiceName}:/tmp/casa-backup.dump" $dumpFile
 if ($LASTEXITCODE -ne 0) {
-    docker compose exec -T $ServiceName rm -f /tmp/casa-backup.dump
+    docker compose @composeArgs exec -T $ServiceName rm -f /tmp/casa-backup.dump
     if (Test-Path $dumpFile) { Remove-Item $dumpFile -Force }
     Write-Error "docker compose cp fehlgeschlagen."
     exit 1
 }
 
 # Temp-Datei im Container entfernen:
-docker compose exec -T $ServiceName rm -f /tmp/casa-backup.dump
+docker compose @composeArgs exec -T $ServiceName rm -f /tmp/casa-backup.dump
 
 # --- 5. Plausibilitätsprüfung ---
 if (-not (Test-Path $dumpFile)) {

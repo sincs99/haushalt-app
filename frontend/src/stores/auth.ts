@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import axios from 'axios'
-import api from '../api/client'
+import api, { API_BASE } from '../api/client'
 import type { UserInfo, HouseholdInfo, MeResponse } from '../types'
 import { tokenStorage, TOKEN_STORAGE_KEY } from '../services/tokenStorage'
 import { useToast } from '../composables/useToast'
@@ -110,7 +110,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Direkter axios call OHNE Interceptor (um Endlos-Loop zu vermeiden)
     const response = await axios.post(
-      `${import.meta.env.VITE_API_URL}/api/auth/refresh`,
+      `${API_BASE}/api/auth/refresh`,
       { refresh_token: rtToUse },
     )
 
@@ -229,7 +229,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (refreshToken.value) {
       try {
         await axios.post(
-          `${import.meta.env.VITE_API_URL}/api/auth/logout`,
+          `${API_BASE}/api/auth/logout`,
           { refresh_token: refreshToken.value },
         )
       } catch {

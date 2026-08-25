@@ -69,4 +69,6 @@ backups/
 # Docker
 # ========================
 .env
+.env.prod
 !.env.example
+!.env.prod.example

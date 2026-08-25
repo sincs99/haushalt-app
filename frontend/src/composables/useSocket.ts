@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { io, type Socket } from 'socket.io-client'
+import { API_BASE } from '../api/client'
 
 let socket: Socket | null = null
 const isConnected = ref(false)
@@ -15,7 +16,7 @@ function connect(token: string) {
 
   // Socket.IO-Client hängt /socket.io automatisch als Path an,
   // daher URL OHNE /socket.io Suffix verwenden
-  socket = io(import.meta.env.VITE_API_URL, {
+  socket = io(API_BASE || undefined, {
     auth: { token },
   })
 

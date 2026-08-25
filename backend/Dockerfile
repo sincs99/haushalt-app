@@ -12,5 +12,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Alembic-Migrationen beim Start ausführen + Uvicorn starten
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Non-root user für Production-Sicherheit
+RUN useradd -r -s /bin/false app \
+    && mkdir -p /app/data/uploads \
+    && chown -R app:app /app
+USER app
+
+# --workers 1: python-socketio ohne Message-Queue kann nicht multi-worker laufen
+# --proxy-headers: X-Forwarded-For wird zu request.client.host (für Rate-Limiting)
+# --forwarded-allow-ips='*': Akzeptabel, da Port 8000 nie ausserhalb des Docker-Netzwerks exponiert ist
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips='*'"]

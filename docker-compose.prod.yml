@@ -1,0 +1,60 @@
+# Production Compose — eigenständig, unabhängig von docker-compose.yml (Dev)
+# Nutzung: docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: haushalt
+      POSTGRES_USER: haushalt
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Kein ports: — DB nur intern erreichbar
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U haushalt"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://haushalt:${POSTGRES_PASSWORD}@postgres:5432/haushalt
+      UPLOAD_DIR: /app/data/uploads
+    volumes:
+      - uploaddata:/app/data/uploads
+    # Kein ports: — Backend nur über Frontend-Nginx erreichbar
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    build: ./frontend
+    container_name: casa-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - default
+      - npm
+    # Kein ports: — NPM verbindet sich über das npm-Netzwerk
+
+volumes:
+  pgdata:
+  uploaddata:
+
+networks:
+  npm:
+    external: true
+    name: "${NPM_NETWORK}"

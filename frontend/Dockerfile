@@ -6,11 +6,15 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
+# Production-Build ohne VITE_API_URL = same-origin (API via nginx reverse proxy)
+ARG VITE_API_URL=""
+ENV VITE_API_URL=$VITE_API_URL
+
 COPY . .
 RUN npm run check:locales && npx vite build
 
 # Stage 2: Serve
-FROM nginx:alpine
+FROM nginx:1.27-alpine
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

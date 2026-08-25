@@ -5,11 +5,25 @@
 # =============================================================================
 
 param(
-    [Parameter(Mandatory = $true, HelpMessage = "Pfad zur .dump-Datei")]
-    [string]$DumpFile
+    [Parameter(Mandatory = $true, Position = 0, HelpMessage = "Pfad zur .dump-Datei")]
+    [string]$DumpFile,
+
+    [Parameter(HelpMessage = "Docker-Compose-Datei (default: docker-compose.yml)")]
+    [string]$ComposeFile = "docker-compose.yml",
+
+    [Parameter(HelpMessage = "Env-Datei für Docker Compose (optional)")]
+    [string]$EnvFile,
+
+    [Parameter(HelpMessage = "Docker-Compose-Projektname (optional)")]
+    [string]$ProjectName
 )
 
 $ErrorActionPreference = "Stop"
+
+# --- Compose-Befehlsbasis zusammenbauen ---
+$composeArgs = @("-f", $ComposeFile)
+if ($EnvFile)     { $composeArgs += @("--env-file", $EnvFile) }
+if ($ProjectName) { $composeArgs += @("--project-name", $ProjectName) }
 
 # --- Konfiguration ---
 $DbUser      = "haushalt"
@@ -42,13 +56,13 @@ Write-Host "Dump-Datei: $($fileInfo.FullName) ($([math]::Round($fileInfo.Length 
 Write-Host "Prüfe ob Postgres-Container läuft..." -ForegroundColor Cyan
 
 try {
-    $containerStatus = docker compose ps --status running --format "{{.Service}}" 2>&1
+    $containerStatus = docker compose @composeArgs ps --status running --format "{{.Service}}" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Fehler beim Abfragen des Container-Status. Läuft Docker?"
         exit 1
     }
     if ($containerStatus -notmatch $ServiceName) {
-        Write-Error "Der Postgres-Container '$ServiceName' läuft nicht. Starte ihn zuerst mit: docker compose up -d $ServiceName"
+        Write-Error "Der Postgres-Container '$ServiceName' läuft nicht. Starte ihn zuerst mit: docker compose @composeArgs up -d $ServiceName"
         exit 1
     }
 }
@@ -79,25 +93,25 @@ Write-Host "Stelle Datenbank wieder her..." -ForegroundColor Cyan
 
 try {
     # Dump byte-sicher in den Container kopieren
-    docker compose cp $DumpFile "${ServiceName}:/tmp/casa-restore.dump"
+    docker compose @composeArgs cp $DumpFile "${ServiceName}:/tmp/casa-restore.dump"
     if ($LASTEXITCODE -ne 0) {
         Write-Error "docker compose cp fehlgeschlagen."
         exit 1
     }
 
     # Restore aus Datei im Container (kein stdin-Piping)
-    docker compose exec -T $ServiceName pg_restore --clean --if-exists -U $DbUser -d $DbName /tmp/casa-restore.dump
+    docker compose @composeArgs exec -T $ServiceName pg_restore --clean --if-exists -U $DbUser -d $DbName /tmp/casa-restore.dump
     $restoreExitCode = $LASTEXITCODE
 }
 catch {
     # Aufräumen bei Fehler
-    docker compose exec -T $ServiceName rm -f /tmp/casa-restore.dump 2>$null
+    docker compose @composeArgs exec -T $ServiceName rm -f /tmp/casa-restore.dump 2>$null
     Write-Error "Fehler beim Restore: $_"
     exit 1
 }
 finally {
     # Temp-Datei im Container immer aufräumen
-    docker compose exec -T $ServiceName rm -f /tmp/casa-restore.dump 2>$null
+    docker compose @composeArgs exec -T $ServiceName rm -f /tmp/casa-restore.dump 2>$null
 }
 
 # --- 5. Ergebnis prüfen ---
@@ -117,7 +131,13 @@ else {
 }
 
 # --- 6. Empfehlung: Backend neu starten ---
+$restartCmd = "docker compose"
+$restartCmd += " -f $ComposeFile"
+if ($EnvFile)     { $restartCmd += " --env-file $EnvFile" }
+if ($ProjectName) { $restartCmd += " --project-name $ProjectName" }
+$restartCmd += " restart backend"
+
 Write-Host ""
 Write-Host "📌 Empfehlung: Backend neu starten mit:" -ForegroundColor Cyan
-Write-Host "   docker compose restart backend" -ForegroundColor White
+Write-Host "   $restartCmd" -ForegroundColor White
 Write-Host ""

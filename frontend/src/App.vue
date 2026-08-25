@@ -376,7 +376,7 @@ onUnmounted(() => {
             :user-id="authStore.user.id"
             size="md"
           />
-          <button class="top-bar__logout" @click="authStore.logout()">{{ $t('auth.logout') }}</button>
+          <button class="top-bar__logout" @click="authStore.logout({ reason: 'user' })">{{ $t('auth.logout') }}</button>
           <span
             class="sync-dot"
             :class="`sync-dot--${syncStatus}`"

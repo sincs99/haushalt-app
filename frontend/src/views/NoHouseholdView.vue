@@ -115,7 +115,7 @@ async function joinHousehold() {
     </div>
 
     <div class="no-household-logout">
-      <BaseButton variant="ghost" @click="authStore.logout()">
+      <BaseButton variant="ghost" @click="authStore.logout({ reason: 'user' })">
         {{ $t('auth.logout') }}
       </BaseButton>
     </div>

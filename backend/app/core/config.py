@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
+    refresh_token_reuse_grace_seconds: int = 30
 
     class Config:
         env_file = ".env"

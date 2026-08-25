@@ -3,22 +3,46 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.errors import RateLimitExceeded
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from app.core.config import settings
+from app.core.error_codes import ErrorCode, error_detail
+from app.core.rate_limit import limiter
 from app.routers import auth, shopping, todos, households, expenses, settlements, chores, dashboard, tasks, budgets, recurring_bills, events, calendars, polls, pets, food, notes, files
 from app.socket_manager import socket_app, set_event_loop
 
 _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 
+_JWT_PLACEHOLDER = "please-change-this-secret-in-production-min-32-chars"
+
+
+async def _custom_rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """Strukturierte JSON-Response statt generischem slowapi-Text."""
+    return JSONResponse(
+        status_code=429,
+        content={"detail": error_detail(ErrorCode.RATE_LIMITED, "Too many requests")},
+    )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Event-Loop für sync→async Bridge (emit_to_household_sync) setzen."""
+    """Startup-Checks und Event-Loop für sync→async Bridge setzen."""
+    # JWT Secret Validierung
+    if settings.jwt_secret_key == _JWT_PLACEHOLDER or len(settings.jwt_secret_key) < 32:
+        raise RuntimeError(
+            "JWT_SECRET_KEY is insecure! It must be at least 32 characters and not the .env.example placeholder. "
+            'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+        )
     set_event_loop(asyncio.get_running_loop())
     yield
 
 
 app = FastAPI(title="Haushalt App API", lifespan=lifespan)
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _custom_rate_limit_handler)
 
 app.add_middleware(
     CORSMiddleware,

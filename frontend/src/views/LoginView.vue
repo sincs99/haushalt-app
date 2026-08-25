@@ -23,7 +23,9 @@ async function handleLogin() {
   isLoading.value = true
   try {
     await authStore.login(email.value, password.value)
-    router.push('/shopping')
+    // Redirect zur vorher gewünschten Seite oder Default
+    const redirect = router.currentRoute.value.query.redirect as string | undefined
+    router.push(redirect || '/shopping')
   } catch (err: any) {
     error.value = translateApiError(err)
   } finally {

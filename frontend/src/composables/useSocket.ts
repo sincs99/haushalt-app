@@ -62,6 +62,17 @@ function offReconnect(callback: () => void) {
   reconnectCallbacks.delete(callback)
 }
 
+function reconnectWithToken(newToken: string) {
+  // Bestehende Verbindung schließen und mit neuem Token neu verbinden
+  if (socket) {
+    socket.disconnect()
+    socket = null
+    isConnected.value = false
+    // hasConnectedBefore NICHT zurücksetzen — wir wollen reconnect-callbacks auslösen
+  }
+  connect(newToken)
+}
+
 function disconnect() {
   if (!socket) return
   socket.disconnect()
@@ -73,6 +84,7 @@ function disconnect() {
 export function useSocket() {
   return {
     connect,
+    reconnectWithToken,
     joinHousehold,
     leaveHousehold,
     on,

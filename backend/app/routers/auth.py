@@ -1,5 +1,6 @@
 import logging
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -8,9 +9,12 @@ from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 from app.database import get_db
-from app.models import User, Household, HouseholdMember
+from app.models import User, Household, HouseholdMember, RefreshToken
 from app.core.error_codes import ErrorCode, error_detail
-from app.core.security import hash_password, verify_password, create_access_token
+from app.core.security import (
+    hash_password, verify_password, create_access_token,
+    create_refresh_token, hash_refresh_token, get_access_token_expires_in,
+)
 from app.services.invite_code import generate_unique_invite_code
 from app.core.deps import get_current_user
 
@@ -38,7 +42,17 @@ class RegisterRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
+    expires_in: int  # Sekunden bis Access-Token abläuft
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str
 
 
 class HouseholdOut(BaseModel):
@@ -53,6 +67,39 @@ class MeResponse(BaseModel):
     email: str
     display_name: str
     households: list[HouseholdOut]
+
+
+# ---------------------------------------------------------------------------
+# Hilfsfunktion: Token-Paar erstellen + Refresh-Token persistieren
+# ---------------------------------------------------------------------------
+
+
+def _create_token_pair(user_id: str, db: Session) -> TokenResponse:
+    """Erzeugt Access- + Refresh-Token-Paar und persistiert den Refresh-Token."""
+    from app.core.config import settings
+
+    access_token = create_access_token(user_id)
+    raw_refresh = create_refresh_token()
+
+    rt = RefreshToken(
+        user_id=uuid.UUID(user_id),
+        token_hash=hash_refresh_token(raw_refresh),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days),
+    )
+    db.add(rt)
+    db.commit()
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=raw_refresh,
+        token_type="bearer",
+        expires_in=get_access_token_expires_in(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 
 
 @router.post("/register", response_model=TokenResponse)
@@ -92,10 +139,9 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
         membership = HouseholdMember(household_id=household.id, user_id=user.id, role="admin")
 
     db.add(membership)
-    db.commit()
+    db.flush()
 
-    token = create_access_token(str(user.id))
-    return TokenResponse(access_token=token)
+    return _create_token_pair(str(user.id), db)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -104,8 +150,70 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(status_code=401, detail=error_detail(ErrorCode.INVALID_CREDENTIALS, "Incorrect email or password"))
 
-    token = create_access_token(str(user.id))
-    return TokenResponse(access_token=token)
+    return _create_token_pair(str(user.id), db)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_endpoint(data: RefreshRequest, db: Session = Depends(get_db)):
+    """Token-Rotation: tausche gültigen Refresh-Token gegen neues Token-Paar."""
+    token_hash = hash_refresh_token(data.refresh_token)
+    old_token = db.query(RefreshToken).filter_by(token_hash=token_hash).first()
+
+    # 1) Token nicht gefunden
+    if old_token is None:
+        raise HTTPException(
+            status_code=401,
+            detail=error_detail(ErrorCode.REFRESH_TOKEN_INVALID, "Refresh token invalid"),
+        )
+
+    # 2) Reuse-Detection: Token bereits revoked → gesamte Kette revoken
+    if old_token.revoked_at is not None:
+        db.query(RefreshToken).filter(
+            RefreshToken.user_id == old_token.user_id,
+            RefreshToken.revoked_at.is_(None),
+        ).update({"revoked_at": datetime.now(timezone.utc)})
+        db.commit()
+        raise HTTPException(
+            status_code=401,
+            detail=error_detail(ErrorCode.REFRESH_TOKEN_REUSED, "Refresh token reuse detected"),
+        )
+
+    # 3) Token abgelaufen (SQLite gibt naive datetimes, PostgreSQL aware)
+    expires_at = old_token.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=401,
+            detail=error_detail(ErrorCode.REFRESH_TOKEN_EXPIRED, "Refresh token expired"),
+        )
+
+    # 4) Alles OK → alten Token revoken, neues Paar erstellen
+    old_token.revoked_at = datetime.now(timezone.utc)
+    db.flush()
+
+    pair = _create_token_pair(str(old_token.user_id), db)
+
+    # replaced_by_id auf das neue RefreshToken setzen
+    new_rt = db.query(RefreshToken).filter_by(
+        token_hash=hash_refresh_token(pair.refresh_token)
+    ).first()
+    if new_rt:
+        old_token.replaced_by_id = new_rt.id
+        db.commit()
+
+    return pair
+
+
+@router.post("/logout", status_code=204)
+def logout_endpoint(data: LogoutRequest, db: Session = Depends(get_db)):
+    """Revoke einen Refresh-Token. Idempotent: unbekannte/bereits revoked Tokens → trotzdem 204."""
+    token_hash = hash_refresh_token(data.refresh_token)
+    existing = db.query(RefreshToken).filter_by(token_hash=token_hash).first()
+    if existing and existing.revoked_at is None:
+        existing.revoked_at = datetime.now(timezone.utc)
+        db.commit()
+    return None
 
 
 @router.get("/me", response_model=MeResponse)

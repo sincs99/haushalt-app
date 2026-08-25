@@ -1,39 +1,28 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import axios from 'axios'
 import api from '../api/client'
 import type { UserInfo, HouseholdInfo, MeResponse } from '../types'
+import { tokenStorage } from '../services/tokenStorage'
 import { useToast } from '../composables/useToast'
 import i18n from '../i18n'
 
-const STORAGE_KEY = 'haushalt_token'
 const HOUSEHOLD_KEY = 'haushalt_household_id'
 
 export const useAuthStore = defineStore('auth', () => {
   // State
   const token = ref<string | null>(null)
+  const refreshToken = ref<string | null>(null)
   const user = ref<UserInfo | null>(null)
   const currentHouseholdId = ref<string | null>(null)
   const households = ref<HouseholdInfo[]>([])
+  const isInitialized = ref(false)
 
-  // Init: Token aus localStorage wiederherstellen
-  const savedToken = localStorage.getItem(STORAGE_KEY)
-  let readyPromise: Promise<void>
-  if (savedToken) {
-    token.value = savedToken
-    readyPromise = fetchMe().catch(() => {
-      // Token expired oder ungültig → sauber ausloggen
-      token.value = null
-      localStorage.removeItem(STORAGE_KEY)
-    })
-  } else {
-    readyPromise = Promise.resolve()
-  }
-
-  // Init: HouseholdId aus localStorage wiederherstellen
-  const savedHouseholdId = localStorage.getItem(HOUSEHOLD_KEY)
-  if (savedHouseholdId) {
-    currentHouseholdId.value = savedHouseholdId
-  }
+  // Internes Promise-Setup für authReady
+  let _authReadyResolve: () => void
+  const authReady = new Promise<void>((resolve) => {
+    _authReadyResolve = resolve
+  })
 
   // Getters
   const isAuthenticated = computed(() => !!token.value)
@@ -43,23 +32,114 @@ export const useAuthStore = defineStore('auth', () => {
     return households.value.find(h => h.id === currentHouseholdId.value) ?? null
   })
 
-  // Actions
+  // ── Actions ──
+
+  async function initialize() {
+    // Nur einmal ausführen
+    if (isInitialized.value) return
+
+    const saved = tokenStorage.get()
+    if (!saved) {
+      isInitialized.value = true
+      _authReadyResolve()
+      return
+    }
+
+    // Tokens aus Storage wiederherstellen
+    token.value = saved.accessToken
+    refreshToken.value = saved.refreshToken
+
+    // HouseholdId aus localStorage wiederherstellen
+    const savedHouseholdId = localStorage.getItem(HOUSEHOLD_KEY)
+    if (savedHouseholdId) {
+      currentHouseholdId.value = savedHouseholdId
+    }
+
+    try {
+      await fetchMe()
+    } catch (err: any) {
+      // Access-Token abgelaufen? → Refresh versuchen
+      if (err?.response?.status === 401) {
+        try {
+          await refresh()
+          await fetchMe()
+        } catch {
+          // Refresh auch fehlgeschlagen → sauber ausloggen
+          _clearState()
+        }
+      } else {
+        _clearState()
+      }
+    }
+
+    isInitialized.value = true
+    _authReadyResolve()
+  }
+
+  // ── Refresh — Single-Flight ──
+
+  let _refreshPromise: Promise<void> | null = null
+
+  async function refresh(): Promise<void> {
+    // Single-flight: concurrent callers teilen sich dasselbe Promise
+    if (_refreshPromise) return _refreshPromise
+
+    _refreshPromise = _doRefresh()
+    try {
+      await _refreshPromise
+    } finally {
+      _refreshPromise = null
+    }
+  }
+
+  async function _doRefresh(): Promise<void> {
+    if (!refreshToken.value) throw new Error('No refresh token')
+
+    // Direkter axios call OHNE Interceptor (um Endlos-Loop zu vermeiden)
+    const response = await axios.post(
+      `${import.meta.env.VITE_API_URL}/api/auth/refresh`,
+      { refresh_token: refreshToken.value },
+    )
+
+    const data = response.data
+    token.value = data.access_token
+    refreshToken.value = data.refresh_token
+
+    tokenStorage.set({
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      accessExpiresAt: Date.now() + data.expires_in * 1000,
+    })
+  }
+
+  // ── Login ──
+
   async function login(email: string, password: string) {
     const response = await api.post(
       '/api/auth/login',
       new URLSearchParams({ username: email, password }),
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
     )
-    token.value = response.data.access_token
-    localStorage.setItem(STORAGE_KEY, token.value!)
+    const data = response.data
+    token.value = data.access_token
+    refreshToken.value = data.refresh_token
+
+    tokenStorage.set({
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      accessExpiresAt: Date.now() + data.expires_in * 1000,
+    })
+
     await fetchMe()
   }
+
+  // ── Register ──
 
   async function register(
     email: string,
     password: string,
     displayName: string,
-    options: { householdName: string } | { inviteCode: string }
+    options: { householdName: string } | { inviteCode: string },
   ) {
     const payload: Record<string, string> = {
       email,
@@ -72,10 +152,20 @@ export const useAuthStore = defineStore('auth', () => {
       payload.invite_code = options.inviteCode
     }
     const response = await api.post('/api/auth/register', payload)
-    token.value = response.data.access_token
-    localStorage.setItem(STORAGE_KEY, token.value!)
+    const data = response.data
+    token.value = data.access_token
+    refreshToken.value = data.refresh_token
+
+    tokenStorage.set({
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      accessExpiresAt: Date.now() + data.expires_in * 1000,
+    })
+
     await fetchMe()
   }
+
+  // ── Fetch Me ──
 
   async function fetchMe() {
     const response = await api.get<MeResponse>('/api/auth/me')
@@ -97,23 +187,54 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  // ── Switch Household ──
+
   function switchHousehold(householdId: string) {
     currentHouseholdId.value = householdId
     localStorage.setItem(HOUSEHOLD_KEY, householdId)
   }
 
+  // ── Logout ──
+
   async function logout() {
+    // Best-effort: Backend benachrichtigen
+    if (refreshToken.value) {
+      try {
+        await axios.post(
+          `${import.meta.env.VITE_API_URL}/api/auth/logout`,
+          { refresh_token: refreshToken.value },
+        )
+      } catch {
+        // Ignore — Logout ist best-effort
+      }
+    }
+
+    _clearState()
+
+    const { default: router } = await import('../router')
+    const currentPath = router.currentRoute.value.fullPath
+    // Nur redirect-Parameter setzen wenn nicht bereits auf /login oder /register
+    if (currentPath && currentPath !== '/login' && currentPath !== '/register') {
+      router.push({ path: '/login', query: { redirect: currentPath } })
+    } else {
+      router.push('/login')
+    }
+  }
+
+  // ── Internal: State zurücksetzen ──
+
+  function _clearState() {
     token.value = null
+    refreshToken.value = null
     user.value = null
     currentHouseholdId.value = null
     households.value = []
-    localStorage.removeItem(STORAGE_KEY)
+    tokenStorage.clear()
     localStorage.removeItem(HOUSEHOLD_KEY)
-    const { default: router } = await import('../router')
-    router.push('/login')
   }
 
-  // Socket-Event-Handler für Household-Events
+  // ── Socket-Event-Handler für Household-Events ──
+
   function handleHouseholdUpdated(data: { id: string; name: string }) {
     const h = households.value.find(h => h.id === data.id)
     if (h) h.name = data.name
@@ -162,19 +283,23 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     // State
     token,
+    refreshToken,
     user,
     currentHouseholdId,
     households,
+    isInitialized,
+    authReady,
     // Getters
     isAuthenticated,
     currentHousehold,
     // Actions
+    initialize,
     login,
     register,
     fetchMe,
+    refresh,
     switchHousehold,
     logout,
-    ready: readyPromise,
     // Socket-Event-Handler
     handleHouseholdUpdated,
     handleMemberJoined,

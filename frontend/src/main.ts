@@ -9,7 +9,15 @@ import { initTheme } from './composables/useTheme'
 initTheme()
 
 const app = createApp(App)
-app.use(createPinia())
+const pinia = createPinia()
+app.use(pinia)
+
+// Auth initialisieren BEVOR Router aktiviert wird
+// Das stellt sicher, dass authReady vor der ersten Navigation resolved wird
+import { useAuthStore } from './stores/auth'
+const authStore = useAuthStore()
+authStore.initialize()
+
 app.use(router)
 app.use(i18n)
 app.mount('#app')

@@ -36,7 +36,7 @@ const financeStore = useFinanceStore()
 const dashboardStore = useDashboardStore()
 const pollsStore = usePollsStore()
 const petsStore = usePetsStore()
-const { connect, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect, isConnected } = useSocket()
+const { connect, reconnectWithToken, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect, isConnected } = useSocket()
 
 // Sync-Status für Indikator
 const syncStatus = computed(() => {
@@ -121,7 +121,7 @@ watch(
       return
     }
 
-    connect(token)
+    reconnectWithToken(token)
 
     // Alten Room verlassen
     if (oldHouseholdId && oldHouseholdId !== householdId) {

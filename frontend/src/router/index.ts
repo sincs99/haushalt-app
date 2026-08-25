@@ -106,8 +106,15 @@ router.beforeEach(async (to) => {
       return { path: '/login', query: { redirect: to.fullPath } }
     }
 
-    // Authentifiziert aber keine Haushalte → NoHousehold
-    if (to.path !== '/no-household' && authStore.households.length === 0) {
+    // Nur die "keine Haushalte"-Prüfung anwenden wenn fetchMe mindestens
+    // einmal erfolgreich war (user ist gesetzt). Wenn user null ist aber
+    // tokens existieren (z.B. Backend offline), durchlassen — die View
+    // wird ihren eigenen Fehlerzustand zeigen.
+    if (
+      authStore.user !== null &&
+      to.path !== '/no-household' &&
+      authStore.households.length === 0
+    ) {
       return { path: '/no-household' }
     }
   }

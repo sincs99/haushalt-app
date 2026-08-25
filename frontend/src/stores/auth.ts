@@ -3,11 +3,16 @@ import { ref, computed } from 'vue'
 import axios from 'axios'
 import api from '../api/client'
 import type { UserInfo, HouseholdInfo, MeResponse } from '../types'
-import { tokenStorage } from '../services/tokenStorage'
+import { tokenStorage, TOKEN_STORAGE_KEY } from '../services/tokenStorage'
 import { useToast } from '../composables/useToast'
 import i18n from '../i18n'
 
 const HOUSEHOLD_KEY = 'haushalt_household_id'
+
+/** True nur wenn der Server explizit 401 zurückgegeben hat (Auth-Rejection). */
+function isAuthRejection(err: any): boolean {
+  return err?.response?.status === 401
+}
 
 export const useAuthStore = defineStore('auth', () => {
   // State
@@ -35,10 +40,9 @@ export const useAuthStore = defineStore('auth', () => {
   // ── Actions ──
 
   async function initialize() {
-    // Nur einmal ausführen
     if (isInitialized.value) return
 
-    const saved = tokenStorage.get()
+    const saved = await tokenStorage.get()
     if (!saved) {
       isInitialized.value = true
       _authReadyResolve()
@@ -58,19 +62,25 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       await fetchMe()
     } catch (err: any) {
-      // Access-Token abgelaufen? → Refresh versuchen
-      if (err?.response?.status === 401) {
+      if (isAuthRejection(err)) {
+        // Access-Token abgelaufen → Refresh versuchen
         try {
           await refresh()
           await fetchMe()
-        } catch {
-          // Refresh auch fehlgeschlagen → sauber ausloggen
-          _clearState()
+        } catch (refreshErr: any) {
+          if (isAuthRejection(refreshErr)) {
+            // Auth definitiv abgelehnt → ausloggen
+            await _clearState()
+          }
+          // Netzwerkfehler bei Refresh → Tokens behalten, User "offline-eingeloggt"
         }
-      } else {
-        _clearState()
       }
+      // Netzwerkfehler bei fetchMe → Tokens behalten!
+      // user/households bleiben null, aber isAuthenticated bleibt true
     }
+
+    // Cross-Tab storage event Listener registrieren
+    _registerStorageListener()
 
     isInitialized.value = true
     _authReadyResolve()
@@ -93,19 +103,22 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function _doRefresh(): Promise<void> {
-    if (!refreshToken.value) throw new Error('No refresh token')
+    // Immer den AKTUELLSTEN Token aus Storage lesen (anderer Tab könnte rotiert haben)
+    const current = await tokenStorage.get()
+    const rtToUse = current?.refreshToken ?? refreshToken.value
+    if (!rtToUse) throw new Error('No refresh token')
 
     // Direkter axios call OHNE Interceptor (um Endlos-Loop zu vermeiden)
     const response = await axios.post(
       `${import.meta.env.VITE_API_URL}/api/auth/refresh`,
-      { refresh_token: refreshToken.value },
+      { refresh_token: rtToUse },
     )
 
     const data = response.data
     token.value = data.access_token
     refreshToken.value = data.refresh_token
 
-    tokenStorage.set({
+    await tokenStorage.set({
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
       accessExpiresAt: Date.now() + data.expires_in * 1000,
@@ -124,7 +137,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = data.access_token
     refreshToken.value = data.refresh_token
 
-    tokenStorage.set({
+    await tokenStorage.set({
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
       accessExpiresAt: Date.now() + data.expires_in * 1000,
@@ -156,7 +169,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = data.access_token
     refreshToken.value = data.refresh_token
 
-    tokenStorage.set({
+    await tokenStorage.set({
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
       accessExpiresAt: Date.now() + data.expires_in * 1000,
@@ -194,9 +207,24 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem(HOUSEHOLD_KEY, householdId)
   }
 
-  // ── Logout ──
+  // ── Logout — Single-Flight ──
 
-  async function logout() {
+  let _logoutPromise: Promise<void> | null = null
+
+  async function logout(options?: { reason?: 'user' | 'expired' }): Promise<void> {
+    // Single-flight: concurrent callers teilen sich dasselbe Promise
+    if (_logoutPromise) return _logoutPromise
+    _logoutPromise = _doLogout(options)
+    try {
+      await _logoutPromise
+    } finally {
+      _logoutPromise = null
+    }
+  }
+
+  async function _doLogout(options?: { reason?: 'user' | 'expired' }): Promise<void> {
+    const reason = options?.reason ?? 'expired'
+
     // Best-effort: Backend benachrichtigen
     if (refreshToken.value) {
       try {
@@ -209,28 +237,65 @@ export const useAuthStore = defineStore('auth', () => {
       }
     }
 
-    _clearState()
+    await _clearState()
 
     const { default: router } = await import('../router')
-    const currentPath = router.currentRoute.value.fullPath
-    // Nur redirect-Parameter setzen wenn nicht bereits auf /login oder /register
-    if (currentPath && currentPath !== '/login' && currentPath !== '/register') {
-      router.push({ path: '/login', query: { redirect: currentPath } })
+    if (reason === 'expired') {
+      const currentPath = router.currentRoute.value.fullPath
+      if (currentPath && currentPath !== '/login' && currentPath !== '/register') {
+        router.push({ path: '/login', query: { redirect: currentPath } })
+      } else {
+        router.push('/login')
+      }
     } else {
+      // Manueller Logout → kein redirect
       router.push('/login')
     }
   }
 
-  // ── Internal: State zurücksetzen ──
+  // ── Internal: State zurücksetzen (async) ──
 
-  function _clearState() {
+  async function _clearState() {
     token.value = null
     refreshToken.value = null
     user.value = null
     currentHouseholdId.value = null
     households.value = []
-    tokenStorage.clear()
+    await tokenStorage.clear()
     localStorage.removeItem(HOUSEHOLD_KEY)
+  }
+
+  // ── Cross-Tab Storage Listener ──
+
+  function _registerStorageListener() {
+    window.addEventListener('storage', (event) => {
+      if (event.key !== TOKEN_STORAGE_KEY) return
+
+      if (event.newValue === null) {
+        // Anderer Tab hat Tokens gelöscht (Logout)
+        token.value = null
+        refreshToken.value = null
+        user.value = null
+        currentHouseholdId.value = null
+        households.value = []
+        localStorage.removeItem(HOUSEHOLD_KEY)
+        // Navigiere zu /login OHNE redirect und OHNE Backend-Logout-Call
+        import('../router').then(({ default: router }) => {
+          router.push('/login')
+        })
+      } else {
+        // Anderer Tab hat Tokens aktualisiert (Refresh)
+        try {
+          const parsed = JSON.parse(event.newValue)
+          if (parsed.accessToken && parsed.refreshToken) {
+            token.value = parsed.accessToken
+            refreshToken.value = parsed.refreshToken
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    })
   }
 
   // ── Socket-Event-Handler für Household-Events ──

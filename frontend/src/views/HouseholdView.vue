@@ -441,7 +441,7 @@ watch(() => authStore.currentHouseholdId, () => {
 
       <!-- Logout-Button für Mobile -->
       <div class="mobile-logout">
-        <BaseButton variant="ghost" @click="authStore.logout()" class="mobile-logout__btn">
+        <BaseButton variant="ghost" @click="authStore.logout({ reason: 'user' })" class="mobile-logout__btn">
           {{ $t('auth.logout') }}
         </BaseButton>
       </div>

@@ -12,7 +12,7 @@ import uuid
 # 1) Env-Vars setzen BEVOR die App importiert wird
 # --------------------------------------------------------------------------
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
-os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-only-for-tests")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-only-for-tests-min32")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:5173")
 
 # --------------------------------------------------------------------------
@@ -72,6 +72,15 @@ TestingSessionLocal = sessionmaker(
 # --------------------------------------------------------------------------
 # 5) Fixtures
 # --------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limit():
+    """Rate-Limits in Tests deaktivieren."""
+    from app.core.rate_limit import limiter
+    limiter.enabled = False
+    yield
+    limiter.enabled = True
 
 
 @pytest.fixture(autouse=True)

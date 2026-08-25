@@ -39,11 +39,14 @@ api.interceptors.response.use(
         // Original-Request mit neuem Token wiederholen
         originalRequest.headers.Authorization = `Bearer ${authStore.token}`
         return api(originalRequest)
-      } catch {
-        // Refresh fehlgeschlagen → Logout
-        const { useAuthStore } = await import('../stores/auth')
-        const authStore = useAuthStore()
-        await authStore.logout()
+      } catch (refreshErr: any) {
+        // Refresh fehlgeschlagen → Logout NUR bei Auth-Rejection
+        if (refreshErr?.response?.status === 401) {
+          const { useAuthStore } = await import('../stores/auth')
+          const authStore = useAuthStore()
+          await authStore.logout({ reason: 'expired' })
+        }
+        // Bei Netzwerkfehler: KEIN Logout, Error durchreichen
       }
     }
 

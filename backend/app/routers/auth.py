@@ -2,7 +2,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -11,6 +11,7 @@ from pydantic import BaseModel, EmailStr, Field, model_validator
 from app.database import get_db
 from app.models import User, Household, HouseholdMember, RefreshToken
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.rate_limit import limiter
 from app.core.security import (
     hash_password, verify_password, create_access_token,
     create_refresh_token, hash_refresh_token, get_access_token_expires_in,
@@ -70,12 +71,16 @@ class MeResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Hilfsfunktion: Token-Paar erstellen + Refresh-Token persistieren
+# Hilfsfunktionen
 # ---------------------------------------------------------------------------
 
 
-def _create_token_pair(user_id: str, db: Session) -> TokenResponse:
-    """Erzeugt Access- + Refresh-Token-Paar und persistiert den Refresh-Token."""
+def _create_token_pair(user_id: str, db: Session) -> tuple[TokenResponse, RefreshToken]:
+    """Erzeugt Access- + Refresh-Token-Paar und persistiert den Refresh-Token.
+
+    Returns:
+        Tuple aus (TokenResponse für den Client, RefreshToken DB-Objekt).
+    """
     from app.core.config import settings
 
     access_token = create_access_token(user_id)
@@ -88,13 +93,33 @@ def _create_token_pair(user_id: str, db: Session) -> TokenResponse:
     )
     db.add(rt)
     db.commit()
+    db.refresh(rt)  # Damit rt.id verfügbar ist
 
-    return TokenResponse(
+    response = TokenResponse(
         access_token=access_token,
         refresh_token=raw_refresh,
         token_type="bearer",
         expires_in=get_access_token_expires_in(),
     )
+    return response, rt
+
+
+def _cleanup_expired_tokens(user_id: uuid.UUID, db: Session) -> None:
+    """Löscht abgelaufene und lang-revozierte Refresh-Tokens eines Users."""
+    now = datetime.now(timezone.utc)
+    seven_days_ago = now - timedelta(days=7)
+
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user_id,
+        (
+            (RefreshToken.expires_at < now)
+            | (
+                RefreshToken.revoked_at.isnot(None)
+                & (RefreshToken.revoked_at < seven_days_ago)
+            )
+        ),
+    ).delete(synchronize_session=False)
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +128,8 @@ def _create_token_pair(user_id: str, db: Session) -> TokenResponse:
 
 
 @router.post("/register", response_model=TokenResponse)
-def register(data: RegisterRequest, db: Session = Depends(get_db)):
+@limiter.limit("3/hour")
+def register(request: Request, data: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter_by(email=data.email).first()
     if existing:
         raise HTTPException(status_code=400, detail=error_detail(ErrorCode.EMAIL_ALREADY_REGISTERED, "Email already registered"))
@@ -141,16 +167,19 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     db.add(membership)
     db.flush()
 
-    return _create_token_pair(str(user.id), db)
+    pair, _ = _create_token_pair(str(user.id), db)
+    return pair
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter_by(email=form_data.username).first()
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(status_code=401, detail=error_detail(ErrorCode.INVALID_CREDENTIALS, "Incorrect email or password"))
 
-    return _create_token_pair(str(user.id), db)
+    pair, _ = _create_token_pair(str(user.id), db)
+    return pair
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -166,8 +195,41 @@ def refresh_endpoint(data: RefreshRequest, db: Session = Depends(get_db)):
             detail=error_detail(ErrorCode.REFRESH_TOKEN_INVALID, "Refresh token invalid"),
         )
 
-    # 2) Reuse-Detection: Token bereits revoked → gesamte Kette revoken
+    # 2) Reuse-Detection MIT Grace Window
     if old_token.revoked_at is not None:
+        from app.core.config import settings
+
+        # Prüfe ob innerhalb der Grace Period UND ein Replacement existiert
+        revoked_at = old_token.revoked_at
+        if revoked_at.tzinfo is None:
+            revoked_at = revoked_at.replace(tzinfo=timezone.utc)
+
+        grace_ok = (
+            old_token.replaced_by_id is not None
+            and (datetime.now(timezone.utc) - revoked_at).total_seconds()
+            <= settings.refresh_token_reuse_grace_seconds
+        )
+
+        if grace_ok:
+            # Benign retry / zweiter Tab → Replacement-Token prüfen
+            replacement = db.get(RefreshToken, old_token.replaced_by_id)
+            if replacement and replacement.revoked_at is None:
+                # Replacement noch gültig → davon ableiten (nochmal rotieren)
+                replacement_expires = replacement.expires_at
+                if replacement_expires.tzinfo is None:
+                    replacement_expires = replacement_expires.replace(tzinfo=timezone.utc)
+
+                if replacement_expires >= datetime.now(timezone.utc):
+                    # Replacement revoken und neues Paar erstellen
+                    replacement.revoked_at = datetime.now(timezone.utc)
+                    db.flush()
+
+                    pair, new_rt = _create_token_pair(str(old_token.user_id), db)
+                    replacement.replaced_by_id = new_rt.id
+                    db.commit()
+                    return pair
+
+        # Grace Window nicht anwendbar → volle Reuse-Detection
         db.query(RefreshToken).filter(
             RefreshToken.user_id == old_token.user_id,
             RefreshToken.revoked_at.is_(None),
@@ -192,15 +254,15 @@ def refresh_endpoint(data: RefreshRequest, db: Session = Depends(get_db)):
     old_token.revoked_at = datetime.now(timezone.utc)
     db.flush()
 
-    pair = _create_token_pair(str(old_token.user_id), db)
+    pair, new_rt = _create_token_pair(str(old_token.user_id), db)
+    old_token.replaced_by_id = new_rt.id
+    db.commit()
 
-    # replaced_by_id auf das neue RefreshToken setzen
-    new_rt = db.query(RefreshToken).filter_by(
-        token_hash=hash_refresh_token(pair.refresh_token)
-    ).first()
-    if new_rt:
-        old_token.replaced_by_id = new_rt.id
-        db.commit()
+    # 5) Lazy Cleanup: alte Tokens dieses Users aufräumen
+    try:
+        _cleanup_expired_tokens(old_token.user_id, db)
+    except Exception:
+        logger.warning("Refresh token cleanup failed for user %s", old_token.user_id, exc_info=True)
 
     return pair
 

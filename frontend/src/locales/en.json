@@ -48,7 +48,9 @@
     "tabCreate": "Create household",
     "tabJoin": "Join with code",
     "inviteCodeLabel": "Invite code",
-    "inviteCodePlaceholder": "e.g. ABCD1234"
+    "inviteCodePlaceholder": "e.g. ABCD1234",
+    "sessionExpired": "Session expired",
+    "sessionExpiredMessage": "Your session has expired. Please log in again."
   },
   "nav": {
     "start": "Home",

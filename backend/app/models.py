@@ -118,6 +118,42 @@ class User(Base):
     )
 
 
+class RefreshToken(Base):
+    """Refresh-Token für Auth-Lifecycle.
+
+    HINWEIS: Diese Tabelle ist bewusst per-User, NICHT per-Household.
+    Refresh-Tokens sind Teil der Authentifizierung (User-Ebene),
+    nicht der Autorisierung (Household-Ebene).
+    """
+    __tablename__ = "refresh_tokens"
+    __table_args__ = (
+        Index("ix_refresh_tokens_user_id", "user_id"),
+        Index("ix_refresh_tokens_token_hash", "token_hash", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    replaced_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("refresh_tokens.id"), nullable=True
+    )
+
+    user: Mapped["User"] = relationship()
+
+
 class HouseholdMember(Base):
     __tablename__ = "household_members"
     __table_args__ = (

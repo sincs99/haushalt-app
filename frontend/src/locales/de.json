@@ -48,7 +48,9 @@
     "tabCreate": "Haushalt gründen",
     "tabJoin": "Mit Code beitreten",
     "inviteCodeLabel": "Einladungscode",
-    "inviteCodePlaceholder": "z.B. ABCD1234"
+    "inviteCodePlaceholder": "z.B. ABCD1234",
+    "sessionExpired": "Sitzung abgelaufen",
+    "sessionExpiredMessage": "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an."
   },
   "nav": {
     "start": "Start",

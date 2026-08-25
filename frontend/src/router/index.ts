@@ -92,20 +92,21 @@ const router = createRouter({
   ],
 })
 
-// Navigation Guard: redirect zu /login wenn kein Token
+// Navigation Guard: authReady abwarten, dann prüfen
 router.beforeEach(async (to) => {
   if (to.meta.requiresAuth) {
     const { useAuthStore } = await import('../stores/auth')
     const authStore = useAuthStore()
+
+    // IMMER auf authReady warten bevor irgendwas geprüft wird!
+    await authStore.authReady
+
     if (!authStore.isAuthenticated) {
-      return { path: '/login' }
+      // Redirect-URL merken für nach dem Login
+      return { path: '/login', query: { redirect: to.fullPath } }
     }
-    // Warten bis fetchMe() abgeschlossen ist (verhindert Race bei F5)
-    if (authStore.isAuthenticated) {
-      try { await authStore.ready } catch {}
-    }
+
     // Authentifiziert aber keine Haushalte → NoHousehold
-    // (ausser wir gehen bereits zu /no-household)
     if (to.path !== '/no-household' && authStore.households.length === 0) {
       return { path: '/no-household' }
     }

@@ -225,6 +225,16 @@ export const useAuthStore = defineStore('auth', () => {
   async function _doLogout(options?: { reason?: 'user' | 'expired' }): Promise<void> {
     const reason = options?.reason ?? 'expired'
 
+    // Gerät vom Push abmelden, damit nach dem Logout keine Erinnerungen mehr ankommen.
+    // Backend nur bei manuellem Logout informieren: Bei 'expired' ist der Access-Token
+    // ungültig, der 401-Interceptor würde erneut logout() aufrufen (Single-Flight-Deadlock).
+    try {
+      const { disablePush } = await import('../services/pushService')
+      await disablePush({ notifyBackend: reason === 'user' })
+    } catch {
+      // Best-effort
+    }
+
     // Best-effort: Backend benachrichtigen
     if (refreshToken.value) {
       try {

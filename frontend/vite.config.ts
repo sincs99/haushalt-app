@@ -35,6 +35,8 @@ export default defineConfig({
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//],
         cleanupOutdatedCaches: true,
+        // Push- und Notification-Click-Handler (public/push-sw.js)
+        importScripts: ['/push-sw.js'],
       },
     }),
   ],

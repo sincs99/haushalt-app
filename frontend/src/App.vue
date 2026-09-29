@@ -17,6 +17,8 @@ import BaseAvatar from './components/ui/BaseAvatar.vue'
 import TheBottomNav from './components/TheBottomNav.vue'
 import MoreSheet from './components/MoreSheet.vue'
 import { useToast } from './composables/useToast'
+import { syncPushSubscription } from './services/pushService'
+import { useI18n } from 'vue-i18n'
 import { PhShoppingBagOpen, PhListChecks, PhWallet, PhHouse, PhCalendarDots, PhWifiSlash, PhCheckCircle, PhWarningCircle, PhInfo } from '@phosphor-icons/vue'
 
 const route = useRoute()
@@ -37,6 +39,16 @@ const dashboardStore = useDashboardStore()
 const pollsStore = usePollsStore()
 const petsStore = usePetsStore()
 const { connect, reconnectWithToken, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect, isConnected } = useSocket()
+
+// Push-Subscription dem eingeloggten User + aktueller Sprache zuordnen
+const { locale } = useI18n()
+watch(
+  () => [authStore.user?.id, locale.value] as const,
+  ([userId]) => {
+    if (userId) syncPushSubscription()
+  },
+  { immediate: true },
+)
 
 // Sync-Status für Indikator
 const syncStatus = computed(() => {

@@ -487,6 +487,20 @@
     "TOO_MANY_REMINDERS": "Maximal 5 Erinnerungen pro Aufgabe",
     "REMINDER_NOT_FOUND": "Erinnerung nicht gefunden"
   },
+  "push": {
+    "title": "Benachrichtigungen",
+    "hint": "Erinnerungen für Aufgaben und Tierpflege auf diesem Gerät erhalten.",
+    "enable": "Aktivieren",
+    "disable": "Deaktivieren",
+    "test": "Test-Benachrichtigung senden",
+    "enabled": "Benachrichtigungen aktiviert",
+    "disabled": "Benachrichtigungen deaktiviert",
+    "denied": "Benachrichtigungen sind in den Browser-Einstellungen blockiert. Erlaube sie dort, um Erinnerungen zu erhalten.",
+    "unsupported": "Dieser Browser unterstützt keine Push-Benachrichtigungen.",
+    "iosInstallHint": "Auf iPhone/iPad: Öffne die App in Safari, tippe auf Teilen → „Zum Home-Bildschirm“ und starte sie von dort. Dann lassen sich Benachrichtigungen aktivieren.",
+    "serverDisabled": "Benachrichtigungen sind auf dem Server nicht eingerichtet.",
+    "error": "Benachrichtigungen konnten nicht geändert werden."
+  },
   "pwa": {
     "updateAvailable": "Eine neue Version ist verfügbar.",
     "reload": "Neu laden"

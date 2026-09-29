@@ -18,6 +18,7 @@ import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
 import { PhUserMinus, PhSignOut, PhPlus, PhShareNetwork } from '@phosphor-icons/vue'
 import PageHeader from '../components/ui/PageHeader.vue'
+import PushSettings from '../components/PushSettings.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -438,6 +439,8 @@ watch(() => authStore.currentHouseholdId, () => {
           <option value="en">{{ $t('household.languageEn') }}</option>
         </select>
       </div>
+
+      <PushSettings />
 
       <!-- Logout-Button für Mobile -->
       <div class="mobile-logout">

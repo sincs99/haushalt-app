@@ -487,6 +487,24 @@
     "TOO_MANY_REMINDERS": "Maximum 5 reminders per task",
     "REMINDER_NOT_FOUND": "Reminder not found"
   },
+  "push": {
+    "title": "Notifications",
+    "hint": "Get reminders for tasks and pet care on this device.",
+    "enable": "Enable",
+    "disable": "Disable",
+    "test": "Send test notification",
+    "enabled": "Notifications enabled",
+    "disabled": "Notifications disabled",
+    "denied": "Notifications are blocked in your browser settings. Allow them there to receive reminders.",
+    "unsupported": "This browser does not support push notifications.",
+    "iosInstallHint": "On iPhone/iPad: open the app in Safari, tap Share → “Add to Home Screen” and launch it from there. Then you can enable notifications.",
+    "serverDisabled": "Notifications are not set up on the server.",
+    "error": "Could not change notification settings."
+  },
+  "pwa": {
+    "updateAvailable": "A new version is available.",
+    "reload": "Reload"
+  },
   "offline": {
     "banner": "No connection – changes cannot be saved right now."
   },

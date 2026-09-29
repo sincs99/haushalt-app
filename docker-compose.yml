@@ -29,6 +29,9 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-please-change-this-secret-in-production}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
       UPLOAD_DIR: /app/data/uploads
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
     ports:
       - "8000:8000"
 

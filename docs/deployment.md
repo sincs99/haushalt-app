@@ -155,6 +155,39 @@ Kontrolliere, dass:
 - Die Startup-Zeile `Casa starting — env=production, ...` erscheint
 - Keine Tracebacks oder Fehler in den letzten Zeilen stehen
 
+### 3.1 PWA-Clients nach einem Update
+
+Die App ist als PWA installierbar (Service Worker cacht die App-Shell). Nach einem Frontend-Update
+erhalten offene Clients einen Toast „Eine neue Version ist verfügbar — Neu laden“. Ohne Bestätigung
+wird die neue Version aktiv, sobald alle Tabs/App-Fenster geschlossen wurden.
+
+`/sw.js` und `/manifest.webmanifest` werden von nginx mit `Cache-Control: no-cache` ausgeliefert —
+diese Header nicht im NPM überschreiben, sonst bleiben Clients auf alten Versionen hängen.
+
+**Installation:** iOS Safari → Teilen → „Zum Home-Bildschirm“. Android Chrome → Menü → „App installieren“.
+Voraussetzung ist HTTPS (bzw. `localhost`).
+
+### 3.2 Push-Benachrichtigungen (Web Push) einrichten
+
+Einmalig VAPID-Schlüssel erzeugen (im `backend/`-Ordner, oder im laufenden Container):
+
+```powershell
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend python -m scripts.generate_vapid_keys
+```
+
+Die beiden Zeilen `VAPID_PUBLIC_KEY=…` / `VAPID_PRIVATE_KEY=…` in `.env.prod` eintragen, `VAPID_SUBJECT`
+auf eine echte Kontaktadresse setzen (`mailto:…`) und das Backend neu starten. Im Log erscheint dann
+`Push scheduler started`. Ohne Keys bleibt Push deaktiviert (`Push notifications disabled …`).
+
+- **Keys nicht rotieren**, ausser bei Kompromittierung — neue Keys machen alle Geräte-Registrierungen
+  ungültig; Nutzer müssen Benachrichtigungen dann neu aktivieren.
+- Der Scheduler prüft jede Minute: fällige **Todo-Erinnerungen** (an die zugewiesene Person, sonst an
+  alle Haushaltsmitglieder) und fällige **Tierpflege-Aufgaben** (ab 08:00 Haushalts-Zeitzone, an alle).
+  Erinnerungen, die älter als 12 h sind (z.B. nach Server-Downtime), werden nicht nachgeschickt.
+- Das Backend sendet ausgehend an die Push-Dienste von Google, Mozilla, Apple und Microsoft (HTTPS/443).
+- Nutzer aktivieren Push pro Gerät unter **Haushalt → Einstellungen → Benachrichtigungen**.
+  Auf iPhone/iPad (ab iOS 16.4) nur, wenn die App zum Home-Bildschirm hinzugefügt wurde.
+
 ---
 
 ## 4. Rollback

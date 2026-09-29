@@ -14,7 +14,8 @@ from app.core.config import settings
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import SessionLocal
-from app.routers import auth, shopping, todos, households, expenses, settlements, chores, dashboard, tasks, budgets, recurring_bills, events, calendars, polls, pets, food, notes, files
+from app.routers import auth, shopping, todos, households, expenses, settlements, chores, dashboard, tasks, budgets, recurring_bills, events, calendars, polls, pets, food, notes, files, push
+from app.services.push_service import scheduler_loop
 from app.socket_manager import socket_app, set_event_loop
 
 logger = logging.getLogger("uvicorn.error")
@@ -62,7 +63,17 @@ async def lifespan(app: FastAPI):
     )
 
     set_event_loop(asyncio.get_running_loop())
+
+    push_task = None
+    if settings.push_enabled:
+        push_task = asyncio.create_task(scheduler_loop())
+    else:
+        logger.info("Push notifications disabled (VAPID keys not configured)")
+
     yield
+
+    if push_task:
+        push_task.cancel()
 
 
 app = FastAPI(title="Haushalt App API", lifespan=lifespan)
@@ -99,6 +110,7 @@ app.include_router(food.recipe_router)
 app.include_router(food.meal_plan_router)
 app.include_router(notes.router)
 app.include_router(files.router)
+app.include_router(push.router)
 
 # Socket.IO unter /socket.io mounten
 app.mount("/socket.io", socket_app)

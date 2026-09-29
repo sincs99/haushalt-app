@@ -132,6 +132,18 @@ Internet → NPM (TLS) → casa-frontend:80 (Nginx)
                           └── /*           → Vue SPA (statisch)
 ```
 
+### Client-IP & Rate-Limiting
+
+Login (`5/minute`) und Registrierung (`3/hour`) werden pro Client-IP limitiert. Damit ein Angreifer die IP nicht über einen selbst gesetzten `X-Forwarded-For`-Header fälschen kann, gilt:
+
+1. **NPM** hängt die echte Client-IP als *letzten* Eintrag an `X-Forwarded-For` an (Standardverhalten, keine Konfiguration nötig).
+2. **Frontend-Nginx** (`frontend/nginx.conf`) übernimmt per `ngx_http_realip_module` nur diesen letzten Eintrag (`real_ip_header X-Forwarded-For`, `real_ip_recursive off`, `set_real_ip_from` = private Netze) und **überschreibt** den Header ans Backend mit genau dieser einen IP (`X-Forwarded-For $remote_addr`).
+3. **uvicorn** (`backend/Dockerfile`) vertraut Proxy-Headern nur von privaten Netzen (`--forwarded-allow-ips`, **nie** `'*'` — damit gewänne der linkeste, gefälschte Eintrag).
+
+`real_ip_recursive` bleibt bewusst `off`: Mit `on` würden LAN-Clients mit privater IP selbst als vertrauenswürdiger Proxy gelten und ein gefälschter Eintrag weiter links übernommen.
+
+> ⚠️ Voraussetzung: `casa-frontend` ist **nur** über NPM erreichbar (kein Host-Port-Mapping). Im Dev-Setup (`docker-compose.yml`) sind Frontend (8080) und Backend (8000) direkt exponiert; dort ist die Client-IP fälschbar — für lokale Entwicklung unkritisch.
+
 ---
 
 ## 3. Update-Prozedur

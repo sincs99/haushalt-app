@@ -1,18 +1,40 @@
-"""Tests: Rate-Limiter erkennt separate Clients anhand der IP (X-Forwarded-For).
+"""Tests: Rate-Limiter keyt auf die echte Client-IP — nicht auf gefälschte XFF-Einträge.
 
-In Produktion übersetzt uvicorn mit ``--proxy-headers`` den
-``X-Forwarded-For``-Header in ``request.client.host``.  Im Test
-simulieren wir dieses Verhalten, indem wir die ``key_func`` auf den
-internen ``Limit``-Objekten in ``limiter._route_limits`` austauschen.
-Slowapi speichert Limits dort — nicht auf der Funktion selbst.
+Produktionskette: Client → Nginx Proxy Manager → Frontend-Nginx → uvicorn.
+
+Die Tests schicken Requests durch uvicorns echte ``ProxyHeadersMiddleware``
+mit genau der ``--forwarded-allow-ips``-Konfiguration aus ``backend/Dockerfile``
+und simulieren als Verbindungs-Peer das Frontend-Nginx im Docker-Netzwerk.
+Der Limiter nutzt dabei seine echte ``key_func`` (``get_remote_address``).
+
+Zusätzlich wird ``frontend/nginx.conf`` geprüft: Dort wird die Client-IP per
+``ngx_http_realip_module`` aus dem *letzten* (von NPM angehängten) XFF-Eintrag
+gewonnen und der Header mit genau dieser IP überschrieben.  Beide Ebenen
+schliessen den Bypass jeweils für sich.
 """
 
+import re
+import shlex
+from pathlib import Path
+
 import pytest
-from starlette.requests import Request
+from fastapi.testclient import TestClient
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.core.rate_limit import limiter
+from app.database import get_db
+from app.main import app
 
-_LOGIN_ROUTE_KEY = "app.routers.auth.login"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DOCKERFILE = _REPO_ROOT / "backend" / "Dockerfile"
+_NGINX_CONF = _REPO_ROOT / "frontend" / "nginx.conf"
+
+# IP des Frontend-Nginx-Containers im Docker-Netzwerk (Verbindungs-Peer)
+_NGINX_PEER = ("172.18.0.3", 40000)
+# IP von Nginx Proxy Manager im Docker-Netzwerk
+_NPM_IP = "172.19.0.2"
+
+_LOGIN_DATA = {"username": "nobody@example.com", "password": "wrong"}
 
 
 # ---------------------------------------------------------------------------
@@ -20,12 +42,23 @@ _LOGIN_ROUTE_KEY = "app.routers.auth.login"
 # ---------------------------------------------------------------------------
 
 
-def _key_from_forwarded_for(request: Request) -> str:
-    """Simuliert --proxy-headers: liest Client-IP aus X-Forwarded-For."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "127.0.0.1"
+def _forwarded_allow_ips() -> str:
+    """Liest den ``--forwarded-allow-ips``-Wert aus dem Backend-Dockerfile."""
+    text = _DOCKERFILE.read_text(encoding="utf-8")
+    match = re.search(r"--forwarded-allow-ips[= ](\S+?)\"\]", text)
+    assert match, "--forwarded-allow-ips nicht im Dockerfile-CMD gefunden"
+    (value,) = shlex.split(match.group(1))
+    return value
+
+
+def _nginx_directives() -> list[str]:
+    """Nginx-Direktiven ohne Kommentare, whitespace-normalisiert."""
+    lines = _NGINX_CONF.read_text(encoding="utf-8").splitlines()
+    return [" ".join(line.split("#", 1)[0].split()) for line in lines if line.split("#", 1)[0].strip()]
+
+
+def _login(client: TestClient, xff: str):
+    return client.post("/api/auth/login", data=_LOGIN_DATA, headers={"X-Forwarded-For": xff})
 
 
 # ---------------------------------------------------------------------------
@@ -34,91 +67,99 @@ def _key_from_forwarded_for(request: Request) -> str:
 
 
 @pytest.fixture(autouse=True)
-def _enable_limiter_with_proxy_key():
-    """Aktiviert den Limiter lokal und patcht key_func in _route_limits.
-
-    Slowapi speichert Limit-Regeln in ``limiter._route_limits[name]``
-    als ``slowapi.wrappers.Limit``-Objekte mit mutierbarem ``key_func``.
-    """
+def _enable_limiter():
     limiter.enabled = True
-
-    # In-Memory-Storage zurücksetzen (verhindert Überlauf zwischen Tests)
     limiter.reset()
-
-    # key_func auf den Login-Limits ersetzen
-    login_limits = limiter._route_limits.get(_LOGIN_ROUTE_KEY, [])
-    original_key_funcs = []
-    for lim in login_limits:
-        original_key_funcs.append(lim.key_func)
-        lim.key_func = _key_from_forwarded_for
-
     yield
-
-    # Wiederherstellen
-    for i, lim in enumerate(login_limits):
-        lim.key_func = original_key_funcs[i]
-
+    limiter.reset()
     limiter.enabled = False
 
 
+@pytest.fixture()
+def proxied_client(db):
+    """TestClient hinter uvicorns ProxyHeadersMiddleware (Produktions-Config)."""
+    app.dependency_overrides[get_db] = lambda: db
+    wrapped = ProxyHeadersMiddleware(app, trusted_hosts=_forwarded_allow_ips())
+    with TestClient(wrapped, client=_NGINX_PEER) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
 # ---------------------------------------------------------------------------
-# Tests
+# Backend-Ebene (uvicorn --forwarded-allow-ips)
 # ---------------------------------------------------------------------------
 
 
-class TestRateLimitProxy:
-    """Verschiedene IPs (via X-Forwarded-For) erhalten separate Rate-Limit-Buckets."""
+class TestUvicornProxyHeaders:
+    def test_dockerfile_does_not_trust_all_forwarders(self):
+        assert _forwarded_allow_ips() != "*", (
+            "'*' lässt uvicorn den linkesten, client-kontrollierten XFF-Eintrag nutzen"
+        )
 
-    def test_different_ips_get_separate_buckets(self, client):
-        """6. Request von IP A → 429, gleichzeitig IP B → kein 429."""
-        # Client A: 5 Requests (Login-Limit ist 5/minute)
+    def test_spoofed_leftmost_xff_does_not_yield_fresh_bucket(self, proxied_client):
+        """Angreifer rotiert den linkesten XFF-Eintrag — bleibt trotzdem im selben Bucket.
+
+        Header wie bei der alten, anhängenden Nginx-Config:
+        ``<gefälscht>, <echte Client-IP (von NPM)>, <NPM-IP (vom Frontend-Nginx)>``.
+        """
         for i in range(5):
-            resp = client.post(
-                "/api/auth/login",
-                data={"username": "nobody@example.com", "password": "wrong"},
-                headers={"X-Forwarded-For": "10.0.0.1"},
-            )
-            assert resp.status_code != 429, (
+            resp = _login(proxied_client, f"198.51.100.{i}, 203.0.113.7, {_NPM_IP}")
+            assert resp.status_code != 429, f"Request {i + 1} darf noch nicht limitiert sein"
+
+        resp = _login(proxied_client, f"198.51.100.99, 203.0.113.7, {_NPM_IP}")
+        assert resp.status_code == 429, "Gefälschter linkester XFF-Eintrag darf keinen neuen Bucket öffnen"
+
+    def test_lan_client_with_private_ip_is_keyed_on_its_ip(self, proxied_client):
+        """Frontend-Nginx sendet genau eine IP — auch private LAN-IPs werden korrekt genutzt."""
+        for _ in range(5):
+            assert _login(proxied_client, "192.168.1.50").status_code != 429
+        assert _login(proxied_client, "192.168.1.50").status_code == 429
+        assert _login(proxied_client, "192.168.1.51").status_code != 429
+
+    def test_different_ips_get_separate_buckets(self, proxied_client):
+        """6. Request von IP A → 429, gleichzeitig IP B → kein 429."""
+        for i in range(5):
+            assert _login(proxied_client, "203.0.113.1").status_code != 429, (
                 f"Request {i + 1} von Client A sollte nicht limitiert sein"
             )
+        assert _login(proxied_client, "203.0.113.1").status_code == 429
+        assert _login(proxied_client, "203.0.113.2").status_code != 429
 
-        # Client A: 6. Request → muss 429 sein
-        resp_a6 = client.post(
-            "/api/auth/login",
-            data={"username": "nobody@example.com", "password": "wrong"},
-            headers={"X-Forwarded-For": "10.0.0.1"},
-        )
-        assert resp_a6.status_code == 429, (
-            "6. Request von Client A (10.0.0.1) muss Rate-Limited sein (429)"
-        )
-
-        # Client B: andere IP → eigener Bucket, NICHT limitiert
-        resp_b = client.post(
-            "/api/auth/login",
-            data={"username": "nobody@example.com", "password": "wrong"},
-            headers={"X-Forwarded-For": "10.0.0.2"},
-        )
-        assert resp_b.status_code != 429, (
-            "Client B (10.0.0.2) hat eigenen Bucket und darf nicht limitiert sein"
-        )
-
-    def test_rate_limit_returns_structured_error(self, client):
+    def test_rate_limit_returns_structured_error(self, proxied_client):
         """429-Response enthält strukturierten Error-Code RATE_LIMITED."""
-        # 5 Requests aufbrauchen
         for _ in range(5):
-            client.post(
-                "/api/auth/login",
-                data={"username": "nobody@example.com", "password": "wrong"},
-                headers={"X-Forwarded-For": "10.0.0.99"},
-            )
+            _login(proxied_client, "203.0.113.99")
 
-        # 6. Request → 429 mit strukturiertem Body
-        resp = client.post(
-            "/api/auth/login",
-            data={"username": "nobody@example.com", "password": "wrong"},
-            headers={"X-Forwarded-For": "10.0.0.99"},
-        )
+        resp = _login(proxied_client, "203.0.113.99")
         assert resp.status_code == 429
         body = resp.json()
-        assert "detail" in body
         assert body["detail"]["code"] == "RATE_LIMITED"
+
+
+# ---------------------------------------------------------------------------
+# Nginx-Ebene (frontend/nginx.conf)
+# ---------------------------------------------------------------------------
+
+
+class TestFrontendNginxConfig:
+    """Statische Prüfung der Nginx-Config.
+
+    Mit ``real_ip_header X-Forwarded-For`` + ``real_ip_recursive off`` ersetzt
+    Nginx ``$remote_addr`` durch den *letzten* XFF-Eintrag — den, den NPM
+    angehängt hat.  Beispiel: Client sendet ``X-Forwarded-For: 1.2.3.4``,
+    NPM leitet ``1.2.3.4, 203.0.113.7`` weiter → ``$remote_addr = 203.0.113.7``.
+    Da der Header anschliessend mit ``$remote_addr`` überschrieben wird,
+    erreicht ``1.2.3.4`` das Backend nie.
+    """
+
+    def test_realip_takes_last_hop_only(self):
+        directives = _nginx_directives()
+        assert "real_ip_header X-Forwarded-For;" in directives
+        assert "real_ip_recursive off;" in directives
+        assert any(d.startswith("set_real_ip_from ") for d in directives)
+
+    def test_xff_is_overwritten_not_appended(self):
+        directives = _nginx_directives()
+        xff = [d for d in directives if d.startswith("proxy_set_header X-Forwarded-For ")]
+        assert xff, "X-Forwarded-For wird nicht gesetzt"
+        assert all(d == "proxy_set_header X-Forwarded-For $remote_addr;" for d in xff), xff

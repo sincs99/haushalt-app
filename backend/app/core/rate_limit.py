@@ -4,11 +4,21 @@ Eigenes Modul, um Circular Imports zwischen main.py und Routern zu vermeiden.
 
 Proxy-Hinweis:
     ``get_remote_address`` liest ``request.client.host``.  In Produktion
-    läuft uvicorn hinter einem Reverse-Proxy (nginx / Traefik) und wird
-    mit ``--proxy-headers`` gestartet.  Uvicorn schreibt dann
-    ``request.client.host`` automatisch aus dem ``X-Forwarded-For``-Header
-    um, sodass ``get_remote_address`` die *echte* Client-IP zurückgibt —
-    ohne dass wir den Header manuell parsen müssen.
+    läuft die Kette Client → Nginx Proxy Manager → Frontend-Nginx → uvicorn.
+
+    - Das Frontend-Nginx (``frontend/nginx.conf``) ermittelt per
+      ``ngx_http_realip_module`` die Client-IP aus dem *letzten*, von NPM
+      angehängten ``X-Forwarded-For``-Eintrag (``real_ip_recursive off``) und
+      *überschreibt* den Header mit genau dieser einen IP.  Vom Client
+      gefälschte Einträge erreichen das Backend nicht.
+    - uvicorn läuft mit ``--proxy-headers`` und ``--forwarded-allow-ips`` auf
+      private Netze beschränkt (``backend/Dockerfile``) und setzt
+      ``request.client.host`` auf den rechtesten nicht-vertrauenswürdigen
+      Hop.  Niemals ``'*'`` verwenden: dann gewinnt der *linkeste*,
+      client-kontrollierte Eintrag und jeder Request bekommt einen frischen
+      Bucket (Brute-Force auf Login möglich).
+
+    Siehe ``tests/test_rate_limit_proxy.py`` und ``docs/deployment.md``.
 """
 
 from slowapi import Limiter

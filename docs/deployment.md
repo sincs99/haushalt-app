@@ -155,6 +155,18 @@ Kontrolliere, dass:
 - Die Startup-Zeile `Casa starting — env=production, ...` erscheint
 - Keine Tracebacks oder Fehler in den letzten Zeilen stehen
 
+### 3.1 PWA-Clients nach einem Update
+
+Die App ist als PWA installierbar (Service Worker cacht die App-Shell). Nach einem Frontend-Update
+erhalten offene Clients einen Toast „Eine neue Version ist verfügbar — Neu laden“. Ohne Bestätigung
+wird die neue Version aktiv, sobald alle Tabs/App-Fenster geschlossen wurden.
+
+`/sw.js` und `/manifest.webmanifest` werden von nginx mit `Cache-Control: no-cache` ausgeliefert —
+diese Header nicht im NPM überschreiben, sonst bleiben Clients auf alten Versionen hängen.
+
+**Installation:** iOS Safari → Teilen → „Zum Home-Bildschirm“. Android Chrome → Menü → „App installieren“.
+Voraussetzung ist HTTPS (bzw. `localhost`).
+
 ---
 
 ## 4. Rollback

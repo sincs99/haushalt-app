@@ -487,6 +487,10 @@
     "TOO_MANY_REMINDERS": "Maximum 5 reminders per task",
     "REMINDER_NOT_FOUND": "Reminder not found"
   },
+  "pwa": {
+    "updateAvailable": "A new version is available.",
+    "reload": "Reload"
+  },
   "offline": {
     "banner": "No connection – changes cannot be saved right now."
   },

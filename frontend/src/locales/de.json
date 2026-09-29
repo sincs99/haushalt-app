@@ -487,6 +487,10 @@
     "TOO_MANY_REMINDERS": "Maximal 5 Erinnerungen pro Aufgabe",
     "REMINDER_NOT_FOUND": "Erinnerung nicht gefunden"
   },
+  "pwa": {
+    "updateAvailable": "Eine neue Version ist verfügbar.",
+    "reload": "Neu laden"
+  },
   "offline": {
     "banner": "Kein Netz – Änderungen können aktuell nicht gespeichert werden."
   },

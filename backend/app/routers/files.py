@@ -9,6 +9,7 @@ import io
 import re
 import uuid
 from datetime import datetime
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -32,6 +33,8 @@ Image.MAX_IMAGE_PIXELS = 25_000_000
 
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
 IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+PILLOW_FORMATS = ["JPEG", "PNG", "WEBP"]
+PDF_MAGIC = b"%PDF-"
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 CHUNK_SIZE = 64 * 1024  # 64 KB
 MAX_IMAGE_DIMENSION = 1600
@@ -74,10 +77,46 @@ router = APIRouter(
 
 
 def _sanitize_filename(name: str) -> str:
-    """Entfernt unsichere Zeichen aus Dateinamen für Content-Disposition."""
-    # Nur alphanumerische Zeichen, Punkte, Bindestriche, Unterstriche
-    sanitized = re.sub(r'[^\w.\-]', '_', name)
+    """ASCII-Fallback für Content-Disposition (filename="...")."""
+    # Nur ASCII-Alphanumerik, Punkte, Bindestriche, Unterstriche — keine
+    # Quotes, CR/LF oder Nicht-Latin-1-Zeichen, die den Header brechen
+    sanitized = re.sub(r"[^A-Za-z0-9.\-_]", "_", name)
     return sanitized or "download"
+
+
+def content_disposition(name: str, disposition: str) -> str:
+    """Baut einen sicheren Content-Disposition-Header (RFC 6266 / RFC 5987).
+
+    filename= enthält einen ASCII-Fallback, filename*= den UTF-8-kodierten
+    Originalnamen, damit Umlaute etc. beim Download erhalten bleiben.
+    """
+    fallback = _sanitize_filename(name)
+    encoded = quote(name, safe="")
+    return f"{disposition}; filename=\"{fallback}\"; filename*=UTF-8''{encoded}"
+
+
+async def read_upload_limited(file, max_size: int = MAX_FILE_SIZE) -> bytes:
+    """Liest den Upload in Chunks und bricht ab, sobald max_size überschritten ist.
+
+    Verhindert, dass beliebig große Uploads komplett in den RAM geladen werden.
+    """
+    chunks: list[bytes] = []
+    total_size = 0
+    while True:
+        chunk = await file.read(CHUNK_SIZE)
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > max_size:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=error_detail(
+                    ErrorCode.FILE_TOO_LARGE,
+                    f"File exceeds maximum size of {max_size // (1024 * 1024)} MB",
+                ),
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _process_image(data: bytes, content_type: str) -> tuple[bytes, str, str]:
@@ -85,7 +124,12 @@ def _process_image(data: bytes, content_type: str) -> tuple[bytes, str, str]:
 
     Returns: (processed_bytes, final_mime_type, file_extension)
     """
-    img = Image.open(io.BytesIO(data))
+    # Nur die erlaubten Decoder zulassen (kleinere Angriffsfläche als alle Pillow-Formate)
+    img = Image.open(io.BytesIO(data), formats=PILLOW_FORMATS)
+    # Pixel-Limit VOR dem Dekomprimieren prüfen — Pillow warnt zwischen 1x und
+    # 2x MAX_IMAGE_PIXELS nur, statt abzubrechen
+    if img.width * img.height > Image.MAX_IMAGE_PIXELS:
+        raise ValueError("Image exceeds pixel limit")
     img.load()  # Validiert den Bildinhalt vollständig
     img = ImageOps.exif_transpose(img)  # EXIF-Rotation anwenden
 
@@ -119,6 +163,58 @@ def _process_image(data: bytes, content_type: str) -> tuple[bytes, str, str]:
         return buf.read(), "image/jpeg", ".jpeg"
 
 
+def validate_upload(raw_data: bytes, content_type: str) -> tuple[bytes, str, str]:
+    """Prüft MIME-Typ und Inhalt (Magic Bytes / Pillow), verarbeitet Bilder.
+
+    Der Client-Header allein ist fälschbar, deshalb wird der Inhalt immer
+    gegen den deklarierten Typ validiert.
+
+    Returns: (processed_bytes, final_mime_type, file_extension)
+    """
+    if content_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.FILE_TYPE_NOT_ALLOWED,
+                f"File type '{content_type}' is not allowed",
+            ),
+        )
+
+    if content_type in IMAGE_MIME_TYPES:
+        try:
+            return _process_image(raw_data, content_type)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=error_detail(
+                    ErrorCode.FILE_TYPE_NOT_ALLOWED,
+                    "File content is not a valid image",
+                ),
+            )
+
+    # PDF Magic-Byte-Validierung, PDF wird unverändert gespeichert
+    if not raw_data.startswith(PDF_MAGIC):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(ErrorCode.FILE_TYPE_NOT_ALLOWED, "Invalid PDF file"),
+        )
+    return raw_data, content_type, ".pdf"
+
+
+def file_response_headers(stored_file: StoredFile) -> dict[str, str]:
+    """Sicherheits-Header für Datei-Downloads.
+
+    Nur (re-encodierte) Bilder werden inline ausgeliefert; PDFs als attachment.
+    Das Frontend lädt Dateien ohnehin als Blob, die Disposition greift nur bei
+    direktem Aufruf der URL.
+    """
+    disposition = "inline" if stored_file.mime_type in IMAGE_MIME_TYPES else "attachment"
+    return {
+        "Content-Disposition": content_disposition(stored_file.original_name, disposition),
+        "X-Content-Type-Options": "nosniff",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -133,64 +229,9 @@ async def upload_file(
     db: Session = Depends(get_db),
 ):
     # Chunk-basiertes Lesen mit frühzeitigem Abbruch (RAM-Exhaustion-Schutz)
-    chunks: list[bytes] = []
-    total_size = 0
-    while True:
-        chunk = await file.read(CHUNK_SIZE)
-        if not chunk:
-            break
-        total_size += len(chunk)
-        if total_size > MAX_FILE_SIZE:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=error_detail(
-                    ErrorCode.FILE_TOO_LARGE,
-                    f"File exceeds maximum size of {MAX_FILE_SIZE // (1024 * 1024)} MB",
-                ),
-            )
-        chunks.append(chunk)
-    raw_data = b"".join(chunks)
-
-    # MIME-Typ-Prüfung
-    content_type = file.content_type or ""
-    if content_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail(
-                ErrorCode.FILE_TYPE_NOT_ALLOWED,
-                f"File type '{content_type}' is not allowed",
-            ),
-        )
-
-    # PDF Magic-Byte-Validierung
-    if content_type == "application/pdf":
-        if not raw_data[:5] == b"%PDF-":
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=error_detail(
-                    ErrorCode.FILE_TYPE_NOT_ALLOWED, "Invalid PDF file"
-                ),
-            )
-
+    raw_data = await read_upload_limited(file)
+    processed_data, final_mime, ext = validate_upload(raw_data, file.content_type or "")
     original_name = file.filename or "upload"
-
-    # Bildverarbeitung
-    if content_type in IMAGE_MIME_TYPES:
-        try:
-            processed_data, final_mime, ext = _process_image(raw_data, content_type)
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=error_detail(
-                    ErrorCode.FILE_TYPE_NOT_ALLOWED,
-                    "File content is not a valid image",
-                ),
-            )
-    else:
-        # PDF unverändert speichern
-        processed_data = raw_data
-        final_mime = content_type
-        ext = ".pdf"
 
     # Speichern
     storage_path = _storage.save(
@@ -249,14 +290,10 @@ def download_file(
             ),
         )
 
-    safe_name = _sanitize_filename(stored_file.original_name)
-
     return StreamingResponse(
         file_handle,
         media_type=stored_file.mime_type,
-        headers={
-            "Content-Disposition": f'inline; filename="{safe_name}"'
-        },
+        headers=file_response_headers(stored_file),
     )
 
 

@@ -65,7 +65,8 @@
     "cats": "Katzen",
     "meals": "Essen",
     "notes": "Notizen",
-    "settings": "Einstellungen"
+    "settings": "Einstellungen",
+    "documents": "Ablage"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -155,7 +156,8 @@
     "catsSub": "Fütterung & Übersicht",
     "mealsSub": "Wochenmenü & Rezepte",
     "notesSub": "Schnelle Notizen & Ideen",
-    "settingsSub": "Haushalt, Mitglieder & Sprache"
+    "settingsSub": "Haushalt, Mitglieder & Sprache",
+    "documentsSub": "Verträge, Rechnungen & Garantien"
   },
   "shopping": {
     "title": "Einkaufsliste",
@@ -485,7 +487,12 @@
     "CANNOT_REMOVE_ADMIN": "Admins können nicht entfernt werden",
     "CANNOT_REMOVE_SELF": "Du kannst dich nicht selbst entfernen – nutze Haushalt verlassen",
     "TOO_MANY_REMINDERS": "Maximal 5 Erinnerungen pro Aufgabe",
-    "REMINDER_NOT_FOUND": "Erinnerung nicht gefunden"
+    "REMINDER_NOT_FOUND": "Erinnerung nicht gefunden",
+    "FILE_TOO_LARGE": "Datei ist zu gross (max. 10 MB)",
+    "FILE_TYPE_NOT_ALLOWED": "Dateityp nicht erlaubt oder Datei beschädigt",
+    "FILE_IN_USE": "Datei wird noch verwendet",
+    "STORAGE_QUOTA_EXCEEDED": "Speicherplatz des Haushalts ist voll – lösche alte Dokumente",
+    "DOCUMENT_NOT_FOUND": "Dokument nicht gefunden"
   },
   "push": {
     "title": "Benachrichtigungen",
@@ -689,5 +696,48 @@
     "connected": "Verbunden",
     "reconnecting": "Verbindung wird wiederhergestellt…",
     "offline": "Offline"
+  },
+  "documents": {
+    "title": "Ablage",
+    "upload": "Hochladen",
+    "uploadTitle": "Dokument hochladen",
+    "editTitle": "Dokument bearbeiten",
+    "searchPlaceholder": "Dokumente durchsuchen…",
+    "storageUsage": "{used} von {quota} belegt",
+    "emptyTitle": "Noch keine Dokumente",
+    "emptySubtitle": "Lade Verträge, Rechnungen oder Garantien hoch",
+    "emptyFilteredSubtitle": "Versuche eine andere Kategorie oder Suche",
+    "loadMore": "Mehr laden",
+    "fileLabel": "Datei",
+    "chooseFile": "Datei auswählen",
+    "changeFile": "Andere Datei",
+    "fileHint": "PDF, JPG, PNG oder WEBP, max. 10 MB",
+    "titleLabel": "Titel",
+    "titlePlaceholder": "z.B. Mietvertrag Wohnung",
+    "categoryLabel": "Kategorie",
+    "documentDateLabel": "Datum",
+    "expiryDateLabel": "Gültig bis",
+    "expiryHint": "z.B. Garantieende oder Kündigungsfrist",
+    "notesLabel": "Notizen",
+    "notesPlaceholder": "Vertragsnummer, Kontakt, …",
+    "preview": "Vorschau",
+    "download": "Herunterladen",
+    "expired": "Abgelaufen",
+    "expiresToday": "Läuft heute ab",
+    "expiresInDays": "Läuft morgen ab | Läuft in {n} Tagen ab",
+    "validUntil": "Gültig bis {date}",
+    "deleteConfirm": "Dokument «{title}» inklusive Datei wirklich löschen?",
+    "uploadSuccess": "Dokument hochgeladen",
+    "loadError": "Dokumente konnten nicht geladen werden.",
+    "deleteError": "Dokument konnte nicht gelöscht werden.",
+    "downloadError": "Datei konnte nicht geladen werden.",
+    "categories": {
+      "all": "Alle",
+      "contract": "Verträge",
+      "invoice": "Rechnungen",
+      "warranty": "Garantien",
+      "insurance": "Versicherungen",
+      "other": "Sonstiges"
+    }
   }
 }

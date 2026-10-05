@@ -65,7 +65,8 @@
     "cats": "Cats",
     "meals": "Meals",
     "notes": "Notes",
-    "settings": "Settings"
+    "settings": "Settings",
+    "documents": "Documents"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -155,7 +156,8 @@
     "catsSub": "Feeding & overview",
     "mealsSub": "Weekly menu & recipes",
     "notesSub": "Quick notes & ideas",
-    "settingsSub": "Household, members & language"
+    "settingsSub": "Household, members & language",
+    "documentsSub": "Contracts, invoices & warranties"
   },
   "shopping": {
     "title": "Shopping list",
@@ -485,7 +487,12 @@
     "CANNOT_REMOVE_ADMIN": "Cannot remove admin members",
     "CANNOT_REMOVE_SELF": "Cannot remove yourself - use Leave household instead",
     "TOO_MANY_REMINDERS": "Maximum 5 reminders per task",
-    "REMINDER_NOT_FOUND": "Reminder not found"
+    "REMINDER_NOT_FOUND": "Reminder not found",
+    "FILE_TOO_LARGE": "File is too large (max. 10 MB)",
+    "FILE_TYPE_NOT_ALLOWED": "File type not allowed or file is corrupt",
+    "FILE_IN_USE": "File is still in use",
+    "STORAGE_QUOTA_EXCEEDED": "Household storage is full – delete old documents",
+    "DOCUMENT_NOT_FOUND": "Document not found"
   },
   "push": {
     "title": "Notifications",
@@ -689,5 +696,48 @@
     "connected": "Connected",
     "reconnecting": "Reconnecting…",
     "offline": "Offline"
+  },
+  "documents": {
+    "title": "Documents",
+    "upload": "Upload",
+    "uploadTitle": "Upload document",
+    "editTitle": "Edit document",
+    "searchPlaceholder": "Search documents…",
+    "storageUsage": "{used} of {quota} used",
+    "emptyTitle": "No documents yet",
+    "emptySubtitle": "Upload contracts, invoices or warranties",
+    "emptyFilteredSubtitle": "Try another category or search",
+    "loadMore": "Load more",
+    "fileLabel": "File",
+    "chooseFile": "Choose file",
+    "changeFile": "Choose another file",
+    "fileHint": "PDF, JPG, PNG or WEBP, max. 10 MB",
+    "titleLabel": "Title",
+    "titlePlaceholder": "e.g. Apartment lease",
+    "categoryLabel": "Category",
+    "documentDateLabel": "Date",
+    "expiryDateLabel": "Valid until",
+    "expiryHint": "e.g. warranty end or cancellation deadline",
+    "notesLabel": "Notes",
+    "notesPlaceholder": "Contract number, contact, …",
+    "preview": "Preview",
+    "download": "Download",
+    "expired": "Expired",
+    "expiresToday": "Expires today",
+    "expiresInDays": "Expires tomorrow | Expires in {n} days",
+    "validUntil": "Valid until {date}",
+    "deleteConfirm": "Really delete \"{title}\" including its file?",
+    "uploadSuccess": "Document uploaded",
+    "loadError": "Documents could not be loaded.",
+    "deleteError": "Document could not be deleted.",
+    "downloadError": "File could not be loaded.",
+    "categories": {
+      "all": "All",
+      "contract": "Contracts",
+      "invoice": "Invoices",
+      "warranty": "Warranties",
+      "insurance": "Insurance",
+      "other": "Other"
+    }
   }
 }

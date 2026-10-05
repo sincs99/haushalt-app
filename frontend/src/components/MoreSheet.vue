@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PhWallet, PhCat, PhForkKnife, PhNote, PhGear, PhCaretRight } from '@phosphor-icons/vue'
+import { PhWallet, PhCat, PhForkKnife, PhNote, PhFolderOpen, PhGear, PhCaretRight } from '@phosphor-icons/vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
@@ -44,6 +44,7 @@ const entries = [
   { label: 'nav.cats', sub: 'moreSheet.catsSub', icon: PhCat, action: () => navigate('/pets'), disabled: false, highlight: false },
   { label: 'nav.meals', sub: 'moreSheet.mealsSub', icon: PhForkKnife, action: () => navigate('/food'), disabled: false, highlight: false },
   { label: 'nav.notes', sub: 'moreSheet.notesSub', icon: PhNote, action: () => navigate('/notes'), disabled: false, highlight: false },
+  { label: 'nav.documents', sub: 'moreSheet.documentsSub', icon: PhFolderOpen, action: () => navigate('/documents'), disabled: false, highlight: false },
   { label: 'nav.settings', sub: 'moreSheet.settingsSub', icon: PhGear, action: () => navigate('/household'), disabled: false, highlight: false },
 ]
 </script>

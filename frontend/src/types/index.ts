@@ -710,3 +710,40 @@ export interface StoredFile {
   size_bytes: number
   created_at: string
 }
+
+// ── Documents (Ablage) ──
+
+export const DOCUMENT_CATEGORIES = ['contract', 'invoice', 'warranty', 'insurance', 'other'] as const
+export type DocumentCategory = (typeof DOCUMENT_CATEGORIES)[number]
+
+export interface DocumentItem {
+  id: string
+  household_id: string
+  title: string
+  category: DocumentCategory
+  notes: string | null
+  document_date: string | null
+  expiry_date: string | null
+  file: StoredFile
+  created_by_user_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface DocumentMeta {
+  title: string
+  category: DocumentCategory
+  notes: string | null
+  document_date: string | null
+  expiry_date: string | null
+}
+
+export interface DocumentList {
+  items: DocumentItem[]
+  total: number
+}
+
+export interface StorageUsage {
+  used_bytes: number
+  quota_bytes: number
+}

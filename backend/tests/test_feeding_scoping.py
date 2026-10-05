@@ -5,7 +5,6 @@ Stellt sicher, dass Fütterungen korrekt erfasst, duplikat-geschützt und
 auf den eigenen Household beschränkt sind.
 """
 
-import uuid
 
 
 # ---------------------------------------------------------------------------

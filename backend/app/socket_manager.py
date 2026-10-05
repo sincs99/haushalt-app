@@ -8,7 +8,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.security import decode_access_token
 from app.database import SessionLocal
-from app.models import User, HouseholdMember
+from app.models import HouseholdMember, User
 
 logger = logging.getLogger(__name__)
 

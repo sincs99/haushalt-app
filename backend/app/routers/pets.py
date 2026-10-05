@@ -10,7 +10,16 @@ from sqlalchemy.orm import Session
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import FeedingLog, Household, HouseholdMember, Medication, MedicationLog, Pet, PetCareTask, StoredFile
+from app.models import (
+    FeedingLog,
+    Household,
+    HouseholdMember,
+    Medication,
+    MedicationLog,
+    Pet,
+    PetCareTask,
+    StoredFile,
+)
 from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
 

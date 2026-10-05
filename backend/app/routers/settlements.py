@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import Household, Settlement, HouseholdMember
+from app.models import Household, HouseholdMember, Settlement
 from app.services.household_checks import assert_users_in_household
 from app.socket_manager import emit_to_household_sync
 

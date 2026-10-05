@@ -9,13 +9,13 @@ from sqlalchemy.orm import Session
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import Chore, ChoreAssignment, HouseholdMember, Household
-from app.services.household_checks import assert_users_in_household
+from app.models import Chore, ChoreAssignment, Household, HouseholdMember
 from app.services.chore_scheduler import (
-    today_in_tz,
-    next_due_dates,
     materialize_due_assignments,
+    next_due_dates,
+    today_in_tz,
 )
+from app.services.household_checks import assert_users_in_household
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------

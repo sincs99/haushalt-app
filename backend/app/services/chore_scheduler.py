@@ -15,7 +15,6 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-
 # ---------------------------------------------------------------------------
 # 1) Zeitzone-Helper
 # ---------------------------------------------------------------------------

@@ -7,11 +7,12 @@ für die Dashboard-View im Frontend.
 
 import uuid
 import zoneinfo
-from datetime import date, datetime, time as dt_time, timezone
+from datetime import date, datetime, timezone
+from datetime import time as dt_time
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import case, func
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access

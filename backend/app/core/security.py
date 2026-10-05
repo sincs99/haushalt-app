@@ -1,9 +1,9 @@
-from datetime import datetime, timedelta, timezone
 import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-import secrets
 
 from app.core.config import settings
 

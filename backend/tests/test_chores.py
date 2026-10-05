@@ -9,18 +9,17 @@ damit alle Datumsberechnungen deterministisch sind.
 """
 
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.models import Chore, ChoreAssignment, Household, HouseholdMember, User
 from app.core.security import hash_password
+from app.models import Chore, Household, HouseholdMember, User
 from app.services.chore_scheduler import (
-    next_due_dates,
     _resolve_next_assignee,
     materialize_due_assignments,
+    next_due_dates,
 )
-
 
 # ---------------------------------------------------------------------------
 # Konstanten

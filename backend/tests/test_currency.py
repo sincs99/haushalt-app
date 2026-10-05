@@ -1,5 +1,4 @@
 """Tests für Household-Currency-Enforcement bei Expenses und Settlements."""
-import uuid
 
 
 # ---------------------------------------------------------------------------

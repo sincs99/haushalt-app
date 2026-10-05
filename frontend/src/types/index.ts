@@ -36,6 +36,12 @@ export interface ShoppingItem {
   assigned_to_user_id: string | null
 }
 
+export interface ReassignStoreResult {
+  updated: number
+  /** Tatsächlich geschriebener Ziel-Store — kann vom angefragten abweichen (case-insensitive Merge). */
+  to_store: string | null
+}
+
 export interface TodoReminder {
   id: string
   todo_id: string

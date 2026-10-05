@@ -741,4 +741,9 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 - **Tests:** 9 neue Tests in `test_shopping_stores.py` (GET stores, reassign rename/dissolve, cross-tenant, edge cases)
 - **Reviews:** Security-Review (`docs/security/epic18-shopping-stores-review.md` — bestanden), Business-Logic-Review (2 Findings behoben: Merge-Warnung + maxlength)
 - **i18n:** 15 neue Keys (shopping.allStores, renameStore, dissolveStore, editItem etc.) → 615 Keys total
-- **Offener Punkt (nächster Sprint):** Case-insensitive Store-Normalisierung (Backend-Änderung)
+- **Erledigt (Follow-up):** Case-insensitive Store-Normalisierung ✅
+  - Backend (`routers/shopping.py`): Store-Werte werden bei Create/Update/Reassign normalisiert (trim, Mehrfach-Whitespace, leer → `null`); existiert im Haushalt bereits ein Store, der sich nur in Gross-/Kleinschreibung unterscheidet, wird dessen Schreibweise übernommen (kanonisch = häufigste Schreibweise, Tie-Break alphabetisch)
+  - `GET /stores` liefert case-insensitive distinct (eine kanonische Schreibweise pro Gruppe); `POST /reassign-store` matcht die Quelle case-insensitive und merged in eine bestehende Ziel-Schreibweise — `ReassignStoreResponse` enthält neu `to_store` (tatsächlich verwendeter Ziel-Name)
+  - Vergleich läuft Python-seitig (`str.lower`) statt per SQL `lower()`, damit SQLite (Tests) und PostgreSQL (Prod) identisch arbeiten (SQLite kennt `lower()` nur für ASCII); keine Migration, keine neue Tabelle
+  - Frontend: `utils/storeName.ts` (`normalizeStoreName`, `storesEqual`, `findCanonicalStore`) — Chip-Filter, Gruppierung, Edit-Sheet-Chips und Merge-Warnung vergleichen case-insensitive; `reassignStore` übernimmt `to_store` aus der Response
+  - Tests: +14 Backend-Tests in `test_shopping_stores.py` (Normalisierung Create/Update, case-insensitive distinct, Reassign mit abweichender Schreibweise, Merge, Cross-Tenant), +7 Vitest-Tests in `utils/__tests__/storeName.test.ts`

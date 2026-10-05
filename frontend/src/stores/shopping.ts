@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlineShoppingRepository } from '../repositories/shoppingRepository'
 import type { ShoppingItem, ShoppingList, ShoppingListUpdatePayload } from '../types'
+import { findCanonicalStore, storesEqual } from '../utils/storeName'
 
 // ── localStorage-Persistenz für aktive Liste ──
 
@@ -138,10 +139,12 @@ export const useShoppingStore = defineStore('shopping', () => {
     if (!householdId) return
     stores.value = await repo.fetchStores(householdId)
 
-    // Aktiven Filter aus localStorage validieren
+    // Aktiven Filter aus localStorage validieren (case-insensitive → kanonische Schreibweise)
     const stored = getStoredStoreFilter(householdId)
-    if (stored && stores.value.includes(stored)) {
-      activeStoreFilter.value = stored
+    const canonical = stored ? findCanonicalStore(stores.value, stored) : null
+    if (canonical) {
+      activeStoreFilter.value = canonical
+      if (canonical !== stored) storeStoreFilter(householdId, canonical)
     } else {
       activeStoreFilter.value = null
     }
@@ -162,10 +165,14 @@ export const useShoppingStore = defineStore('shopping', () => {
 
     const result = await repo.reassignStore(householdId, fromStore, toStore)
 
-    // Optimistisch lokalen State patchen
+    // Tatsächlich verwendeter Ziel-Store: Das Backend merged case-insensitive in
+    // eine bereits vorhandene Schreibweise (z. B. "coop" → "Coop").
+    const targetStore = result.to_store ?? toStore
+
+    // Optimistisch lokalen State patchen (Quell-Store case-insensitive matchen)
     for (const item of items.value) {
-      if (item.store === fromStore) {
-        item.store = toStore
+      if (storesEqual(item.store, fromStore)) {
+        item.store = targetStore
       }
     }
 
@@ -173,8 +180,8 @@ export const useShoppingStore = defineStore('shopping', () => {
     await fetchStores()
 
     // Filter resetten falls der aktive Store umbenannt/aufgelöst wurde
-    if (activeStoreFilter.value === fromStore) {
-      setStoreFilter(toStore)
+    if (activeStoreFilter.value !== null && storesEqual(activeStoreFilter.value, fromStore)) {
+      setStoreFilter(targetStore)
     }
 
     return result

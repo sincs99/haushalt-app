@@ -190,24 +190,17 @@ export const useTodosStore = defineStore('todos', () => {
 
   // Socket-Handler — Idempotente Merges (Server gewinnt immer)
   function handleTodoCreated(serverItem: TodoItem) {
-    // Wenn wir gerade selbst ein Todo erstellt haben, könnte das Socket-Event
-    // vor dem REST-Response kommen. In diesem Fall ignorieren — der REST-Response
-    // erledigt den Temp→Server-Swap.
-    if (pendingTempIds.size > 0) {
-      const existingIdx = items.value.findIndex(i => i.id === serverItem.id)
-      if (existingIdx !== -1) {
-        items.value[existingIdx] = serverItem
-      }
-      // KEIN push — REST-Response-Handling macht den Swap
-      return
-    }
-    // Normaler Fall (Event von anderem Haushaltsmitglied)
+    // Idempotenter Merge: Duplikat-Check statt pendingTempIds-Guard.
+    // So werden auch Todos von anderen Usern korrekt gepusht,
+    // selbst wenn wir gerade ein eigenes Todo erstellen.
     const existingIdx = items.value.findIndex(i => i.id === serverItem.id)
     if (existingIdx !== -1) {
       items.value[existingIdx] = serverItem
     } else {
       items.value.push(serverItem)
     }
+    // Der REST-Response-Handler in addTodo() erkennt via serverIdx !== -1
+    // dass das Socket-Event schon gepusht hat und entfernt nur das Temp-Item.
   }
 
   function handleTodoUpdated(serverItem: TodoItem) {

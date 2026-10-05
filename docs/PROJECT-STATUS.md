@@ -471,7 +471,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Offline-Phase 2 (IndexedDB + SyncQueue) | Gross | 🔵 Niedrig | Lokale Persistenz, Sync-Queue, Conflict Resolution |
 | PWA / Service Worker | Gross | 🔵 Niedrig | Offline-Shell, Cache-Strategie |
 | Push-Notifications (Todos) | Mittel | 🔵 Niedrig | Reminder für `due_date` |
-| Frontend-Tests | Mittel | 🟡 Mittel | Unit-Tests für Stores und Komponenten |
+| Frontend-Tests (Rest) | Mittel | 🟡 Mittel | Unit-Tests für die übrigen Stores und für Komponenten (shopping/todos/chores/auth sind abgedeckt) |
 | Deployment (Azure/Docker) | Mittel | 🟡 Mittel | Produktiv-Deployment |
 | FR/IT-Sprachen | Klein | 🔵 Niedrig | Locale-Erweiterung |
 | Chores-Statistiken | Klein | 🔵 Niedrig | "Wer hat wie oft geputzt" |
@@ -485,7 +485,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | `updated_at` fehlt | Auf ShoppingItem und Todo — wird für Phase-2 Conflict Resolution gebraucht | Phase 2 |
 | `navigator.onLine` unzuverlässig | Captive Portals, WiFi ohne Internet werden nicht erkannt | Phase 2 |
 | `deleteItem()` Rollback-Position | Bei paralleler Socket-Mutation kann Position abweichen (kosmetisch) | Gering |
-| Keine Frontend-Tests | Stores und Komponenten haben keine Unit-Tests | Technische Schuld |
+| Frontend-Tests unvollständig | Vitest-Unit-Tests für die Stores `shopping`, `todos`, `chores` und `auth` (`frontend/src/stores/__tests__/`, 69 Tests); übrige Stores (calendar, expenses, finance, food, notes, pets, polls, settlements, tasks, dashboard) und alle Komponenten noch ohne Tests | Technische Schuld |
 | Auth-Styles dupliziert | Login/Register haben identische Scoped-CSS-Blöcke (Shared-Auth-Component wäre Refactoring) | Gering |
 | Emoji-/Icon-Sizes nicht tokenisiert | 48px, 22px Grössen sind hardcoded statt Design-Tokens | Gering |
 | Toast-Transitions hardcoded | Nutzen hardcoded Durations statt Design-Tokens | Gering |

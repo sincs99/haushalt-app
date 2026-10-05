@@ -30,7 +30,12 @@ def get_access_token_expires_in() -> int:
 
 
 def decode_access_token(token: str) -> str:
-    payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[ALGORITHM])
+    payload = jwt.decode(
+        token,
+        settings.jwt_secret_key,
+        algorithms=[ALGORITHM],
+        options={"require": ["exp", "sub"]},
+    )
     return payload["sub"]  # user_id
 
 

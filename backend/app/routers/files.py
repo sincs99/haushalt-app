@@ -25,6 +25,7 @@ from app.socket_manager import emit_to_household_sync
 
 # Decompression Bomb Schutz: max 25 Megapixel
 Image.MAX_IMAGE_PIXELS = 25_000_000
+_PIL_FORMATS = ("JPEG", "PNG", "WEBP")
 
 # ---------------------------------------------------------------------------
 # Konstanten
@@ -85,7 +86,9 @@ def _process_image(data: bytes, content_type: str) -> tuple[bytes, str, str]:
 
     Returns: (processed_bytes, final_mime_type, file_extension)
     """
-    img = Image.open(io.BytesIO(data))
+    # Nur die erlaubten Formate dekodieren — der MIME-Typ kommt vom Client, ohne
+    # formats= würde Pillow jeden bekannten Decoder (PSD, FITS, GD, ...) probieren.
+    img = Image.open(io.BytesIO(data), formats=_PIL_FORMATS)
     img.load()  # Validiert den Bildinhalt vollständig
     img = ImageOps.exif_transpose(img)  # EXIF-Rotation anwenden
 

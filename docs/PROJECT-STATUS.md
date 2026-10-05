@@ -1,6 +1,6 @@
 # Haushalt-App — Aktueller Projektstand
 
-**Stand:** 2026-08-12 (aktualisiert)
+**Stand:** 2026-10-05 (aktualisiert)
 **Autor:** Tech Lead (automatisch generiert)
 
 ---
@@ -16,7 +16,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | Realtime | Socket.IO (python-socketio) |
 | Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4 |
 | Auth | JWT (Bearer Token), bcrypt-Hashing |
-| i18n | vue-i18n, 615 Keys (DE + EN), Build-gesicherter Key-Sync |
+| i18n | vue-i18n, 631 Keys (DE + EN), Build-gesicherter Key-Sync |
 | Icons | Phosphor Icons (`@phosphor-icons/vue`) — regular/fill/bold |
 | UI | Custom Design-System (CSS Custom Properties, Nunito + Quicksand), Mobile-First |
 
@@ -38,8 +38,11 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 ┌──────────────────────▼────────────────────────────────┐
 │                  FastAPI Backend                        │
 │                                                        │
-│  Routers (auth, shopping, todos, households,            │
-│           expenses, settlements, chores)                │
+│  Routers (19 total: auth, shopping, todos,              │
+│           households, expenses, settlements, chores,    │
+│           budgets, recurring_bills, events, polls,      │
+│           files, dashboard, notes, pets, food,          │
+│           calendars, tasks, push)                       │
 │      ↓              ↓                                  │
 │  SQLAlchemy    Socket.IO Server                        │
 │      ↓                                                 │
@@ -72,7 +75,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | [`app/routers/chores.py`](../backend/app/routers/chores.py) | CRUD Chores + 4 Assignment-Endpoints + Socket-Events | ✅ Fertig |
 | [`app/services/chore_scheduler.py`](../backend/app/services/chore_scheduler.py) | Lazy-Materialisierung, Kalender-basierte Rotation, Datumsberechnung (weekly/biweekly/monthly) | ✅ Fertig |
 | [`app/services/invite_code.py`](../backend/app/services/invite_code.py) | Gemeinsame Invite-Code-Generierung mit Retry-Logik | ✅ Fertig |
-| `migrations/` | Alembic-Migrationen (9 Versionen) | ✅ Fertig |
+| `migrations/` | Alembic-Migrationen (29 Versionen) | ✅ Fertig |
 | [`scripts/regenerate_invite_codes.py`](../backend/scripts/regenerate_invite_codes.py) | Dry-Run/Apply Script für Invite-Code-Migration | ✅ Fertig |
 
 ### Backend-Tests (`backend/tests/`)
@@ -450,7 +453,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Haushalt verlassen / Mitglied entfernen | ✅ POST /leave, DELETE /members/{uid} | ✅ HouseholdView | ✅ Socket |
 | Rollen-System (admin/member) | ✅ verify_household_admin | ✅ UI-Anzeige | — |
 | Währung pro Haushalt | ✅ Household.currency | ✅ /me Response | — |
-| Backend-Tests (Multi-Tenant + Auth) | ✅ 32 Testdateien, ~151 Tests | — | — |
+| Backend-Tests (Multi-Tenant + Auth) | ✅ 41 Testdateien, ~250+ Tests | — | — |
 | Dashboard | ✅ | ✅ DashboardView | — |
 | Einkauf 2.0 (Multi-Listen, Stores) | ✅ | ✅ ShoppingView | ✅ Socket |
 | Aufgaben 2.0 (Unified Tasks) | ✅ | ✅ TodosView | ✅ Socket |
@@ -740,5 +743,41 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 - **Frontend:** `ShoppingList.vue` (Hauptumbau), `ShoppingItemEditSheet.vue` (neu), `stores/shopping.ts`, `repositories/shoppingRepository.ts`, `App.vue` (Socket-Registrierung)
 - **Tests:** 9 neue Tests in `test_shopping_stores.py` (GET stores, reassign rename/dissolve, cross-tenant, edge cases)
 - **Reviews:** Security-Review (`docs/security/epic18-shopping-stores-review.md` — bestanden), Business-Logic-Review (2 Findings behoben: Merge-Warnung + maxlength)
-- **i18n:** 15 neue Keys (shopping.allStores, renameStore, dissolveStore, editItem etc.) → 615 Keys total
+- **i18n:** 15 neue Keys (shopping.allStores, renameStore, dissolveStore, editItem etc.) → 631 Keys total
 - **Offener Punkt (nächster Sprint):** Case-insensitive Store-Normalisierung (Backend-Änderung)
+
+---
+
+## Offene Punkte / Ideen
+
+### Technische Schulden und Gaps
+
+| Thema | Status | Details |
+|---|---|---|
+| **Frontend-Tests** | zu prüfen | Nur 1 Vitest-Datei vorhanden; Stores und Komponenten haben keine Unit-Tests. Braucht Testabdeckung für kritische Flows (optimistic updates, Socket-Handler, race conditions). |
+| **Linting & Code-Style (CI)** | zu prüfen | Kein ESLint für Frontend, kein Black/Flake8 für Backend in CI/CD Pipeline. Alembic config erwähnt Black, ist aber deaktiviert. |
+| **Token-Speicherung (Web)** | zu prüfen | Aktuell `localStorage` (frontend/src/services/tokenStorage.ts). Für native Builds (Capacitor) soll auf SecureStorage gewechselt werden (TODO-Kommentar). Web ist damit XSS-anfällig. |
+| **Offline-First Phase 2** | zu prüfen | Repository-Layer-Abstraktionen bestehen, aber IndexedDB + SyncQueue nicht implementiert. Siehe `docs/offline-ready-architecture.md` — Phase 2 nicht gestartet. |
+| **PWA Service Worker** | zu prüfen | `vite-plugin-pwa` ist installiert; Manifestdatei möglicherweise unvollständig. Cache-Strategien und Offline-Shell müssen validiert werden. |
+| **Rate-Limiting** | zu prüfen | Kein Endpoint-basiertes Rate-Limiting implementiert. ErrorCode.RATE_LIMITED existiert aber in error_codes.py. |
+| **GitHub CI/CD** | zu prüfen | Keine .github/workflows/*.yml gefunden. Tests laufen lokal, aber keine automatisierte Pipeline. |
+| **Dateiuploads (Produktiv)** | zu prüfen | LocalStorageService für Dateien; für Production braucht es wahrscheinlich Supabase oder ähnlich. Docker-Compose hat `uploaddata` Volume. |
+
+### Fehlende/Unvollständige Features
+
+| Feature | Status | Details |
+|---|---|---|
+| **Push-Notifications** | zu prüfen | `routers/push.py` existiert; PushSubscription Model vorhanden. Aber Notification-Versand für Chores/Todos unklar. Braucht Web Push API + Backend Service-Worker. |
+| **Recurring Bills Automation** | zu prüfen | RecurringBill Model und API existieren (budgets.py, recurring_bills.py). Automatische Buchung als Expense (Cron-Job?) nicht sichtbar. |
+| **Chore Notifications** | zu prüfen | Chores sind implementiert, aber "Du bist dran"-Push-Meldungen nicht. |
+| **Multi-Language (FR/IT)** | zu prüfen | Nur DE/EN. Infrastruktur besteht (vue-i18n), aber Übersetzungen fehlen. |
+| **Production Deployment** | zu prüfen | docker-compose.prod.yml und docs/deployment.md existieren. Status des Live-Deployments unklar. |
+| **Offline Mode Coverage** | zu prüfen | Offline-Banner existiert, aber nur Read-Only-Funktionalität ohne SyncQueue. |
+
+### Bekannte Constraints
+
+| Constraint | Details | Impact |
+|---|---|---|
+| Keine `updated_at` auf ShoppingItem/Todo | Nötig für Phase 2 Conflict Resolution | Kann Merge-Konflikte nicht auflösen |
+| `navigator.onLine` unzuverlässig | Captive Portals, WiFi ohne Internet nicht erkannt | Offline-Status kann falsch sein |
+| Nur ein Test-File Frontend | Vitest-Setup vorhanden, aber keine Test-Abdeckung | Schnell Regressions bei Refactoring |

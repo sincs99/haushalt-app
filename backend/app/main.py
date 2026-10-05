@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import SessionLocal
-from app.routers import auth, shopping, todos, households, expenses, settlements, chores, dashboard, tasks, budgets, recurring_bills, events, calendars, polls, pets, food, notes, files, push
+from app.routers import auth, shopping, todos, households, expenses, settlements, chores, dashboard, tasks, budgets, recurring_bills, events, calendars, polls, pets, food, notes, files, push, documents
 from app.services.push_service import scheduler_loop
 from app.socket_manager import socket_app, set_event_loop
 
@@ -110,6 +110,7 @@ app.include_router(food.recipe_router)
 app.include_router(food.meal_plan_router)
 app.include_router(notes.router)
 app.include_router(files.router)
+app.include_router(documents.router)
 app.include_router(push.router)
 
 # Socket.IO unter /socket.io mounten

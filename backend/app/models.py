@@ -98,6 +98,9 @@ class Household(Base):
     stored_files: Mapped[list["StoredFile"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
+    documents: Mapped[list["Document"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
 
 
 class User(Base):
@@ -1001,3 +1004,64 @@ class StoredFile(Base):
     )
 
     household: Mapped["Household"] = relationship(back_populates="stored_files")
+
+
+DOCUMENT_CATEGORIES = ("contract", "invoice", "warranty", "insurance", "other")
+
+
+class Document(Base):
+    """Abgelegtes Dokument (Vertrag, Rechnung, Garantie, …) mit genau einer Datei.
+
+    Verknüpfungen zu anderen Entitäten (Ausgaben, Termine, …) sind bewusst
+    nicht Teil dieser Tabelle — sie kommen später als eigene Link-Tabelle
+    (document_id, entity_type, entity_id), damit ein Dokument mit mehreren
+    Entitäten verknüpft werden kann, ohne dieses Schema zu ändern.
+    """
+
+    __tablename__ = "documents"
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('contract', 'invoice', 'warranty', 'insurance', 'other')",
+            name="ck_document_category",
+        ),
+        Index("ix_documents_household_category", "household_id", "category"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("households.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(150), nullable=False)
+    category: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="other"
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    # Datum des Dokuments (Rechnungsdatum, Vertragsbeginn, Kaufdatum)
+    document_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Ablauf-/Erinnerungsdatum (Garantieende, Kündigungsfrist)
+    expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    file_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("stored_files.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    household: Mapped["Household"] = relationship(back_populates="documents")
+    file: Mapped["StoredFile"] = relationship()

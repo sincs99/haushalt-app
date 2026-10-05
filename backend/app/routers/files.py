@@ -15,12 +15,14 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from PIL import Image, ImageOps
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import HouseholdMember, Pet, StoredFile
+from app.models import Document, HouseholdMember, Pet, StoredFile
 from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
 
@@ -201,6 +203,72 @@ def validate_upload(raw_data: bytes, content_type: str) -> tuple[bytes, str, str
     return raw_data, content_type, ".pdf"
 
 
+def household_storage_used(db: Session, household_id: uuid.UUID) -> int:
+    """Summe aller gespeicherten Dateigrößen eines Haushalts in Bytes."""
+    return (
+        db.query(func.coalesce(func.sum(StoredFile.size_bytes), 0))
+        .filter(StoredFile.household_id == household_id)
+        .scalar()
+    )
+
+
+def household_storage_quota() -> int:
+    return settings.household_storage_quota_mb * 1024 * 1024
+
+
+def check_storage_quota(db: Session, household_id: uuid.UUID, incoming_bytes: int) -> None:
+    """Wirft STORAGE_QUOTA_EXCEEDED, wenn die neue Datei die Quota sprengen würde."""
+    if household_storage_used(db, household_id) + incoming_bytes > household_storage_quota():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.STORAGE_QUOTA_EXCEEDED,
+                f"Household storage quota of {settings.household_storage_quota_mb} MB exceeded",
+            ),
+        )
+
+
+async def store_upload(
+    db: Session, household_id: uuid.UUID, user_id: uuid.UUID, file: UploadFile
+) -> StoredFile:
+    """Liest, validiert und speichert einen Upload; legt den StoredFile-Eintrag an.
+
+    Committet nicht — der Aufrufer entscheidet über die Transaktion.
+    """
+    # Chunk-basiertes Lesen mit frühzeitigem Abbruch (RAM-Exhaustion-Schutz)
+    raw_data = await read_upload_limited(file)
+    processed_data, final_mime, ext = validate_upload(raw_data, file.content_type or "")
+    check_storage_quota(db, household_id, len(processed_data))
+    original_name = (file.filename or "upload")[:255]
+
+    storage_path = _storage.save(
+        household_id=str(household_id),
+        filename=original_name,
+        data=processed_data,
+        ext=ext,
+    )
+
+    stored_file = StoredFile(
+        household_id=household_id,
+        original_name=original_name,
+        mime_type=final_mime,
+        size_bytes=len(processed_data),
+        storage_path=storage_path,
+        uploaded_by_user_id=user_id,
+    )
+    db.add(stored_file)
+    db.flush()
+    return stored_file
+
+
+def remove_from_storage(storage_path: str) -> None:
+    """Best-effort: Physische Datei nach erfolgreichem Commit entfernen."""
+    try:
+        _storage.delete(storage_path)
+    except Exception:
+        pass  # Datei wird ggf. zum Waisen, aber DB ist konsistent
+
+
 def file_response_headers(stored_file: StoredFile) -> dict[str, str]:
     """Sicherheits-Header für Datei-Downloads.
 
@@ -228,29 +296,7 @@ async def upload_file(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    # Chunk-basiertes Lesen mit frühzeitigem Abbruch (RAM-Exhaustion-Schutz)
-    raw_data = await read_upload_limited(file)
-    processed_data, final_mime, ext = validate_upload(raw_data, file.content_type or "")
-    original_name = file.filename or "upload"
-
-    # Speichern
-    storage_path = _storage.save(
-        household_id=str(household_id),
-        filename=original_name,
-        data=processed_data,
-        ext=ext,
-    )
-
-    # DB-Eintrag
-    stored_file = StoredFile(
-        household_id=household_id,
-        original_name=original_name,
-        mime_type=final_mime,
-        size_bytes=len(processed_data),
-        storage_path=storage_path,
-        uploaded_by_user_id=membership.user_id,
-    )
-    db.add(stored_file)
+    stored_file = await store_upload(db, household_id, membership.user_id, file)
     db.commit()
     db.refresh(stored_file)
 
@@ -325,16 +371,23 @@ def delete_file(
             ),
         )
 
+    # Referenzprüfung: Gehört die Datei zu einem Dokument? (Löschen über /documents)
+    doc_ref = db.query(Document).filter(Document.file_id == file_id).first()
+    if doc_ref is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.FILE_IN_USE,
+                f"File is referenced by document '{doc_ref.title}'",
+            ),
+        )
+
     # Pfad merken, dann DB-Eintrag zuerst löschen
     storage_path = stored_file.storage_path
     db.delete(stored_file)
     db.commit()
 
-    # Best-effort: Physische Datei nach erfolgreichem Commit entfernen
-    try:
-        _storage.delete(storage_path)
-    except Exception:
-        pass  # Datei wird ggf. zum Waisen, aber DB ist konsistent
+    remove_from_storage(storage_path)
 
     emit_to_household_sync(
         household_id,

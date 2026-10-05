@@ -96,6 +96,7 @@ export const useChoresStore = defineStore('chores', () => {
     const removed = idx !== -1 ? chores.value[idx] : null
     if (idx !== -1) chores.value.splice(idx, 1)
     // Auch zugehörige Assignments entfernen
+    const removedAssignments = assignments.value.filter(a => a.chore_id === choreId)
     assignments.value = assignments.value.filter(a => a.chore_id !== choreId)
 
     try {
@@ -103,6 +104,11 @@ export const useChoresStore = defineStore('chores', () => {
     } catch (error) {
       // Rollback
       if (removed && idx !== -1) chores.value.splice(idx, 0, removed)
+      const restored = removedAssignments.filter(r => !assignments.value.some(a => a.id === r.id))
+      if (restored.length > 0) {
+        assignments.value = [...assignments.value, ...restored]
+          .sort((a, b) => a.due_date.localeCompare(b.due_date))
+      }
       throw error
     }
   }

@@ -68,6 +68,18 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/plants',
+      name: 'plants',
+      component: () => import('../views/PlantsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/plants/:id',
+      name: 'plant-detail',
+      component: () => import('../views/PlantDetailView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/food',
       name: 'food',
       component: () => import('../views/FoodView.vue'),

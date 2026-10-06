@@ -1653,7 +1653,8 @@ async function handleDeleteCareTask() {
 .health-editor__row {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-2);
+  /* Abstand, damit die Tap-Fläche von „Löschen“ nicht über dem Eingabefeld liegt */
+  gap: var(--space-3);
   padding: var(--space-2);
   background: var(--chip);
   border-radius: var(--radius-sm);

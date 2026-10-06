@@ -1,24 +1,47 @@
 # Haushalt-App — Aktueller Projektstand
 
-**Stand:** 2026-08-12 (aktualisiert)
+**Stand:** 2026-10-06 (Kopf, Kennzahlen, Feature-Status, Einschränkungen und Dependencies aktualisiert; die Tabellen in den Abschnitten 3–5 und 10 stammen noch vom Stand 2026-08-12 und sind unvollständig — maßgeblich sind der Code und die OpenAPI-Doku unter `/docs`)
 **Autor:** Tech Lead (automatisch generiert)
 
 ---
 
 ## 1. Projektübersicht
 
-Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzpläne mit Ämtli-Rotation und Ausgaben-Teilung mit Ausgleichszahlungen innerhalb eines Haushalts. Multi-User, Echtzeit-Sync via WebSocket, Mobile-First UI, zweisprachig (DE/EN).
+Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzpläne mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Notizen und eine Dokument-Ablage (Verträge, Rechnungen, Garantien) innerhalb eines Haushalts. Multi-User, Echtzeit-Sync via WebSocket, Mobile-First UI, installierbare PWA mit Web Push, zweisprachig (DE/EN).
 
 | Aspekt | Technologie |
 |---|---|
 | Backend | Python 3.12+, FastAPI 0.141, SQLAlchemy, Alembic |
 | Datenbank | PostgreSQL (via psycopg2) |
 | Realtime | Socket.IO (python-socketio) |
-| Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4 |
-| Auth | JWT (Bearer Token), bcrypt-Hashing |
-| i18n | vue-i18n, 615 Keys (DE + EN), Build-gesicherter Key-Sync |
+| Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4, PWA (`vite-plugin-pwa`) |
+| Auth | JWT-Access-Token (15 Min.) + rotierender Refresh-Token mit Reuse-Erkennung, bcrypt-Hashing |
+| i18n | vue-i18n, 700 Keys (DE + EN), Build-gesicherter Key-Sync |
+| Qualität / CI | GitHub Actions: Backend (ruff, pytest mit Coverage), Frontend (Locale-Check, Typecheck, Vitest mit Coverage), Dependency-Audit (pip-audit, npm audit) |
+| Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager), Backup-Skripte für Datenbank und Uploads |
 | Icons | Phosphor Icons (`@phosphor-icons/vue`) — regular/fill/bold |
 | UI | Custom Design-System (CSS Custom Properties, Nunito + Quicksand), Mobile-First |
+
+### Änderungen seit 2026-08-12
+
+Alle Änderungen kamen per Pull Request auf `master`:
+
+| PR | Inhalt |
+|---|---|
+| #6 | CI-Pipeline (GitHub Actions) mit Backend- und Frontend-Job, Status-Badge in der README |
+| #8 | Sicherheit/Betrieb: Rate-Limit-Umgehung per gefälschtem `X-Forwarded-For` behoben, Pfade für wiederkehrende Rechnungen hinter HTTPS, Pflicht-Secrets und lokal gebundene Ports in den Compose-Dateien, Backup inkl. Uploads (und Bugfix im Backup-Skript) |
+| #9 | Datenkorrektheit: Ämtli-Rotation springt beim Umbenennen nicht mehr, Kalender-Uhrzeiten in der Haushalts-Zeitzone (inkl. Migration bestehender Termine), doppelte Teilnehmer bei Ausgaben abgelehnt, Ausgleich mit Ex-Mitgliedern, Standard-Zahler bei wiederkehrenden Rechnungen |
+| #10 | DB-Integrität: Löschregeln (`ondelete`), eine Stimme pro Person und Abstimmung, eine Buchung pro Rechnung und Monat, `household_id`-Indizes, Test gegen mehrere Alembic-Köpfe |
+| #11 | Mitglieder-Lebenszyklus: Entfernte Mitglieder verlassen den Echtzeit-Raum, Einladungscode wird beim Entfernen erneuert (und ist per Admin-Button erneuerbar), Dateien werden beim Löschen eines Haushalts entfernt |
+| #7 | Dokument-Ablage (Backend, Ansicht, mehrseitige Dokumente, Speicher-Limit pro Haushalt) sowie Schließen der Upload-Befunde F-02 bis F-04 |
+| #12 | Offline-first: Konzeptdokument (`docs/offline-first-phase2.md`) und Meilenstein M0 (vom Client erzeugte IDs, `updated_at`/`version`, idempotentes Anlegen) |
+| #13 | Security-Hardening: HTTP-Security-Header und CSP, engeres CORS, Rate-Limits für Refresh/Logout/Beitritt, Dependency-Audit-Job, Review `docs/security/hardening-review.md` |
+| #14 | Abhängigkeits-Updates gegen bekannte Schwachstellen (u. a. Pillow 12, cryptography 50, PyJWT 2.15) |
+| #15 | ruff im Backend, Coverage-Berichte, Unit-Tests für Utils und vier Stores |
+
+**Kennzahlen (nach #15):** Backend 562 Tests in 51 Dateien, Coverage 91 %; Frontend 132 Tests in 11 Dateien, Coverage 25,9 % (Statements); 700 i18n-Schlüssel; 34 Alembic-Migrationen (einziger Kopf `w1x2y3z4a5b6`).
+
+**Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Essen, Notizen, Kalender und Finanzen.
 
 ---
 
@@ -437,12 +460,12 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Expenses-Modul (CRUD + Split + Saldo) | ✅ | ✅ ExpensesView, ExpenseList, BalanceSummary, ExpenseFormDialog | ✅ Socket |
 | Settlements-Modul | ✅ | ✅ | ✅ Socket |
 | Chores-Modul (Putzplan + Rotation) | ✅ | ✅ | ✅ Socket |
-| i18n (DE + EN, 531 Keys, Locale-Check) | ✅ | ✅ | — |
+| i18n (DE + EN, 700 Keys, Locale-Check) | ✅ | ✅ | — |
 | Error-Code-System (maschinenlesbar) | ✅ | ✅ i18n-Mapping | — |
 | Offline-Banner | — | ✅ | — |
 | Toast-System | — | ✅ | — |
-| Repository-Layer (Offline-Ready Seam) | — | ✅ (6 Repos) | — |
-| Race-Condition-Schutz (Temp-IDs, Toggle-Mutex) | — | ✅ | — |
+| Repository-Layer (Offline-Ready Seam) | — | ✅ (17 Repos) | — |
+| Race-Condition-Schutz (vom Client erzeugte IDs, versionierte Merges, Toggle-Mutex) | — | ✅ | — |
 | Design-System (CSS Custom Properties) | — | ✅ theme.css + 7 UI-Komponenten | — |
 | Mobile-First UI | — | ✅ Bottom-Tab-Bar, Touch-optimiert | — |
 | Household erstellen (eigenständig) | ✅ POST /households/ | ✅ HouseholdView | — |
@@ -450,7 +473,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Haushalt verlassen / Mitglied entfernen | ✅ POST /leave, DELETE /members/{uid} | ✅ HouseholdView | ✅ Socket |
 | Rollen-System (admin/member) | ✅ verify_household_admin | ✅ UI-Anzeige | — |
 | Währung pro Haushalt | ✅ Household.currency | ✅ /me Response | — |
-| Backend-Tests (Multi-Tenant + Auth) | ✅ 32 Testdateien, ~151 Tests | — | — |
+| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 51 Testdateien, 562 Tests (Coverage 91 %) | — | — |
 | Dashboard | ✅ | ✅ DashboardView | — |
 | Einkauf 2.0 (Multi-Listen, Stores) | ✅ | ✅ ShoppingView | ✅ Socket |
 | Aufgaben 2.0 (Unified Tasks) | ✅ | ✅ TodosView | ✅ Socket |
@@ -461,20 +484,29 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Essen (Wochenmenü + Rezepte) | ✅ | ✅ FoodView | — |
 | Notizen | ✅ | ✅ NotesView | — |
 | App-Shell (Bottom-Nav, MoreSheet, Sync-Status) | — | ✅ | — |
+| PWA (installierbar, Service Worker) | — | ✅ | — |
+| Web Push (Todo-Erinnerungen, Tierpflege) | ✅ | ✅ | — |
+| Dokument-Ablage (Verträge, Rechnungen, Garantien; mehrseitig, Vorschau, Speicher-Limit) | ✅ | ✅ DocumentsView | ✅ Socket |
+| Auth-Härtung (Rate-Limits, Refresh-Rotation, Security-Header/CSP) | ✅ | — | — |
+| Offline-Basis M0 (Client-IDs, `version`/`updated_at`) | ✅ Shopping, Todos, Chore-Zuweisungen | ✅ Stores | ✅ veraltete Events werden verworfen |
+| CI (Lint, Tests mit Coverage, Dependency-Audit) | — | — | — |
+| Produktions-Deployment (Docker, Nginx Proxy Manager) | ✅ | ✅ | — |
 
 ### ❌ Offen (nächste Schritte)
 
 | Feature | Aufwand | Prio | Beschreibung |
 |---|---|---|---|
-| Push-Notifications für Chores | Mittel | 🔵 Niedrig | "Du bist dran"-Benachrichtigung |
-| Rate-Limiting vor Public Launch | Klein | 🟡 Mittel | Endpoint-basiertes Rate-Limiting |
-| Offline-Phase 2 (IndexedDB + SyncQueue) | Gross | 🔵 Niedrig | Lokale Persistenz, Sync-Queue, Conflict Resolution |
-| PWA / Service Worker | Gross | 🔵 Niedrig | Offline-Shell, Cache-Strategie |
-| Push-Notifications (Todos) | Mittel | 🔵 Niedrig | Reminder für `due_date` |
-| Frontend-Tests | Mittel | 🟡 Mittel | Unit-Tests für Stores und Komponenten |
-| Deployment (Azure/Docker) | Mittel | 🟡 Mittel | Produktiv-Deployment |
+| Offline-Betrieb ab M1 | Gross | 🔵 Niedrig | IndexedDB, Änderungs-Warteschlange, Synchronisation; Plan und Etappen in `docs/offline-first-phase2.md`. Vorher offen: Entscheidung E8 (nur kürzlich abgehakte Einkäufe synchronisieren oder Funktion „Abgehakte löschen“) |
+| Refresh-Token nicht in `localStorage` | Mittel | 🟡 Mittel | Vorschlag HttpOnly-Cookie in `docs/security/hardening-review.md` (H-01); ändert den Vertrag von Login/Refresh/Logout und braucht CSRF-Schutz |
+| Dokumente verknüpfen | Mittel | 🔵 Niedrig | Verknüpfung mit Ausgaben/Terminen (Datenmodell ist vorbereitet, eigene Link-Tabelle) |
+| Push-Erinnerung zum Ablaufdatum von Dokumenten | Klein | 🔵 Niedrig | Garantieende, Kündigungsfrist |
+| Rate-Limit für Uploads | Klein | 🟡 Mittel | Upload-Endpunkte haben kein eigenes Limit (H-14, Epic-8-Review F-06); das Speicher-Limit pro Haushalt existiert |
+| Einladungscode läuft nie ab | Klein | 🔵 Niedrig | H-12; Rotation ist seit #11 möglich. Offen ist außerdem, ob der Code nur für Admins sichtbar sein soll |
+| Token-Ablauf auf Socket-Verbindungen | Klein | 🔵 Niedrig | Logout/Ablauf beendet bestehende WebSocket-Verbindungen serverseitig noch nicht |
+| Frontend-Testabdeckung | Mittel | 🟡 Mittel | 25,9 % Statements; Komponenten und weitere Stores (Kalender, Finanzen, Haustiere …) sind ungetestet; Coverage wird nur berichtet, es gibt keine Schwelle |
+| Push-Notifications für Chores | Mittel | 🔵 Niedrig | „Du bist dran“-Benachrichtigung |
 | FR/IT-Sprachen | Klein | 🔵 Niedrig | Locale-Erweiterung |
-| Chores-Statistiken | Klein | 🔵 Niedrig | "Wer hat wie oft geputzt" |
+| Chores-Statistiken | Klein | 🔵 Niedrig | „Wer hat wie oft geputzt“ |
 
 ---
 
@@ -482,13 +514,17 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 
 | Thema | Details | Prio |
 |---|---|---|
-| `updated_at` fehlt | Auf ShoppingItem und Todo — wird für Phase-2 Conflict Resolution gebraucht | Phase 2 |
-| `navigator.onLine` unzuverlässig | Captive Portals, WiFi ohne Internet werden nicht erkannt | Phase 2 |
-| `deleteItem()` Rollback-Position | Bei paralleler Socket-Mutation kann Position abweichen (kosmetisch) | Gering |
-| Keine Frontend-Tests | Stores und Komponenten haben keine Unit-Tests | Technische Schuld |
-| Auth-Styles dupliziert | Login/Register haben identische Scoped-CSS-Blöcke (Shared-Auth-Component wäre Refactoring) | Gering |
-| Emoji-/Icon-Sizes nicht tokenisiert | 48px, 22px Grössen sind hardcoded statt Design-Tokens | Gering |
-| Toast-Transitions hardcoded | Nutzen hardcoded Durations statt Design-Tokens | Gering |
+| Wiederholtes Anlegen nach Löschen | Wird ein Anlegen wiederholt, nachdem jemand anderes den Eintrag gelöscht hat, taucht er wieder auf. Dafür bräuchte der Server Lösch-Vermerke (Tombstones); bewusst zurückgestellt | Phase 2 |
+| `version`/`updated_at` nur teilweise | Vorhanden auf Einkaufslisten, Einkaufseinträgen, Todos und Putzplan-Zuweisungen; andere Entitäten haben sie nicht | Phase 2 |
+| `navigator.onLine` unzuverlässig | Captive Portals und WLAN ohne Internet werden nicht erkannt | Phase 2 |
+| Kalender-Migration (#9) | Termine, die der alte Fehler beim Bearbeiten bereits verschoben hatte, kann die Migration nicht erkennen; sie gelten als zuletzt gespeicherte Zeit und müssen ggf. von Hand korrigiert werden | Einmalig |
+| PDF-Vorschau unter der CSP | Im eingebetteten PDF-Betrachter fehlen die Schaltflächen „Drucken“ und „Mehr“ (nicht durch Styles verursacht, nicht weiter untersucht); die App hat einen eigenen Download-Button. Die CSP wurde nur für `/documents` und `/shopping` im Browser geprüft | Gering |
+| Bestehende wiederkehrende Rechnungen | Haben noch keinen Standard-Zahler; beim ersten Buchen wird im Dialog die aktuelle Person vorgeschlagen | Gering |
+| Rate-Limits nur pro IP, im Speicher | Zähler gehen beim Neustart verloren; passt zu einem Worker (Socket.IO ohne Message-Queue) | Akzeptiert |
+| Major-Updates ohne Gerätetest | Pillow 12 und cryptography 50 wurden über Tests und Stichproben geprüft, nicht mit einer echten Web-Push-Zustellung auf einem Gerät und nicht mit einem Upload über den laufenden Browser | Prüfen |
+| `deleteItem()` Rollback-Position | Bei paralleler Socket-Mutation kann die Position abweichen (kosmetisch) | Gering |
+| Auth-Styles dupliziert | Login/Register haben identische Scoped-CSS-Blöcke | Gering |
+| Emoji-/Icon-Größen und Toast-Transitions | Hardcoded statt Design-Tokens | Gering |
 
 ---
 
@@ -499,24 +535,26 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 |---|---|---|
 | FastAPI | 0.141.1 | Web-Framework |
 | SQLAlchemy | (via requirements.txt) | ORM |
-| Alembic | 1.18.5 | DB-Migrationen (23 Versionen) |
+| Alembic | 1.18.5 | DB-Migrationen (34 Versionen) |
 | psycopg2-binary | 2.9.12 | PostgreSQL-Driver |
 | python-socketio | (via requirements.txt) | WebSocket |
 | bcrypt | 4.0.1 | Passwort-Hashing |
 | pydantic | 2.13.4 | Validierung |
-| python-jose / PyJWT | (via requirements.txt) | JWT |
-| pytest | (via requirements.txt) | Testing |
+| PyJWT | 2.15.0 | JWT |
+| Pillow | 12.3.0 | Bildverarbeitung (Uploads) |
+| pywebpush | 2.5.0 | Web Push |
+| pytest, httpx, pytest-cov, ruff | (nicht in `requirements.txt`) | Tests und Lint; werden in der CI separat installiert |
 
 ### Frontend (Node.js)
 | Package | Version | Zweck |
 |---|---|---|
-| Vue | 3.5.40 | UI-Framework |
+| Vue | 3.5.43 | UI-Framework |
 | Pinia | 4.0.2 | State Management |
 | Vue Router | 5.2.0 | Routing |
 | vue-i18n | (via package.json) | Internationalisierung |
-| Axios | 1.19.0 | HTTP-Client |
+| Axios | 1.20.0 | HTTP-Client |
 | socket.io-client | 4.8.3 | WebSocket-Client |
-| TypeScript | 7.0.2 | Typisierung |
+| TypeScript | 5.8.3 | Typisierung |
 | Vite | 8.2.0 | Build-Tool |
 
 ---

@@ -157,6 +157,8 @@ export interface RecurringBill {
   category: string | null
   split_type: SplitType
   active: boolean
+  /** Standard-Zahler beim Buchen */
+  paid_by_user_id: string | null
   created_at: string
 }
 
@@ -167,6 +169,7 @@ export interface RecurringBillCreatePayload {
   category?: string
   split_type?: SplitType
   active?: boolean
+  paid_by_user_id?: string | null
 }
 
 export interface RecurringBillUpdatePayload {
@@ -176,6 +179,7 @@ export interface RecurringBillUpdatePayload {
   category?: string | null
   split_type?: SplitType
   active?: boolean
+  paid_by_user_id?: string | null
 }
 
 // ── Finance Summary ──
@@ -192,6 +196,7 @@ export interface PendingBillInfo {
   day_of_month: number
   category: string | null
   is_booked_this_month: boolean
+  paid_by_user_id: string | null
 }
 
 export interface FinanceSummary {

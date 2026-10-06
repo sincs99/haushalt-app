@@ -3,6 +3,7 @@ import type { TagResolveResult } from '../../types'
 import {
   moduleRouteFor,
   nextScanStep,
+  plantWaterLines,
   safeInternalPath,
   scanErrorKind,
   suggestedSlot,
@@ -116,7 +117,33 @@ describe('Hilfsfunktionen', () => {
     expect(moduleRouteFor(result({ action: 'pet.care_task.done', details: {} }))).toBe('/pets')
     expect(moduleRouteFor(result({ action: 'chore.assignment.done' }))).toBe('/chores')
     expect(moduleRouteFor(result({ action: 'todo.done' }))).toBe('/todos')
-    expect(moduleRouteFor(result({ action: 'plant.water' }))).toBe('/dashboard')
+    expect(moduleRouteFor(result({ action: 'plant.unknown' }))).toBe('/dashboard')
+  })
+
+  it('moduleRouteFor führt Pflanzen-Tags auf die Pflanze', () => {
+    expect(moduleRouteFor(result({ action: 'plant.water', details: { plant_id: 'pl1' } }))).toBe('/plants/pl1')
+    expect(moduleRouteFor(result({ action: 'plant.care_task.done', details: { plant_id: 'pl2' } }))).toBe('/plants/pl2')
+    // „alle fälligen“ hat keine einzelne Pflanze
+    expect(moduleRouteFor(result({ action: 'plant.water', details: { plants: [], due_count: 2 } }))).toBe('/plants')
+    expect(moduleRouteFor(result({ action: 'plant.care_task.done', details: {} }))).toBe('/plants')
+  })
+
+  it('plantWaterLines: einzelne Pflanze', () => {
+    expect(plantWaterLines({ last_watered_at: '2026-01-02', next_due_at: '2026-01-09' }, true)).toEqual([
+      { kind: 'lastWatered', value: '2026-01-02' },
+      { kind: 'plantDue', value: '2026-01-09' },
+    ])
+    expect(plantWaterLines({ last_watered_at: null, next_due_at: null }, true)).toEqual([{ kind: 'neverWatered' }])
+  })
+
+  it('plantWaterLines: alle fälligen zeigt die Anzahl', () => {
+    expect(plantWaterLines({ due_count: 3, plants: [] }, false)).toEqual([{ kind: 'dueCount', value: 3 }])
+    expect(plantWaterLines({}, false)).toEqual([])
+  })
+
+  it('Pflanzen-Tag ohne Gießaufgabe ist blockiert, nicht bestätigbar', () => {
+    const r = result({ action: 'plant.water', target_type: 'plant', can_execute: false, reason: 'NO_WATER_TASK' })
+    expect(nextScanStep(r, 'h1')).toEqual({ kind: 'blocked', reason: 'NO_WATER_TASK' })
   })
 })
 

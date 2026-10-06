@@ -963,6 +963,8 @@ export interface AiPlantCareAdvice {
 export type TagActionKey =
   | 'pet.feed'
   | 'pet.care_task.done'
+  | 'plant.water'
+  | 'plant.care_task.done'
   | 'chore.assignment.done'
   | 'shopping_list.open'
   | 'todo.done'

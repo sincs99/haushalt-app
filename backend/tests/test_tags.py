@@ -14,6 +14,9 @@ from app.models import (
     ChoreAssignment,
     FeedingLog,
     PetCareTask,
+    Plant,
+    PlantCareLog,
+    PlantCareTask,
     ShoppingList,
     Tag,
     Todo,
@@ -69,6 +72,26 @@ def care_task_a(db, household_a, pet_a) -> PetCareTask:
     db.commit()
     db.refresh(task)
     return task
+
+
+def _plant_task(db, household, plant, care_type="water", *, interval=7, due=None, label=None) -> PlantCareTask:
+    task = PlantCareTask(
+        household_id=household.id,
+        plant_id=plant.id,
+        care_type=care_type,
+        label=label,
+        interval_days=interval,
+        next_due_at=due or date(2026, 1, 1),
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+@pytest.fixture()
+def water_task_a(db, household_a, plant_a) -> PlantCareTask:
+    return _plant_task(db, household_a, plant_a, "water", interval=7)
 
 
 @pytest.fixture()
@@ -267,13 +290,20 @@ class TestTagCrud:
         assert resp.status_code == 422
         assert resp.json()["detail"]["code"] == "TOO_MANY_TAGS"
 
-    def test_targets_endpoint(self, client, db, household_a, token_a, pet_a, todo_a, shopping_list_a, care_task_a, chore_a):
+    def test_targets_endpoint(
+        self, client, db, household_a, token_a, pet_a, todo_a, shopping_list_a, care_task_a, chore_a, plant_a, water_task_a
+    ):
         resp = client.get(f"{_tags_url(household_a)}targets", headers=_auth(token_a))
         assert resp.status_code == 200
         by_type = {t["target_type"]: t for t in resp.json()}
-        assert set(by_type) == {"pet", "pet_care_task", "chore", "shopping_list", "todo"}
+        assert set(by_type) == {"pet", "pet_care_task", "plant", "plant_care_task", "chore", "shopping_list", "todo"}
         assert by_type["pet"]["options"] == [{"id": str(pet_a.id), "name": "Luna"}]
         assert by_type["pet_care_task"]["options"][0]["name"] == "Luna – Krallen schneiden"
+        assert by_type["plant"]["options"] == [{"id": str(plant_a.id), "name": "Monstera"}]
+        assert by_type["plant"]["actions"] == [
+            {"key": "plant.water", "target_optional": True, "navigate_only": False}
+        ]
+        assert by_type["plant_care_task"]["options"][0]["name"] == "Monstera – Gießen"
         assert by_type["shopping_list"]["actions"] == [
             {"key": "shopping_list.open", "target_optional": True, "navigate_only": True}
         ]
@@ -337,7 +367,7 @@ class TestScanErrors:
         assert resp.json()["detail"]["code"] == "TAG_TARGET_NOT_FOUND"
 
     def test_unsupported_action_422(self, client, db, household_a, token_a):
-        tag = _make_tag(db, household_a, "plant.water", "plant")
+        tag = _make_tag(db, household_a, "plant.unknown", "plant")
         resp = _resolve(client, token_a, tag)
         assert resp.status_code == 422
         assert resp.json()["detail"]["code"] == "TAG_ACTION_INVALID"
@@ -461,6 +491,168 @@ class TestCareTaskDone:
         assert care_task_a.last_done_at == today
         assert care_task_a.next_due_at == today + timedelta(days=14)
         assert "pet_care_task_updated" in [c.args[1] for c in _mock_socket_emit.call_args_list]
+
+
+class TestPlantWater:
+    def test_resolve_and_execute_single_plant(self, client, db, household_a, token_a, user_a, plant_a, water_task_a, _mock_socket_emit):
+        tag = _make_tag(db, household_a, "plant.water", "plant", plant_a.id)
+        data = _resolve(client, token_a, tag).json()
+        assert data["target_name"] == "Monstera"
+        assert data["can_execute"] is True
+        assert data["details"]["plant_id"] == str(plant_a.id)
+        assert data["details"]["last_watered_at"] is None
+        assert data["details"]["next_due_at"] == "2026-01-01"
+
+        resp = _execute(client, token_a, tag)
+        assert resp.status_code == 200
+        assert resp.json()["changed"] is True
+        today = today_in_tz(household_a.timezone)
+        db.refresh(water_task_a)
+        assert water_task_a.last_done_at == today
+        assert water_task_a.next_due_at == today + timedelta(days=7)
+        log = db.query(PlantCareLog).filter(PlantCareLog.plant_id == plant_a.id).one()
+        assert log.done_by_user_id == user_a.id
+        assert "plant_care_logged" in [c.args[1] for c in _mock_socket_emit.call_args_list]
+
+        data = _resolve(client, token_a, tag).json()
+        assert data["details"]["last_watered_at"] == today.isoformat()
+
+    def test_resolve_does_not_mutate(self, client, db, household_a, token_a, plant_a, water_task_a):
+        tag = _make_tag(db, household_a, "plant.water", "plant", plant_a.id)
+        assert _resolve(client, token_a, tag).status_code == 200
+        db.refresh(water_task_a)
+        assert water_task_a.last_done_at is None
+        assert db.query(PlantCareLog).count() == 0
+
+    def test_only_water_tasks_are_completed(self, client, db, household_a, token_a, plant_a, water_task_a):
+        fertilize = _plant_task(db, household_a, plant_a, "fertilize", interval=30)
+        tag = _make_tag(db, household_a, "plant.water", "plant", plant_a.id)
+        assert _execute(client, token_a, tag).status_code == 200
+        db.refresh(fertilize)
+        assert fertilize.last_done_at is None
+
+    def test_no_water_task_cannot_execute(self, client, db, household_a, token_a, plant_a):
+        _plant_task(db, household_a, plant_a, "fertilize", interval=30)
+        tag = _make_tag(db, household_a, "plant.water", "plant", plant_a.id)
+        data = _resolve(client, token_a, tag).json()
+        assert data["can_execute"] is False
+        assert data["reason"] == "NO_WATER_TASK"
+        resp = _execute(client, token_a, tag)
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["code"] == "TAG_NOTHING_TO_DO"
+        assert db.query(PlantCareLog).count() == 0
+
+    def test_deleted_plant_is_target_missing(self, client, db, household_a, token_a, plant_a):
+        tag = _make_tag(db, household_a, "plant.water", "plant", plant_a.id)
+        db.delete(plant_a)
+        db.commit()
+        for resp in (_resolve(client, token_a, tag), _execute(client, token_a, tag)):
+            assert resp.status_code == 404
+            assert resp.json()["detail"]["code"] == "TAG_TARGET_NOT_FOUND"
+        listing = client.get(_tags_url(household_a), headers=_auth(token_a))
+        assert listing.json()[0]["target_missing"] is True
+
+    def test_foreign_household_forbidden(self, client, db, household_a, token_b, plant_a, water_task_a):
+        tag = _make_tag(db, household_a, "plant.water", "plant", plant_a.id)
+        assert _resolve(client, token_b, tag).status_code == 403
+        assert _execute(client, token_b, tag).status_code == 403
+        db.refresh(water_task_a)
+        assert water_task_a.last_done_at is None
+
+    def test_plant_of_other_household_rejected_on_create(self, client, household_a, token_a, plant_b):
+        resp = client.post(
+            _tags_url(household_a),
+            headers=_auth(token_a),
+            json={"label": "X", "target_type": "plant", "target_id": str(plant_b.id), "action": "plant.water"},
+        )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "TAG_TARGET_INVALID"
+
+    def test_all_plants_waters_only_due(self, client, db, household_a, token_a, plant_a, water_task_a):
+        other = Plant(household_id=household_a.id, name="Ficus")
+        db.add(other)
+        db.commit()
+        today = today_in_tz(household_a.timezone)
+        not_due = _plant_task(db, household_a, other, "water", due=today + timedelta(days=3))
+        tag = _make_tag(db, household_a, "plant.water", "plant", None)
+
+        data = _resolve(client, token_a, tag).json()
+        assert data["target_name"] is None
+        assert data["can_execute"] is True
+        assert data["details"]["due_count"] == 1
+        assert [p["name"] for p in data["details"]["plants"]] == ["Ficus", "Monstera"]
+
+        resp = _execute(client, token_a, tag)
+        assert resp.status_code == 200
+        assert resp.json()["changed"] is True
+        db.refresh(water_task_a)
+        db.refresh(not_due)
+        assert water_task_a.last_done_at == today
+        assert not_due.last_done_at is None
+
+        data = _resolve(client, token_a, tag).json()
+        assert data["can_execute"] is False
+        assert data["reason"] == "NOTHING_DUE"
+        assert _execute(client, token_a, tag).json()["changed"] is False
+
+    def test_all_plants_without_plants(self, client, db, household_a, token_a):
+        tag = _make_tag(db, household_a, "plant.water", "plant", None)
+        data = _resolve(client, token_a, tag).json()
+        assert data["can_execute"] is False
+        assert data["reason"] == "NO_PLANTS"
+
+
+class TestPlantCareTaskDone:
+    def test_resolve_and_execute(self, client, db, household_a, token_a, plant_a, _mock_socket_emit):
+        task = _plant_task(db, household_a, plant_a, "fertilize", interval=30)
+        tag = _make_tag(db, household_a, "plant.care_task.done", "plant_care_task", task.id)
+        data = _resolve(client, token_a, tag).json()
+        assert data["target_name"] == "Düngen"
+        assert data["details"]["plant_id"] == str(plant_a.id)
+        assert data["details"]["plant_name"] == "Monstera"
+        assert data["details"]["next_due_at"] == "2026-01-01"
+        assert data["can_execute"] is True
+
+        resp = _execute(client, token_a, tag)
+        assert resp.status_code == 200
+        db.refresh(task)
+        today = today_in_tz(household_a.timezone)
+        assert task.last_done_at == today
+        assert task.next_due_at == today + timedelta(days=30)
+        assert db.query(PlantCareLog).filter(PlantCareLog.care_task_id == task.id).count() == 1
+        assert "plant_care_task_updated" in [c.args[1] for c in _mock_socket_emit.call_args_list]
+
+    def test_custom_label_is_used(self, client, db, household_a, token_a, plant_a):
+        task = _plant_task(db, household_a, plant_a, "other", label="Blätter abwischen")
+        tag = _make_tag(db, household_a, "plant.care_task.done", "plant_care_task", task.id)
+        assert _resolve(client, token_a, tag).json()["target_name"] == "Blätter abwischen"
+
+    def test_deleted_task_is_target_missing(self, client, db, household_a, token_a, plant_a, water_task_a):
+        tag = _make_tag(db, household_a, "plant.care_task.done", "plant_care_task", water_task_a.id)
+        db.delete(water_task_a)
+        db.commit()
+        assert _resolve(client, token_a, tag).status_code == 404
+        assert _execute(client, token_a, tag).json()["detail"]["code"] == "TAG_TARGET_NOT_FOUND"
+
+    def test_foreign_household_forbidden(self, client, db, household_a, token_b, water_task_a):
+        tag = _make_tag(db, household_a, "plant.care_task.done", "plant_care_task", water_task_a.id)
+        assert _execute(client, token_b, tag).status_code == 403
+        db.refresh(water_task_a)
+        assert water_task_a.last_done_at is None
+
+    def test_task_of_other_household_rejected_on_create(self, client, db, household_a, household_b, token_a, plant_b):
+        foreign = _plant_task(db, household_b, plant_b)
+        resp = client.post(
+            _tags_url(household_a),
+            headers=_auth(token_a),
+            json={
+                "label": "X",
+                "target_type": "plant_care_task",
+                "target_id": str(foreign.id),
+                "action": "plant.care_task.done",
+            },
+        )
+        assert resp.status_code == 422
 
 
 class TestChoreDone:

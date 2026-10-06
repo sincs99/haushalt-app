@@ -996,11 +996,14 @@
       "pet_care_task": "Pet care",
       "chore": "Chore",
       "shopping_list": "Shopping list",
-      "todo": "Task"
+      "todo": "Task",
+      "plant": "Plant",
+      "plant_care_task": "Plant care"
     },
     "targetNone": {
       "pet": "All pets",
-      "shopping_list": "Shopping (last opened list)"
+      "shopping_list": "Shopping (last opened list)",
+      "plant": "All plants that are due"
     },
     "actions": {
       "pet": {
@@ -1045,6 +1048,23 @@
           "button": "Done",
           "done": "Task ticked off"
         }
+      },
+      "plant": {
+        "water": {
+          "label": "Water plant",
+          "confirm": "Watered {name}?",
+          "confirmAll": "Watered all plants that are due?",
+          "button": "Watered",
+          "done": "Watering logged"
+        },
+        "care_task": {
+          "done": {
+            "label": "Complete plant care task",
+            "confirm": "\"{name}\" done?",
+            "button": "Done",
+            "done": "Care task done"
+          }
+        }
       }
     },
     "scan": {
@@ -1087,8 +1107,15 @@
         "NOTHING_DUE": "Nothing is due right now.",
         "CHORE_INACTIVE": "This chore is paused.",
         "NO_PETS": "There are no pets in this household.",
-        "UNKNOWN": "Not possible right now."
-      }
+        "UNKNOWN": "Not possible right now.",
+        "NO_WATER_TASK": "This plant has no watering task.",
+        "NO_PLANTS": "There are no plants in this household."
+      },
+      "plant": "Plant: {name}",
+      "lastWatered": "Last watered: {date}",
+      "neverWatered": "Never watered",
+      "dueCount": "Due: {n} plant(s)",
+      "plantDue": "Watering due: {date}"
     }
   }
 }

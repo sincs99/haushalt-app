@@ -996,11 +996,14 @@
       "pet_care_task": "Tierpflege",
       "chore": "Ämtli",
       "shopping_list": "Einkaufsliste",
-      "todo": "Aufgabe"
+      "todo": "Aufgabe",
+      "plant": "Pflanze",
+      "plant_care_task": "Pflanzenpflege"
     },
     "targetNone": {
       "pet": "Alle Tiere",
-      "shopping_list": "Einkauf (zuletzt geöffnete Liste)"
+      "shopping_list": "Einkauf (zuletzt geöffnete Liste)",
+      "plant": "Alle fälligen Pflanzen"
     },
     "actions": {
       "pet": {
@@ -1045,6 +1048,23 @@
           "button": "Erledigt",
           "done": "Aufgabe abgehakt"
         }
+      },
+      "plant": {
+        "water": {
+          "label": "Pflanze gießen",
+          "confirm": "{name} gegossen?",
+          "confirmAll": "Alle fälligen Pflanzen gegossen?",
+          "button": "Gegossen",
+          "done": "Gießen eingetragen"
+        },
+        "care_task": {
+          "done": {
+            "label": "Pflanzenpflege erledigen",
+            "confirm": "„{name}“ erledigt?",
+            "button": "Erledigt",
+            "done": "Pflege erledigt"
+          }
+        }
       }
     },
     "scan": {
@@ -1087,8 +1107,15 @@
         "NOTHING_DUE": "Gerade ist nichts fällig.",
         "CHORE_INACTIVE": "Dieses Ämtli ist pausiert.",
         "NO_PETS": "Im Haushalt gibt es keine Tiere.",
-        "UNKNOWN": "Gerade nicht möglich."
-      }
+        "UNKNOWN": "Gerade nicht möglich.",
+        "NO_WATER_TASK": "Für diese Pflanze gibt es keine Gießaufgabe.",
+        "NO_PLANTS": "Im Haushalt gibt es keine Pflanzen."
+      },
+      "plant": "Pflanze: {name}",
+      "lastWatered": "Zuletzt gegossen: {date}",
+      "neverWatered": "Noch nie gegossen",
+      "dueCount": "Fällig: {n} Pflanze(n)",
+      "plantDue": "Gießen fällig: {date}"
     }
   }
 }

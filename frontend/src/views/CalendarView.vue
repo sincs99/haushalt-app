@@ -7,7 +7,7 @@ import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
 import { DEFAULT_CALENDAR_PALETTE } from '../utils/categoryColors'
-import { expandEventToDays } from '../utils/dates'
+import { expandEventToDays, eventTime, eventDate } from '../utils/dates'
 import type { ExpandedEventDay } from '../utils/dates'
 import type { CalendarEvent, CalendarEventCreatePayload, CalendarInfo, EventPoll } from '../types'
 import CalendarMonthGrid from '../components/CalendarMonthGrid.vue'
@@ -307,12 +307,8 @@ function formatWeekdayShort(dateStr: string): string {
 }
 
 function formatTime(isoStr: string): string {
-  const d = new Date(isoStr)
-  return d.toLocaleTimeString(locale.value === 'de' ? 'de-CH' : 'en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
+  // Haushaltszeit direkt aus dem String (siehe utils/dates eventTime)
+  return eventTime(isoStr)
 }
 
 function getParticipantNames(event: CalendarEvent): string {
@@ -402,8 +398,8 @@ function openCreateDialog() {
 function openEditDialog(event: CalendarEvent) {
   editingEvent.value = event
   formTitle.value = event.title
-  formDate.value = event.starts_at.substring(0, 10)
-  formEndDate.value = event.ends_at ? event.ends_at.substring(0, 10) : formDate.value
+  formDate.value = eventDate(event.starts_at)
+  formEndDate.value = event.ends_at ? eventDate(event.ends_at) : formDate.value
   formEndDateError.value = ''
   formAllDay.value = event.all_day
   if (!event.all_day) {
@@ -913,7 +909,7 @@ watch(
               <span class="event-card__time">
                 {{ event.all_day ? t('calendar.allDay') : formatTime(event.starts_at) }}
                 <span class="event-card__date-badge">
-                  {{ formatDayHeader(event.starts_at.substring(0, 10)) }}
+                  {{ formatDayHeader(eventDate(event.starts_at)) }}
                 </span>
                 <span v-if="event.spanBadge" class="event-card__span-badge">
                   {{ event.spanBadge }}

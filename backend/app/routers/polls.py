@@ -15,10 +15,12 @@ from app.models import (
     EventPoll,
     EventPollOption,
     EventPollVote,
+    Household,
     HouseholdMember,
     MealPlanEntry,
     Recipe,
 )
+from app.services.event_times import household_tz, to_utc
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -189,12 +191,14 @@ def create_poll(
                     ),
                 )
 
+    # Optionszeiten ohne Offset gelten wie bei Terminen als Haushaltszeit
+    tz = household_tz(db.get(Household, household_id).timezone)
     for opt in body.options:
         option = EventPollOption(
             poll_id=poll.id,
             household_id=household_id,
             label=opt.label,
-            starts_at=opt.starts_at,
+            starts_at=to_utc(opt.starts_at, tz) if opt.starts_at is not None else None,
             recipe_id=opt.recipe_id,
         )
         db.add(option)
@@ -351,7 +355,11 @@ def decide_poll(
         )
 
     # Event erstellen
-    event_starts_at = chosen_option.starts_at or datetime.now(timezone.utc)
+    if chosen_option.starts_at is not None:
+        # Naive Werte aus der DB (SQLite) sind bereits UTC
+        event_starts_at = to_utc(chosen_option.starts_at, timezone.utc)
+    else:
+        event_starts_at = datetime.now(timezone.utc)
     event = Event(
         household_id=household_id,
         calendar_id=body.calendar_id,

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sincs99/haushalt-app/actions/workflows/ci.yml/badge.svg)](https://github.com/sincs99/haushalt-app/actions/workflows/ci.yml)
 
-Web-App (PWA) für die gemeinsame Organisation eines Haushalts: Einkaufslisten, Aufgaben, Putzplan mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Notizen und eine Dokument-Ablage (Verträge, Rechnungen, Garantien). Mehrere Nutzer pro Haushalt, Echtzeit-Sync per WebSocket, Mobile-First, zweisprachig (DE/EN).
+Web-App (PWA) für die gemeinsame Organisation eines Haushalts: Einkaufslisten, Aufgaben, Putzplan mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Notizen, eine Dokument-Ablage (Verträge, Rechnungen, Garantien) und ein optionaler KI-Assistent (Rezeptvorschläge, Pflanzenpflege). Mehrere Nutzer pro Haushalt, Echtzeit-Sync per WebSocket, Mobile-First, zweisprachig (DE/EN).
 
 Detaillierter Stand und Architektur: [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md).
 
@@ -14,6 +14,7 @@ Detaillierter Stand und Architektur: [`docs/PROJECT-STATUS.md`](docs/PROJECT-STA
 | Datenbank | PostgreSQL 16 |
 | Frontend | Vue 3, TypeScript, Vite, Pinia, vue-i18n, PWA (`vite-plugin-pwa`) |
 | Auth | JWT-Access-Token (15 Min.) + rotierender Refresh-Token, bcrypt |
+| KI (optional) | Anthropic-API (Claude Opus 5.5) über das offizielle `anthropic`-SDK |
 | Tests | Backend: pytest (SQLite in-memory, kein Postgres nötig); Frontend: Vitest |
 | Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager) |
 
@@ -31,7 +32,24 @@ docker compose up -d --build
 
 Die App läuft danach unter <http://localhost:8080> (anderer Port: `FRONTEND_PORT` in `.env`). Datenbank (5432) und Backend (8000) sind nur vom Rechner selbst erreichbar (`127.0.0.1`). Die Datenbank-Migrationen laufen beim Start des Backend-Containers automatisch (`alembic upgrade head`).
 
-Weitere Einstellungen stehen kommentiert in [`.env.example`](.env.example), darunter Web Push (VAPID-Schlüssel) und das Speicher-Limit pro Haushalt für Uploads (`HOUSEHOLD_STORAGE_QUOTA_MB`).
+Weitere Einstellungen stehen kommentiert in [`.env.example`](.env.example), darunter Web Push (VAPID-Schlüssel), das Speicher-Limit pro Haushalt für Uploads (`HOUSEHOLD_STORAGE_QUOTA_MB`) und der optionale KI-Assistent (`ANTHROPIC_API_KEY`, siehe unten).
+
+## KI-Assistent (optional)
+
+Rezeptvorschläge aus vorhandenen Zutaten und Pflanzenpflege-Hinweise über die Anthropic-API (Modell Claude Opus 5.5, offizielles `anthropic`-SDK). Ohne Schlüssel sind alle KI-Funktionen ausgeblendet und die App läuft unverändert.
+
+| Variable | Standard | Bedeutung |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | leer | API-Schlüssel (<https://console.anthropic.com>); leer = KI deaktiviert |
+| `AI_DAILY_LIMIT_PER_HOUSEHOLD` | `50` | KI-Aufrufe pro Haushalt und Tag (UTC), danach HTTP 429 |
+| `AI_REQUEST_TIMEOUT_SECONDS` | `90` | Timeout pro Versuch (das SDK wiederholt höchstens einmal) |
+| `AI_MAX_CONCURRENT_REQUESTS` | `4` | gleichzeitige KI-Aufrufe pro Backend-Prozess |
+
+Eintragen in `.env` (Docker-Dev) bzw. `.env.prod` (Produktion). Der Schlüssel bleibt im Backend; das Frontend ruft den Anbieter nie direkt. Zusätzlich muss ein **Admin den Assistenten pro Haushalt einschalten** (Einstellungen → KI-Assistent); dort steht auch der Hinweis, dass Eingaben (Zutaten, Pflanzenart) an die Anthropic-API gesendet werden. Pro Aufruf gilt ausserdem ein IP-Limit von 10/min.
+
+Liegt Nginx Proxy Manager davor: für den Host ein längeres Timeout eintragen (`proxy_read_timeout 200s;`), Rezeptvorschläge können länger als 60 s dauern.
+
+Architektur, Datenfluss, Kosten und Ausgabe-Schemas: [`docs/ai-assistant.md`](docs/ai-assistant.md). Sicherheitsbewertung: [`docs/security/ai-assistant-review.md`](docs/security/ai-assistant-review.md).
 
 ## Lokale Entwicklung ohne Docker
 
@@ -75,13 +93,14 @@ pip install pip-audit && pip-audit -r backend/requirements.txt
 cd frontend && npm audit --omit=dev --audit-level=high
 ```
 
-Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` selbst und brauchen keine laufende Datenbank. Wer `DATABASE_URL` in der Shell gesetzt hat, sollte sie vor `pytest` entfernen, sonst laufen die Tests gegen diese Datenbank.
+Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` selbst und brauchen keine laufende Datenbank. Die Tests des KI-Assistenten mocken den Anthropic-Client und brauchen keinen API-Schlüssel. Wer `DATABASE_URL` in der Shell gesetzt hat, sollte sie vor `pytest` entfernen, sonst laufen die Tests gegen diese Datenbank.
 
 ## Produktion
 
 - [`docs/deployment.md`](docs/deployment.md): Docker-Deployment hinter Nginx Proxy Manager, Updates, Rollback, Web Push
 - [`docs/DEPLOYMENT-WINDOWS-SERVER.md`](docs/DEPLOYMENT-WINDOWS-SERVER.md): Einrichtung auf einem Windows-Server
-- [`docs/security/`](docs/security/): Sicherheits-Reviews (zuletzt `hardening-review.md`)
+- [`docs/security/`](docs/security/): Sicherheits-Reviews (zuletzt `ai-assistant-review.md`)
+- [`docs/ai-assistant.md`](docs/ai-assistant.md): KI-Assistent (Architektur, Datenschutz, Kosten, Erweiterung)
 - [`docs/offline-first-phase2.md`](docs/offline-first-phase2.md): Konzept für Offline-Betrieb (Meilenstein M0 ist umgesetzt)
 
 ## Datensicherung

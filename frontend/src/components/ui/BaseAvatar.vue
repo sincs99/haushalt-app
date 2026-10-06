@@ -50,14 +50,14 @@ const sizeClass = computed(() => `base-avatar--${props.size}`)
 }
 
 .base-avatar--sm {
-  width: 22px;
-  height: 22px;
+  width: var(--avatar-sm);
+  height: var(--avatar-sm);
   font-size: var(--text-2xs);
 }
 
 .base-avatar--md {
-  width: 32px;
-  height: 32px;
+  width: var(--avatar-md);
+  height: var(--avatar-md);
   font-size: var(--text-xs);
 }
 </style>

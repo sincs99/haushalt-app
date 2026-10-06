@@ -400,7 +400,7 @@ async function handleSubmit() {
 
 .dialog-content {
   background: var(--color-surface);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-dialog);
   padding: var(--space-6);
   width: 100%;
   max-width: 480px;

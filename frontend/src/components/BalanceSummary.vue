@@ -281,7 +281,7 @@ async function confirmSettlement() {
 
 .dialog-panel {
   background: var(--color-surface);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-dialog);
   box-shadow: var(--shadow-overlay);
   width: 100%;
   max-width: 400px;

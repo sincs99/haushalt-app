@@ -46,8 +46,10 @@ withDefaults(defineProps<{
   font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: filter var(--transition-fast),
+              background-color var(--transition-fast),
               color var(--transition-fast),
-              border-color var(--transition-fast);
+              border-color var(--transition-fast),
+              transform var(--transition-fast);
   white-space: nowrap;
   user-select: none;
   line-height: var(--line-height-tight);
@@ -55,7 +57,7 @@ withDefaults(defineProps<{
 
 /* --- Sizes --- */
 .base-btn--md {
-  min-height: 44px;
+  min-height: var(--touch-target);
   padding: var(--space-3) var(--space-4);
   font-size: var(--text-base);
 }
@@ -104,6 +106,7 @@ withDefaults(defineProps<{
 
 .base-btn--danger:active:not(:disabled) {
   background-color: var(--color-danger-hover);
+  filter: brightness(0.95);
   transform: scale(0.98);
 }
 
@@ -128,13 +131,15 @@ withDefaults(defineProps<{
 
 /* --- Focus visible --- */
 .base-btn:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: var(--focus-outline);
   outline-offset: 2px;
 }
 
 /* --- Loading --- */
-.base-btn--loading {
-  cursor: wait;
+.base-btn--loading,
+.base-btn--loading:disabled {
+  cursor: progress;
+  opacity: 1;
 }
 
 .base-btn__content {

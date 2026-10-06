@@ -178,7 +178,7 @@ function handleSubmit() {
 
 .edit-field__input {
   width: 100%;
-  padding: 10px var(--space-3);
+  padding: var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
   font-size: var(--text-base);

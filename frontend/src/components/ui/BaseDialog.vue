@@ -44,7 +44,7 @@ function onKeydown(e: KeyboardEvent) {
           <div class="dialog-header" v-if="title">
             <h2 class="dialog-title">{{ title }}</h2>
             <button class="dialog-close" @click="emit('close')" :aria-label="$t('common.close')">
-              <PhX :size="18" />
+              <PhX :size="20" />
             </button>
           </div>
           <div class="dialog-body">
@@ -104,10 +104,11 @@ function onKeydown(e: KeyboardEvent) {
   border: none;
   cursor: pointer;
   color: var(--sub);
-  padding: var(--space-1);
+  padding: var(--space-2);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .dialog-close:hover {

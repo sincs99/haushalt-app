@@ -248,12 +248,22 @@ body {
   outline-offset: 2px;
 }
 
-/* Für Elemente die bereits einen eigenen Focus-Style haben (Inputs), keinen Doppel-Ring */
+/* Eingabefelder: Halo statt Outline. Basis für native Felder ohne eigenen
+   Fokus-Style; Komponenten-Styles (höhere Spezifität) überschreiben ihn. */
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
   outline: none;
-  /* Diese haben bereits box-shadow / border-color Änderungen in ihren Komponenten */
+  border-color: var(--acc);
+  box-shadow: var(--focus-ring);
+}
+
+/* Checkboxen/Radios behalten den Outline-Ring */
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 /* ============================================

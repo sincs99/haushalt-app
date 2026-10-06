@@ -619,8 +619,8 @@ function navigateToPet(petId: string) {
   position: fixed;
   bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   right: var(--space-4);
-  width: 56px;
-  height: 56px;
+  width: var(--fab-size);
+  height: var(--fab-size);
   border-radius: var(--radius-full);
   background: var(--acc);
   color: var(--color-on-accent);

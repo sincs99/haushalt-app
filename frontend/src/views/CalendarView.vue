@@ -1496,8 +1496,8 @@ watch(
   position: fixed;
   right: var(--space-4);
   bottom: 80px;
-  width: 52px;
-  height: 52px;
+  width: var(--fab-size);
+  height: var(--fab-size);
   border-radius: var(--radius-full);
   background: var(--acc);
   color: var(--color-on-accent);
@@ -1507,7 +1507,7 @@ watch(
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow-overlay);
-  z-index: var(--z-nav);
+  z-index: var(--z-fab);
   transition: transform var(--transition-fast), filter var(--transition-fast);
 }
 

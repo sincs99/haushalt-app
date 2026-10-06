@@ -53,7 +53,15 @@
     "inviteCodeLabel": "Invite code",
     "inviteCodePlaceholder": "e.g. ABCD1234",
     "sessionExpired": "Session expired",
-    "sessionExpiredMessage": "Your session has expired. Please log in again."
+    "sessionExpiredMessage": "Your session has expired. Please log in again.",
+    "emailInvalid": "Please enter a valid email address",
+    "passwordRequired": "Password required",
+    "passwordTooShort": "The password needs at least 8 characters",
+    "displayNameRequired": "Please enter your name",
+    "householdNameRequired": "Please enter a household name",
+    "inviteCodeRequired": "Please enter the invite code",
+    "logoutOfflineTitle": "Log out while offline?",
+    "logoutOfflineConfirm": "You are offline. After logging out you can only log in again once you have a connection."
   },
   "nav": {
     "start": "Home",
@@ -137,7 +145,12 @@
     "noEventsMonth": "No events this month",
     "moreEvents": "+{n} more",
     "nextMonth": "Next month",
-    "prevMonth": "Previous month"
+    "prevMonth": "Previous month",
+    "savedOn": "Event saved for {date}",
+    "deleted": "Event deleted",
+    "prevWeek": "Previous week",
+    "nextWeek": "Next week",
+    "noEventsDay": "No events on this day"
   },
   "calendars": {
     "manage": "Manage calendars",
@@ -154,7 +167,9 @@
     "deleted": "Calendar deleted",
     "selectCalendar": "Select calendar",
     "allCalendars": "All",
-    "default": "General"
+    "default": "General",
+    "saveError": "Couldn't save the calendar.",
+    "deleteConfirmNamed": "Really delete the calendar “{name}”?"
   },
   "moreSheet": {
     "title": "More",
@@ -308,7 +323,8 @@
       "settled": "All settled",
       "settlementTitle": "Settlements",
       "pays": "pays",
-      "unassignedHint": "{amount} from former members unassignable"
+      "unassignedHint": "{amount} from former members unassignable",
+      "loadError": "Couldn't load balances."
     },
     "category": "Category",
     "categoryAll": "All",
@@ -320,7 +336,9 @@
       "health": "Health",
       "other": "Other",
       "uncategorized": "Uncategorized"
-    }
+    },
+    "saved": "Expense saved",
+    "deleteLabel": "Delete expense “{name}”"
   },
   "finance": {
     "available": "Still available",
@@ -347,7 +365,11 @@
     "overspent": "Overspent",
     "bookBillTitle": "Book \"{name}\"",
     "paidBy": "Paid by",
-    "bookBillHint": "{amount} will be split evenly across all members."
+    "bookBillHint": "{amount} will be split evenly across all members.",
+    "spentThisMonth": "Spent this month",
+    "allBooked": "All bills for this month are booked.",
+    "budgetSaveError": "Couldn't save the budget.",
+    "bookError": "Couldn't book the bill."
   },
   "settlements": {
     "title": "Settlements",
@@ -366,7 +388,8 @@
     "invalidAmount": "Please enter a valid amount.",
     "sameUser": "Sender and recipient must be different.",
     "flow": "{from} → {to}",
-    "saveError": "Could not save payment."
+    "saveError": "Could not save payment.",
+    "deleteLabel": "Delete settlement"
   },
   "chores": {
     "title": "Chores",
@@ -425,7 +448,7 @@
     "copyFailed": "Copy failed",
     "shareInvite": "Share invite",
     "shareTitle": "Join household",
-    "shareText": "Join our household \"{name}\" — Code: {code}",
+    "shareText": "Join our household “{name}”: {link} (code: {code})",
     "shareCopied": "Invitation copied to clipboard",
     "members": "Members",
     "noMembers": "No members loaded.",
@@ -467,7 +490,10 @@
     "rotateCode": "Generate new code",
     "rotateCodeConfirm": "Generate a new invite code? The current code will stop working.",
     "rotateCodeSuccess": "New invite code created",
-    "rotateCodeHint": "The code is renewed automatically when a member is removed."
+    "rotateCodeHint": "The code is renewed automatically when a member is removed.",
+    "leaveBalanceOwe": "You still owe {amount}. The data is kept, but you can no longer settle the balance yourself after leaving.",
+    "leaveBalanceOwed": "You are still owed {amount}. The data is kept, but you can no longer settle the balance yourself after leaving.",
+    "createError": "Household could not be created"
   },
   "noHousehold": {
     "title": "Welcome back",
@@ -591,7 +617,8 @@
     "unsupported": "This browser does not support push notifications.",
     "iosInstallHint": "On iPhone/iPad: open the app in Safari, tap Share → “Add to Home Screen” and launch it from there. Then you can enable notifications.",
     "serverDisabled": "Notifications are not set up on the server.",
-    "error": "Could not change notification settings."
+    "error": "Could not change notification settings.",
+    "testSent": "Test notification sent"
   },
   "pwa": {
     "updateAvailable": "A new version is available.",
@@ -620,7 +647,8 @@
     "decideEventTitle": "Event title",
     "decideCalendar": "Calendar",
     "voteError": "Could not submit vote.",
-    "decideError": "Could not accept poll."
+    "decideError": "Could not accept poll.",
+    "decidedOn": "Event added for {date}"
   },
   "pets": {
     "title": "Cats",
@@ -877,7 +905,7 @@
     "upload": "Upload",
     "uploadTitle": "Upload document",
     "editTitle": "Edit document",
-    "searchPlaceholder": "Search documents…",
+    "searchPlaceholder": "Search titles…",
     "storageUsage": "{used} of {quota} used",
     "emptyTitle": "No documents yet",
     "emptySubtitle": "Upload contracts, invoices or warranties",
@@ -924,7 +952,13 @@
     "removePageConfirm": "Really remove page \"{name}\"?",
     "previousPage": "Previous page",
     "nextPage": "Next page",
-    "pageOf": "Page {current} / {total}"
+    "pageOf": "Page {current} / {total}",
+    "deleteTitle": "Delete document",
+    "deleted": "Document deleted",
+    "saveSuccess": "Changes saved",
+    "pagesAdded": "{n} page added | {n} pages added",
+    "previewError": "Preview could not be loaded.",
+    "saveError": "Document could not be saved."
   },
   "ai": {
     "title": "AI assistant",
@@ -939,7 +973,8 @@
       "privacyHint": "When the AI assistant is on, your input (e.g. ingredients, plant species, later also photos) is sent to the Anthropic API for processing. Only what you choose to keep is saved in the app.",
       "adminOnly": "Only admins can turn the AI assistant on or off.",
       "usage": "{used} of {limit} requests used today",
-      "openAssistant": "Open AI assistant"
+      "openAssistant": "Open AI assistant",
+      "saveError": "AI assistant could not be switched"
     },
     "recipe": {
       "title": "Suggest a recipe",
@@ -1186,6 +1221,9 @@
       "neverWatered": "Never watered",
       "dueCount": "Due: {n} plant(s)",
       "plantDue": "Watering due: {date}"
-    }
+    },
+    "deleteTitle": "Delete tag",
+    "labelSaved": "Name saved",
+    "loadTargetsError": "Targets could not be loaded"
   }
 }

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import type { Expense } from '../../types'
 
-const { repo, householdRepo, auth } = vi.hoisted(() => ({
+const { repo, householdRepo, auth, finance } = vi.hoisted(() => ({
   repo: {
     fetchAll: vi.fn(),
     getBalances: vi.fn(),
@@ -12,9 +12,15 @@ const { repo, householdRepo, auth } = vi.hoisted(() => ({
   },
   householdRepo: { fetchMembers: vi.fn() },
   auth: { currentHouseholdId: 'h1' as string | null, user: { id: 'u1' } },
+  finance: { fetchSummary: vi.fn() },
 }))
 
 vi.mock('../auth', () => ({ useAuthStore: () => auth }))
+vi.mock('../finance', () => ({ useFinanceStore: () => finance }))
+// Übersetzung der Fehler ist Sache von utils/apiErrors (eigene Tests) — hier nur durchreichen
+vi.mock('../../utils/apiErrors', () => ({
+  translateApiError: (e: any) => e?.response?.data?.detail ?? e?.message,
+}))
 vi.mock('../../repositories/expensesRepository', () => ({
   createOnlineExpensesRepository: () => repo,
 }))
@@ -50,6 +56,8 @@ describe('expenses store', () => {
     Object.values(repo).forEach(fn => fn.mockReset())
     householdRepo.fetchMembers.mockReset()
     repo.getBalances.mockResolvedValue({ balances: [] })
+    finance.fetchSummary.mockReset()
+    finance.fetchSummary.mockResolvedValue(undefined)
     auth.currentHouseholdId = 'h1'
   })
 
@@ -83,12 +91,16 @@ describe('expenses store', () => {
     })
   })
 
-  it('fetchBalances swallows errors (non-critical)', async () => {
+  it('fetchBalances swallows errors (non-critical) but flags balancesError until the next success', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     repo.getBalances.mockRejectedValue(new Error('x'))
     const s = useExpensesStore()
     await expect(s.fetchBalances()).resolves.toBeUndefined()
     expect(s.balances).toBeNull()
+    expect(s.balancesError).toBe(true)
+    repo.getBalances.mockResolvedValue({ balances: [] })
+    await s.fetchBalances()
+    expect(s.balancesError).toBe(false)
     spy.mockRestore()
   })
 
@@ -102,8 +114,21 @@ describe('expenses store', () => {
       expect(s.expenses.map(e => e.id)).toEqual(['new', 'old'])
 
       expect(repo.getBalances).not.toHaveBeenCalled()
+      expect(finance.fetchSummary).not.toHaveBeenCalled()
       await vi.advanceTimersByTimeAsync(300)
       expect(repo.getBalances).toHaveBeenCalledTimes(1) // debounced into one call
+      // Budget-Übersicht wird mit aktualisiert
+      expect(finance.fetchSummary).toHaveBeenCalledTimes(1)
+      expect(finance.fetchSummary).toHaveBeenCalledWith('h1')
+    })
+
+    it('a failing summary refresh does not cause an unhandled rejection', async () => {
+      finance.fetchSummary.mockRejectedValue(new Error('offline'))
+      repo.create.mockResolvedValue(expense({ id: 'new' }))
+      const s = useExpensesStore()
+      await s.addExpense({} as any)
+      await vi.advanceTimersByTimeAsync(300)
+      expect(finance.fetchSummary).toHaveBeenCalledTimes(1)
     })
 
     it('sets error and rethrows on failure', async () => {
@@ -169,6 +194,7 @@ describe('expenses store', () => {
       expect(s.expenses).toEqual([])
       await vi.advanceTimersByTimeAsync(300)
       expect(repo.getBalances).toHaveBeenCalledTimes(1)
+      expect(finance.fetchSummary).toHaveBeenCalledTimes(1)
     })
   })
 })

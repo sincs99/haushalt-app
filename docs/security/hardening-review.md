@@ -44,9 +44,9 @@
 | H-09 | 🟢 Gering | `GET /recurring-bills` ohne Trailing-Slash → 307 auf absolute `http://`-URL (Mixed Content / CSP-Block) | ✅ Behoben |
 | H-10 | 🟡 Mittel | Dependencies mit bekannten Advisories (Pillow, PyJWT, urllib3, cryptography, axios, …) | ✅ Behoben mit #14 (Updates), CI-Audit-Job aktiv |
 | H-11 | 🟢 Gering | nginx überschreibt `X-Forwarded-Proto` mit `$scheme` (= `http` hinter NPM) | ✅ Behoben mit #8 |
-| H-12 | 🟢 Gering | Invite-Codes laufen nie ab / nicht rotierbar | 📝 Offen |
+| H-12 | 🟢 Gering | Invite-Codes laufen nie ab / nicht rotierbar | ✅ Behoben |
 | H-13 | ℹ️ Info | Rate-Limits nur per IP, In-Memory-Storage (Reset bei Neustart) | Akzeptiert (1 Worker) |
-| H-14 | ℹ️ Info | Upload-Endpoint weiterhin ohne Rate-Limit (vgl. Epic 8 F-06) | 📝 Offen |
+| H-14 | ℹ️ Info | Upload-Endpoint ohne Rate-Limit (vgl. Epic 8 F-06) | ✅ Behoben (`30/minute;300/hour`) |
 
 ---
 
@@ -203,9 +203,9 @@ Die Limits von `refresh` sind so gewählt, dass mehrere Geräte hinter einem NAT
 
 **H-13 (Info):** slowapi zählt per Client-IP im Prozessspeicher. Das ist korrekt, solange uvicorn mit `--workers 1` läuft (durch Socket.IO ohnehin erzwungen) und `--proxy-headers` die echte IP liefert (`test_rate_limit_proxy.py`). Es gibt keinen Per-Account-Lockout; ein verteilter Angriff auf ein Konto wird nur per IP gebremst. Empfehlung bei Bedarf: zusätzliches Limit per `form_data.username` (eigene `key_func`) und Redis-Storage bei Skalierung.
 
-**H-12 (Offen):** Invite-Codes sind permanent. Empfehlung: Admin-Endpoint „Code neu generieren" (+ Rate-Limit), optional Ablaufdatum.
+**H-12 (✅ Behoben):** Rotation durch Admins gibt es seit #11 (`POST /invite-code/rotate`); Einladungscodes laufen jetzt nach 7 Tagen ab (`households.invite_code_expires_at`, gesetzt beim Anlegen und bei jeder Rotation). Abgelaufene Codes werden bei Beitritt und Registrierung mit 410 `INVITE_CODE_EXPIRED` abgelehnt. Bestehende Haushalte erhalten bei der Migration 7 Tage ab Upgrade. Weiterhin offen (Produktfrage, bewusst nicht geändert): ob der Code nur für Admins sichtbar sein soll.
 
-**H-14 (Offen):** Upload (`POST /files/`) hat weiterhin kein Rate-Limit/Quota (Epic 8, F-06).
+**H-14 (✅ Behoben):** `POST /files/` und `POST /documents/upload` (die einzigen Endpunkte, die Dateien entgegennehmen) tragen jetzt `@limiter.limit(UPLOAD_RATE_LIMIT)` mit `30/minute;300/hour` pro Client-IP (Konstante in `files.py`). Das reicht für mehrere Fotos/Seiten nacheinander, bremst aber Massen-Uploads; zusammen mit der Speicher-Quota pro Haushalt (`HOUSEHOLD_STORAGE_QUOTA_MB`) begrenzt es Rate und Volumen. Tierfotos laufen über `/files` (Pets referenzieren nur `photo_file_id`) und sind damit abgedeckt. Beide Routen zählen getrennt. Tests: `test_upload_rate_limit.py`.
 
 ### H-08 — Pillow-Formate (✅ Behoben)
 
@@ -270,5 +270,5 @@ Die Auth-Architektur (kurzlebige JWTs, gehashte opake Refresh-Tokens, Rotation m
 1. ✅ **Umgesetzt mit #14:** Pillow 12.3.0, PyJWT 2.15.0, urllib3 2.8.0, Werkzeug 3.1.9, multidict 6.9.1, cryptography 50.0.0 sowie `npm audit fix` (axios 1.20.0 u. a.). Offen: `dependency-audit` als Required Check einstellen.
 2. ✅ **H-01** umgesetzt (HttpOnly-Refresh-Cookie, CSRF-Header, Migration in einem Release). Offen: Betreiber-Checks oben (HSTS, `ENVIRONMENT=production`).
 3. ✅ **H-11** durch #8 behoben. Offen: HSTS in NPM aktivieren.
-4. **H-12/H-14:** Invite-Code-Rotation, Upload-Rate-Limit/Quota.
+4. ✅ **H-12** behoben (Rotation + Ablauf). ✅ **H-14** behoben (Upload-Rate-Limit).
 5. CSP-Monitoring: optional `report-to`-Endpoint, um Violations aus dem Feld zu sehen.

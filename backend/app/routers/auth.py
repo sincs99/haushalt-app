@@ -23,7 +23,11 @@ from app.core.security import (
 )
 from app.database import get_db
 from app.models import Household, HouseholdMember, RefreshToken, User
-from app.services.invite_code import generate_unique_invite_code
+from app.services.invite_code import (
+    generate_unique_invite_code,
+    is_invite_code_expired,
+    new_invite_code_expiry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -274,11 +278,20 @@ def register(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=error_detail(ErrorCode.INVITE_CODE_NOT_FOUND, "Invite code not found"),
             )
+        if is_invite_code_expired(household):
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail=error_detail(ErrorCode.INVITE_CODE_EXPIRED, "Invite code has expired"),
+            )
         membership = HouseholdMember(household_id=household.id, user_id=user.id, role="member")
     else:
         # ── Pfad A: Neuen Haushalt erstellen (Standard, wie bisher) ──
         invite_code = generate_unique_invite_code(db)
-        household = Household(name=data.household_name.strip(), invite_code=invite_code)
+        household = Household(
+            name=data.household_name.strip(),
+            invite_code=invite_code,
+            invite_code_expires_at=new_invite_code_expiry(),
+        )
         db.add(household)
         db.flush()
         membership = HouseholdMember(household_id=household.id, user_id=user.id, role="admin")

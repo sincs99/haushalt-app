@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
+import { createOnlineHouseholdsRepository, type InviteCodeInfo } from '../repositories/householdsRepository'
 import { createOnlineExpensesRepository } from '../repositories/expensesRepository'
 import { useToast } from '../composables/useToast'
 import { useSocket } from '../composables/useSocket'
@@ -16,7 +16,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
-import { PhUserMinus, PhSignOut, PhPlus, PhShareNetwork } from '@phosphor-icons/vue'
+import { PhUserMinus, PhSignOut, PhPlus, PhShareNetwork, PhQrCode } from '@phosphor-icons/vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 import PushSettings from '../components/PushSettings.vue'
 import AiSettingsCard from '../components/AiSettingsCard.vue'
@@ -148,13 +148,29 @@ async function confirmLeave() {
 
 // ── Einladen ──
 const inviteCode = ref('')
+const inviteExpiresAt = ref<string | null>(null)
+const inviteExpired = ref(false)
+
+const inviteExpiryLabel = computed(() => {
+  if (!inviteExpiresAt.value) return ''
+  return new Date(inviteExpiresAt.value).toLocaleString(
+    locale.value === 'de' ? 'de-CH' : 'en-US',
+    { dateStyle: 'medium', timeStyle: 'short' },
+  )
+})
+
+function applyInviteInfo(info: InviteCodeInfo) {
+  inviteCode.value = info.inviteCode
+  inviteExpiresAt.value = info.expiresAt
+  inviteExpired.value = info.expired
+}
 const inviteCodeLoading = ref(false)
 
 async function loadInviteCode() {
   if (!authStore.currentHouseholdId) return
   inviteCodeLoading.value = true
   try {
-    inviteCode.value = await repo.fetchInviteCode(authStore.currentHouseholdId)
+    applyInviteInfo(await repo.fetchInviteCode(authStore.currentHouseholdId))
   } catch {
     showToast(t('household.inviteLoadError'), 'error')
   } finally {
@@ -169,7 +185,7 @@ async function rotateInviteCode() {
   if (!confirm(t('household.rotateCodeConfirm'))) return
   rotateLoading.value = true
   try {
-    inviteCode.value = await repo.rotateInviteCode(authStore.currentHouseholdId)
+    applyInviteInfo(await repo.rotateInviteCode(authStore.currentHouseholdId))
     showToast(t('household.rotateCodeSuccess'), 'success')
   } catch (error: unknown) {
     showToast(translateApiError(error), 'error')
@@ -390,6 +406,22 @@ watch(() => authStore.currentHouseholdId, () => {
         <div class="invite-code-display">
           <code class="invite-code">{{ inviteCode || '...' }}</code>
         </div>
+        <p v-if="inviteExpired" class="section-hint invite-expired" role="alert">
+          {{ $t('household.inviteExpired') }}
+          <button
+            v-if="isAdmin"
+            type="button"
+            class="invite-expired-link"
+            :disabled="rotateLoading"
+            @click="rotateInviteCode"
+          >
+            {{ $t('household.inviteExpiredAction') }}
+          </button>
+          <template v-else>{{ $t('household.inviteExpiredAskAdmin') }}</template>
+        </p>
+        <p v-else-if="inviteExpiryLabel" class="section-hint">
+          {{ $t('household.inviteValidUntil', { date: inviteExpiryLabel }) }}
+        </p>
         <div class="invite-actions">
           <BaseButton
             variant="primary"
@@ -452,6 +484,16 @@ watch(() => authStore.currentHouseholdId, () => {
           {{ $t('household.createNewTitle') }}
         </BaseButton>
       </div>
+    </BaseCard>
+
+    <!-- ══ Sektion: Tags (NFC/QR) ══ -->
+    <BaseCard>
+      <h2 class="section-title">{{ $t('tags.title') }}</h2>
+      <p class="section-hint">{{ $t('tags.householdHint') }}</p>
+      <BaseButton variant="secondary" size="sm" @click="router.push('/tags')">
+        <PhQrCode :size="16" />
+        {{ $t('tags.manage') }}
+      </BaseButton>
     </BaseCard>
 
     <!-- ══ Sektion: KI-Assistent (nur wenn auf dem Server eingerichtet) ══ -->
@@ -703,6 +745,21 @@ watch(() => authStore.currentHouseholdId, () => {
   align-items: center;
   gap: var(--space-3);
   margin-bottom: var(--space-3);
+}
+
+.invite-expired {
+  color: var(--color-danger, #c0392b);
+}
+
+.invite-expired-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--font-weight-bold);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .invite-actions {

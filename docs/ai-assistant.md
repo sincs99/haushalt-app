@@ -180,7 +180,7 @@ Dev: in `.env` (wird von `docker-compose.yml` durchgereicht). Produktion: in `.e
 }
 ```
 
-`recipe` hat genau die Felder von `RecipeCreate` und geht unverändert an `POST /api/households/{id}/recipes/`. Dafür haben Rezepte neu die Felder `steps` und `tags` (Migration `x1y2z3a4b5c6`); bestehende Rezepte haben leere Listen. `missing_ingredients` passt auf `ShoppingItemCreate` (`name` ≤ 200, `quantity` ≤ 50).
+`recipe` hat genau die Felder von `RecipeCreate` und geht unverändert an `POST /api/households/{id}/recipes/`. Dafür haben Rezepte neu die Felder `steps` und `tags` (Migration `c8d9e0f1a2b3`); bestehende Rezepte haben leere Listen. `missing_ingredients` passt auf `ShoppingItemCreate` (`name` ≤ 200, `quantity` ≤ 50).
 
 Die Modell-Ausgabe (`RecipeOutput`) wird vor der Rückgabe in die Grenzen von `RecipeCreate` gebracht: Texte gekürzt, leere Einträge entfernt, höchstens 100 Zutaten / 30 Schritte / 10 Tags, ungültige Portionen → gewünschte Personenzahl, ungültige Dauer → `null`. Ein Rezept ohne Zutaten oder Schritte ist `AI_INVALID_OUTPUT`.
 

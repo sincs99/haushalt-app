@@ -12,6 +12,7 @@ from starlette.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.log_redaction import install_tag_token_redaction
 from app.core.rate_limit import limiter
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import SessionLocal
@@ -30,11 +31,13 @@ from app.routers import (
     households,
     notes,
     pets,
+    plants,
     polls,
     push,
     recurring_bills,
     settlements,
     shopping,
+    tags,
     tasks,
     todos,
 )
@@ -43,6 +46,9 @@ from app.services.push_service import scheduler_loop
 from app.socket_manager import set_event_loop, socket_app
 
 logger = logging.getLogger("uvicorn.error")
+
+# Tag-Tokens (NFC/QR) stehen im URL-Pfad → in Access-Logs schwärzen
+install_tag_token_redaction()
 
 _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 
@@ -61,6 +67,15 @@ def is_insecure_jwt_secret(secret: str) -> bool:
     )
 
 
+def has_wildcard_cors_origin(origins: list[str]) -> bool:
+    """True, wenn ein Origin-Eintrag ein Wildcard enthält.
+
+    "*" würde mit allow_credentials=True jeden Origin spiegeln; andere Muster
+    ("https://*.example.com") versteht Starlette nicht und sind ein Konfigurationsfehler.
+    """
+    return any("*" in o for o in origins)
+
+
 async def _custom_rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
     """Strukturierte JSON-Response statt generischem slowapi-Text."""
     return JSONResponse(
@@ -77,6 +92,14 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(
             "JWT_SECRET_KEY is insecure! It must be at least 32 characters and not a template placeholder. "
             'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+        )
+
+    # Mit allow_credentials=True würde Starlette bei "*" jeden Origin spiegeln —
+    # fremde Seiten könnten dann den Refresh-Cookie mitschicken.
+    if has_wildcard_cors_origin(_cors_origins):
+        raise RuntimeError(
+            "CORS_ORIGINS must list explicit origins (e.g. https://casa.example.com); "
+            "'*' is not allowed because the API accepts credentials (refresh cookie)."
         )
 
     # Startup-Log: Konfigurationsübersicht (NIE Passwörter loggen!)
@@ -123,16 +146,19 @@ app = FastAPI(title="Haushalt App API", lifespan=lifespan, redirect_slashes=Fals
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _custom_rate_limit_handler)
 
-# Auth läuft ausschliesslich über den Authorization-Header (keine Cookies),
-# daher allow_credentials=False und explizite Methoden-/Header-Listen.
+# API-Zugriffe laufen über den Authorization-Header; nur der Refresh-Token des
+# Web-Clients ist ein HttpOnly-Cookie (Path=/api/auth), das mit withCredentials
+# gesendet wird — daher allow_credentials=True, aber ausschliesslich für die
+# explizit konfigurierten Origins (ein "*" wird im Startup-Check abgelehnt).
+# X-Requested-With ist der CSRF-Header der Cookie-Endpunkte (app/routers/auth.py).
 # In Produktion ist die API same-origin (nginx-Proxy) — CORS greift nur im
 # Dev-Setup bzw. bei gesetztem VITE_API_URL.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language", "X-Requested-With"],
 )
 # Zuletzt hinzugefügt = äusserste Middleware → Header auch auf CORS-Preflights
 app.add_middleware(SecurityHeadersMiddleware)
@@ -154,12 +180,15 @@ app.include_router(events.router)
 app.include_router(calendars.router)
 app.include_router(polls.router)
 app.include_router(pets.router)
+app.include_router(plants.router)
 app.include_router(food.recipe_router)
 app.include_router(food.meal_plan_router)
 app.include_router(notes.router)
 app.include_router(files.router)
 app.include_router(documents.router)
 app.include_router(push.router)
+app.include_router(tags.router)
+app.include_router(tags.scan_router)
 app.include_router(ai.status_router)
 app.include_router(ai.router)
 

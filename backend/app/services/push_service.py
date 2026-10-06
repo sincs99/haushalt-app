@@ -26,6 +26,8 @@ from app.models import (
     HouseholdMember,
     Pet,
     PetCareTask,
+    Plant,
+    PlantCareTask,
     PushSubscription,
     Todo,
     TodoReminder,
@@ -37,8 +39,9 @@ SCHEDULER_INTERVAL_SECONDS = 60
 # Erinnerungen, die länger überfällig sind (z.B. Backend war offline), werden
 # still als erledigt markiert statt nachträglich eine Flut an Pushes zu senden.
 STALE_AFTER = timedelta(hours=12)
-# Tierpflege-Aufgaben (Datum ohne Uhrzeit) ab dieser lokalen Stunde melden.
+# Tier- und Pflanzenpflege-Aufgaben (Datum ohne Uhrzeit) ab dieser lokalen Stunde melden.
 PET_CARE_NOTIFY_HOUR = 8
+PLANT_CARE_NOTIFY_HOUR = 8
 
 # SSRF-Schutz: Der Server POSTet an die vom Client gelieferte Endpoint-URL.
 # Nur bekannte Push-Services der Browser-Hersteller zulassen.
@@ -56,6 +59,13 @@ _TEXTS = {
         "todo_title": "Erinnerung",
         "pet_title": "Tierpflege fällig",
         "pet_body": "{pet}: {task}",
+        "plant_title": "Pflanzenpflege fällig",
+        "plant_body": "{plant}: {task}",
+        "plant_care_water": "Gießen",
+        "plant_care_fertilize": "Düngen",
+        "plant_care_repot": "Umtopfen",
+        "plant_care_mist": "Besprühen",
+        "plant_care_other": "Pflege",
         "test_title": "Benachrichtigungen aktiv",
         "test_body": "So sehen Erinnerungen der Haushalt App aus.",
     },
@@ -63,6 +73,13 @@ _TEXTS = {
         "todo_title": "Reminder",
         "pet_title": "Pet care due",
         "pet_body": "{pet}: {task}",
+        "plant_title": "Plant care due",
+        "plant_body": "{plant}: {task}",
+        "plant_care_water": "Water",
+        "plant_care_fertilize": "Fertilize",
+        "plant_care_repot": "Repot",
+        "plant_care_mist": "Mist",
+        "plant_care_other": "Care",
         "test_title": "Notifications enabled",
         "test_body": "This is how Haushalt App reminders look.",
     },
@@ -204,6 +221,37 @@ def process_pet_care_tasks(db: Session, now: datetime) -> int:
     return sent
 
 
+def process_plant_care_tasks(db: Session, now: datetime) -> int:
+    due = (
+        db.query(PlantCareTask, Plant.name, Household.timezone)
+        .join(Plant, PlantCareTask.plant_id == Plant.id)
+        .join(Household, PlantCareTask.household_id == Household.id)
+        .filter(
+            PlantCareTask.notified_at.is_(None),
+            # Grobfilter (+1 Tag Puffer für Zeitzonen), exakt pro Household unten
+            PlantCareTask.next_due_at <= (now + timedelta(days=1)).date(),
+        )
+        .all()
+    )
+    sent = 0
+    for task, plant_name, tz_name in due:
+        local_now = now.astimezone(zoneinfo.ZoneInfo(tz_name or "Europe/Zurich"))
+        if task.next_due_at > local_now.date() or local_now.hour < PLANT_CARE_NOTIFY_HOUR:
+            continue
+        if not _claim(db, PlantCareTask, task.id, now):
+            continue
+
+        care_type, label = task.care_type, task.label
+        url, tag = f"/plants/{task.plant_id}", f"plant-care-{task.id}"
+        sent += send_to_users(db, _household_member_ids(db, task.household_id), lambda loc: {
+            "title": _text(loc, "plant_title"),
+            "body": _text(loc, "plant_body", plant=plant_name, task=label or _text(loc, f"plant_care_{care_type}")),
+            "url": url,
+            "tag": tag,
+        })
+    return sent
+
+
 def send_test_notification(db: Session, user_id: uuid.UUID) -> int:
     return send_to_users(db, [user_id], lambda loc: {
         "title": _text(loc, "test_title"),
@@ -217,7 +265,11 @@ def run_once() -> None:
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)
-        sent = process_todo_reminders(db, now) + process_pet_care_tasks(db, now)
+        sent = (
+            process_todo_reminders(db, now)
+            + process_pet_care_tasks(db, now)
+            + process_plant_care_tasks(db, now)
+        )
         if sent:
             logger.info("Push scheduler: %d notification(s) sent", sent)
     except Exception:

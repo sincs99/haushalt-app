@@ -3,8 +3,8 @@
 Zubereitungsschritte und Tags für Rezepte. Der KI-Assistent liefert beides,
 die Rezept-Ansicht zeigt und speichert es; bestehende Rezepte erhalten leere Listen.
 
-Revision ID: x1y2z3a4b5c6
-Revises: w1x2y3z4a5b6
+Revision ID: c8d9e0f1a2b3
+Revises: b7c8d9e0f1a2
 Create Date: 2026-10-06 18:00:00.000000
 
 """
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'x1y2z3a4b5c6'
-down_revision: Union[str, Sequence[str], None] = 'w1x2y3z4a5b6'
+revision: str = 'c8d9e0f1a2b3'
+down_revision: Union[str, Sequence[str], None] = 'b7c8d9e0f1a2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

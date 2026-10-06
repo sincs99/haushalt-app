@@ -4,7 +4,7 @@ Opt-in pro Haushalt (households.ai_enabled, Standard false) und Tageszähler
 ai_usage (Aufrufe, Input-/Output-Tokens) für das Tageslimit des KI-Assistenten.
 
 Revision ID: y1z2a3b4c5d6
-Revises: x1y2z3a4b5c6
+Revises: c8d9e0f1a2b3
 Create Date: 2026-10-06 18:05:00.000000
 
 """
@@ -17,7 +17,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'y1z2a3b4c5d6'
-down_revision: Union[str, Sequence[str], None] = 'x1y2z3a4b5c6'
+down_revision: Union[str, Sequence[str], None] = 'c8d9e0f1a2b3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

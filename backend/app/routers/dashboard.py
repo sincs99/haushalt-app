@@ -12,7 +12,7 @@ from datetime import time as dt_time
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import case
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
@@ -25,6 +25,8 @@ from app.models import (
     HouseholdMember,
     Pet,
     PetCareTask,
+    Plant,
+    PlantCareTask,
     ShoppingItem,
     Todo,
     TodoReminder,
@@ -93,6 +95,19 @@ class DashboardPetCareItem(BaseModel):
     is_overdue: bool
 
 
+class DashboardPlantItem(BaseModel):
+    id: uuid.UUID        # Task-ID
+    plant_id: uuid.UUID
+    plant_name: str
+    next_due_at: date    # Fälligkeit der Gießaufgabe
+    is_overdue: bool
+
+
+class DashboardPlantSection(BaseModel):
+    due_count: int       # Anzahl Pflanzen, die heute oder überfällig gegossen werden müssen
+    items: list[DashboardPlantItem]  # max 5, Überfällige zuerst
+
+
 class DashboardReminderItem(BaseModel):
     id: uuid.UUID
     todo_id: uuid.UUID
@@ -107,6 +122,7 @@ class DashboardResponse(BaseModel):
     finance: DashboardFinanceSection
     events: DashboardEventSection
     pet_care_due: list[DashboardPetCareItem] = []
+    plants_water: DashboardPlantSection = DashboardPlantSection(due_count=0, items=[])
     upcoming_reminders: list[DashboardReminderItem] = []
 
 
@@ -289,7 +305,40 @@ def get_dashboard(
     ]
 
     # ------------------------------------------------------------------
-    # 7. Upcoming Reminders (nächste 5 Erinnerungen)
+    # 7. Pflanzen, die gegossen werden müssen (heute fällig oder überfällig)
+    # ------------------------------------------------------------------
+    water_due_filter = (
+        PlantCareTask.household_id == household_id,
+        PlantCareTask.care_type == "water",
+        PlantCareTask.next_due_at <= today,
+    )
+    plants_due_count = (
+        db.query(func.count(func.distinct(PlantCareTask.plant_id)))
+        .filter(*water_due_filter)
+        .scalar()
+        or 0
+    )
+    water_tasks = (
+        db.query(PlantCareTask, Plant.name.label("plant_name"))
+        .join(Plant, PlantCareTask.plant_id == Plant.id)
+        .filter(*water_due_filter)
+        .order_by(PlantCareTask.next_due_at.asc(), Plant.name.asc())
+        .limit(5)
+        .all()
+    )
+    plant_items = [
+        DashboardPlantItem(
+            id=task.id,
+            plant_id=task.plant_id,
+            plant_name=plant_name,
+            next_due_at=task.next_due_at,
+            is_overdue=task.next_due_at < today,
+        )
+        for task, plant_name in water_tasks
+    ]
+
+    # ------------------------------------------------------------------
+    # 8. Upcoming Reminders (nächste 5 Erinnerungen)
     # ------------------------------------------------------------------
     upcoming_reminders_query = (
         db.query(TodoReminder, Todo.title.label("todo_title"))
@@ -332,5 +381,6 @@ def get_dashboard(
         ),
         events=event_section,
         pet_care_due=pet_care_items,
+        plants_water=DashboardPlantSection(due_count=plants_due_count, items=plant_items),
         upcoming_reminders=reminder_items,
     )

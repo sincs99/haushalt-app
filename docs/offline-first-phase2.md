@@ -52,8 +52,8 @@ Kernempfehlungen dieses Dokuments:
 | Reconnect | `App.vue → handleReconnect()` lädt bei Socket-Reconnect alle Module neu | `frontend/src/App.vue` |
 | Connectivity | `useConnectivity()` = nur `navigator.onLine` + `online`/`offline`-Events | `frontend/src/composables/useConnectivity.ts` |
 | Offline-Banner | Vorhanden, Text: „Kein Netz – Änderungen können aktuell nicht gespeichert werden.“ (`offline.banner`). Zusätzlich Sync-Dot mit `sync.connected/reconnecting/offline` | `App.vue`, `locales/de.json` |
-| Auth offline | `initialize()` behält Tokens bei Netzwerkfehler („offline-eingeloggt“), aber `user` und `households` bleiben `null`. `currentHouseholdId` kommt aus `localStorage` | `frontend/src/stores/auth.ts` |
-| Tokens | `localStorage` (`haushalt_tokens`) — für einen Service Worker **nicht** lesbar | `frontend/src/services/tokenStorage.ts` |
+| Auth offline | `initialize()` bleibt bei Netzwerkfehler „offline-eingeloggt“ (`hasOfflineSession`), hat aber keinen Access-Token, bis der erste 401 ihn per Cookie-Refresh holt; `user` und `households` bleiben `null`. `currentHouseholdId` kommt aus `localStorage` | `frontend/src/stores/auth.ts` |
+| Tokens | Seit H-01: Access-Token nur im Speicher, Refresh-Token als HttpOnly-Cookie `casa_rt` (Path `/api/auth`). In `localStorage` liegt nur noch der Sitzungs-Marker `haushalt_session`. Ein Service Worker kann den Cookie bei `fetch` mitsenden (`credentials: 'include'`), aber nicht lesen | `frontend/src/services/tokenStorage.ts` |
 | PWA | `vite-plugin-pwa`, `registerType: 'prompt'`, Workbox precacht nur die App-Shell (`**/*.{js,css,html,svg,png,ico,woff2}`), `/api/` und `/socket.io/` explizit ausgenommen, `push-sw.js` per `importScripts` | `frontend/vite.config.ts`, `frontend/src/pwa.ts` |
 | IndexedDB | Wird nirgends verwendet | — |
 | Tests | Vitest mit `environment: 'node'`, aktuell genau ein Test (`utils/__tests__/money.test.ts`) | `frontend/vitest.config.ts` |
@@ -229,7 +229,7 @@ nicht korrekt dargestellt werden.
 | Logout in anderem Tab (`storage`-Event in `_registerStorageListener`) | Verbindung schliessen, keine Ops mehr senden. Löschen übernimmt der auslösende Tab |
 
 Hinweis Datenschutz: Daten liegen unverschlüsselt im Browser-Profil — gleiche Schutzklasse wie
-die heute in `localStorage` liegenden Tokens. Für ein geteiltes Gerät ist der Logout-Pfad
+der Refresh-Cookie im Cookie-Jar des Browsers. Für ein geteiltes Gerät ist der Logout-Pfad
 entscheidend.
 
 ---
@@ -486,9 +486,10 @@ unterstützt die API in neueren Versionen; Ergebnis ist ein Hinweis, keine Garan
 (Stand der Recherche bei Erstellung; vor Umsetzung gegen aktuelle Kompatibilitätstabellen prüfen.)
 
 Für den Haupt-Use-Case (Haushaltsmitglieder mit iPhone im Supermarkt) bringt Background Sync
-also **nichts**. Hinzu kommt ein technischer Blocker: Die Tokens liegen in `localStorage`
-(`tokenStorage.ts`), auf das ein Service Worker keinen Zugriff hat. Background Sync würde
-Tokens in IndexedDB und eine zweite Refresh-Logik im SW erfordern.
+also **nichts**. Hinzu kommt ein technischer Blocker: Der Access-Token lebt nur im Speicher
+der Seite, der Refresh-Token ist ein HttpOnly-Cookie (seit H-01). Ein Service Worker könnte
+`/api/auth/refresh` zwar mit `credentials: 'include'` und dem CSRF-Header aufrufen, bräuchte
+dafür aber eine zweite Refresh-Logik (inkl. Grace-Window-Verhalten gegenüber offenen Tabs).
 
 **Entscheidung (Empfehlung):** Kein Background Sync in Phase 2. Sync läuft ausschliesslich im
 App-Kontext über die Trigger aus 4.5. Konsequenz für den User: Änderungen werden übertragen,

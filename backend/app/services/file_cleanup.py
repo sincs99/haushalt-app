@@ -1,7 +1,7 @@
 """
 Periodisches Aufräumen verwaister Uploads.
 
-Dateien werden zuerst über /files hochgeladen und danach einem Pet oder Dokument
+Dateien werden zuerst über /files hochgeladen und danach einem Pet, einer Pflanze oder einem Dokument
 zugeordnet. Bricht der Client dazwischen ab (Tab geschlossen, Netzwerkfehler),
 bleibt die Datei ohne Referenz liegen und zählt weiter zur Speicher-Quota.
 """

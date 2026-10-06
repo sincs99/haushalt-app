@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sincs99/haushalt-app/actions/workflows/ci.yml/badge.svg)](https://github.com/sincs99/haushalt-app/actions/workflows/ci.yml)
 
-Web-App (PWA) für die gemeinsame Organisation eines Haushalts: Einkaufslisten, Aufgaben, Putzplan mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Notizen, eine Dokument-Ablage (Verträge, Rechnungen, Garantien) und ein optionaler KI-Assistent (Rezeptvorschläge, Pflanzenpflege). Mehrere Nutzer pro Haushalt, Echtzeit-Sync per WebSocket, Mobile-First, zweisprachig (DE/EN).
+Web-App (PWA) für die gemeinsame Organisation eines Haushalts: Einkaufslisten, Aufgaben, Putzplan mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Pflanzen, Notizen, eine Dokument-Ablage (Verträge, Rechnungen, Garantien), NFC/QR-Tags für Ein-Tipp-Aktionen und ein optionaler KI-Assistent (Rezeptvorschläge, Pflanzenpflege). Mehrere Nutzer pro Haushalt, Echtzeit-Sync per WebSocket, Mobile-First, zweisprachig (DE/EN).
 
 Detaillierter Stand und Architektur: [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md).
 
@@ -13,7 +13,7 @@ Detaillierter Stand und Architektur: [`docs/PROJECT-STATUS.md`](docs/PROJECT-STA
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2, Alembic, Socket.IO (`python-socketio`) |
 | Datenbank | PostgreSQL 16 |
 | Frontend | Vue 3, TypeScript, Vite, Pinia, vue-i18n, PWA (`vite-plugin-pwa`) |
-| Auth | JWT-Access-Token (15 Min.) + rotierender Refresh-Token, bcrypt |
+| Auth | JWT-Access-Token (15 Min.) + rotierender Refresh-Token als HttpOnly-Cookie, bcrypt |
 | KI (optional) | Anthropic-API (Claude Opus 5.5) über das offizielle `anthropic`-SDK |
 | Tests | Backend: pytest (SQLite in-memory, kein Postgres nötig); Frontend: Vitest |
 | Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager) |
@@ -103,6 +103,33 @@ Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` sel
 - [`docs/ai-assistant.md`](docs/ai-assistant.md): KI-Assistent (Architektur, Datenschutz, Kosten, Erweiterung)
 - [`docs/offline-first-phase2.md`](docs/offline-first-phase2.md): Konzept für Offline-Betrieb (Meilenstein M0 ist umgesetzt)
 
+## Tags (NFC/QR)
+
+Tags sind NFC-Chips oder QR-Sticker, die beim Scannen eine Aktion mit einem Tipp auslösen: Tier füttern, Pflegeaufgabe oder Ämtli abhaken, Aufgabe erledigen, Einkaufsliste öffnen. Auf dem Tag steht nur eine Adresse der App, `https://<host>/t/<token>`. Welche Aktion dazugehört, steht in der Datenbank — ein Tag lässt sich deshalb später neu zuordnen, ohne ihn neu zu beschreiben.
+
+**Ablauf beim Scannen:** Das Telefon öffnet die Adresse. Wer nicht eingeloggt ist, landet beim Login und danach wieder auf dem Tag. Die App zeigt eine Bestätigung (z. B. „Mia füttern?“ mit der letzten Fütterung); erst der Tipp auf den grossen Button führt die Aktion aus. Tags zum Öffnen einer Liste navigieren direkt. Ausführen dürfen alle Mitglieder des Haushalts, Fremde mit dem Sticker in der Hand nichts.
+
+**Einrichten (Admin):** Haushalt → „Tags verwalten“ → „Tag anlegen“: Bezeichnung, Zieltyp, Ziel und Aktion wählen. Danach zeigt die App QR-Code, Adresse und — auf Android/Chrome — „Auf NFC-Chip schreiben“.
+
+### Welche Chips?
+
+- **NTAG213** (144 Byte Nutzspeicher) reicht: Die Adresse ist der Hostname plus `/t/` plus 32 Zeichen Token, zusammen meist unter 70 Byte. **NTAG215** (504 Byte) oder **NTAG216** (888 Byte) gehen ebenfalls.
+- Bauform nach Ort: Sticker für glatte Flächen, **On-Metal-/Anti-Metall-Tags** für Kühlschrank, Metallnapf oder Heizkörper (normale Chips funktionieren auf Metall nicht), Schlüsselanhänger oder Epoxy-Tags für feuchte Orte.
+- Nicht geeignet: MIFARE Classic (wird von iPhones nicht gelesen).
+
+### Chips beschreiben
+
+- **Android mit Chrome:** In der App „Auf NFC-Chip schreiben“ tippen und den Chip an die Rückseite halten (Web NFC, nur Chrome auf Android, nur über HTTPS).
+- **iPhone und andere Browser:** Mit einer NFC-App, z. B. „NFC Tools“ (iOS/Android): „Schreiben“ → „Datensatz hinzufügen“ → „URL/URI“ → die in der App angezeigte Adresse einfügen → „Schreiben“. Genau **einen** URL-Datensatz schreiben.
+- **Optional sperren:** In der NFC-App „Tag sperren/Lock“ verhindert, dass jemand den Chip überschreibt. Das ist endgültig — nach „Token neu erzeugen“ braucht es dann einen neuen Chip.
+- **QR-Sticker:** QR-Code als SVG herunterladen und drucken, ab etwa 2 × 2 cm zuverlässig lesbar.
+
+### Verhalten auf den Geräten
+
+- **iPhone (ab XS):** liest NFC-Chips im Hintergrund, ohne App; es erscheint eine Mitteilung, ein Tipp öffnet die Adresse in Safari. QR-Codes liest die Kamera-App. Die als Web-App installierte Version auf dem Home-Bildschirm hat einen **eigenen Login-Speicher** — Tags öffnen Safari, dort muss man sich einmal separat anmelden.
+- **Android:** liest NFC-Chips bei entsperrtem Bildschirm, ohne App. Ist die App über Chrome installiert, öffnen sich Adressen der App in der Regel direkt in der installierten App (sonst in Chrome, der Login gilt dort ebenfalls). QR-Codes liest die Kamera oder Google Lens.
+- **Sicherheit:** Ein Tag bewirkt nichts ohne Login als Mitglied des Haushalts. Ist ein Sticker verloren oder abfotografiert: „Token neu erzeugen“ — der alte Tag ist danach wirkungslos. Details: [`docs/security/tags-review.md`](docs/security/tags-review.md).
+
 ## Datensicherung
 
 ### Backup erstellen
@@ -111,7 +138,7 @@ Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` sel
 .\scripts\backup-db.ps1
 ```
 
-Erstellt einen komprimierten Datenbank-Dump unter `backups/casa-backup-<Zeitstempel>.dump` **und** ein Archiv der hochgeladenen Dateien (Dokument-Ablage, Tierfotos) unter `backups/casa-uploads-<Zeitstempel>.tar.gz`.  
+Erstellt einen komprimierten Datenbank-Dump unter `backups/casa-backup-<Zeitstempel>.dump` **und** ein Archiv der hochgeladenen Dateien (Dokument-Ablage, Tier- und Pflanzenfotos) unter `backups/casa-uploads-<Zeitstempel>.tar.gz`.  
 Es werden automatisch maximal **14 Backups** vorgehalten; ältere werden gelöscht. Beide Container (Postgres und Backend) müssen laufen.
 
 ### Backup wiederherstellen

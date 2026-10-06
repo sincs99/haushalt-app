@@ -68,6 +68,18 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/plants',
+      name: 'plants',
+      component: () => import('../views/PlantsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/plants/:id',
+      name: 'plant-detail',
+      component: () => import('../views/PlantDetailView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/food',
       name: 'food',
       component: () => import('../views/FoodView.vue'),
@@ -95,6 +107,20 @@ const router = createRouter({
       path: '/household',
       name: 'household',
       component: () => import('../views/HouseholdView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/tags',
+      name: 'tags',
+      component: () => import('../views/TagsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      // Ziel der NFC-Chip-/QR-URL. Login erzwingt der Guard unten (redirect
+      // zurück hierher); die Aktion selbst läuft erst nach Bestätigung.
+      path: '/t/:token',
+      name: 'tag-scan',
+      component: () => import('../views/TagScanView.vue'),
       meta: { requiresAuth: true },
     },
     {

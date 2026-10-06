@@ -1,0 +1,332 @@
+/**
+ * Unit-Tests für den Pets-Store: Pets, Fütterungs-Toggle (Optimistic + Mutex + Rollback),
+ * Medikation, Pflegeaufgaben und Socket-Handler.
+ */
+import type {} from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { deferred, HOUSEHOLD_ID, USER_ID } from './helpers'
+
+const { repo, householdRepo, auth } = vi.hoisted(() => ({
+  repo: {
+    fetchAll: vi.fn(), fetchFeedingStatus: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(),
+    createFeeding: vi.fn(), deleteFeeding: vi.fn(), feedAll: vi.fn(),
+    fetchMedications: vi.fn(), createMedication: vi.fn(), updateMedication: vi.fn(),
+    removeMedication: vi.fn(), giveMedication: vi.fn(), fetchMedicationLog: vi.fn(),
+    fetchCareTasks: vi.fn(), createCareTask: vi.fn(), updateCareTask: vi.fn(),
+    completeCareTask: vi.fn(), removeCareTask: vi.fn(),
+  },
+  householdRepo: { fetchMembers: vi.fn() },
+  auth: { currentHouseholdId: null as string | null, user: null as { id: string } | null },
+}))
+
+vi.mock('../../repositories/petsRepository', () => ({ createOnlinePetsRepository: () => repo }))
+vi.mock('../../repositories/householdsRepository', () => ({ createOnlineHouseholdsRepository: () => householdRepo }))
+vi.mock('../auth', () => ({ useAuthStore: () => auth }))
+
+import { usePetsStore } from '../pets'
+
+const pet = (id = 'p1', o: Record<string, unknown> = {}) => ({ id, name: 'Bello', ...o }) as any
+const feeding = (id: string, slot = 'morning', petId = 'p1') => ({ id, pet_id: petId, slot }) as any
+const status = (petId = 'p1', o: Record<string, unknown> = {}) => ({ pet_id: petId, morning: null, evening: null, ...o }) as any
+const med = (id = 'm1', o: Record<string, unknown> = {}) => ({ id, name: 'Pille', ...o }) as any
+const task = (id = 't1', o: Record<string, unknown> = {}) => ({
+  id, interval_days: 7, last_done_at: null, next_due_at: '2026-01-01', notified_at: 'x', ...o,
+}) as any
+const axios409 = { response: { status: 409 } }
+
+beforeEach(() => {
+  setActivePinia(createPinia())
+  vi.resetAllMocks()
+  auth.currentHouseholdId = HOUSEHOLD_ID
+  auth.user = { id: USER_ID }
+})
+
+describe('Pets', () => {
+  test('fetchPets lädt und setzt loading zurück (auch bei Fehler)', async () => {
+    const store = usePetsStore()
+    repo.fetchAll.mockResolvedValue([pet()])
+    await store.fetchPets()
+    expect(store.pets).toHaveLength(1)
+    repo.fetchAll.mockRejectedValue(new Error('x'))
+    await expect(store.fetchPets()).rejects.toThrow('x')
+    expect(store.loading).toBe(false)
+  })
+
+  test('fetchFeedingStatus schluckt Fehler; fetchMembers lädt', async () => {
+    const store = usePetsStore()
+    store.feedingStatus = [status()]
+    repo.fetchFeedingStatus.mockRejectedValue(new Error('x'))
+    await store.fetchFeedingStatus()
+    expect(store.feedingStatus).toHaveLength(1)
+    householdRepo.fetchMembers.mockResolvedValue([{ user_id: 'u' }])
+    await store.fetchMembers()
+    expect(store.members).toHaveLength(1)
+  })
+
+  test('createPet dedupliziert gegen Socket und lädt Feeding-Status nach', async () => {
+    const store = usePetsStore()
+    store.handlePetCreated(pet('new'))
+    repo.create.mockResolvedValue(pet('new', { name: 'Final' }))
+    repo.fetchFeedingStatus.mockResolvedValue([status('new')])
+    await store.createPet({} as any)
+    expect(store.pets).toHaveLength(1)
+    expect(store.pets[0].name).toBe('Final')
+    expect(store.feedingStatus).toHaveLength(1)
+  })
+
+  test('updatePet ersetzt das Pet', async () => {
+    const store = usePetsStore()
+    store.pets = [pet()]
+    repo.update.mockResolvedValue(pet('p1', { name: 'Neu' }))
+    await store.updatePet('p1', { name: 'Neu' } as any)
+    expect(store.pets[0].name).toBe('Neu')
+  })
+
+  test('removePet: optimistisch inkl. Feeding-Status, Rollback + Status-Refetch bei Fehler', async () => {
+    const store = usePetsStore()
+    store.pets = [pet('a'), pet('b')]
+    store.feedingStatus = [status('a'), status('b')]
+    repo.remove.mockRejectedValue(new Error('x'))
+    repo.fetchFeedingStatus.mockResolvedValue([status('a'), status('b')])
+    const p = store.removePet('a')
+    expect(store.pets.map(x => x.id)).toEqual(['b'])
+    expect(store.feedingStatus.map(x => x.pet_id)).toEqual(['b'])
+    await expect(p).rejects.toThrow('x')
+    expect(store.pets.map(x => x.id)).toEqual(['a', 'b'])
+    expect(store.feedingStatus).toHaveLength(2)
+  })
+})
+
+describe('toggleFeeding', () => {
+  test('Füttern: Temp sofort, danach Server-Log', async () => {
+    const store = usePetsStore()
+    store.feedingStatus = [status()]
+    const pending = deferred<any>()
+    repo.createFeeding.mockReturnValue(pending.promise)
+    const p = store.toggleFeeding('p1', 'morning')
+    expect(store.feedingStatus[0].morning).toMatchObject({ id: 'temp', fed_by_user_id: USER_ID })
+    pending.resolve(feeding('real'))
+    await p
+    expect(store.feedingStatus[0].morning.id).toBe('real')
+  })
+
+  test('Füttern: Rollback bei Fehler; bei 409 wird der Status neu geladen', async () => {
+    const store = usePetsStore()
+    store.feedingStatus = [status()]
+    repo.createFeeding.mockRejectedValue(new Error('500'))
+    await store.toggleFeeding('p1', 'morning')
+    expect(store.feedingStatus[0].morning).toBeNull()
+    expect(repo.fetchFeedingStatus).not.toHaveBeenCalled()
+
+    repo.createFeeding.mockRejectedValue(axios409)
+    repo.fetchFeedingStatus.mockResolvedValue([status('p1', { morning: feeding('srv') })])
+    await store.toggleFeeding('p1', 'morning')
+    expect(store.feedingStatus[0].morning.id).toBe('srv')
+  })
+
+  test('Rückgängig: sofort entfernt, Rollback bei Fehler', async () => {
+    const store = usePetsStore()
+    const f = feeding('f1')
+    store.feedingStatus = [status('p1', { morning: f })]
+    repo.deleteFeeding.mockRejectedValue(new Error('x'))
+    const p = store.toggleFeeding('p1', 'morning')
+    expect(store.feedingStatus[0].morning).toBeNull()
+    await p
+    expect(store.feedingStatus[0].morning).toEqual(f)
+    repo.deleteFeeding.mockResolvedValue(undefined)
+    await store.toggleFeeding('p1', 'morning')
+    expect(repo.deleteFeeding).toHaveBeenLastCalledWith(HOUSEHOLD_ID, 'p1', 'f1')
+    expect(store.feedingStatus[0].morning).toBeNull()
+  })
+
+  test('Mutex: zweiter Klick während Request wird ignoriert; Slot danach wieder frei', async () => {
+    const store = usePetsStore()
+    store.feedingStatus = [status()]
+    const pending = deferred<any>()
+    repo.createFeeding.mockReturnValue(pending.promise)
+    const p1 = store.toggleFeeding('p1', 'morning')
+    await store.toggleFeeding('p1', 'morning')
+    expect(repo.createFeeding).toHaveBeenCalledTimes(1)
+    pending.resolve(feeding('real'))
+    await p1
+    repo.deleteFeeding.mockResolvedValue(undefined)
+    await store.toggleFeeding('p1', 'morning')
+    expect(repo.deleteFeeding).toHaveBeenCalledTimes(1)
+  })
+
+  test('unbekanntes Pet gibt den Mutex wieder frei', async () => {
+    const store = usePetsStore()
+    await store.toggleFeeding('ghost', 'morning')
+    store.feedingStatus = [status('ghost')]
+    repo.createFeeding.mockResolvedValue(feeding('r', 'morning', 'ghost'))
+    await store.toggleFeeding('ghost', 'morning')
+    expect(repo.createFeeding).toHaveBeenCalledTimes(1)
+  })
+
+  test('feedAll lädt den Status danach neu — auch bei Fehler', async () => {
+    const store = usePetsStore()
+    repo.feedAll.mockResolvedValue(undefined)
+    repo.fetchFeedingStatus.mockResolvedValue([])
+    await store.feedAll('morning')
+    repo.feedAll.mockRejectedValue(new Error('x'))
+    await store.feedAll('evening')
+    expect(repo.fetchFeedingStatus).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Medikation', () => {
+  test('fetch/create/update/remove', async () => {
+    const store = usePetsStore()
+    repo.fetchMedications.mockResolvedValue([med()])
+    await store.fetchMedications('p1')
+    expect(store.medications).toHaveLength(1)
+    repo.fetchMedications.mockRejectedValue(new Error('x'))
+    await store.fetchMedications('p1') // schluckt
+    expect(store.medications).toHaveLength(1)
+
+    repo.createMedication.mockResolvedValue(med('m2'))
+    await store.createMedication('p1', {} as any)
+    expect(store.medications.map(m => m.id)).toEqual(['m1', 'm2'])
+    repo.updateMedication.mockResolvedValue(med('m1', { name: 'Neu' }))
+    await store.updateMedication('p1', 'm1', {} as any)
+    expect(store.medications[0].name).toBe('Neu')
+
+    store.medicationLogs = { m1: [{ id: 'l' } as any] }
+    repo.removeMedication.mockResolvedValue(undefined)
+    await store.removeMedication('p1', 'm1')
+    expect(store.medications.map(m => m.id)).toEqual(['m2'])
+    expect(store.medicationLogs.m1).toBeUndefined()
+  })
+
+  test('giveMedication/handleMedicationGiven behalten nur die letzten 10 Logs, neueste zuerst', async () => {
+    const store = usePetsStore()
+    store.medicationLogs = { m1: Array.from({ length: 10 }, (_, i) => ({ id: `old${i}`, medication_id: 'm1' }) as any) }
+    repo.giveMedication.mockResolvedValue({ id: 'new', medication_id: 'm1' })
+    await store.giveMedication('p1', 'm1')
+    expect(store.medicationLogs.m1).toHaveLength(10)
+    expect(store.medicationLogs.m1[0].id).toBe('new')
+    store.handleMedicationGiven({ id: 'sock', medication_id: 'm1' } as any)
+    store.handleMedicationGiven({ id: 'x', medication_id: 'm2' } as any)
+    expect(store.medicationLogs.m1[0].id).toBe('sock')
+    expect(store.medicationLogs.m2).toHaveLength(1)
+  })
+
+  test('fetchMedicationLog kürzt auf 10 und schluckt Fehler', async () => {
+    const store = usePetsStore()
+    repo.fetchMedicationLog.mockResolvedValue(Array.from({ length: 15 }, (_, i) => ({ id: `${i}` })))
+    await store.fetchMedicationLog('p1', 'm1')
+    expect(store.medicationLogs.m1).toHaveLength(10)
+    repo.fetchMedicationLog.mockRejectedValue(new Error('x'))
+    await store.fetchMedicationLog('p1', 'm1')
+    expect(store.medicationLogs.m1).toHaveLength(10)
+  })
+})
+
+describe('Pflegeaufgaben', () => {
+  test('fetch/create/update', async () => {
+    const store = usePetsStore()
+    repo.fetchCareTasks.mockResolvedValue([task()])
+    await store.fetchCareTasks('p1')
+    repo.fetchCareTasks.mockRejectedValue(new Error('x'))
+    await store.fetchCareTasks('p1')
+    expect(store.careTasks).toHaveLength(1)
+    repo.createCareTask.mockResolvedValue(task('t2'))
+    await store.createCareTask('p1', {} as any)
+    repo.updateCareTask.mockResolvedValue(task('t1', { interval_days: 3 }))
+    await store.updateCareTask('p1', 't1', {} as any)
+    expect(store.careTasks.map(t => t.interval_days)).toEqual([3, 7])
+  })
+
+  test('completeCareTask: optimistisch (last_done/next_due), dann Server-Wahrheit', async () => {
+    const store = usePetsStore()
+    store.careTasks = [task()]
+    const pending = deferred<any>()
+    repo.completeCareTask.mockReturnValue(pending.promise)
+    const p = store.completeCareTask('p1', 't1')
+    const today = new Date().toISOString().slice(0, 10)
+    expect(store.careTasks[0].last_done_at).toBe(today)
+    expect(store.careTasks[0].notified_at).toBeNull()
+    expect(store.careTasks[0].next_due_at).not.toBe('2026-01-01')
+    pending.resolve(task('t1', { last_done_at: 'server' }))
+    await p
+    expect(store.careTasks[0].last_done_at).toBe('server')
+  })
+
+  test('completeCareTask: Rollback auf Snapshot bei Fehler', async () => {
+    const store = usePetsStore()
+    store.careTasks = [task()]
+    repo.completeCareTask.mockRejectedValue(new Error('x'))
+    await expect(store.completeCareTask('p1', 't1')).rejects.toThrow('x')
+    expect(store.careTasks[0]).toEqual(task())
+  })
+
+  test('removeCareTask: optimistisch, Rollback bei Fehler', async () => {
+    const store = usePetsStore()
+    store.careTasks = [task('a'), task('b')]
+    repo.removeCareTask.mockRejectedValue(new Error('x'))
+    const p = store.removeCareTask('p1', 'a')
+    expect(store.careTasks.map(t => t.id)).toEqual(['b'])
+    await expect(p).rejects.toThrow('x')
+    expect(store.careTasks.map(t => t.id)).toEqual(['a', 'b'])
+  })
+})
+
+describe('Socket-Handler', () => {
+  test('Pet created/updated/deleted (deleted räumt Feeding-Status auf)', () => {
+    const store = usePetsStore()
+    store.handlePetCreated(pet())
+    store.handlePetCreated(pet('p1', { name: 'B' }))
+    expect(store.pets).toHaveLength(1)
+    store.handlePetUpdated(pet('p1', { name: 'C' }))
+    store.handlePetUpdated(pet('unknown'))
+    expect(store.pets.map(p => p.name)).toEqual(['C'])
+    store.feedingStatus = [status('p1')]
+    store.handlePetDeleted({ id: 'p1' })
+    expect(store.pets).toEqual([])
+    expect(store.feedingStatus).toEqual([])
+  })
+
+  test('Feeding created/deleted aktualisieren nur den passenden Slot', () => {
+    const store = usePetsStore()
+    store.feedingStatus = [status()]
+    store.handleFeedingCreated(feeding('f1', 'evening'))
+    store.handleFeedingCreated(feeding('fx', 'morning', 'unknown'))
+    expect(store.feedingStatus[0].evening.id).toBe('f1')
+    expect(store.feedingStatus[0].morning).toBeNull()
+    store.handleFeedingDeleted({ id: 'other', pet_id: 'p1' })
+    expect(store.feedingStatus[0].evening).not.toBeNull()
+    store.handleFeedingDeleted({ id: 'f1', pet_id: 'p1' })
+    expect(store.feedingStatus[0].evening).toBeNull()
+  })
+
+  test('Medication und CareTask Handler', () => {
+    const store = usePetsStore()
+    store.handleMedicationCreated(med()); store.handleMedicationCreated(med('m1', { name: 'B' }))
+    store.handleMedicationUpdated(med('m1', { name: 'C' })); store.handleMedicationUpdated(med('x'))
+    expect(store.medications.map(m => m.name)).toEqual(['C'])
+    store.medicationLogs = { m1: [{ id: 'l' } as any] }
+    store.handleMedicationDeleted({ id: 'm1' })
+    expect(store.medications).toEqual([])
+    expect(store.medicationLogs.m1).toBeUndefined()
+
+    store.handleCareTaskCreated(task()); store.handleCareTaskCreated(task('t1', { interval_days: 1 }))
+    store.handleCareTaskUpdated(task('t1', { interval_days: 2 })); store.handleCareTaskUpdated(task('x'))
+    expect(store.careTasks.map(t => t.interval_days)).toEqual([2])
+    store.handleCareTaskDeleted({ id: 't1' })
+    expect(store.careTasks).toEqual([])
+  })
+})
+
+test('ohne Haushalt: alle Aktionen sind No-Ops', async () => {
+  auth.currentHouseholdId = null
+  const s = usePetsStore()
+  await s.fetchPets(); await s.fetchFeedingStatus(); await s.fetchMembers()
+  await s.createPet({} as any); await s.updatePet('p', {} as any); await s.removePet('p')
+  await s.toggleFeeding('p', 'morning'); await s.feedAll('morning')
+  await s.fetchMedications('p'); await s.createMedication('p', {} as any)
+  await s.updateMedication('p', 'm', {} as any); await s.removeMedication('p', 'm')
+  await s.giveMedication('p', 'm'); await s.fetchMedicationLog('p', 'm')
+  await s.fetchCareTasks('p'); await s.createCareTask('p', {} as any)
+  await s.updateCareTask('p', 't', {} as any); await s.completeCareTask('p', 't'); await s.removeCareTask('p', 't')
+  for (const fn of [...Object.values(repo), householdRepo.fetchMembers]) expect(fn).not.toHaveBeenCalled()
+})

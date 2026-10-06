@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PhWallet, PhCat, PhForkKnife, PhNote, PhFolderOpen, PhGear, PhCaretRight, PhSparkle } from '@phosphor-icons/vue'
+import { PhWallet, PhCat, PhPlant, PhForkKnife, PhNote, PhFolderOpen, PhGear, PhCaretRight, PhSparkle } from '@phosphor-icons/vue'
 import { useI18n } from 'vue-i18n'
 import { useAiStore } from '../stores/ai'
 
@@ -44,6 +44,7 @@ watch(() => props.open, (isOpen) => {
 const baseEntries = [
   { label: 'nav.expenses', sub: 'moreSheet.expensesSub', icon: PhWallet, action: () => navigate('/expenses'), disabled: false, highlight: true },
   { label: 'nav.cats', sub: 'moreSheet.catsSub', icon: PhCat, action: () => navigate('/pets'), disabled: false, highlight: false },
+  { label: 'nav.plants', sub: 'moreSheet.plantsSub', icon: PhPlant, action: () => navigate('/plants'), disabled: false, highlight: false },
   { label: 'nav.meals', sub: 'moreSheet.mealsSub', icon: PhForkKnife, action: () => navigate('/food'), disabled: false, highlight: false },
   { label: 'nav.notes', sub: 'moreSheet.notesSub', icon: PhNote, action: () => navigate('/notes'), disabled: false, highlight: false },
   { label: 'nav.documents', sub: 'moreSheet.documentsSub', icon: PhFolderOpen, action: () => navigate('/documents'), disabled: false, highlight: false },

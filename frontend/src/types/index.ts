@@ -416,6 +416,19 @@ export interface DashboardReminderItem {
   remind_at: string   // ISO 8601
 }
 
+export interface DashboardPlantItem {
+  id: string            // Task-ID der Gießaufgabe
+  plant_id: string
+  plant_name: string
+  next_due_at: string   // "YYYY-MM-DD"
+  is_overdue: boolean
+}
+
+export interface DashboardPlantSection {
+  due_count: number
+  items: DashboardPlantItem[]
+}
+
 export interface DashboardResponse {
   todos: DashboardTodoSection
   chores: DashboardChoreSection
@@ -423,6 +436,7 @@ export interface DashboardResponse {
   finance: DashboardFinanceSection
   events: DashboardEventSection
   pet_care_due: DashboardPetCareItem[]
+  plants_water: DashboardPlantSection
   upcoming_reminders: DashboardReminderItem[]
 }
 
@@ -673,6 +687,104 @@ export interface PetCareTaskUpdatePayload {
   next_due_at?: string
 }
 
+// ── Plants ──
+
+export type PlantCareType = 'water' | 'fertilize' | 'repot' | 'mist' | 'other'
+
+export interface Plant {
+  id: string
+  household_id: string
+  name: string
+  species: string | null
+  location: string | null
+  notes: string | null
+  care_notes: string | null
+  photo_file_id: string | null
+  created_at: string
+}
+
+export interface PlantCreatePayload {
+  name: string
+  species?: string
+  location?: string
+  notes?: string
+  care_notes?: string
+}
+
+export interface PlantUpdatePayload {
+  name?: string
+  species?: string | null
+  location?: string | null
+  notes?: string | null
+  care_notes?: string | null
+  photo_file_id?: string | null
+}
+
+export interface PlantCareTask {
+  id: string
+  household_id: string
+  plant_id: string
+  care_type: PlantCareType
+  label: string | null
+  interval_days: number
+  next_due_at: string       // ISO date "YYYY-MM-DD"
+  last_done_at: string | null
+  notified_at: string | null
+  created_at: string
+}
+
+export interface PlantCareTaskCreatePayload {
+  care_type: PlantCareType
+  label?: string
+  interval_days?: number
+  next_due_at?: string
+}
+
+export interface PlantCareTaskUpdatePayload {
+  label?: string | null
+  interval_days?: number
+  next_due_at?: string
+}
+
+export interface PlantCareLog {
+  id: string
+  household_id: string
+  plant_id: string
+  care_task_id: string | null
+  care_type: PlantCareType
+  label: string | null
+  done_at: string           // ISO 8601
+  done_by_user_id: string | null
+  note: string | null
+}
+
+export interface PlantCareCompleteResponse {
+  task: PlantCareTask
+  log: PlantCareLog
+}
+
+export interface PlantCareStatusTask {
+  task_id: string
+  care_type: PlantCareType
+  label: string | null
+  interval_days: number
+  next_due_at: string
+  last_done_at: string | null
+  due_today: boolean
+  overdue: boolean
+}
+
+export interface PlantCareStatus {
+  plant_id: string
+  plant_name: string
+  species: string | null
+  location: string | null
+  photo_file_id: string | null
+  tasks: PlantCareStatusTask[]
+  due_today: boolean
+  overdue: boolean
+}
+
 // ── Recipes & Meal Plan ──
 
 export interface Recipe {
@@ -843,4 +955,77 @@ export interface AiPlantCareAdvice {
   care_notes: string
   pet_toxicity: AiPetToxicity
   pet_toxicity_note: string | null
+}
+
+// ── Tags (NFC-Chips / QR-Sticker) ──
+
+/** Aktions-Schlüssel aus der Backend-Registry (app/services/tag_actions.py). */
+export type TagActionKey =
+  | 'pet.feed'
+  | 'pet.care_task.done'
+  | 'chore.assignment.done'
+  | 'shopping_list.open'
+  | 'todo.done'
+  // Neue Aktionen kommen vom Backend, bevor das Frontend sie kennt
+  | (string & {})
+
+export interface TagInfo {
+  id: string
+  household_id: string
+  token: string
+  label: string
+  target_type: string
+  target_id: string | null
+  target_name: string | null
+  target_missing: boolean
+  action: TagActionKey
+  created_by_user_id: string | null
+  created_at: string
+  last_used_at: string | null
+  use_count: number
+  enabled: boolean
+}
+
+export interface TagTargetOption {
+  id: string
+  name: string
+}
+
+export interface TagTargetType {
+  target_type: string
+  actions: { key: TagActionKey; target_optional: boolean; navigate_only: boolean }[]
+  options: TagTargetOption[]
+}
+
+export interface TagCreatePayload {
+  label: string
+  target_type: string
+  target_id: string | null
+  action: TagActionKey
+}
+
+export interface TagResolveResult {
+  tag_id: string
+  label: string
+  household_id: string
+  household_name: string
+  action: TagActionKey
+  target_type: string
+  target_id: string | null
+  target_name: string | null
+  navigate_only: boolean
+  navigate_to: string | null
+  description: string
+  details: Record<string, any>
+  can_execute: boolean
+  reason: string | null
+}
+
+export interface TagExecuteResult {
+  tag_id: string
+  action: TagActionKey
+  household_id: string
+  target_name: string | null
+  changed: boolean
+  result: Record<string, any>
 }

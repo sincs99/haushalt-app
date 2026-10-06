@@ -67,7 +67,8 @@
     "notes": "Notizen",
     "settings": "Einstellungen",
     "documents": "Ablage",
-    "assistant": "KI-Assistent"
+    "assistant": "KI-Assistent",
+    "plants": "Pflanzen"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -93,7 +94,8 @@
     "petCareDueToday": "Heute fällig",
     "remindersTitle": "Nächste Erinnerungen",
     "remindersEmpty": "Keine anstehenden Erinnerungen",
-    "reminderFor": "für \"{title}\""
+    "reminderFor": "für \"{title}\"",
+    "plantsWaterTitle": "Pflanzen brauchen Wasser"
   },
   "calendar": {
     "title": "Kalender",
@@ -159,7 +161,8 @@
     "notesSub": "Schnelle Notizen & Ideen",
     "settingsSub": "Haushalt, Mitglieder & Sprache",
     "documentsSub": "Verträge, Rechnungen & Garantien",
-    "assistantSub": "Pflanzenpflege mit KI"
+    "assistantSub": "Pflanzenpflege mit KI",
+    "plantsSub": "Gießen, Düngen & Pflege"
   },
   "shopping": {
     "title": "Einkaufsliste",
@@ -408,6 +411,10 @@
   "household": {
     "title": "Haushalt",
     "inviteCode": "Einladungscode",
+    "inviteValidUntil": "Gültig bis {date}",
+    "inviteExpired": "Dieser Einladungscode ist abgelaufen.",
+    "inviteExpiredAction": "Neuen Code erzeugen",
+    "inviteExpiredAskAdmin": "Bitte einen Admin, einen neuen Code zu erzeugen.",
     "inviteHint": "Teile diesen Code, damit andere deinem Haushalt beitreten können:",
     "copyCode": "Kopieren",
     "codeCopied": "Invite-Code kopiert!",
@@ -473,6 +480,7 @@
     "INVALID_CREDENTIALS": "Ungültige Anmeldedaten",
     "EMAIL_ALREADY_REGISTERED": "Diese E-Mail ist bereits registriert",
     "NOT_HOUSEHOLD_MEMBER": "Du bist kein Mitglied dieses Haushalts",
+    "INVITE_CODE_EXPIRED": "Einladungscode abgelaufen – bitte einen neuen Code anfordern",
     "INVITE_CODE_NOT_FOUND": "Einladungscode nicht gefunden",
     "ALREADY_MEMBER": "Du bist bereits Mitglied dieses Haushalts",
     "EXPENSE_NOT_FOUND": "Ausgabe nicht gefunden",
@@ -515,7 +523,17 @@
     "AI_PLANT_NOT_RECOGNIZED": "Diese Eingabe wurde nicht als Pflanze erkannt",
     "AI_BUSY": "Der KI-Assistent ist gerade ausgelastet – bitte gleich nochmals versuchen",
     "AI_UNAVAILABLE": "Der KI-Dienst ist im Moment nicht erreichbar",
-    "RATE_LIMITED": "Zu viele Anfragen – bitte kurz warten"
+    "RATE_LIMITED": "Zu viele Anfragen – bitte kurz warten",
+    "TAG_NOT_FOUND": "Tag nicht gefunden",
+    "TAG_DISABLED": "Dieser Tag ist deaktiviert",
+    "TAG_ACTION_INVALID": "Aktion passt nicht zum Zieltyp",
+    "TAG_TARGET_INVALID": "Bitte ein gültiges Ziel aus diesem Haushalt wählen",
+    "TAG_TARGET_NOT_FOUND": "Das Ziel dieses Tags wurde gelöscht",
+    "TAG_NOT_EXECUTABLE": "Dieser Tag öffnet nur eine Seite",
+    "TAG_NOTHING_TO_DO": "Gerade gibt es nichts zu tun",
+    "TOO_MANY_TAGS": "Maximale Anzahl Tags für diesen Haushalt erreicht",
+    "PLANT_NOT_FOUND": "Pflanze nicht gefunden",
+    "PLANT_CARE_TASK_NOT_FOUND": "Pflegeaufgabe nicht gefunden"
   },
   "push": {
     "title": "Benachrichtigungen",
@@ -648,6 +666,70 @@
     "taskCreated": "Pflegeaufgabe erstellt",
     "taskDeleted": "Pflegeaufgabe gelöscht",
     "deleteConfirm": "Pflegeaufgabe wirklich löschen?"
+  },
+  "plants": {
+    "title": "Pflanzen",
+    "addPlant": "Pflanze hinzufügen",
+    "editPlant": "Pflanze bearbeiten",
+    "name": "Name",
+    "species": "Art",
+    "speciesPlaceholder": "z.B. Monstera",
+    "location": "Standort / Raum",
+    "locationPlaceholder": "z.B. Wohnzimmer",
+    "notes": "Notizen",
+    "careNotes": "Pflegehinweise",
+    "noInfo": "Keine Angaben hinterlegt",
+    "addWaterTask": "Gießen alle 7 Tage anlegen",
+    "created": "Pflanze hinzugefügt",
+    "updated": "Pflanze aktualisiert",
+    "deleted": "Pflanze gelöscht",
+    "deleteConfirm": "Pflanze wirklich löschen?",
+    "deleteHint": "Pflegeaufgaben und Verlauf gehen verloren.",
+    "emptyState": "Noch keine Pflanzen",
+    "emptyStateHint": "Füge deine erste Pflanze hinzu",
+    "createError": "Fehler beim Erstellen",
+    "updateError": "Fehler beim Aktualisieren",
+    "deleteError": "Fehler beim Löschen",
+    "careError": "Pflege konnte nicht gespeichert werden",
+    "notFound": "Pflanze nicht gefunden",
+    "watered": "Gegossen",
+    "waterAll": "Alle fälligen gießen",
+    "waterAllDone": "Alle fälligen Pflanzen gegossen",
+    "waterAllNone": "Nichts zu gießen",
+    "overviewToday": "Pflege heute",
+    "dueToday": "Heute fällig",
+    "overdue": "Überfällig",
+    "dueIn": "in {n} Tagen",
+    "allGood": "Alles in Ordnung",
+    "noTasksShort": "Keine Pflegeaufgaben",
+    "careTypes": {
+      "water": "Gießen",
+      "fertilize": "Düngen",
+      "repot": "Umtopfen",
+      "mist": "Besprühen",
+      "other": "Sonstiges"
+    },
+    "careTasks": "Pflege",
+    "addTask": "Pflegeaufgabe hinzufügen",
+    "careType": "Pflegeart",
+    "taskLabel": "Bezeichnung (optional)",
+    "intervalDays": "Intervall (Tage)",
+    "nextDueDate": "Nächste Fälligkeit (optional)",
+    "every": "alle {days} Tage",
+    "dueAt": "fällig am {date}",
+    "complete": "Erledigt",
+    "noTasks": "Noch keine Pflegeaufgaben",
+    "completed": "Erledigt! Nächste Pflege: {date}",
+    "taskCreated": "Pflegeaufgabe erstellt",
+    "taskDeleted": "Pflegeaufgabe gelöscht",
+    "deleteTaskConfirm": "Pflegeaufgabe wirklich löschen?",
+    "careLog": "Pflege-Verlauf",
+    "noLog": "Noch keine Pflege eingetragen",
+    "loggedBy": "{name} · {date}",
+    "invalidInterval": "Bitte ein Intervall zwischen 1 und 3650 Tagen eingeben",
+    "photoUploading": "Foto wird hochgeladen…",
+    "photoUploadSuccess": "Foto aktualisiert",
+    "photoUploadError": "Foto konnte nicht hochgeladen werden"
   },
   "food": {
     "title": "Essen",
@@ -848,6 +930,155 @@
         "toxic": "giftig"
       },
       "vetDisclaimer": "Keine tierärztliche Auskunft. Im Zweifel Tierarztpraxis oder Tox-Info fragen."
+    }
+  },
+  "tags": {
+    "title": "Tags (NFC/QR)",
+    "subtitle": "Ein Scan, ein Tipp: Chips und Sticker für wiederkehrende Handgriffe",
+    "householdHint": "NFC-Chips und QR-Sticker, die beim Scannen eine Aktion auslösen — Tier füttern, Ämtli abhaken, Einkaufsliste öffnen.",
+    "manage": "Tags verwalten",
+    "add": "Tag anlegen",
+    "emptyTitle": "Noch keine Tags",
+    "emptySubtitle": "Lege einen Tag an und klebe QR-Code oder NFC-Chip dorthin, wo die Aktion passiert.",
+    "adminOnly": "Nur Admins des Haushalts können Tags anlegen und ändern. Scannen dürfen alle Mitglieder.",
+    "labelLabel": "Bezeichnung",
+    "labelPlaceholder": "z. B. Futternapf Küche",
+    "targetTypeLabel": "Zieltyp",
+    "targetLabel": "Ziel",
+    "targetChoose": "Bitte wählen",
+    "targetNoneDefault": "Ohne bestimmtes Ziel",
+    "noTargets": "Für diesen Zieltyp gibt es im Haushalt noch keine Einträge.",
+    "actionLabel": "Aktion",
+    "createSuccess": "Tag angelegt",
+    "createError": "Tag konnte nicht angelegt werden",
+    "saveError": "Änderung konnte nicht gespeichert werden",
+    "deleteConfirm": "Tag „{label}“ löschen? Der Chip bzw. QR-Code funktioniert danach nicht mehr.",
+    "deleteError": "Tag konnte nicht gelöscht werden",
+    "deleted": "Tag gelöscht",
+    "disabledBadge": "Deaktiviert",
+    "enable": "Aktivieren",
+    "disable": "Deaktivieren",
+    "targetMissing": "Ziel gelöscht",
+    "useCount": "{count}× benutzt",
+    "lastUsed": "zuletzt {date}",
+    "neverUsed": "Noch nie benutzt",
+    "url": "Adresse auf dem Chip",
+    "copyUrl": "Adresse kopieren",
+    "urlCopied": "Adresse kopiert",
+    "copyFailed": "Kopieren fehlgeschlagen",
+    "qrTitle": "QR-Code",
+    "qrHint": "Ausdrucken und aufkleben. Die Kamera-App des Telefons öffnet die Adresse direkt.",
+    "qrAlt": "QR-Code für {label}",
+    "downloadQr": "QR-Code herunterladen",
+    "nfcTitle": "NFC-Chip",
+    "nfcWrite": "Auf NFC-Chip schreiben",
+    "nfcHold": "Halte den Chip jetzt an die Rückseite des Telefons …",
+    "nfcCancel": "Abbrechen",
+    "nfcSuccess": "Chip beschrieben",
+    "nfcError": "Schreiben fehlgeschlagen. Ist der Chip beschreibbar (nicht gesperrt) und gross genug?",
+    "nfcPermission": "NFC-Zugriff wurde verweigert",
+    "nfcUnsupported": "Dieser Browser kann keine NFC-Chips beschreiben (nur Chrome auf Android). Beschreibe den Chip mit einer NFC-App (z. B. „NFC Tools“) mit einem einzigen URL-Eintrag mit der Adresse oben.",
+    "regenerate": "Token neu erzeugen",
+    "regenerateConfirm": "Neuen Token erzeugen? Der bisherige Chip bzw. QR-Code funktioniert danach nicht mehr und muss neu beschrieben bzw. gedruckt werden.",
+    "regenerateSuccess": "Neuer Token erzeugt — Chip neu beschreiben",
+    "targetTypes": {
+      "pet": "Haustier",
+      "pet_care_task": "Tierpflege",
+      "chore": "Ämtli",
+      "shopping_list": "Einkaufsliste",
+      "todo": "Aufgabe"
+    },
+    "targetNone": {
+      "pet": "Alle Tiere",
+      "shopping_list": "Einkauf (zuletzt geöffnete Liste)"
+    },
+    "actions": {
+      "pet": {
+        "feed": {
+          "label": "Füttern",
+          "confirm": "{name} füttern?",
+          "confirmAll": "Alle Tiere füttern?",
+          "button": "Füttern",
+          "done": "Fütterung eingetragen"
+        },
+        "care_task": {
+          "done": {
+            "label": "Pflegeaufgabe erledigen",
+            "confirm": "„{name}“ erledigt?",
+            "button": "Erledigt",
+            "done": "Pflegeaufgabe erledigt"
+          }
+        }
+      },
+      "chore": {
+        "assignment": {
+          "done": {
+            "label": "Aktuelles Ämtli abhaken",
+            "confirm": "„{name}“ erledigt?",
+            "button": "Erledigt",
+            "done": "Ämtli abgehakt"
+          }
+        }
+      },
+      "shopping_list": {
+        "open": {
+          "label": "Einkaufsliste öffnen",
+          "confirm": "Einkaufsliste öffnen",
+          "button": "Öffnen",
+          "done": "Geöffnet"
+        }
+      },
+      "todo": {
+        "done": {
+          "label": "Aufgabe abhaken",
+          "confirm": "„{name}“ erledigt?",
+          "button": "Erledigt",
+          "done": "Aufgabe abgehakt"
+        }
+      }
+    },
+    "scan": {
+      "loading": "Tag wird geladen …",
+      "household": "Haushalt: {name}",
+      "cancel": "Abbrechen",
+      "slot": "Mahlzeit",
+      "slotMorning": "Morgen",
+      "slotEvening": "Abend",
+      "lastFed": "Zuletzt gefüttert: {when}",
+      "lastFedBy": "Zuletzt gefüttert: {when} von {name}",
+      "neverFed": "Noch keine Fütterung eingetragen",
+      "fedToday": "Heute: Morgen {morning} · Abend {evening}",
+      "pet": "Tier: {name}",
+      "dueDate": "Fällig: {date}",
+      "assignedTo": "Zuständig: {name}",
+      "lastDone": "Zuletzt erledigt: {date}",
+      "lastDoneBy": "Zuletzt erledigt: {date} von {name}",
+      "nextDue": "Nächste Fälligkeit: {date}",
+      "success": "Erledigt!",
+      "successNoChange": "War schon erledigt — nichts geändert.",
+      "toDashboard": "Zur Startseite",
+      "openModule": "Ansehen",
+      "retry": "Erneut versuchen",
+      "errors": {
+        "not_found": "Diesen Tag gibt es nicht (mehr). Vielleicht wurde er gelöscht oder sein Token neu erzeugt.",
+        "target_missing": "Das Ziel dieses Tags wurde gelöscht. Ein Admin kann den Tag neu zuordnen.",
+        "forbidden": "Dieser Tag gehört zu einem Haushalt, in dem du nicht Mitglied bist.",
+        "disabled": "Dieser Tag ist deaktiviert. Ein Admin kann ihn unter „Tags verwalten“ wieder aktivieren.",
+        "unsupported": "Diese Aktion wird von der App nicht unterstützt.",
+        "already_done": "Schon erledigt — für diese Mahlzeit ist bereits eine Fütterung eingetragen.",
+        "nothing_to_do": "Gerade gibt es dafür nichts zu tun.",
+        "rate_limited": "Zu viele Scans in kurzer Zeit. Bitte warte eine Minute.",
+        "offline": "Keine Verbindung zum Server.",
+        "unknown": "Etwas ist schiefgelaufen."
+      },
+      "reasons": {
+        "ALREADY_FED": "Für diese Mahlzeit ist schon gefüttert.",
+        "ALREADY_DONE": "Schon erledigt.",
+        "NOTHING_DUE": "Gerade ist nichts fällig.",
+        "CHORE_INACTIVE": "Dieses Ämtli ist pausiert.",
+        "NO_PETS": "Im Haushalt gibt es keine Tiere.",
+        "UNKNOWN": "Gerade nicht möglich."
+      }
     }
   }
 }

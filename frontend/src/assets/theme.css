@@ -85,6 +85,10 @@
 
   /* --- Erweiterte Radien --- */
   --radius-xl: 16px;
+
+  /* --- App-Shell (Mobile) --- */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);  /* iOS Home-Indicator */
+  --bottom-nav-space: 64px;                          /* Platz für die Bottom-Nav (ohne Safe-Area) */
 }
 
 /* ============================================

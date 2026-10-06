@@ -22,7 +22,6 @@
     "copied": "Copied",
     "deleted": "Deleted",
     "undo": "Undo",
-    "listCleared": "Checked items removed",
     "undoError": "Could not undo",
     "retry": "Try again",
     "loadError": "Couldn't load. Check your connection and try again."
@@ -492,7 +491,6 @@
     "renameError": "Could not change name",
     "leaveTitle": "Leave household",
     "leaveConfirm": "Do you really want to leave this household?",
-    "leaveBalanceWarning": "You still have an open balance of {amount}. Your data will be preserved, but you won't be able to settle the balance yourself.",
     "leaveButton": "Leave",
     "leaveSuccess": "Left household",
     "leaveError": "Could not leave household",
@@ -858,7 +856,6 @@
     "remove": "Remove",
     "ingredients": "Ingredients",
     "addToShopping": "Add missing to shopping list",
-    "addedToShopping": "{n} ingredients added ✓",
     "skippedItems": "{n} already on list",
     "newRecipe": "New recipe",
     "recipeName": "Name",

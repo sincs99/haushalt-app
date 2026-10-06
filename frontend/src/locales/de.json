@@ -22,7 +22,6 @@
     "copied": "Kopiert",
     "deleted": "Gelöscht",
     "undo": "Rückgängig",
-    "listCleared": "Erledigte entfernt",
     "undoError": "Rückgängig machen hat nicht geklappt",
     "retry": "Erneut versuchen",
     "loadError": "Laden hat nicht geklappt. Prüfe deine Verbindung und versuch es nochmals."
@@ -492,7 +491,6 @@
     "renameError": "Name konnte nicht geändert werden",
     "leaveTitle": "Haushalt verlassen",
     "leaveConfirm": "Willst du diesen Haushalt wirklich verlassen?",
-    "leaveBalanceWarning": "Du hast noch offene {amount}. Die Daten bleiben erhalten, aber du kannst den Saldo nicht mehr selbst ausgleichen.",
     "leaveButton": "Verlassen",
     "leaveSuccess": "Haushalt verlassen",
     "leaveError": "Verlassen fehlgeschlagen",
@@ -858,7 +856,6 @@
     "remove": "Entfernen",
     "ingredients": "Zutaten",
     "addToShopping": "Fehlende Zutaten zur Einkaufsliste",
-    "addedToShopping": "{n} Zutaten hinzugefügt ✓",
     "skippedItems": "{n} bereits vorhanden",
     "newRecipe": "Neues Rezept",
     "recipeName": "Name",

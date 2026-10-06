@@ -65,7 +65,8 @@
     "cats": "Cats",
     "meals": "Meals",
     "notes": "Notes",
-    "settings": "Settings"
+    "settings": "Settings",
+    "documents": "Documents"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -155,7 +156,8 @@
     "catsSub": "Feeding & overview",
     "mealsSub": "Weekly menu & recipes",
     "notesSub": "Quick notes & ideas",
-    "settingsSub": "Household, members & language"
+    "settingsSub": "Household, members & language",
+    "documentsSub": "Contracts, invoices & warranties"
   },
   "shopping": {
     "title": "Shopping list",
@@ -333,7 +335,10 @@
     "billDay": "Day of month (1–28)",
     "billSaved": "Bill saved",
     "billDeleted": "Bill deleted",
-    "overspent": "Overspent"
+    "overspent": "Overspent",
+    "bookBillTitle": "Book \"{name}\"",
+    "paidBy": "Paid by",
+    "bookBillHint": "{amount} will be split evenly across all members."
   },
   "settlements": {
     "title": "Settlements",
@@ -445,7 +450,11 @@
     "householdLeft": "You have left the household",
     "createNewTitle": "Create another household",
     "createNewButton": "Create household",
-    "createNewSuccess": "Household \"{name}\" created!"
+    "createNewSuccess": "Household \"{name}\" created!",
+    "rotateCode": "Generate new code",
+    "rotateCodeConfirm": "Generate a new invite code? The current code will stop working.",
+    "rotateCodeSuccess": "New invite code created",
+    "rotateCodeHint": "The code is renewed automatically when a member is removed."
   },
   "noHousehold": {
     "title": "Welcome back",
@@ -485,7 +494,16 @@
     "CANNOT_REMOVE_ADMIN": "Cannot remove admin members",
     "CANNOT_REMOVE_SELF": "Cannot remove yourself - use Leave household instead",
     "TOO_MANY_REMINDERS": "Maximum 5 reminders per task",
-    "REMINDER_NOT_FOUND": "Reminder not found"
+    "REMINDER_NOT_FOUND": "Reminder not found",
+    "FILE_TOO_LARGE": "File is too large (max. 10 MB)",
+    "FILE_TYPE_NOT_ALLOWED": "File type not allowed or file is corrupt",
+    "FILE_IN_USE": "File is still in use",
+    "STORAGE_QUOTA_EXCEEDED": "Household storage is full – delete old documents",
+    "DOCUMENT_NOT_FOUND": "Document not found",
+    "DOCUMENT_TOO_MANY_FILES": "Too many pages for one document (max. 30)",
+    "DOCUMENT_LAST_FILE": "The last page cannot be removed – delete the document instead",
+    "BILL_PAYER_REQUIRED": "Please choose who paid the bill",
+    "BILL_ALREADY_BOOKED": "This bill has already been booked"
   },
   "push": {
     "title": "Notifications",
@@ -689,5 +707,59 @@
     "connected": "Connected",
     "reconnecting": "Reconnecting…",
     "offline": "Offline"
+  },
+  "documents": {
+    "title": "Documents",
+    "upload": "Upload",
+    "uploadTitle": "Upload document",
+    "editTitle": "Edit document",
+    "searchPlaceholder": "Search documents…",
+    "storageUsage": "{used} of {quota} used",
+    "emptyTitle": "No documents yet",
+    "emptySubtitle": "Upload contracts, invoices or warranties",
+    "emptyFilteredSubtitle": "Try another category or search",
+    "loadMore": "Load more",
+    "fileHint": "PDF, JPG, PNG or WEBP, max. 10 MB per page, up to {max} pages",
+    "titleLabel": "Title",
+    "titlePlaceholder": "e.g. Apartment lease",
+    "categoryLabel": "Category",
+    "documentDateLabel": "Date",
+    "expiryDateLabel": "Valid until",
+    "expiryHint": "e.g. warranty end or cancellation deadline",
+    "notesLabel": "Notes",
+    "notesPlaceholder": "Contract number, contact, …",
+    "preview": "Preview",
+    "download": "Download",
+    "expired": "Expired",
+    "expiresToday": "Expires today",
+    "expiresInDays": "Expires tomorrow | Expires in {n} days",
+    "validUntil": "Valid until {date}",
+    "deleteConfirm": "Really delete \"{title}\" including its file? | Really delete \"{title}\" including all {n} pages?",
+    "uploadSuccess": "Document uploaded",
+    "loadError": "Documents could not be loaded.",
+    "deleteError": "Document could not be deleted.",
+    "downloadError": "File could not be loaded.",
+    "categories": {
+      "all": "All",
+      "contract": "Contracts",
+      "invoice": "Invoices",
+      "warranty": "Warranties",
+      "insurance": "Insurance",
+      "other": "Other"
+    },
+    "pagesLabel": "Pages",
+    "pageCount": "{n} page | {n} pages",
+    "chooseFiles": "Choose files",
+    "addPages": "Add pages",
+    "takePhoto": "Take photo",
+    "uploadingPage": "Uploading page {current} of {total}…",
+    "tooManyPages": "At most {max} pages per document",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "removePage": "Remove page",
+    "removePageConfirm": "Really remove page \"{name}\"?",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "pageOf": "Page {current} / {total}"
   }
 }

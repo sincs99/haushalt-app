@@ -69,6 +69,15 @@ Eine Neuimplementierung war daher nicht nötig. Ergänzt wurde (H-05/H-06/H-07):
 - `decode_access_token` verlangt `exp` und `sub` (`options={"require": [...]}`); `alg=none` ist durch `algorithms=["HS256"]` ausgeschlossen (Test vorhanden).
 - Alle `/api/auth/*`-Responses tragen `Cache-Control: no-store`.
 
+### Nachtrag H-02 — CSP und PDF-Vorschau (Dokument-Ablage)
+
+Beim Zusammenführen mit der Dokument-Ablage (`DocumentsView.vue`) zeigte sich im Browser (Chromium, gebautes Frontend, Header aus `frontend/nginx/security-headers.conf`):
+
+- Die PDF-Vorschau ist ein `<iframe>` auf eine Blob-URL. Ohne `frame-src` greift `default-src 'self'`, das `blob:` nicht erlaubt → `Refused to frame 'blob:…'`. **Behoben:** `frame-src blob:`.
+- Der PDF-Betrachter im Blob-Dokument erbt die CSP der Seite; seine Inline-Styles wurden blockiert, die Ansicht kollabierte auf einen schmalen Streifen. **Behoben:** `style-src-attr 'unsafe-inline'` (nur `style=""`-Attribute; `<style>`-Blöcke und externe CSS bleiben durch `style-src 'self'` gesperrt).
+- Bekannte Einschränkung: In der Werkzeugleiste des eingebetteten Betrachters fehlen unter der CSP die Schaltflächen „Drucken" und „Mehr". Die Ursache liegt nicht an Styles (auch mit `style-src 'unsafe-inline'` fehlen sie). Die App bietet einen eigenen Download-Button. Nicht weiter untersucht.
+- Geprüft wurden nur `/documents` (inkl. Vorschau) und `/shopping`; weitere Seiten wurden nicht gegen die CSP getestet.
+
 ### H-01 — Refresh-Token in `localStorage` (🟡 Mittel, Vorschlag)
 
 **Risiko:** Jedes XSS kann `localStorage.haushalt_tokens` lesen und erhält damit einen **30 Tage gültigen** Refresh-Token, der auch nach Schliessen des Tabs weiter rotiert werden kann. Die Reuse-Detection greift erst, wenn der legitime Client den gestohlenen (bereits rotierten) Token erneut benutzt — der Angreifer kann also bis zur nächsten Rotation durch den Nutzer weiterarbeiten.

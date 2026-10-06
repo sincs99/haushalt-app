@@ -65,7 +65,8 @@
     "cats": "Katzen",
     "meals": "Essen",
     "notes": "Notizen",
-    "settings": "Einstellungen"
+    "settings": "Einstellungen",
+    "documents": "Ablage"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -155,7 +156,8 @@
     "catsSub": "Fütterung & Übersicht",
     "mealsSub": "Wochenmenü & Rezepte",
     "notesSub": "Schnelle Notizen & Ideen",
-    "settingsSub": "Haushalt, Mitglieder & Sprache"
+    "settingsSub": "Haushalt, Mitglieder & Sprache",
+    "documentsSub": "Verträge, Rechnungen & Garantien"
   },
   "shopping": {
     "title": "Einkaufsliste",
@@ -333,7 +335,10 @@
     "billDay": "Tag im Monat (1–28)",
     "billSaved": "Rechnung gespeichert",
     "billDeleted": "Rechnung gelöscht",
-    "overspent": "Überschritten"
+    "overspent": "Überschritten",
+    "bookBillTitle": "«{name}» buchen",
+    "paidBy": "Bezahlt von",
+    "bookBillHint": "{amount} werden gleichmässig auf alle Mitglieder verteilt."
   },
   "settlements": {
     "title": "Ausgleichszahlungen",
@@ -445,7 +450,11 @@
     "householdLeft": "Du hast den Haushalt verlassen",
     "createNewTitle": "Weiteren Haushalt gründen",
     "createNewButton": "Haushalt erstellen",
-    "createNewSuccess": "Haushalt \"{name}\" erstellt!"
+    "createNewSuccess": "Haushalt \"{name}\" erstellt!",
+    "rotateCode": "Neuen Code erzeugen",
+    "rotateCodeConfirm": "Neuen Einladungscode erzeugen? Der bisherige Code funktioniert danach nicht mehr.",
+    "rotateCodeSuccess": "Neuer Einladungscode erstellt",
+    "rotateCodeHint": "Beim Entfernen eines Mitglieds wird der Code automatisch erneuert."
   },
   "noHousehold": {
     "title": "Willkommen zurück",
@@ -485,7 +494,16 @@
     "CANNOT_REMOVE_ADMIN": "Admins können nicht entfernt werden",
     "CANNOT_REMOVE_SELF": "Du kannst dich nicht selbst entfernen – nutze Haushalt verlassen",
     "TOO_MANY_REMINDERS": "Maximal 5 Erinnerungen pro Aufgabe",
-    "REMINDER_NOT_FOUND": "Erinnerung nicht gefunden"
+    "REMINDER_NOT_FOUND": "Erinnerung nicht gefunden",
+    "FILE_TOO_LARGE": "Datei ist zu gross (max. 10 MB)",
+    "FILE_TYPE_NOT_ALLOWED": "Dateityp nicht erlaubt oder Datei beschädigt",
+    "FILE_IN_USE": "Datei wird noch verwendet",
+    "STORAGE_QUOTA_EXCEEDED": "Speicherplatz des Haushalts ist voll – lösche alte Dokumente",
+    "DOCUMENT_NOT_FOUND": "Dokument nicht gefunden",
+    "DOCUMENT_TOO_MANY_FILES": "Zu viele Seiten für ein Dokument (max. 30)",
+    "DOCUMENT_LAST_FILE": "Die letzte Seite kann nicht entfernt werden – lösche stattdessen das Dokument",
+    "BILL_PAYER_REQUIRED": "Bitte wähle aus, wer die Rechnung bezahlt hat",
+    "BILL_ALREADY_BOOKED": "Rechnung wurde bereits gebucht"
   },
   "push": {
     "title": "Benachrichtigungen",
@@ -689,5 +707,59 @@
     "connected": "Verbunden",
     "reconnecting": "Verbindung wird wiederhergestellt…",
     "offline": "Offline"
+  },
+  "documents": {
+    "title": "Ablage",
+    "upload": "Hochladen",
+    "uploadTitle": "Dokument hochladen",
+    "editTitle": "Dokument bearbeiten",
+    "searchPlaceholder": "Dokumente durchsuchen…",
+    "storageUsage": "{used} von {quota} belegt",
+    "emptyTitle": "Noch keine Dokumente",
+    "emptySubtitle": "Lade Verträge, Rechnungen oder Garantien hoch",
+    "emptyFilteredSubtitle": "Versuche eine andere Kategorie oder Suche",
+    "loadMore": "Mehr laden",
+    "fileHint": "PDF, JPG, PNG oder WEBP, max. 10 MB pro Seite, bis zu {max} Seiten",
+    "titleLabel": "Titel",
+    "titlePlaceholder": "z.B. Mietvertrag Wohnung",
+    "categoryLabel": "Kategorie",
+    "documentDateLabel": "Datum",
+    "expiryDateLabel": "Gültig bis",
+    "expiryHint": "z.B. Garantieende oder Kündigungsfrist",
+    "notesLabel": "Notizen",
+    "notesPlaceholder": "Vertragsnummer, Kontakt, …",
+    "preview": "Vorschau",
+    "download": "Herunterladen",
+    "expired": "Abgelaufen",
+    "expiresToday": "Läuft heute ab",
+    "expiresInDays": "Läuft morgen ab | Läuft in {n} Tagen ab",
+    "validUntil": "Gültig bis {date}",
+    "deleteConfirm": "Dokument «{title}» inklusive Datei wirklich löschen? | Dokument «{title}» inklusive aller {n} Seiten wirklich löschen?",
+    "uploadSuccess": "Dokument hochgeladen",
+    "loadError": "Dokumente konnten nicht geladen werden.",
+    "deleteError": "Dokument konnte nicht gelöscht werden.",
+    "downloadError": "Datei konnte nicht geladen werden.",
+    "categories": {
+      "all": "Alle",
+      "contract": "Verträge",
+      "invoice": "Rechnungen",
+      "warranty": "Garantien",
+      "insurance": "Versicherungen",
+      "other": "Sonstiges"
+    },
+    "pagesLabel": "Seiten",
+    "pageCount": "{n} Seite | {n} Seiten",
+    "chooseFiles": "Dateien auswählen",
+    "addPages": "Seiten hinzufügen",
+    "takePhoto": "Foto aufnehmen",
+    "uploadingPage": "Seite {current} von {total} wird hochgeladen…",
+    "tooManyPages": "Maximal {max} Seiten pro Dokument",
+    "moveUp": "Nach oben",
+    "moveDown": "Nach unten",
+    "removePage": "Seite entfernen",
+    "removePageConfirm": "Seite «{name}» wirklich entfernen?",
+    "previousPage": "Vorherige Seite",
+    "nextPage": "Nächste Seite",
+    "pageOf": "Seite {current} / {total}"
   }
 }

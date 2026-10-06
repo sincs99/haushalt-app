@@ -619,13 +619,16 @@ async function saveEdit(todoId: string) {
 
 .todo-row__title-line {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
 }
 
 .todo-row__name {
+  min-width: 0;
   font-size: var(--text-base);
   color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .overdue-badge {

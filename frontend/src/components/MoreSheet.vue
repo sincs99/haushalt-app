@@ -209,7 +209,7 @@ watch(() => props.open, (isOpen) => {
 /* --- Backdrop Transition --- */
 .backdrop-enter-active,
 .backdrop-leave-active {
-  transition: opacity 0.2s ease;
+  transition: opacity var(--transition-normal);
 }
 
 .backdrop-enter-from,
@@ -219,11 +219,11 @@ watch(() => props.open, (isOpen) => {
 
 /* --- Sheet Slide-Up Transition --- */
 .sheet-enter-active {
-  transition: transform 0.25s ease-out;
+  transition: transform var(--duration-slow) var(--ease-out);
 }
 
 .sheet-leave-active {
-  transition: transform 0.2s ease-in;
+  transition: transform var(--duration-normal) var(--ease-in);
 }
 
 .sheet-enter-from,

@@ -135,7 +135,7 @@ const isTabActive = (to: string) => route.path === to
 
 .sync-dot--reconnecting {
   background-color: var(--color-warning);
-  animation: sync-pulse 1.5s ease-in-out infinite;
+  animation: sync-pulse var(--duration-pulse) ease-in-out infinite;
 }
 
 .sync-dot--offline {

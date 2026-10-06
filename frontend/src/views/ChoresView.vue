@@ -1137,7 +1137,7 @@ const weekdayOptions = computed(() =>
   color: var(--color-text-secondary);
   cursor: pointer;
   font-family: var(--font-family);
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
 }
 
 .filter-chip--active {

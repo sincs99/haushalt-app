@@ -628,7 +628,7 @@ onUnmounted(() => {
 
 .sync-dot--reconnecting {
   background-color: var(--color-warning);
-  animation: sync-pulse 1.5s ease-in-out infinite;
+  animation: sync-pulse var(--duration-pulse) ease-in-out infinite;
 }
 
 .sync-dot--offline {
@@ -714,11 +714,11 @@ onUnmounted(() => {
 
 /* ── Toast-Transitions ── */
 .toast-enter-active {
-  transition: all 0.3s ease-out;
+  transition: opacity var(--duration-slow) var(--ease-out), transform var(--duration-slow) var(--ease-out);
 }
 
 .toast-leave-active {
-  transition: all 0.25s ease-in;
+  transition: opacity var(--duration-normal) var(--ease-in), transform var(--duration-normal) var(--ease-in);
 }
 
 .toast-enter-from {
@@ -732,6 +732,6 @@ onUnmounted(() => {
 }
 
 .toast-move {
-  transition: transform 0.25s ease;
+  transition: transform var(--transition-normal);
 }
 </style>

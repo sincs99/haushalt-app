@@ -134,6 +134,8 @@
   --transition-fast: var(--duration-fast) var(--ease-standard);
   --transition-normal: var(--duration-normal) var(--ease-standard);
   --transition-slow: var(--duration-slow) var(--ease-out);
+  --duration-pulse: 1.5s;    /* Endlos-Puls (Skeleton, Sync-Punkt) */
+  --duration-spin: 0.6s;     /* Spinner-Umdrehung */
   --toast-duration: 4000ms;
 
   /* --- 8. Icons (Phosphor-Props folgen derselben Skala) --- */

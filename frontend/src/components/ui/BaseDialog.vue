@@ -131,11 +131,11 @@ function onKeydown(e: KeyboardEvent) {
 /* Transitions */
 .dialog-enter-active,
 .dialog-leave-active {
-  transition: opacity 0.15s ease;
+  transition: opacity var(--transition-fast);
 }
 .dialog-enter-active .dialog-panel,
 .dialog-leave-active .dialog-panel {
-  transition: transform 0.15s ease;
+  transition: transform var(--transition-fast);
 }
 .dialog-enter-from,
 .dialog-leave-to {

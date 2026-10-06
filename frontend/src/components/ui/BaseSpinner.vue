@@ -22,7 +22,7 @@ withDefaults(defineProps<{
   border-style: solid;
   border-color: var(--line-strong);
   border-top-color: var(--acc);
-  animation: spin 0.6s linear infinite;
+  animation: spin var(--duration-spin) linear infinite;
 }
 
 .base-spinner--sm {

@@ -78,7 +78,7 @@ const iconSize = computed(() => {
   width: 100%;
   height: 100%;
   background: var(--chip);
-  animation: pet-avatar-pulse 1.5s ease-in-out infinite;
+  animation: pet-avatar-pulse var(--duration-pulse) ease-in-out infinite;
 }
 
 .pet-avatar__icon {

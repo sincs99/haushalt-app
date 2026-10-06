@@ -722,7 +722,16 @@
     "photoUploadSuccess": "Photo updated",
     "photoUploadError": "Could not upload photo",
     "photoDeleteError": "Could not remove old photo",
-    "invalidWeight": "Enter a valid weight, e.g. 4.5"
+    "invalidWeight": "Enter a valid weight, e.g. 4.5",
+    "fedToast": "{name} fed",
+    "allFedToast": "All fed",
+    "allAlreadyFed": "Everyone has already been fed",
+    "feedToggleMorning": "{name} fed in the morning",
+    "feedToggleEvening": "{name} fed in the evening",
+    "medicationGiveError": "Couldn't save the dose",
+    "medicationSaveError": "Couldn't save the medication",
+    "medicationDeleteError": "Couldn't delete the medication",
+    "changePhoto": "Change photo"
   },
   "petCare": {
     "title": "Care & Schedule",
@@ -738,7 +747,11 @@
     "completed": "Done! Next due: {date}",
     "taskCreated": "Care task created",
     "taskDeleted": "Care task deleted",
-    "deleteConfirm": "Really delete this care task?"
+    "deleteConfirm": "Really delete this care task?",
+    "invalidInterval": "Enter an interval between 1 and 3650 days",
+    "saveError": "Couldn't save the care task",
+    "completeError": "Couldn't mark the task as done",
+    "deleteError": "Couldn't delete the care task"
   },
   "plants": {
     "title": "Plants",
@@ -802,7 +815,13 @@
     "invalidInterval": "Please enter an interval between 1 and 3650 days",
     "photoUploading": "Uploading photo…",
     "photoUploadSuccess": "Photo updated",
-    "photoUploadError": "Photo could not be uploaded"
+    "photoUploadError": "Photo could not be uploaded",
+    "wateredToast": "{name} watered",
+    "statusLoadError": "Couldn't load the care status – due dates may be out of date.",
+    "taskCreateError": "Couldn't create the care task",
+    "taskDeleteError": "Couldn't delete the care task",
+    "deleteTaskHint": "The care history is kept.",
+    "changePhoto": "Change photo"
   },
   "food": {
     "title": "Food",

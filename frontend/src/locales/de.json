@@ -722,7 +722,16 @@
     "photoUploadSuccess": "Foto aktualisiert",
     "photoUploadError": "Foto konnte nicht hochgeladen werden",
     "photoDeleteError": "Altes Foto konnte nicht entfernt werden",
-    "invalidWeight": "Gib ein gültiges Gewicht ein, z. B. 4,5"
+    "invalidWeight": "Gib ein gültiges Gewicht ein, z. B. 4,5",
+    "fedToast": "{name} gefüttert",
+    "allFedToast": "Alle gefüttert",
+    "allAlreadyFed": "Alle sind schon gefüttert",
+    "feedToggleMorning": "{name} morgens gefüttert",
+    "feedToggleEvening": "{name} abends gefüttert",
+    "medicationGiveError": "Gabe konnte nicht gespeichert werden",
+    "medicationSaveError": "Medikament konnte nicht gespeichert werden",
+    "medicationDeleteError": "Medikament konnte nicht gelöscht werden",
+    "changePhoto": "Foto ändern"
   },
   "petCare": {
     "title": "Pflege & Termine",
@@ -738,7 +747,11 @@
     "completed": "Erledigt! Nächster Termin: {date}",
     "taskCreated": "Pflegeaufgabe erstellt",
     "taskDeleted": "Pflegeaufgabe gelöscht",
-    "deleteConfirm": "Pflegeaufgabe wirklich löschen?"
+    "deleteConfirm": "Pflegeaufgabe wirklich löschen?",
+    "invalidInterval": "Gib ein Intervall zwischen 1 und 3650 Tagen ein",
+    "saveError": "Pflegeaufgabe konnte nicht gespeichert werden",
+    "completeError": "Erledigt konnte nicht gespeichert werden",
+    "deleteError": "Pflegeaufgabe konnte nicht gelöscht werden"
   },
   "plants": {
     "title": "Pflanzen",
@@ -802,7 +815,13 @@
     "invalidInterval": "Gib ein Intervall zwischen 1 und 3650 Tagen ein",
     "photoUploading": "Foto wird hochgeladen…",
     "photoUploadSuccess": "Foto aktualisiert",
-    "photoUploadError": "Foto konnte nicht hochgeladen werden"
+    "photoUploadError": "Foto konnte nicht hochgeladen werden",
+    "wateredToast": "{name} gegossen",
+    "statusLoadError": "Pflegestatus konnte nicht geladen werden – die Fälligkeiten sind evtl. nicht aktuell.",
+    "taskCreateError": "Pflegeaufgabe konnte nicht erstellt werden",
+    "taskDeleteError": "Pflegeaufgabe konnte nicht gelöscht werden",
+    "deleteTaskHint": "Der Pflege-Verlauf bleibt erhalten.",
+    "changePhoto": "Foto ändern"
   },
   "food": {
     "title": "Essen",

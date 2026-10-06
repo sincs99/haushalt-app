@@ -265,7 +265,7 @@ function auditInPage(opts) {
       if (/(auto|scroll)/.test(getComputedStyle(p).overflowY)) {
         const pr = p.getBoundingClientRect()
         if (r.top >= pr.bottom - 1 || r.bottom <= pr.top + 1) return true
-        if (r.bottom > pr.bottom + 1) return 'partial'
+        if (r.bottom > pr.bottom + 1 || r.top < pr.top - 1) return 'partial'
       }
     }
     return false

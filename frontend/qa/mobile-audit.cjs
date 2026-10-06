@@ -60,6 +60,22 @@ const ROUTES = [
   { path: '/no-household', user: NOHH },
 ]
 
+// Zusätzliche Zustände pro Route: [Name, Klick-Selektoren nacheinander, overlay?]
+const EXTRA = {
+  '/shopping': [['item-edit', ['.item-row__name'], true], ['store-menu', ['.group-header__kebab'], false]],
+  '/todos': [['details-form', ['summary, .details-toggle, button:has-text("Details")'], false], ['edit-inline', ['.todo-row__actions button'], false]],
+  '/chores': [['chore-edit', ['.chore-card__actions button'], false]],
+  '/expenses': [['expense-edit', ['.expense-row__main, .expense-item__main'], true]],
+  '/calendar': [['day-week', ['.week-strip__day >> nth=3'], false], ['day-month', ['.pill-tab >> nth=1', '.month-grid__cell >> nth=10'], false], ['event-edit', ['.event-card'], true]],
+  'pet-detail': [['care-task-add', ['.icon-btn'], true], ['med-add', ['button:has-text("Medikament hinzufügen"), button:has-text("Add medication")'], true]],
+  'plant-detail': [['task-add', ['button:has-text("Pflegeaufgabe"), button:has-text("care task")'], true]],
+  '/food': [['meal-detail', ['.week-row >> nth=2'], true], ['meal-poll', ['button:has-text("Abstimmung starten"), button:has-text("Start poll")'], true]],
+  '/notes': [['note-edit', ['.note-card'], true]],
+  '/documents': [['doc-edit', ['.doc-card'], true], ['upload', ['button:has-text("Hochladen"), button:has-text("Upload")'], true]],
+  '/household': [['leave-confirm', ['button:has-text("Haushalt verlassen"), button:has-text("Leave household")'], true]],
+  '/tags': [['tag-detail', ['.tag-row'], true]],
+}
+
 const OPEN_RE = /(hinzufügen|bezahlt markieren|mark as paid|neue[rs]?\b|neu\b|erstellen|anlegen|bearbeiten|verwalten|ausgleich|begleichen|einstellungen|^add|\badd\b|new\b|create|edit|manage|settle|^\+$)/i
 const DANGER_RE = /(lösch|delete|entfern|remove|abmeld|logout|log out|verlass|leave|rotate|erneuern|regenerate)/i
 
@@ -170,6 +186,18 @@ function auditInPage(opts) {
       const px = v => (v.endsWith('px') ? parseFloat(v) : 0)
       w = Math.max(w, r.width - px(ps.left) - px(ps.right))
       h = Math.max(h, r.height - px(ps.top) - px(ps.bottom))
+    }
+    // vergrösserte Hitbox wird von overflow-Vorfahren (Scroll-Container, Karten) abgeschnitten
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      const pcs = getComputedStyle(p)
+      if (pcs.overflowX !== 'visible' || pcs.overflowY !== 'visible') {
+        const pr = p.getBoundingClientRect()
+        const cx = r.left + r.width / 2, cy = r.top + r.height / 2
+        w = Math.min(w, 2 * Math.min(cx - pr.left, pr.right - cx))
+        h = Math.min(h, 2 * Math.min(cy - pr.top, pr.bottom - cy))
+        w = Math.max(w, r.width); h = Math.max(h, r.height)
+      }
+      if (pcs.position === 'fixed') break
     }
     if (w < 43.5 || h < 43.5) add('tap-target', el, `${Math.round(w)}×${Math.round(h)}`)
   }
@@ -380,6 +408,31 @@ async function main() {
               const res = await page.evaluate(auditInPage, { insets: KEYBOARD.insets, vw: KEYBOARD.width, vh: KEYBOARD.height, scopeOverlay: true })
               for (const f of res) all.push({ route: route.name || route.path, state: 'dialog-' + (cnd.name || cnd.cls), viewport: KEYBOARD.name, theme: c.theme, locale: c.locale, ...f })
               if (c.vp.width === 390 && c.shots) await page.screenshot({ path: path.join(OUT, `${base}--dialog-${slug(cnd.name || cnd.cls)}--kb.png`) })
+              await page.setViewportSize({ width: c.vp.width, height: c.vp.height })
+            }
+            await page.goto(BASE + route.path)
+            await settle(page)
+          }
+        }
+        // Routenspezifische Zustände (nur Light, DE + EN@360)
+        const extra = EXTRA[route.name || route.path] || []
+        if (c.theme === 'light' && (c.locale === 'de' || c.vp.width === 360)) {
+          for (const [name, clicks, overlay] of extra) {
+            let ok = true
+            for (const sel of clicks) {
+              const loc = page.locator(sel).first()
+              if (!(await loc.isVisible().catch(() => false))) { ok = false; break }
+              await loc.click({ timeout: 2000 }).catch(() => { ok = false })
+              await page.waitForTimeout(500)
+            }
+            if (!ok) { console.log('  extra nicht erreichbar:', route.path, name); await page.goto(BASE + route.path); await settle(page); continue }
+            await record(name, { overlay })
+            if (overlay) {
+              await page.setViewportSize({ width: KEYBOARD.width, height: KEYBOARD.height })
+              await page.waitForTimeout(200)
+              const res = await page.evaluate(auditInPage, { insets: KEYBOARD.insets, vw: KEYBOARD.width, vh: KEYBOARD.height, scopeOverlay: true })
+              for (const f of res) all.push({ route: route.name || route.path, state: name, viewport: KEYBOARD.name, theme: c.theme, locale: c.locale, ...f })
+              if (c.vp.width === 390 && c.shots) await page.screenshot({ path: path.join(OUT, `${base}--${name}--kb.png`) })
               await page.setViewportSize({ width: c.vp.width, height: c.vp.height })
             }
             await page.goto(BASE + route.path)

@@ -1,9 +1,12 @@
 """Tests: Rate-Limiter erkennt separate Clients anhand der IP (X-Forwarded-For).
 
-In Produktion übersetzt uvicorn mit ``--proxy-headers`` den
-``X-Forwarded-For``-Header in ``request.client.host``.  Im Test
-simulieren wir dieses Verhalten, indem wir die ``key_func`` auf den
-internen ``Limit``-Objekten in ``limiter._route_limits`` austauschen.
+In Produktion setzt das Frontend-nginx ``X-Forwarded-For`` auf genau
+eine IP (die per ``real_ip`` ermittelte echte Client-IP; vom Client
+gefälschte Einträge werden verworfen), und uvicorn übersetzt sie mit
+``--proxy-headers`` in ``request.client.host`` (nur vom Docker-Netz
+vertraut, siehe ``FORWARDED_ALLOW_IPS``).  Im Test simulieren wir
+dieses Verhalten, indem wir die ``key_func`` auf den internen
+``Limit``-Objekten in ``limiter._route_limits`` austauschen.
 Slowapi speichert Limits dort — nicht auf der Funktion selbst.
 """
 

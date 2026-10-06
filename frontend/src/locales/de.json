@@ -22,7 +22,10 @@
     "copied": "Kopiert!",
     "deleted": "Gelöscht",
     "undo": "Rückgängig",
-    "listCleared": "Liste geleert"
+    "listCleared": "Liste geleert",
+    "undoError": "Rückgängig machen hat nicht geklappt",
+    "retry": "Erneut versuchen",
+    "loadError": "Laden hat nicht geklappt. Prüfe deine Verbindung und versuch es nochmals."
   },
   "auth": {
     "login": "Anmelden",
@@ -554,7 +557,8 @@
     "reload": "Neu laden"
   },
   "offline": {
-    "banner": "Kein Netz – Änderungen können aktuell nicht gespeichert werden."
+    "banner": "Kein Netz – Änderungen können aktuell nicht gespeichert werden.",
+    "actionBlocked": "Du bist offline – die Änderung wurde nicht gespeichert."
   },
   "polls": {
     "title": "Abstimmungen",

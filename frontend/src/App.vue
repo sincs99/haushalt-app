@@ -459,7 +459,7 @@ onUnmounted(() => {
           v-for="toast in toasts"
           :key="toast.id"
           :class="['toast', `toast--${toast.type}`]"
-          role="status"
+          :role="toast.type === 'error' ? 'alert' : 'status'"
         >
           <PhCheckCircle v-if="toast.type === 'success'" :size="16" />
           <PhWarningCircle v-if="toast.type === 'error'" :size="16" />

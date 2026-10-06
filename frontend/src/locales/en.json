@@ -22,7 +22,10 @@
     "copied": "Copied!",
     "deleted": "Deleted",
     "undo": "Undo",
-    "listCleared": "List cleared"
+    "listCleared": "List cleared",
+    "undoError": "Could not undo",
+    "retry": "Try again",
+    "loadError": "Couldn't load. Check your connection and try again."
   },
   "auth": {
     "login": "Log in",
@@ -554,7 +557,8 @@
     "reload": "Reload"
   },
   "offline": {
-    "banner": "No connection – changes cannot be saved right now."
+    "banner": "No connection – changes cannot be saved right now.",
+    "actionBlocked": "You're offline – the change wasn't saved."
   },
   "polls": {
     "title": "Polls",

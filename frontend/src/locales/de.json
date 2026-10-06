@@ -485,7 +485,8 @@
     "CANNOT_REMOVE_ADMIN": "Admins können nicht entfernt werden",
     "CANNOT_REMOVE_SELF": "Du kannst dich nicht selbst entfernen – nutze Haushalt verlassen",
     "TOO_MANY_REMINDERS": "Maximal 5 Erinnerungen pro Aufgabe",
-    "REMINDER_NOT_FOUND": "Erinnerung nicht gefunden"
+    "REMINDER_NOT_FOUND": "Erinnerung nicht gefunden",
+    "ENTITY_ID_CONFLICT": "Diese ID wird bereits verwendet"
   },
   "push": {
     "title": "Benachrichtigungen",

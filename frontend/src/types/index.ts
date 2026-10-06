@@ -7,10 +7,14 @@ export interface ShoppingList {
   icon: string | null
   position: number
   created_at: string
+  updated_at: string
+  version: number
   open_count: number
 }
 
 export interface ShoppingListCreatePayload {
+  /** Client-generierte ID → idempotenter Create */
+  id?: string
   name: string
   icon?: string
 }
@@ -34,6 +38,9 @@ export interface ShoppingItem {
   checked_at: string | null
   store: string | null
   assigned_to_user_id: string | null
+  updated_at: string
+  /** Server-Änderungszähler; 0 = optimistischer, noch nicht bestätigter Eintrag */
+  version: number
 }
 
 export interface TodoReminder {
@@ -56,6 +63,9 @@ export interface TodoItem {
   created_at: string
   done_at: string | null
   tags: string[]
+  updated_at: string
+  /** Server-Änderungszähler; 0 = optimistischer, noch nicht bestätigter Eintrag */
+  version: number
   reminders: TodoReminder[]
 }
 
@@ -326,6 +336,8 @@ export interface ChoreAssignmentInfo {
   completed_at: string | null
   completed_by_user_id: string | null
   created_at: string
+  updated_at: string
+  version: number
 }
 
 // ── Dashboard ──

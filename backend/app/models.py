@@ -3,12 +3,43 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     Boolean, String, DateTime, ForeignKey, Enum, UniqueConstraint,
-    Integer, CheckConstraint, Index, Date, text, JSON,
+    Integer, CheckConstraint, Index, Date, text, JSON, event, func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, object_session
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
+
+
+class SyncVersionMixin:
+    """Änderungs-Metadaten für Offline-Sync (docs/offline-first-phase2.md, B2).
+
+    - ``updated_at``: Zeitpunkt der letzten Änderung (auch bei Core-UPDATEs via onupdate)
+    - ``version``: startet bei 1, wird bei jeder ORM-Änderung atomar in SQL erhöht
+      (``version = version + 1``). Clients verwerfen damit veraltete Socket-Events.
+      Core-``update()``-Statements müssen ``version`` selbst erhöhen.
+    """
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+
+
+@event.listens_for(SyncVersionMixin, "before_update", propagate=True)
+def _bump_sync_version(mapper, connection, target):
+    session = object_session(target)
+    # before_update feuert auch für "dirty" Objekte ohne Netto-Änderung
+    if session is None or not session.is_modified(target, include_collections=False):
+        return
+    # SQL-Ausdruck statt Python-Inkrement: atomar bei parallelen Updates
+    target.version = type(target).version + 1
 
 
 class Household(Base):
@@ -208,7 +239,7 @@ class HouseholdMember(Base):
     user: Mapped["User"] = relationship(back_populates="memberships")
 
 
-class ShoppingList(Base):
+class ShoppingList(SyncVersionMixin, Base):
     __tablename__ = "shopping_lists"
     __table_args__ = (
         Index("ix_shopping_lists_household", "household_id"),
@@ -233,7 +264,7 @@ class ShoppingList(Base):
     )
 
 
-class ShoppingItem(Base):
+class ShoppingItem(SyncVersionMixin, Base):
     __tablename__ = "shopping_items"
     __table_args__ = (
         Index("ix_shopping_items_list", "list_id"),
@@ -270,7 +301,7 @@ class ShoppingItem(Base):
     shopping_list: Mapped["ShoppingList"] = relationship(back_populates="items")
 
 
-class Todo(Base):
+class Todo(SyncVersionMixin, Base):
     __tablename__ = "todos"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -553,7 +584,7 @@ class Chore(Base):
     )
 
 
-class ChoreAssignment(Base):
+class ChoreAssignment(SyncVersionMixin, Base):
     __tablename__ = "chore_assignments"
     __table_args__ = (
         UniqueConstraint("chore_id", "due_date", name="uq_chore_assignment_per_date"),

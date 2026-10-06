@@ -485,7 +485,8 @@
     "CANNOT_REMOVE_ADMIN": "Cannot remove admin members",
     "CANNOT_REMOVE_SELF": "Cannot remove yourself - use Leave household instead",
     "TOO_MANY_REMINDERS": "Maximum 5 reminders per task",
-    "REMINDER_NOT_FOUND": "Reminder not found"
+    "REMINDER_NOT_FOUND": "Reminder not found",
+    "ENTITY_ID_CONFLICT": "This ID is already in use"
   },
   "push": {
     "title": "Notifications",

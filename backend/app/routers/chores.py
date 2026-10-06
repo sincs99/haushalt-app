@@ -77,6 +77,8 @@ class ChoreAssignmentResponse(BaseModel):
     completed_at: datetime | None
     completed_by_user_id: uuid.UUID | None
     created_at: datetime
+    updated_at: datetime
+    version: int
 
     model_config = ConfigDict(from_attributes=True)
 

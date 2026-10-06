@@ -1,7 +1,7 @@
 # Designdokument: Offline-First Phase 2
 
 **Erstellt:** 2026-10-05
-**Status:** Entwurf (nur Design, noch kein Produktionscode)
+**Status:** Freigegeben (Entscheidungen E1–E12 am 2026-10-06 gemäss Empfehlung getroffen) · M0 umgesetzt
 **Epic:** Offline-First Phase 2
 **Vorgänger:** [`offline-ready-architecture.md`](./offline-ready-architecture.md) (Phase 1: Repository Pattern + Optimistic Updates, umgesetzt)
 **Priorität:** Hoch
@@ -642,7 +642,7 @@ Schätzung in Personentagen (PT) inkl. Tests, für eine Person, die die Codebasi
 
 | # | Meilenstein | Inhalt | Nutzen ohne Folgemeilensteine | Schätzung |
 |---|---|---|---|---|
-| M0 | Backend-Grundlagen | B1 (Client-IDs), B2/B3 (`updated_at`, `version`, Migration), Tests. Frontend schickt ab jetzt `id` bei Create mit (Temp-ID = endgültige ID) | Entfernt den Temp-ID-Swap, behebt Duplikat-Risiko bei Retry, korrigiert Socket-Race in `handleTodoCreated` | 1,5–2 PT |
+| M0 ✅ | Backend-Grundlagen | B1 (Client-IDs), B2/B3 (`updated_at`, `version`, Migration), Tests. Frontend schickt ab jetzt `id` bei Create mit (Temp-ID = endgültige ID) | Entfernt den Temp-ID-Swap, behebt Duplikat-Risiko bei Retry, korrigiert Socket-Race in `handleTodoCreated` | 1,5–2 PT |
 | M1 | Lese-Cache | `idb`, DB-Layout, `me`-Snapshot, Snapshot-Persistenz für Shopping/Todos/Chores, Offline-Kaltstart, Logout löscht DB | App zeigt im Keller den letzten Stand statt leerer Liste (S2) | 2–3 PT |
 | M2 | Outbox + Shopping-Items offline | Outbox, Coalescing, Sync-Engine, Trigger, `rebase`, Socket-Handler-Umstellung Shopping, Pending-Icon, neue Banner-Texte, i18n | Kern-Use-Case S1/S3/S4 erfüllt | 3–4 PT |
 | M3 | Todos offline | Repository/Store/Handler analog, `TodosView`-Refetch entfernen | S1 für Todos | 1,5–2 PT |
@@ -652,6 +652,29 @@ Schätzung in Personentagen (PT) inkl. Tests, für eine Person, die die Codebasi
 | M7 | Optional | Delta-Sync mit Change-Cursor + Tombstones; Background Sync für Chromium; Offline-Anlegen von Shopping-Listen | Performance, Android-Komfort | 3–5 PT |
 
 **Summe M0–M6: ca. 11,5–15 PT.**
+
+#### Umsetzungsstand M0 (2026-10-06)
+
+- `SyncVersionMixin` in `backend/app/models.py` auf `ShoppingList`, `ShoppingItem`, `Todo`,
+  `ChoreAssignment`: `updated_at` (mit `onupdate`) und `version`. Ein `before_update`-Hook erhöht
+  `version` als SQL-Ausdruck (`version + 1`, atomar bei parallelen Updates) — **nur bei
+  Netto-Änderung**: ein PATCH ohne effektive Änderung und ein wiederholtes `complete` lassen die
+  Version unverändert. Core-`update()`-Statements (aktuell nur Todo-Claim) erhöhen `version`
+  selbst.
+- Migration `t1u2v3w4x5y6_add_sync_version_fields` (befüllt `updated_at` aus `created_at`),
+  Up/Down/Up gegen PostgreSQL 16 geprüft.
+- Optionales `id` in `ShoppingItemCreate`, `ShoppingListCreate`, `TodoCreate`
+  (`backend/app/services/client_ids.py`): Wiederholung → `200` mit dem **bestehenden** Objekt
+  (ein abweichender Payload wird ignoriert), kein zweites Socket-Event; ID eines anderen Haushalts
+  → `409 ENTITY_ID_CONFLICT`; paralleler Insert mit gleicher ID (PK-Kollision) → bestehendes Objekt.
+- Response-Schemas und damit Socket-Payloads enthalten `updated_at` und `version`.
+- Frontend: Shopping-Items, Shopping-Listen und Todos werden mit Client-ID angelegt; Temp-ID-Swap
+  und `pendingTempIds` entfallen. Socket-Handler und REST-Antworten für Shopping, Todos und
+  Chore-Assignments laufen über `upsertVersioned()` (`frontend/src/utils/syncVersion.ts`) und
+  verwerfen veraltete Stände. Behebt nebenbei, dass `handleTodoCreated` Todos anderer User
+  verwarf, solange ein eigener Create lief.
+- Bekannte Grenze: Ein Create-Retry, nachdem ein anderes Mitglied das Objekt bereits gelöscht hat,
+  legt es neu an (ohne Tombstones nicht unterscheidbar). Für M2 akzeptiert.
 
 Empfehlung: M2–M4 hinter ein Feature-Flag (z. B. `VITE_OFFLINE_WRITES`) stellen, damit die
 Outbox im eigenen Haushalt getestet werden kann, bevor sie für alle aktiv ist (→ E7).
@@ -689,8 +712,8 @@ Outbox im eigenen Haushalt getestet werden kann, bevor sie für alle aktiv ist (
 
 ## Offene Entscheidungen
 
-Diese Punkte muss der Product Owner vor bzw. während der Umsetzung entscheiden. Die Empfehlung
-ist jeweils fett markiert.
+**Entschieden am 2026-10-06:** Der Product Owner hat für E1–E12 jeweils die fett markierte
+Empfehlung übernommen. Bei E8 (b oder c) ist die konkrete Variante vor M2 noch festzulegen.
 
 | # | Frage | Optionen | Empfehlung |
 |---|---|---|---|

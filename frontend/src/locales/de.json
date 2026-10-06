@@ -503,7 +503,8 @@
     "DOCUMENT_TOO_MANY_FILES": "Zu viele Seiten für ein Dokument (max. 30)",
     "DOCUMENT_LAST_FILE": "Die letzte Seite kann nicht entfernt werden – lösche stattdessen das Dokument",
     "BILL_PAYER_REQUIRED": "Bitte wähle aus, wer die Rechnung bezahlt hat",
-    "BILL_ALREADY_BOOKED": "Rechnung wurde bereits gebucht"
+    "BILL_ALREADY_BOOKED": "Rechnung wurde bereits gebucht",
+    "ENTITY_ID_CONFLICT": "Diese ID wird bereits verwendet"
   },
   "push": {
     "title": "Benachrichtigungen",

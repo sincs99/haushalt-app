@@ -2,13 +2,14 @@ import calendar
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import get_current_user, verify_household_access, verify_household_admin
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Budget, Calendar, Expense, Household, HouseholdMember, RecurringBill, User
 from app.services.invite_code import generate_unique_invite_code
@@ -459,7 +460,9 @@ def create_household(
 
 
 @general_router.post("/join", response_model=JoinResponse)
+@limiter.limit("5/minute;20/hour")
 def join_household(
+    request: Request,
     data: JoinRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse
 from app.core.config import settings
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import SessionLocal
 from app.routers import auth, shopping, todos, households, expenses, settlements, chores, dashboard, tasks, budgets, recurring_bills, events, calendars, polls, pets, food, notes, files, push, documents
 from app.services.file_cleanup import cleanup_loop
@@ -100,13 +101,19 @@ app = FastAPI(title="Haushalt App API", lifespan=lifespan, redirect_slashes=Fals
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _custom_rate_limit_handler)
 
+# Auth läuft ausschliesslich über den Authorization-Header (keine Cookies),
+# daher allow_credentials=False und explizite Methoden-/Header-Listen.
+# In Produktion ist die API same-origin (nginx-Proxy) — CORS greift nur im
+# Dev-Setup bzw. bei gesetztem VITE_API_URL.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language"],
 )
+# Zuletzt hinzugefügt = äusserste Middleware → Header auch auf CORS-Preflights
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth.router)
 app.include_router(shopping.list_router)

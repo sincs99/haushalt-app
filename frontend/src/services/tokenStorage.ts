@@ -2,6 +2,8 @@
  * Token-Persistence-Abstraktion.
  * Aktuelle Implementierung: localStorage (synchron, als Promise gewrapped).
  * TODO: Für native Builds (Capacitor) durch SecureStorage ersetzen.
+ * Sicherheit: localStorage ist per XSS lesbar — Vorschlag für HttpOnly-Refresh-Cookie
+ * siehe docs/security/hardening-review.md (H-01).
  */
 
 export interface Tokens {

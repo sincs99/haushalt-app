@@ -162,6 +162,12 @@ body {
   inset: min(0px, calc((100% - var(--tap-min)) / 2));
 }
 
+/* Eingabefelder und Auswahllisten mindestens so hoch wie ein Tap-Ziel */
+input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=range]):not([type=file]):not([type=hidden]),
+select {
+  min-height: var(--tap-min);
+}
+
 /* iOS Tap-Highlight neutralisieren */
 * {
   -webkit-tap-highlight-color: transparent;

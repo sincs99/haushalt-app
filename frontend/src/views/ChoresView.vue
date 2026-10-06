@@ -314,10 +314,10 @@ const weekdayOptions = computed(() =>
   <div class="view-page">
     <!-- Segment Control: Aufgaben | Ämtli -->
     <div class="segment-control">
-      <router-link to="/todos" :class="{ active: route.path === '/todos' }">
+      <router-link to="/todos" class="tap-target" :class="{ active: route.path === '/todos' }">
         {{ $t('tasks.segmentTodos') }}
       </router-link>
-      <router-link to="/chores" :class="{ active: route.path === '/chores' }">
+      <router-link to="/chores" class="tap-target" :class="{ active: route.path === '/chores' }">
         {{ $t('tasks.segmentChores') }}
       </router-link>
     </div>
@@ -928,6 +928,10 @@ const weekdayOptions = computed(() =>
   flex-direction: row;
   align-items: center;
   gap: var(--space-2);
+}
+
+.form-field--row .form-label {
+  min-height: var(--tap-min); /* ganze Zeile ist Tap-Ziel der Checkbox */
 }
 
 .form-label {

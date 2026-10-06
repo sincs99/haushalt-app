@@ -684,6 +684,7 @@ async function confirmDissolve() {
 .kebab-menu button {
   display: block;
   width: 100%;
+  min-height: var(--tap-min);
   text-align: left;
   padding: var(--space-3) var(--space-4);
   border: none;

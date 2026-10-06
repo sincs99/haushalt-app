@@ -503,6 +503,7 @@ onUnmounted(() => {
 .pin-toggle {
   display: flex;
   align-items: center;
+  min-height: var(--tap-min); /* ganze Zeile ist Tap-Ziel der Checkbox */
   gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--ink);

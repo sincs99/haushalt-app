@@ -1237,7 +1237,9 @@ watch(
 .calendar-filter-chips {
   display: flex;
   gap: var(--space-2);
-  padding: 0 var(--space-4) var(--space-3);
+  /* oben Raum für die vergrösserte Tap-Fläche (Scroll-Container schneidet sonst ab) */
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  margin-top: calc(-1 * var(--space-2));
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
@@ -1831,8 +1833,8 @@ watch(
 }
 
 .color-picker {
-  width: 32px;
-  height: 32px;
+  width: var(--tap-min);
+  height: var(--tap-min);
   padding: 0;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);

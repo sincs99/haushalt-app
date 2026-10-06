@@ -91,10 +91,10 @@ onUnmounted(() => {
   <div class="view-page">
     <!-- Segment Control: Aufgaben | Ämtli -->
     <div class="segment-control">
-      <router-link to="/todos" :class="{ active: route.path === '/todos' }">
+      <router-link to="/todos" class="tap-target" :class="{ active: route.path === '/todos' }">
         {{ $t('tasks.segmentTodos') }}
       </router-link>
-      <router-link to="/chores" :class="{ active: route.path === '/chores' }">
+      <router-link to="/chores" class="tap-target" :class="{ active: route.path === '/chores' }">
         {{ $t('tasks.segmentChores') }}
       </router-link>
     </div>

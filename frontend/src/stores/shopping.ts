@@ -4,6 +4,7 @@ import { useAuthStore } from './auth'
 import { createOnlineShoppingRepository } from '../repositories/shoppingRepository'
 import type { ShoppingItem, ShoppingList, ShoppingListUpdatePayload } from '../types'
 import { upsertVersioned } from '../utils/syncVersion'
+import { findCanonicalStore, storesEqual } from '../utils/storeName'
 
 // ── localStorage-Persistenz für aktive Liste ──
 
@@ -137,10 +138,12 @@ export const useShoppingStore = defineStore('shopping', () => {
     if (!householdId) return
     stores.value = await repo.fetchStores(householdId)
 
-    // Aktiven Filter aus localStorage validieren
+    // Aktiven Filter aus localStorage validieren (case-insensitive → kanonische Schreibweise)
     const stored = getStoredStoreFilter(householdId)
-    if (stored && stores.value.includes(stored)) {
-      activeStoreFilter.value = stored
+    const canonical = stored ? findCanonicalStore(stores.value, stored) : null
+    if (canonical) {
+      activeStoreFilter.value = canonical
+      if (canonical !== stored) storeStoreFilter(householdId, canonical)
     } else {
       activeStoreFilter.value = null
     }
@@ -161,23 +164,28 @@ export const useShoppingStore = defineStore('shopping', () => {
 
     const result = await repo.reassignStore(householdId, fromStore, toStore)
 
-    // Optimistisch lokalen State patchen
+    // Tatsächlich verwendeter Ziel-Store: Das Backend merged case-insensitive in
+    // eine bereits vorhandene Schreibweise (z. B. "coop" → "Coop").
+    const targetStore = result.to_store ?? toStore
+
+    // Optimistisch lokalen State patchen (Quell-Store case-insensitive matchen)
     for (const item of items.value) {
-      if (item.store === fromStore) {
-        item.store = toStore
+      if (storesEqual(item.store, fromStore)) {
+        item.store = targetStore
       }
     }
 
     // Vor fetchStores() merken: fetchStores() verwirft den Filter auf fromStore,
     // weil dieser Store danach nicht mehr existiert
-    const wasActiveFilter = activeStoreFilter.value === fromStore
+    const wasActiveFilter =
+      activeStoreFilter.value !== null && storesEqual(activeStoreFilter.value, fromStore)
 
     // Stores-Liste aktualisieren
     await fetchStores()
 
     // Filter resetten falls der aktive Store umbenannt/aufgelöst wurde
     if (wasActiveFilter) {
-      setStoreFilter(toStore)
+      setStoreFilter(targetStore)
     }
 
     return result

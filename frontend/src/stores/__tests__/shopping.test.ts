@@ -249,6 +249,15 @@ describe('shopping store', () => {
       expect(s.activeStoreFilter).toBe('Coop City')
     })
 
+    it('follows the canonical spelling when the backend merges into an existing store', async () => {
+      const s = useShoppingStore()
+      s.setStoreFilter('coop')
+      repo.reassignStore.mockResolvedValue({ updated: 1, to_store: 'Coop' })
+      repo.fetchStores.mockResolvedValue(['Coop']) // 'coop' wurde in 'Coop' überführt
+      await s.reassignStore('coop', 'coop')
+      expect(s.activeStoreFilter).toBe('Coop')
+    })
+
     it('resets the filter to "all" when the active store is dissolved', async () => {
       const s = useShoppingStore()
       s.setStoreFilter('Coop')

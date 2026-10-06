@@ -1,5 +1,5 @@
 import api from '../api/client'
-import type { ShoppingItem, ShoppingList, ShoppingListCreatePayload, ShoppingListUpdatePayload } from '../types'
+import type { ReassignStoreResult, ShoppingItem, ShoppingList, ShoppingListCreatePayload, ShoppingListUpdatePayload } from '../types'
 
 export interface ShoppingRepository {
   // Lists
@@ -21,7 +21,7 @@ export interface ShoppingRepository {
   remove(householdId: string, itemId: string): Promise<void>
   // Stores
   fetchStores(householdId: string): Promise<string[]>
-  reassignStore(householdId: string, fromStore: string, toStore: string | null): Promise<{ updated: number }>
+  reassignStore(householdId: string, fromStore: string, toStore: string | null): Promise<ReassignStoreResult>
 }
 
 export function createOnlineShoppingRepository(): ShoppingRepository {
@@ -108,7 +108,7 @@ export function createOnlineShoppingRepository(): ShoppingRepository {
     },
 
     async reassignStore(householdId, fromStore, toStore) {
-      const { data } = await api.post<{ updated: number }>(
+      const { data } = await api.post<ReassignStoreResult>(
         `/api/households/${householdId}/shopping-items/reassign-store`,
         { from_store: fromStore, to_store: toStore },
       )

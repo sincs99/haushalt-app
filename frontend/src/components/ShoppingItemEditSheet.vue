@@ -3,6 +3,7 @@ import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ShoppingItem } from '../types'
 import BaseDialog from './ui/BaseDialog.vue'
+import { findCanonicalStore, normalizeStoreName, storesEqual } from '../utils/storeName'
 
 const props = defineProps<{
   item: ShoppingItem | null
@@ -38,7 +39,7 @@ watch(() => props.item, (item) => {
 const canSave = computed(() => name.value.trim().length > 0)
 
 function selectStore(s: string) {
-  if (store.value === s) {
+  if (storesEqual(store.value, s)) {
     store.value = null
   } else {
     store.value = s
@@ -47,12 +48,13 @@ function selectStore(s: string) {
 }
 
 function handleNewStoreInput() {
-  const trimmed = newStoreName.value.trim()
+  const trimmed = normalizeStoreName(newStoreName.value)
   if (trimmed) {
-    store.value = trimmed
+    // Freitext, der einem vorhandenen Store case-insensitiv entspricht → dessen Schreibweise
+    store.value = findCanonicalStore(props.stores, trimmed) ?? trimmed
   } else {
     // Wenn Freitext gelöscht wird und kein Chip aktiv, Store null
-    if (!props.stores.includes(store.value ?? '')) {
+    if (!findCanonicalStore(props.stores, store.value)) {
       store.value = null
     }
   }
@@ -110,7 +112,7 @@ function handleSubmit() {
             :key="s"
             type="button"
             class="store-pick-chip"
-            :class="{ 'store-pick-chip--active': store === s }"
+            :class="{ 'store-pick-chip--active': storesEqual(store, s) }"
             @click="selectStore(s)"
           >
             {{ s }}

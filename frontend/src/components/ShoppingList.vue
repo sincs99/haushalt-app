@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, onUnmounted } from 'vue'
 import { useShoppingStore } from '../stores/shopping'
+import { findCanonicalStore, normalizeStoreName, storesEqual } from '../utils/storeName'
 import { useExpensesStore } from '../stores/expenses'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
@@ -69,7 +70,7 @@ const openItems = computed(() => {
     if (item.is_checked) return false
     if (filter === null) return true // "Alle"
     if (filter === '__none__') return !item.store
-    return item.store === filter
+    return storesEqual(item.store, filter)
   })
 })
 
@@ -79,7 +80,7 @@ const checkedItems = computed(() => {
     if (!item.is_checked) return false
     if (filter === null) return true
     if (filter === '__none__') return !item.store
-    return item.store === filter
+    return storesEqual(item.store, filter)
   })
 })
 
@@ -96,7 +97,10 @@ const groupedItems = computed(() => {
   const misc = t('shopping.miscGroup')
 
   for (const item of items) {
-    const key = item.store || misc
+    // Altdaten mit abweichender Schreibweise ("coop") landen in der kanonischen Gruppe ("Coop")
+    const key = item.store
+      ? (findCanonicalStore(shoppingStore.stores, item.store) ?? item.store)
+      : misc
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(item)
   }
@@ -122,7 +126,7 @@ const storeChips = computed(() => {
   ]
 
   for (const store of shoppingStore.stores) {
-    const count = allItems.filter(i => i.store === store).length
+    const count = allItems.filter(i => storesEqual(i.store, store)).length
     if (count > 0) {
       chips.push({ key: store, label: store, count })
     }
@@ -255,17 +259,19 @@ function handleRenameStore(storeName: string) {
 }
 
 async function confirmRename() {
-  const newName = renameNewName.value.trim()
+  const newName = normalizeStoreName(renameNewName.value)
   if (!newName || newName === renameTarget.value) {
     showRenameDialog.value = false
     return
   }
 
-  // Merge-Warnung: Prüfe ob Ziel-Store bereits existiert
-  if (shoppingStore.stores.includes(newName)) {
-    const existingCount = shoppingStore.activeListItems.filter(i => i.store === newName).length
+  // Merge-Warnung: Prüfe case-insensitive, ob ein anderer Ziel-Store bereits existiert.
+  // Eine reine Änderung der Gross-/Kleinschreibung ("coop" → "Coop") ist kein Merge.
+  const existingStore = findCanonicalStore(shoppingStore.stores, newName)
+  if (existingStore && !storesEqual(existingStore, renameTarget.value)) {
+    const existingCount = shoppingStore.activeListItems.filter(i => storesEqual(i.store, existingStore)).length
     const confirmed = window.confirm(
-      t('shopping.mergeStoreConfirm', { to: newName, count: existingCount })
+      t('shopping.mergeStoreConfirm', { to: existingStore, count: existingCount })
     )
     if (!confirmed) return
   }

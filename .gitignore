@@ -75,3 +75,6 @@ backups/
 
 # Frontend coverage
 frontend/coverage/
+
+# Mobile-Layout-QA: Screenshots/Befunde (lokal, nicht einchecken)
+frontend/qa/mobile/

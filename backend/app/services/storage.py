@@ -6,6 +6,7 @@ Schnittstelle bewusst schmal — später kommt SupabaseStorageService.
 """
 
 import os
+import shutil
 import uuid
 from pathlib import Path
 from typing import BinaryIO
@@ -50,3 +51,14 @@ class LocalStorageService:
         abs_path = self._safe_path(storage_path)
         if abs_path.exists():
             abs_path.unlink()
+
+    def delete_household(self, household_id: str) -> None:
+        """Löscht alle Dateien eines Haushalts (Ordner {household_id}/).
+
+        Erfasst auch Dateien ohne DB-Eintrag (z.B. nach abgebrochenen Uploads).
+        """
+        abs_path = self._safe_path(household_id)
+        if abs_path == self.upload_dir.resolve():
+            raise ValueError("Refusing to delete the upload root")
+        if abs_path.is_dir():
+            shutil.rmtree(abs_path)

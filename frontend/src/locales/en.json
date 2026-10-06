@@ -450,7 +450,11 @@
     "householdLeft": "You have left the household",
     "createNewTitle": "Create another household",
     "createNewButton": "Create household",
-    "createNewSuccess": "Household \"{name}\" created!"
+    "createNewSuccess": "Household \"{name}\" created!",
+    "rotateCode": "Generate new code",
+    "rotateCodeConfirm": "Generate a new invite code? The current code will stop working.",
+    "rotateCodeSuccess": "New invite code created",
+    "rotateCodeHint": "The code is renewed automatically when a member is removed."
   },
   "noHousehold": {
     "title": "Welcome back",

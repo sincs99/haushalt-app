@@ -450,7 +450,11 @@
     "householdLeft": "Du hast den Haushalt verlassen",
     "createNewTitle": "Weiteren Haushalt gründen",
     "createNewButton": "Haushalt erstellen",
-    "createNewSuccess": "Haushalt \"{name}\" erstellt!"
+    "createNewSuccess": "Haushalt \"{name}\" erstellt!",
+    "rotateCode": "Neuen Code erzeugen",
+    "rotateCodeConfirm": "Neuen Einladungscode erzeugen? Der bisherige Code funktioniert danach nicht mehr.",
+    "rotateCodeSuccess": "Neuer Einladungscode erstellt",
+    "rotateCodeHint": "Beim Entfernen eines Mitglieds wird der Code automatisch erneuert."
   },
   "noHousehold": {
     "title": "Willkommen zurück",

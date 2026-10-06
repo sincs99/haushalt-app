@@ -20,14 +20,16 @@ import MoreSheet from './components/MoreSheet.vue'
 import { useToast } from './composables/useToast'
 import { syncPushSubscription } from './services/pushService'
 import { useI18n } from 'vue-i18n'
-import { PhShoppingBagOpen, PhListChecks, PhWallet, PhHouse, PhCalendarDots, PhWifiSlash, PhCheckCircle, PhWarningCircle, PhInfo } from '@phosphor-icons/vue'
+import { PhShoppingBagOpen, PhListChecks, PhWallet, PhHouse, PhCalendarDots, PhWifiSlash, PhCheckCircle, PhWarningCircle, PhInfo, PhDotsThreeCircle } from '@phosphor-icons/vue'
 
 const route = useRoute()
 const { isOnline } = useConnectivity()
 const { toasts, dismissToast } = useToast()
 const moreOpen = ref(false)
+// „Mehr“ ist aktiv für alle Seiten, die keinen eigenen Tab haben (inkl. Detailseiten)
+const TAB_ROUTES = ['/dashboard', '/calendar', '/todos', '/shopping']
 const moreActive = computed(() =>
-  moreOpen.value || ['/expenses', '/chores', '/household', '/documents'].includes(route.path)
+  moreOpen.value || !TAB_ROUTES.some((p) => route.path === p || route.path.startsWith(`${p}/`))
 )
 const authStore = useAuthStore()
 const shoppingStore = useShoppingStore()
@@ -403,6 +405,17 @@ onUnmounted(() => {
           <router-link to="/household" class="top-bar__link" active-class="top-bar__link--active">
             <PhHouse :size="18" /> {{ $t('nav.household') }}
           </router-link>
+          <!-- Weitere Module (Haustiere, Pflanzen, Essen, …) wie im Mobile-„Mehr“-Sheet -->
+          <button
+            type="button"
+            class="top-bar__link top-bar__more"
+            :class="{ 'top-bar__link--active': moreOpen }"
+            aria-haspopup="dialog"
+            :aria-expanded="moreOpen"
+            @click="moreOpen = !moreOpen"
+          >
+            <PhDotsThreeCircle :size="18" /> {{ $t('nav.more') }}
+          </button>
         </nav>
         <div class="top-bar__right">
           <!-- Household-Wechsel (nur bei >1 Haushalt) -->
@@ -411,6 +424,7 @@ onUnmounted(() => {
             :value="authStore.currentHouseholdId"
             @change="authStore.switchHousehold(($event.target as HTMLSelectElement).value)"
             class="household-select"
+            :aria-label="$t('household.title')"
           >
             <option v-for="h in authStore.households" :key="h.id" :value="h.id">
               {{ h.name }}
@@ -569,6 +583,13 @@ onUnmounted(() => {
   gap: var(--space-3);
 }
 
+
+.top-bar__more {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
 
 .top-bar__logout {
   padding: var(--space-1) var(--space-3);

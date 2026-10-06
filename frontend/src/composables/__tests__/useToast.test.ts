@@ -170,3 +170,19 @@ describe('useAsyncAction', () => {
 afterEach(() => {
   vi.useRealTimers()
 })
+
+describe('useLoader', () => {
+  it('setzt loadError bei Fehler und nach erfolgreichem Retry zurück', async () => {
+    const { useLoader } = await import('../useLoader')
+    let fail = true
+    const { loadError, reload, reloading } = useLoader(() => (fail ? Promise.reject(new Error('x')) : Promise.resolve()))
+    await reload()
+    expect(loadError.value).toBe(true)
+    fail = false
+    const p = reload()
+    expect(reloading.value).toBe(true)
+    await p
+    expect(loadError.value).toBe(false)
+    expect(reloading.value).toBe(false)
+  })
+})

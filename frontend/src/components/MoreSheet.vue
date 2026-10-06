@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { PhWallet, PhCat, PhPlant, PhForkKnife, PhNote, PhFolderOpen, PhGear, PhCaretRight, PhSparkle } from '@phosphor-icons/vue'
 import { useI18n } from 'vue-i18n'
 import { useAiStore } from '../stores/ai'
+import { useBackClose } from '../composables/useBackClose'
 
 const props = defineProps<{
   open: boolean
@@ -17,10 +18,15 @@ const router = useRouter()
 const { t } = useI18n()
 const aiStore = useAiStore()
 
-function navigate(path: string) {
-  router.push(path)
+async function navigate(path: string) {
+  // Erst schliessen (entfernt den History-Eintrag des Sheets), dann navigieren
   emit('close')
+  await nextTick()
+  router.push(path)
 }
+
+// Zurück-Taste schliesst das Sheet
+useBackClose(() => props.open, () => emit('close'))
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && props.open) {
@@ -83,7 +89,11 @@ watch(() => props.open, (isOpen) => {
                 :key="entry.label"
                 class="more-sheet__item"
                 :class="{ 'more-sheet__item--disabled': entry.disabled }"
+                role="link"
+                tabindex="0"
                 @click="entry.action?.()"
+                @keydown.enter.prevent="entry.action?.()"
+                @keydown.space.prevent="entry.action?.()"
               >
                 <span class="more-sheet__icon-tile" :class="{ 'more-sheet__icon-tile--accent': entry.highlight }">
                   <component :is="entry.icon" :size="20" />
@@ -92,7 +102,7 @@ watch(() => props.open, (isOpen) => {
                   <span class="more-sheet__label">{{ t(entry.label) }}</span>
                   <span class="more-sheet__sub">{{ t(entry.sub) }}</span>
                 </div>
-                <PhCaretRight :size="16" class="more-sheet__chevron" />
+                <PhCaretRight :size="16" class="more-sheet__chevron" aria-hidden="true" />
               </li>
             </ul>
           </div>

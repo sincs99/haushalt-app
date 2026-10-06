@@ -1,7 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { waitForOverlayBack } from '../composables/useBackClose'
 
 const router = createRouter({
   history: createWebHistory(),
+  // Zurück stellt die Scroll-Position wieder her, neue Seiten starten oben
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) return savedPosition
+    if (to.path === from.path) return false
+    return { top: 0 }
+  },
   routes: [
     {
       path: '/dashboard',
@@ -129,6 +136,10 @@ const router = createRouter({
     },
   ],
 })
+
+// Ein gerade geschlossener Dialog nimmt seinen History-Eintrag zurück –
+// erst danach navigieren, sonst würde die neue Seite gleich wieder verlassen.
+router.beforeEach(() => waitForOverlayBack())
 
 // Navigation Guard: authReady abwarten, dann prüfen
 router.beforeEach(async (to) => {

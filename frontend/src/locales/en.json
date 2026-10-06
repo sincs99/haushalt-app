@@ -71,7 +71,8 @@
     "settings": "Settings",
     "documents": "Documents",
     "assistant": "AI assistant",
-    "plants": "Plants"
+    "plants": "Plants",
+    "mainNav": "Main navigation"
   },
   "dashboard": {
     "title": "Dashboard",

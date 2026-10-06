@@ -41,7 +41,7 @@ export function createOnlineFinanceRepository(): FinanceRepository {
     async fetchBills(householdId, includeInactive = false) {
       const params = includeInactive ? { include_inactive: 'true' } : undefined
       const { data } = await api.get<RecurringBill[]>(
-        `/api/households/${householdId}/recurring-bills`,
+        `/api/households/${householdId}/recurring-bills/`,
         { params },
       )
       return data
@@ -49,7 +49,7 @@ export function createOnlineFinanceRepository(): FinanceRepository {
 
     async createBill(householdId, payload) {
       const { data } = await api.post<RecurringBill>(
-        `/api/households/${householdId}/recurring-bills`,
+        `/api/households/${householdId}/recurring-bills/`,
         payload,
       )
       return data

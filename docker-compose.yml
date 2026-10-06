@@ -1,3 +1,6 @@
+# Lokale Entwicklung. Für Produktion docker-compose.prod.yml verwenden (siehe docs/deployment.md).
+# Secrets sind Pflicht: .env.example nach .env kopieren und Werte setzen.
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -5,11 +8,12 @@ services:
     environment:
       POSTGRES_DB: haushalt
       POSTGRES_USER: haushalt
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt - .env.example nach .env kopieren}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # Nur lokal erreichbar (DB-Tools auf dem Host), nicht im Netzwerk
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U haushalt"]
       interval: 5s
@@ -25,15 +29,16 @@ services:
     volumes:
       - uploaddata:/app/data/uploads
     environment:
-      DATABASE_URL: postgresql://haushalt:${POSTGRES_PASSWORD:-changeme}@postgres:5432/haushalt
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-please-change-this-secret-in-production}
+      DATABASE_URL: postgresql://haushalt:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt}@postgres:5432/haushalt
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY fehlt - .env.example nach .env kopieren}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
       UPLOAD_DIR: /app/data/uploads
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
+    # Nur lokal (API-Debugging); das Frontend erreicht das Backend über das Docker-Netz
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
 
   frontend:
     build: ./frontend

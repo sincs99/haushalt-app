@@ -1,7 +1,7 @@
 """integrity: ondelete rules, unique vote/booking, household_id indexes
 
 Revision ID: v1w2x3y4z5a6
-Revises: s1t2u3v4w5x6
+Revises: u1v2w3x4y5z6
 Create Date: 2026-10-06 12:00:00.000000
 
 - Fremdschlüssel ohne ondelete: Löschen eines Termins aus einer entschiedenen
@@ -25,7 +25,7 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 # revision identifiers, used by Alembic.
 revision: str = 'v1w2x3y4z5a6'
-down_revision: Union[str, Sequence[str], None] = 's1t2u3v4w5x6'
+down_revision: Union[str, Sequence[str], None] = 'u1v2w3x4y5z6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

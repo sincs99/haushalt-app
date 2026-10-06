@@ -143,7 +143,8 @@ function auditInPage(opts) {
     const cs = getComputedStyle(el)
     if (cs.display.startsWith('inline') && cs.display !== 'inline-block' && cs.display !== 'inline-flex') continue
     if (cs.overflowX !== 'visible') continue
-    if (el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0) {
+    // .tap-target: das unsichtbare ::after zählt in scrollWidth mit
+    if (el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0 && !el.classList.contains('tap-target')) {
       add('text-overflow', el, `scrollWidth ${el.scrollWidth} > clientWidth ${el.clientWidth}`)
     }
   }
@@ -201,7 +202,8 @@ function auditInPage(opts) {
       if (pcs.overflowX !== 'visible' || pcs.overflowY !== 'visible') {
         const pr = p.getBoundingClientRect()
         const cx = r.left + r.width / 2, cy = r.top + r.height / 2
-        if (cx < pr.left || cx > pr.right || cy < pr.top || cy > pr.bottom) { w = h = Infinity; break } // weggescrollt
+        // (teilweise) weggescrollt: nicht vollständig sichtbar, wird beim Scrollen geprüft
+        if (/(auto|scroll)/.test(pcs.overflowX + pcs.overflowY) && (r.left < pr.left - 1 || r.right > pr.right + 1 || r.top < pr.top - 1 || r.bottom > pr.bottom + 1)) { w = h = Infinity; break }
         w = Math.min(w, 2 * Math.min(cx - pr.left, pr.right - cx))
         h = Math.min(h, 2 * Math.min(cy - pr.top, pr.bottom - cy))
         w = Math.max(w, r.width); h = Math.max(h, r.height)

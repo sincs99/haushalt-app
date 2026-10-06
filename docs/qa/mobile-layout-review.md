@@ -86,18 +86,25 @@ Screenshots und `summary.tsv`/`findings.json` landen unter
 | 13 | `/todos`, `/chores`, `/documents`, Katze/Pflanze Detail, `/food` | alle | Vergrösserte Tap-Flächen benachbarter Buttons überlappen 2–6 px (Tipp auf den Rand löst Nachbaraktion aus) | Abstand 4 px zwischen Icon-Buttons | `8e11fb3` |
 | 14 | Formulare in allen Dialogen, `/household`, `/chores`, `/todos`, `/calendar` | alle | Eingabefelder/Selects 34–42 px, Checkbox-Zeilen 21–24 px, Aufgaben/Ämtli-Umschalter 37 px, Farbwähler 32 px, Kalender-Filterchips vom Scroll-Container abgeschnitten | keine Mindesthöhe | `f2590e0` |
 | 15 | `/documents`, `/expenses` (Rechnung buchen), KI-Rezeptkarte | alle | Selects 40–42 px, KI-Chips 36 px | komponenteneigene `min-height` unter 44 px überschreibt die globale | `0026e1d` |
+| 20 | Katze → Bearbeiten → Gesundheit | alle | Tap-Fläche von „Löschen“ liegt 2 px über dem Titel-Eingabefeld (erst mit ans Ende gescrolltem Dialog gefunden) | Abstand 8 px | `72a15cf` |
 | 16 | `/calendar` (Woche, Monat) | 360×780 | Tage 39–41 px breit | 7 Spalten in 328 px; Zellen liegen lückenlos nebeneinander | offen, akzeptiert: 44 px Breite geht nur mit anderem Raster (Design-Entscheidung) |
 | 17 | Katze → Bearbeiten → Gesundheit | alle | Schweregrad-Punkte 18×18 px, 4 px untereinander | Layout | offen: vergrösserte Flächen würden sich überlappen; braucht anderes Layout (z. B. Segment-Control) → `claude/ui-design-audit` |
 | 18 | `/chores` | alle | Ämtli-Checkbox 17×20 px | — | kein Fix nötig: die ganze Zeile (`.assignment-row__main`) ist klickbar; das Skript kennt Klick-Handler nicht |
 | 19 | `/calendar` | alle | Avatare in Terminkarten überlappen 4 px | — | kein Befund: gewollter Avatar-Stapel (negativer Margin) |
 
-**Summe:** 19 gemeldete Punkte, davon 15 behoben, 2 offen (16, 17) und 2 ohne
+**Summe:** 20 gemeldete Punkte, davon 16 behoben, 2 offen (16, 17) und 2 ohne
 Handlungsbedarf (18, 19). Sprache: EN wurde in allen Zuständen bei 360 px
-geprüft; kein eigener EN-Befund (keine Texte, die nur auf Englisch
-überlaufen).
+geprüft (Grundzustände zusätzlich bei 390/430); kein eigener EN-Befund, keine
+Texte, die nur auf Englisch überlaufen.
 
-Schlusslauf (`qa/mobile/final/summary.tsv`, alle Viewports, Light/Dark,
-DE/EN): nur noch die Punkte 16–19.
+**Schlussläufe:**
+
+- `qa/mobile/final/` – voller Lauf, alle Viewports, Light/Dark, DE/EN
+  (528 Screenshots): nur Punkte 16, 18, 19.
+- `qa/mobile/final2/` – Audit erweitert, Dialoge werden zusätzlich ans Ende
+  gescrollt geprüft (Light, alle Viewports, DE/EN): fand Punkt 17 (vorher
+  unter dem sichtbaren Dialogbereich) und Punkt 20.
+- `qa/mobile/final3-*` – nach dem Fix von Punkt 20: nur noch Punkte 16–19.
 
 ## Für andere Branches notiert (nicht behoben)
 

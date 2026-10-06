@@ -310,9 +310,11 @@ export const useAuthStore = defineStore('auth', () => {
 
   // ── Socket-Event-Handler für Household-Events ──
 
-  function handleHouseholdUpdated(data: { id: string; name: string }) {
+  function handleHouseholdUpdated(data: { id: string; name: string; ai_enabled?: boolean }) {
     const h = households.value.find(h => h.id === data.id)
-    if (h) h.name = data.name
+    if (!h) return
+    h.name = data.name
+    if (typeof data.ai_enabled === 'boolean') h.ai_enabled = data.ai_enabled
   }
 
   function handleMemberJoined(_data: { household_id: string; user_id: string; display_name: string; role: string }) {

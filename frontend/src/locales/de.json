@@ -66,7 +66,8 @@
     "meals": "Essen",
     "notes": "Notizen",
     "settings": "Einstellungen",
-    "documents": "Ablage"
+    "documents": "Ablage",
+    "assistant": "KI-Assistent"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -157,7 +158,8 @@
     "mealsSub": "Wochenmenü & Rezepte",
     "notesSub": "Schnelle Notizen & Ideen",
     "settingsSub": "Haushalt, Mitglieder & Sprache",
-    "documentsSub": "Verträge, Rechnungen & Garantien"
+    "documentsSub": "Verträge, Rechnungen & Garantien",
+    "assistantSub": "Pflanzenpflege mit KI"
   },
   "shopping": {
     "title": "Einkaufsliste",
@@ -504,7 +506,16 @@
     "DOCUMENT_LAST_FILE": "Die letzte Seite kann nicht entfernt werden – lösche stattdessen das Dokument",
     "BILL_PAYER_REQUIRED": "Bitte wähle aus, wer die Rechnung bezahlt hat",
     "BILL_ALREADY_BOOKED": "Rechnung wurde bereits gebucht",
-    "ENTITY_ID_CONFLICT": "Diese ID wird bereits verwendet"
+    "ENTITY_ID_CONFLICT": "Diese ID wird bereits verwendet",
+    "AI_NOT_CONFIGURED": "Der KI-Assistent ist auf diesem Server nicht eingerichtet",
+    "AI_NOT_ENABLED": "Der KI-Assistent ist für diesen Haushalt nicht eingeschaltet",
+    "AI_DAILY_LIMIT_REACHED": "Das Tageslimit für KI-Anfragen in diesem Haushalt ist erreicht – morgen geht es weiter",
+    "AI_REFUSED": "Die KI hat diese Anfrage abgelehnt. Formuliere sie bitte anders.",
+    "AI_INVALID_OUTPUT": "Die KI hat keine brauchbare Antwort geliefert – bitte nochmals versuchen",
+    "AI_PLANT_NOT_RECOGNIZED": "Diese Eingabe wurde nicht als Pflanze erkannt",
+    "AI_BUSY": "Der KI-Assistent ist gerade ausgelastet – bitte gleich nochmals versuchen",
+    "AI_UNAVAILABLE": "Der KI-Dienst ist im Moment nicht erreichbar",
+    "RATE_LIMITED": "Zu viele Anfragen – bitte kurz warten"
   },
   "push": {
     "title": "Benachrichtigungen",
@@ -675,7 +686,8 @@
     "startPoll": "Abstimmung starten",
     "pollDecided": "Entschieden! 🎉",
     "openPollCount": "{n} offene Abstimmung | {n} offene Abstimmungen",
-    "voteCount": "{n} Stimme | {n} Stimmen"
+    "voteCount": "{n} Stimme | {n} Stimmen",
+    "steps": "Zubereitung"
   },
   "notes": {
     "title": "Notizen",
@@ -762,5 +774,80 @@
     "previousPage": "Vorherige Seite",
     "nextPage": "Nächste Seite",
     "pageOf": "Seite {current} / {total}"
+  },
+  "ai": {
+    "title": "KI-Assistent",
+    "disclaimer": "KI-generiert – kann Fehler enthalten. Bitte prüfen.",
+    "notAvailable": "Der KI-Assistent ist auf diesem Server nicht eingerichtet.",
+    "notEnabled": "Der KI-Assistent ist für diesen Haushalt nicht eingeschaltet. Ein Admin kann ihn in den Einstellungen aktivieren.",
+    "settings": {
+      "enable": "Einschalten",
+      "disable": "Ausschalten",
+      "enabledState": "Eingeschaltet",
+      "disabledState": "Ausgeschaltet",
+      "privacyHint": "Ist der KI-Assistent eingeschaltet, werden deine Eingaben (z. B. Zutaten, Pflanzenart, später auch Fotos) zur Verarbeitung an die Anthropic-API gesendet. In der App gespeichert wird nur, was du selbst übernimmst.",
+      "adminOnly": "Nur Admins können den KI-Assistenten ein- oder ausschalten.",
+      "usage": "Heute {used} von {limit} Anfragen genutzt",
+      "openAssistant": "Zum KI-Assistenten"
+    },
+    "recipe": {
+      "title": "Rezept vorschlagen",
+      "ingredientsLabel": "Was ist da?",
+      "ingredientsPlaceholder": "z. B. Reis, Zucchetti, Zwiebel, Rahm",
+      "ingredientsHint": "Mit Komma oder Zeilenumbruch trennen",
+      "servings": "Personen",
+      "preferencesLabel": "Wünsche",
+      "preferences": {
+        "vegetarian": "Vegetarisch",
+        "quick": "Schnell",
+        "kids": "Kinderfreundlich",
+        "leftovers": "Reste verwerten"
+      },
+      "noteLabel": "Weitere Wünsche (optional)",
+      "generate": "Rezept vorschlagen",
+      "generating": "Rezept wird erstellt …",
+      "reviewHint": "Vorschlag – bitte prüfen, bevor du ihn speicherst.",
+      "duration": "{n} Min.",
+      "tip": "Tipp",
+      "missing": "Fehlt noch",
+      "addMissing": "Fehlende auf die Einkaufsliste",
+      "addedMissing": "{n} Zutat auf der Einkaufsliste | {n} Zutaten auf der Einkaufsliste",
+      "save": "Rezept speichern",
+      "saved": "Rezept gespeichert",
+      "discard": "Verwerfen",
+      "newSuggestion": "Neuer Vorschlag",
+      "defaultListName": "Einkaufsliste"
+    },
+    "plant": {
+      "title": "Pflanzenpflege",
+      "plantLabel": "Pflanze",
+      "plantPlaceholder": "z. B. Monstera, Basilikum, Geranie",
+      "locationLabel": "Standort (optional)",
+      "locationPlaceholder": "z. B. Wohnzimmer, Nordfenster",
+      "ask": "Pflegehinweise holen",
+      "watering": "Gießen",
+      "fertilizing": "Düngen",
+      "repotting": "Umtopfen",
+      "light": "Licht",
+      "everyDays": "jeden Tag | alle {n} Tage",
+      "everyMonths": "jeden Monat | alle {n} Monate",
+      "notNeeded": "nicht nötig",
+      "rarely": "selten nötig",
+      "lightValues": {
+        "low": "Schatten, wenig Licht",
+        "medium": "Halbschatten",
+        "bright_indirect": "Hell, ohne direkte Sonne",
+        "full_sun": "Sonnig"
+      },
+      "location": "Standort",
+      "care": "Pflege",
+      "petToxicity": "Für Haustiere",
+      "toxicity": {
+        "unknown": "unbekannt",
+        "non_toxic": "ungiftig",
+        "toxic": "giftig"
+      },
+      "vetDisclaimer": "Keine tierärztliche Auskunft. Im Zweifel Tierarztpraxis oder Tox-Info fragen."
+    }
   }
 }

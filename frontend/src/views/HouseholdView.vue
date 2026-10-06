@@ -19,6 +19,7 @@ import BaseDialog from '../components/ui/BaseDialog.vue'
 import { PhUserMinus, PhSignOut, PhPlus, PhShareNetwork } from '@phosphor-icons/vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 import PushSettings from '../components/PushSettings.vue'
+import AiSettingsCard from '../components/AiSettingsCard.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -452,6 +453,9 @@ watch(() => authStore.currentHouseholdId, () => {
         </BaseButton>
       </div>
     </BaseCard>
+
+    <!-- ══ Sektion: KI-Assistent (nur wenn auf dem Server eingerichtet) ══ -->
+    <AiSettingsCard />
 
     <!-- ══ Sektion: App ══ -->
     <BaseCard>

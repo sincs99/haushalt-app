@@ -16,10 +16,13 @@ import BaseDialog from '../components/ui/BaseDialog.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
+import AiRecipeCard from '../components/AiRecipeCard.vue'
+import { useAiStore } from '../stores/ai'
 
 const foodStore = useFoodStore()
 const pollsStore = usePollsStore()
 const authStore = useAuthStore()
+const aiStore = useAiStore()
 const { on, off, onReconnect, offReconnect } = useSocket()
 const { t } = useI18n()
 
@@ -28,6 +31,7 @@ const weekdayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
 // ── Lifecycle ──
 onMounted(() => {
+  aiStore.fetchStatus()
   foodStore.fetchRecipes()
   foodStore.fetchWeekPlan()
   pollsStore.fetchPolls('offen')
@@ -451,6 +455,9 @@ async function doCreateMealPoll() {
       </BaseButton>
     </BaseCard>
 
+    <!-- ── KI-Rezeptvorschlag (nur mit Server-Schlüssel und Opt-in des Haushalts) ── -->
+    <AiRecipeCard v-if="aiStore.enabledForHousehold" />
+
     <!-- ── Create Meal Poll Dialog ── -->
     <BaseDialog
       :open="showCreateMealPoll"
@@ -614,6 +621,14 @@ async function doCreateMealPoll() {
               {{ ingredient }}
             </li>
           </ul>
+        </div>
+
+        <!-- Zubereitung -->
+        <div v-if="detailEntry.recipe.steps?.length" class="detail-ingredients">
+          <h4 class="detail-ingredients__title">{{ t('food.steps') }}</h4>
+          <ol class="detail-steps">
+            <li v-for="(step, idx) in detailEntry.recipe.steps" :key="idx">{{ step }}</li>
+          </ol>
         </div>
 
         <!-- Zur Einkaufsliste hinzufügen -->
@@ -913,6 +928,18 @@ async function doCreateMealPoll() {
 }
 
 /* ── Shopping Button Result ── */
+.detail-steps {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.detail-steps li + li {
+  margin-top: var(--space-1);
+}
+
 .detail-shopping {
   margin-top: var(--space-2);
 }

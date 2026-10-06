@@ -276,6 +276,7 @@ export interface HouseholdInfo {
   name: string
   role: string
   currency: string  // z.B. "CHF" — vom Backend via GET /api/auth/me
+  ai_enabled?: boolean  // Opt-in für den KI-Assistenten (nur Admins schalten um)
 }
 
 export interface HouseholdMemberInfo {
@@ -682,6 +683,8 @@ export interface Recipe {
   cost_rappen: number | null
   duration_min: number | null
   ingredients: string[]
+  steps?: string[]
+  tags?: string[]
   is_favorite: boolean
   created_at: string
 }
@@ -692,6 +695,8 @@ export interface RecipeCreatePayload {
   cost_rappen?: number
   duration_min?: number
   ingredients?: string[]
+  steps?: string[]
+  tags?: string[]
   is_favorite?: boolean
 }
 
@@ -770,4 +775,72 @@ export interface DocumentList {
 export interface StorageUsage {
   used_bytes: number
   quota_bytes: number
+}
+
+// ── KI-Assistent ──
+
+export interface AiStatus {
+  enabled: boolean      // Schlüssel auf dem Server gesetzt
+  daily_limit: number
+}
+
+export interface AiSettings {
+  ai_enabled: boolean   // Opt-in des Haushalts
+  available: boolean    // Schlüssel auf dem Server gesetzt
+  calls_today: number
+  daily_limit: number
+}
+
+export type AiLocale = 'de' | 'en'
+export type AiRecipePreference = 'vegetarian' | 'quick' | 'kids' | 'leftovers'
+
+export interface AiRecipeRequest {
+  ingredients: string[]
+  servings: number
+  preferences: AiRecipePreference[]
+  note?: string | null
+  locale: AiLocale
+}
+
+export interface AiShoppingSuggestion {
+  name: string
+  quantity: string | null
+}
+
+export interface AiRecipeSuggestion {
+  // Felder von RecipeCreate — kann unverändert gespeichert werden
+  recipe: {
+    name: string
+    servings: number
+    cost_rappen: number | null
+    duration_min: number | null
+    ingredients: string[]
+    steps: string[]
+    tags: string[]
+    is_favorite: boolean
+  }
+  missing_ingredients: AiShoppingSuggestion[]
+  tip: string | null
+}
+
+export type AiLightRequirement = 'low' | 'medium' | 'bright_indirect' | 'full_sun'
+export type AiPetToxicity = 'unknown' | 'non_toxic' | 'toxic'
+
+export interface AiPlantCareRequest {
+  plant: string
+  location?: string | null
+  locale: AiLocale
+}
+
+export interface AiPlantCareAdvice {
+  plant_name: string
+  botanical_name: string | null
+  watering_interval_days: number
+  fertilizing_interval_days: number | null
+  repotting_interval_months: number | null
+  light: AiLightRequirement
+  location_tip: string
+  care_notes: string
+  pet_toxicity: AiPetToxicity
+  pet_toxicity_note: string | null
 }

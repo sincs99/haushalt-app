@@ -86,6 +86,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/assistant',
+      name: 'assistant',
+      component: () => import('../views/AssistantView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/household',
       name: 'household',
       component: () => import('../views/HouseholdView.vue'),

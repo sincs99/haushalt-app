@@ -90,6 +90,7 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);  /* iOS Home-Indicator */
   --bottom-nav-space: 64px;                          /* Platz für die Bottom-Nav (ohne Safe-Area) */
   --fab-size: 56px;
+  --tap-min: 44px;                                   /* Mindestgrösse Tap-Ziel (Apple HIG) */
   --fab-bottom: calc(var(--bottom-nav-space) + var(--safe-bottom) + var(--space-4));
 }
 
@@ -141,6 +142,24 @@ body {
   background-color: var(--color-bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================
+   Tap-Ziele
+   Vergrössert die Tap-Fläche kleiner Bedienelemente auf --tap-min, ohne die
+   Optik zu ändern (unsichtbares ::after). Das Element braucht position:
+   relative/absolute; Komponenten mit eigener Positionierung behalten sie
+   (scoped-Selektoren sind spezifischer).
+   ============================================ */
+
+.tap-target {
+  position: relative;
+}
+
+.tap-target::after {
+  content: '';
+  position: absolute;
+  inset: min(0px, calc((100% - var(--tap-min)) / 2));
 }
 
 /* iOS Tap-Highlight neutralisieren */

@@ -43,7 +43,7 @@ function onKeydown(e: KeyboardEvent) {
         >
           <div class="dialog-header" v-if="title">
             <h2 class="dialog-title">{{ title }}</h2>
-            <button class="dialog-close" @click="emit('close')" :aria-label="$t('common.close')">
+            <button class="dialog-close tap-target" @click="emit('close')" :aria-label="$t('common.close')">
               <PhX :size="18" />
             </button>
           </div>

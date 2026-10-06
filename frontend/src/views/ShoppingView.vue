@@ -84,7 +84,7 @@ onMounted(async () => {
         v-for="tab in listTabs"
         :key="tab.key"
         type="button"
-        class="pill-tab"
+        class="pill-tab tap-target"
         :class="{ 'pill-tab--active': activeTab === tab.key }"
         @click="activeTab = tab.key"
       >
@@ -92,7 +92,7 @@ onMounted(async () => {
       </button>
       <button
         type="button"
-        class="pill-tab pill-tab--add"
+        class="pill-tab pill-tab--add tap-target"
         @click="showNewListDialog = true"
       >
         <PhPlus :size="16" weight="bold" />
@@ -158,7 +158,10 @@ onMounted(async () => {
   gap: var(--space-2);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: var(--space-1);
+  /* Raum für die vergrösserte Tap-Fläche (Scroll-Container schneidet sonst ab) */
+  padding-block: var(--space-2) var(--space-3);
+  margin-block: calc(-1 * var(--space-2)) calc(-1 * var(--space-2));
+  padding-inline-end: var(--space-1);
 }
 
 .pill-tab {

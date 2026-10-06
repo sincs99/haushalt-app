@@ -15,7 +15,7 @@ defineEmits<{
       v-for="tab in tabs"
       :key="tab.key"
       type="button"
-      class="pill-tab"
+      class="pill-tab tap-target"
       :class="{ 'pill-tab--active': modelValue === tab.key }"
       @click="$emit('update:modelValue', tab.key)"
     >
@@ -29,6 +29,9 @@ defineEmits<{
   display: flex;
   gap: var(--space-2);
   overflow-x: auto;
+  /* Raum für die vergrösserte Tap-Fläche, die der Scroll-Container sonst abschneidet */
+  padding-block: var(--space-2);
+  margin-block: calc(-1 * var(--space-2));
   -webkit-overflow-scrolling: touch;
 }
 

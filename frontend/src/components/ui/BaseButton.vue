@@ -18,7 +18,7 @@ withDefaults(defineProps<{
 
 <template>
   <button
-    class="base-btn"
+    class="base-btn tap-target"
     :class="[
       `base-btn--${variant}`,
       `base-btn--${size}`,

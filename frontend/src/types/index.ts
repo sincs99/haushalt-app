@@ -771,3 +771,76 @@ export interface StorageUsage {
   used_bytes: number
   quota_bytes: number
 }
+
+// ── Tags (NFC-Chips / QR-Sticker) ──
+
+/** Aktions-Schlüssel aus der Backend-Registry (app/services/tag_actions.py). */
+export type TagActionKey =
+  | 'pet.feed'
+  | 'pet.care_task.done'
+  | 'chore.assignment.done'
+  | 'shopping_list.open'
+  | 'todo.done'
+  // Neue Aktionen kommen vom Backend, bevor das Frontend sie kennt
+  | (string & {})
+
+export interface TagInfo {
+  id: string
+  household_id: string
+  token: string
+  label: string
+  target_type: string
+  target_id: string | null
+  target_name: string | null
+  target_missing: boolean
+  action: TagActionKey
+  created_by_user_id: string | null
+  created_at: string
+  last_used_at: string | null
+  use_count: number
+  enabled: boolean
+}
+
+export interface TagTargetOption {
+  id: string
+  name: string
+}
+
+export interface TagTargetType {
+  target_type: string
+  actions: { key: TagActionKey; target_optional: boolean; navigate_only: boolean }[]
+  options: TagTargetOption[]
+}
+
+export interface TagCreatePayload {
+  label: string
+  target_type: string
+  target_id: string | null
+  action: TagActionKey
+}
+
+export interface TagResolveResult {
+  tag_id: string
+  label: string
+  household_id: string
+  household_name: string
+  action: TagActionKey
+  target_type: string
+  target_id: string | null
+  target_name: string | null
+  navigate_only: boolean
+  navigate_to: string | null
+  description: string
+  details: Record<string, any>
+  can_execute: boolean
+  reason: string | null
+}
+
+export interface TagExecuteResult {
+  tag_id: string
+  action: TagActionKey
+  household_id: string
+  target_name: string | null
+  changed: boolean
+  result: Record<string, any>
+}

@@ -92,6 +92,20 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/tags',
+      name: 'tags',
+      component: () => import('../views/TagsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      // Ziel der NFC-Chip-/QR-URL. Login erzwingt der Guard unten (redirect
+      // zurück hierher); die Aktion selbst läuft erst nach Bestätigung.
+      path: '/t/:token',
+      name: 'tag-scan',
+      component: () => import('../views/TagScanView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/',
       redirect: '/dashboard',
     },

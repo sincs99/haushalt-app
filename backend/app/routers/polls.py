@@ -3,7 +3,8 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func
+from sqlalchemy import func, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import verify_household_access
@@ -118,6 +119,32 @@ def _get_poll_or_404(
             detail=error_detail(ErrorCode.POLL_NOT_FOUND, "Poll not found in this household"),
         )
     return poll
+
+
+def _already_decided() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=error_detail(ErrorCode.POLL_ALREADY_DECIDED, "Poll has already been decided"),
+    )
+
+
+def _claim_poll(db: Session, poll_id: uuid.UUID) -> None:
+    """Setzt den Status atomar von 'offen' auf 'entschieden'.
+
+    Zwei gleichzeitige Entscheidungen sahen beide 'offen' und legten je einen Termin
+    an. Das bedingte UPDATE lässt nur einen Request gewinnen; der andere bekommt
+    POLL_ALREADY_DECIDED. Committet wird zusammen mit dem Ergebnis (Termin/Menüplan).
+    """
+    claimed = db.execute(
+        update(EventPoll)
+        .where(EventPoll.id == poll_id, EventPoll.status == "offen")
+        .values(status="entschieden")
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    if claimed != 1:
+        db.rollback()
+        raise _already_decided()
+    db.expire_all()
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +291,10 @@ def vote_poll(
 ):
     poll = _get_poll_or_404(poll_id, household_id, db)
 
+    # Entschiedene Abstimmungen sind abgeschlossen
+    if poll.status != "offen":
+        raise _already_decided()
+
     # Prüfe, dass option_id zu einer Option dieses Polls gehört
     option_ids = {opt.id for opt in poll.options}
     if body.option_id not in option_ids:
@@ -278,7 +309,7 @@ def vote_poll(
     existing_vote = (
         db.query(EventPollVote)
         .filter(
-            EventPollVote.option_id.in_(option_ids),
+            EventPollVote.poll_id == poll_id,
             EventPollVote.user_id == user_id,
         )
         .first()
@@ -293,14 +324,19 @@ def vote_poll(
         db.delete(existing_vote)
         db.flush()
 
-    # Neue Stimme erstellen
+    # Neue Stimme erstellen. Unique (poll_id, user_id): bei gleichzeitigen Requests
+    # derselben Person gewinnt eine Stimme, die andere wird verworfen.
     vote = EventPollVote(
+        poll_id=poll_id,
         option_id=body.option_id,
         user_id=user_id,
         household_id=household_id,
     )
     db.add(vote)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
 
     # Reload für Response
     poll = _get_poll_or_404(poll_id, household_id, db)
@@ -326,12 +362,16 @@ def decide_poll(
 ):
     poll = _get_poll_or_404(poll_id, household_id, db)
 
-    # Prüfe: Poll noch offen?
-    if poll.status != "offen":
+    # Essens-Abstimmungen werden über /meal-decide entschieden (Menüplan statt Termin)
+    if poll.poll_type != "event":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error_detail(ErrorCode.POLL_ALREADY_DECIDED, "Poll has already been decided"),
+            detail=error_detail(ErrorCode.POLL_TYPE_MISMATCH, "This is not an event poll"),
         )
+
+    # Prüfe: Poll noch offen?
+    if poll.status != "offen":
+        raise _already_decided()
 
     # Prüfe, dass option_id zu einer Option dieses Polls gehört
     chosen_option = None
@@ -354,6 +394,9 @@ def decide_poll(
             detail=error_detail(ErrorCode.CALENDAR_MISMATCH, "Calendar does not belong to this household"),
         )
 
+    # Atomar schließen: nur ein gleichzeitiger Request darf entscheiden
+    _claim_poll(db, poll_id)
+
     # Event erstellen
     if chosen_option.starts_at is not None:
         # Naive Werte aus der DB (SQLite) sind bereits UTC
@@ -372,8 +415,7 @@ def decide_poll(
     db.add(event)
     db.flush()
 
-    # Poll schließen
-    poll.status = "entschieden"
+    # Poll schließen (Status wurde bereits atomar gesetzt)
     poll.decided_event_id = event.id
     db.commit()
 
@@ -418,13 +460,7 @@ def meal_decide_poll(
 
     # Prüfe: Poll noch offen
     if poll.status != "offen":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error_detail(
-                ErrorCode.POLL_ALREADY_DECIDED,
-                "Poll already decided",
-            ),
-        )
+        raise _already_decided()
 
     # Gewählte Option finden
     chosen_option = None
@@ -440,6 +476,9 @@ def meal_decide_poll(
                 "Option not in this poll",
             ),
         )
+
+    # Atomar schließen: nur ein gleichzeitiger Request darf entscheiden
+    _claim_poll(db, poll_id)
 
     # MealPlanEntry erzeugen (Upsert: wenn Datum schon belegt, updaten)
     meal_date = poll.decided_meal_date or date.today()
@@ -465,8 +504,7 @@ def meal_decide_poll(
         )
         db.add(entry)
 
-    # Poll schließen
-    poll.status = "entschieden"
+    # Poll schließen (Status wurde bereits atomar gesetzt)
     poll.decided_meal_date = meal_date
     db.commit()
 

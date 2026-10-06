@@ -29,6 +29,7 @@ from app.routers import (
     households,
     notes,
     pets,
+    plants,
     polls,
     push,
     recurring_bills,
@@ -153,6 +154,7 @@ app.include_router(events.router)
 app.include_router(calendars.router)
 app.include_router(polls.router)
 app.include_router(pets.router)
+app.include_router(plants.router)
 app.include_router(food.recipe_router)
 app.include_router(food.meal_plan_router)
 app.include_router(notes.router)

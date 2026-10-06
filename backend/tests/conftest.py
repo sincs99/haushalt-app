@@ -63,6 +63,7 @@ from app.models import (  # noqa: E402
     Note,
     Pet,
     PetCareTask,
+    Plant,
     Recipe,
     RecurringBill,
     RefreshToken,
@@ -129,7 +130,9 @@ def _mock_socket_emit():
                                     with patch("app.routers.households.emit_to_household_sync", mock_emit):
                                         with patch("app.routers.events.emit_to_household_sync", mock_emit):
                                             with patch("app.routers.polls.emit_to_household_sync", mock_emit):
-                                                with patch("app.routers.pets.emit_to_household_sync", mock_emit):
+                                                with patch("app.routers.pets.emit_to_household_sync", mock_emit), patch(
+                                                    "app.routers.plants.emit_to_household_sync", mock_emit
+                                                ):
                                                     with patch("app.routers.food.emit_to_household_sync", mock_emit):
                                                         with patch("app.routers.notes.emit_to_household_sync", mock_emit):
                                                             with patch("app.routers.calendars.emit_to_household_sync", mock_emit):
@@ -906,3 +909,34 @@ def document_a(db, household_a, user_a) -> Document:
 @pytest.fixture()
 def document_b(db, household_b, user_b) -> Document:
     return _make_document(db, household_b, user_b, "Handy-Rechnung", "invoice")
+
+
+# --- Plants ---
+
+
+@pytest.fixture()
+def plant_a(db, household_a) -> Plant:
+    plant = Plant(
+        id=uuid.uuid4(),
+        household_id=household_a.id,
+        name="Monstera",
+        species="Monstera deliciosa",
+        location="Wohnzimmer",
+    )
+    db.add(plant)
+    db.commit()
+    db.refresh(plant)
+    return plant
+
+
+@pytest.fixture()
+def plant_b(db, household_b) -> Plant:
+    plant = Plant(
+        id=uuid.uuid4(),
+        household_id=household_b.id,
+        name="Ficus",
+    )
+    db.add(plant)
+    db.commit()
+    db.refresh(plant)
+    return plant

@@ -1,6 +1,7 @@
 /**
  * Unit-Tests für den Auth-Store: initialize() mit Token-Refresh-Pfad,
- * Single-Flight-Refresh, Offline-Verhalten, Haushalts-Auswahl und Logout.
+ * Single-Flight-Refresh, Offline-Verhalten, Haushalts-Auswahl, Logout und
+ * Token-Erneuerung für den Socket.
  *
  * axios, API-Client, tokenStorage, Router, Toast und i18n sind gemockt.
  */
@@ -10,13 +11,14 @@ import type { MeResponse } from '../../types'
 import type { Tokens } from '../../services/tokenStorage'
 import { createMemoryStorage, deferred } from './helpers'
 
-const { axiosPost, api, tokenStorage, router, showToast, disablePush } = vi.hoisted(() => ({
+const { axiosPost, api, tokenStorage, router, showToast, disablePush, socketDisconnect } = vi.hoisted(() => ({
   axiosPost: vi.fn(),
   api: { get: vi.fn(), post: vi.fn() },
   tokenStorage: { get: vi.fn(), set: vi.fn(), clear: vi.fn() },
   router: { push: vi.fn(), replace: vi.fn(), currentRoute: { value: { fullPath: '/' } } },
   showToast: vi.fn(),
   disablePush: vi.fn(),
+  socketDisconnect: vi.fn(),
 }))
 
 vi.mock('axios', () => ({ default: { post: axiosPost } }))
@@ -26,6 +28,7 @@ vi.mock('../../composables/useToast', () => ({ useToast: () => ({ showToast }) }
 vi.mock('../../i18n', () => ({ default: { global: { t: (key: string) => key } } }))
 vi.mock('../../router', () => ({ default: router }))
 vi.mock('../../services/pushService', () => ({ disablePush }))
+vi.mock('../../composables/useSocket', () => ({ useSocket: () => ({ disconnect: socketDisconnect }) }))
 
 import { useAuthStore } from '../auth'
 
@@ -276,5 +279,81 @@ describe('logout', () => {
     expect(disablePush).toHaveBeenCalledWith({ notifyBackend: true })
     expect(store.isAuthenticated).toBe(false)
     expect(router.push).toHaveBeenCalledWith('/login')
+  })
+})
+
+describe('logout und Socket', () => {
+  test('trennt den Socket, bevor das Backend den Logout erhält', async () => {
+    const store = useAuthStore()
+    store.token = 'access'
+    store.refreshToken = 'refresh'
+    axiosPost.mockResolvedValue({ data: {} })
+
+    await store.logout({ reason: 'user' })
+
+    expect(socketDisconnect).toHaveBeenCalledTimes(1)
+    expect(socketDisconnect.mock.invocationCallOrder[0]).toBeLessThan(axiosPost.mock.invocationCallOrder[0])
+  })
+})
+
+describe('refreshForSocket', () => {
+  test('liefert nach erfolgreichem Refresh das neue Access-Token', async () => {
+    tokenStorage.get.mockResolvedValue(savedTokens)
+    axiosPost.mockResolvedValue(refreshResponse)
+    const store = useAuthStore()
+    store.token = 'old-access'
+    store.refreshToken = 'old-refresh'
+
+    await expect(store.refreshForSocket()).resolves.toBe('new-access')
+    expect(axiosPost).toHaveBeenCalledWith('http://api.test/api/auth/refresh', { refresh_token: 'old-refresh' })
+  })
+
+  test('ohne Login: kein Refresh, null', async () => {
+    const store = useAuthStore()
+
+    await expect(store.refreshForSocket()).resolves.toBeNull()
+    expect(axiosPost).not.toHaveBeenCalled()
+  })
+
+  test('Refresh abgelehnt (401): null und Logout mit Grund "expired"', async () => {
+    tokenStorage.get.mockResolvedValue(savedTokens)
+    axiosPost.mockRejectedValueOnce(httpError(401)).mockResolvedValue({ data: {} })
+    router.currentRoute.value.fullPath = '/todos'
+    const store = useAuthStore()
+    store.token = 'old-access'
+    store.refreshToken = 'old-refresh'
+
+    await expect(store.refreshForSocket()).resolves.toBeNull()
+    expect(store.isAuthenticated).toBe(false)
+    expect(router.push).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/todos' } })
+  })
+
+  test('Netzwerkfehler: null, bleibt eingeloggt', async () => {
+    tokenStorage.get.mockResolvedValue(savedTokens)
+    axiosPost.mockRejectedValue(networkError())
+    const store = useAuthStore()
+    store.token = 'old-access'
+    store.refreshToken = 'old-refresh'
+
+    await expect(store.refreshForSocket()).resolves.toBeNull()
+    expect(store.isAuthenticated).toBe(true)
+    expect(tokenStorage.clear).not.toHaveBeenCalled()
+  })
+
+  test('während eines Logouts: kein Refresh (Refresh-Token ist gerade widerrufen)', async () => {
+    const logoutCall = deferred<{ data: object }>()
+    axiosPost.mockReturnValueOnce(logoutCall.promise)
+    const store = useAuthStore()
+    store.token = 'access'
+    store.refreshToken = 'refresh'
+
+    const loggingOut = store.logout({ reason: 'user' })
+    await vi.waitFor(() => expect(axiosPost).toHaveBeenCalledTimes(1))
+
+    await expect(store.refreshForSocket()).resolves.toBeNull()
+    expect(axiosPost).toHaveBeenCalledTimes(1)
+
+    logoutCall.resolve({ data: {} })
+    await loggingOut
   })
 })

@@ -125,6 +125,22 @@ export const useAuthStore = defineStore('auth', () => {
     })
   }
 
+  /**
+   * Frisches Access-Token für den Socket, nachdem der Server ihn wegen Ablauf getrennt hat.
+   * null, wenn ausgeloggt (oder Logout läuft) oder der Refresh nicht klappt; lehnt der
+   * Server den Refresh-Token ab, wird wie beim API-Interceptor ausgeloggt.
+   */
+  async function refreshForSocket(): Promise<string | null> {
+    if (_logoutPromise || !token.value) return null
+    try {
+      await refresh()
+      return token.value
+    } catch (err: any) {
+      if (isAuthRejection(err)) await logout({ reason: 'expired' })
+      return null
+    }
+  }
+
   // ── Login ──
 
   async function login(email: string, password: string) {
@@ -224,6 +240,15 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function _doLogout(options?: { reason?: 'user' | 'expired' }): Promise<void> {
     const reason = options?.reason ?? 'expired'
+
+    // Socket zuerst trennen: Der Logout-Aufruf beendet serverseitig alle Verbindungen
+    // des Users; diese hier soll darauf nicht mehr reagieren (kein Reconnect/Refresh).
+    try {
+      const { useSocket } = await import('../composables/useSocket')
+      useSocket().disconnect()
+    } catch {
+      // Best-effort
+    }
 
     // Gerät vom Push abmelden, damit nach dem Logout keine Erinnerungen mehr ankommen.
     // Backend nur bei manuellem Logout informieren: Bei 'expired' ist der Access-Token
@@ -373,6 +398,7 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     fetchMe,
     refresh,
+    refreshForSocket,
     switchHousehold,
     logout,
     // Socket-Event-Handler

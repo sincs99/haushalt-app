@@ -184,6 +184,11 @@ onMounted(async () => {
 }
 
 .pill-tab--add {
+  /* bleibt bei langen Listennamen rechts sichtbar statt aus dem Bild zu scrollen */
+  position: sticky;
+  right: 0;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 var(--space-2) var(--bg);
   display: flex;
   align-items: center;
   justify-content: center;

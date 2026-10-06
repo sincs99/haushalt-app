@@ -44,7 +44,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 
 **Kennzahlen (nach #18, vor Epic 20):** Backend 576 Tests in 51 Dateien, Coverage 91 %; Frontend 156 Tests in 13 Dateien, Coverage 31,8 % (Statements); 700 i18n-Schlüssel; 33 Alembic-Migrationen (einziger Kopf `w1x2y3z4a5b6`).
 
-**Kennzahlen (mit Epic 20: Pflanzen):** Backend 612 Tests in 52 Dateien; Frontend 179 Tests in 15 Dateien, Coverage 37,4 % (Statements); 765 i18n-Schlüssel; 34 Alembic-Migrationen (einziger Kopf `x1y2z3a4b5c6`).
+**Kennzahlen (mit Epic 20: Pflanzen):** Backend 612 Tests in 52 Dateien; Frontend 179 Tests in 15 Dateien, Coverage 38,0 % (Statements); 765 i18n-Schlüssel; 34 Alembic-Migrationen (einziger Kopf `x1y2z3a4b5c6`).
 
 **Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`, `plants`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `PlantsView`/`PlantDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Pflanzen, Essen, Notizen, Kalender und Finanzen.
 
@@ -509,7 +509,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Rate-Limit für Uploads | Klein | 🟡 Mittel | Upload-Endpunkte haben kein eigenes Limit (H-14, Epic-8-Review F-06); das Speicher-Limit pro Haushalt existiert |
 | Einladungscode läuft nie ab | Klein | 🔵 Niedrig | H-12; Rotation ist seit #11 möglich. Offen ist außerdem, ob der Code nur für Admins sichtbar sein soll |
 | Token-Ablauf auf Socket-Verbindungen | Klein | 🔵 Niedrig | Logout/Ablauf beendet bestehende WebSocket-Verbindungen serverseitig noch nicht |
-| Frontend-Testabdeckung | Mittel | 🟡 Mittel | 37,4 % Statements; Komponenten und weitere Stores (Kalender, Finanzen, Haustiere …) sind ungetestet; Coverage wird nur berichtet, es gibt keine Schwelle |
+| Frontend-Testabdeckung | Mittel | 🟡 Mittel | 38,0 % Statements; Komponenten und weitere Stores (Kalender, Finanzen, Haustiere …) sind ungetestet; Coverage wird nur berichtet, es gibt keine Schwelle |
 | Push-Notifications für Chores | Mittel | 🔵 Niedrig | „Du bist dran“-Benachrichtigung |
 | FR/IT-Sprachen | Klein | 🔵 Niedrig | Locale-Erweiterung |
 | Chores-Statistiken | Klein | 🔵 Niedrig | „Wer hat wie oft geputzt“ |

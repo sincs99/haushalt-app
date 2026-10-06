@@ -23,6 +23,7 @@ from app.core.security import (
 from app.database import get_db
 from app.models import Household, HouseholdMember, RefreshToken, User
 from app.services.invite_code import generate_unique_invite_code
+from app.socket_manager import disconnect_user_sync
 
 logger = logging.getLogger(__name__)
 
@@ -248,6 +249,8 @@ def refresh_endpoint(request: Request, data: RefreshRequest, db: Session = Depen
             RefreshToken.revoked_at.is_(None),
         ).update({"revoked_at": datetime.now(timezone.utc)})
         db.commit()
+        # Alle Sitzungen sind widerrufen → auch offene Socket-Verbindungen beenden
+        disconnect_user_sync(old_token.user_id, "revoked")
         raise HTTPException(
             status_code=401,
             detail=error_detail(ErrorCode.REFRESH_TOKEN_REUSED, "Refresh token reuse detected"),
@@ -283,12 +286,18 @@ def refresh_endpoint(request: Request, data: RefreshRequest, db: Session = Depen
 @router.post("/logout", status_code=204)
 @limiter.limit("30/minute")
 def logout_endpoint(request: Request, data: LogoutRequest, db: Session = Depends(get_db)):
-    """Revoke einen Refresh-Token. Idempotent: unbekannte/bereits revoked Tokens → trotzdem 204."""
+    """Revoke einen Refresh-Token. Idempotent: unbekannte/bereits revoked Tokens → trotzdem 204.
+
+    Offene Socket-Verbindungen des Users werden serverseitig getrennt. Der Access-Token
+    trägt keine Geräte-Kennung, deshalb trifft das alle Verbindungen des Users; andere
+    Geräte verbinden sich mit ihrem weiterhin gültigen Token selbst neu.
+    """
     token_hash = hash_refresh_token(data.refresh_token)
     existing = db.query(RefreshToken).filter_by(token_hash=token_hash).first()
     if existing and existing.revoked_at is None:
         existing.revoked_at = datetime.now(timezone.utc)
         db.commit()
+        disconnect_user_sync(existing.user_id, "logout")
     return None
 
 

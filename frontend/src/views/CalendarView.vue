@@ -1206,7 +1206,8 @@ watch(
 
 <style scoped>
 .calendar-view {
-  padding-bottom: 100px;
+  /* Platz, damit der FAB den letzten Termin nicht verdeckt */
+  padding-bottom: calc(var(--fab-size) + var(--space-6));
 }
 
 .calendar-tabs {
@@ -1495,7 +1496,7 @@ watch(
 .fab {
   position: fixed;
   right: var(--space-4);
-  bottom: 80px;
+  bottom: var(--fab-bottom);
   width: 52px;
   height: 52px;
   border-radius: var(--radius-full);

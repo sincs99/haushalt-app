@@ -89,6 +89,8 @@
   /* --- App-Shell (Mobile) --- */
   --safe-bottom: env(safe-area-inset-bottom, 0px);  /* iOS Home-Indicator */
   --bottom-nav-space: 64px;                          /* Platz für die Bottom-Nav (ohne Safe-Area) */
+  --fab-size: 56px;
+  --fab-bottom: calc(var(--bottom-nav-space) + var(--safe-bottom) + var(--space-4));
 }
 
 /* ============================================

@@ -193,6 +193,18 @@ function auditInPage(opts) {
       const r = el.getBoundingClientRect()
       if (r.bottom > navTop + 1 && r.top < navTop) add('under-bottom-nav', el, `bottom ${Math.round(r.bottom)} > navTop ${Math.round(navTop)}`)
     }
+    // Fixe Elemente (FAB etc.) verdecken am Seitenende Tap-Ziele im Inhalt
+    const fixedEls = els.filter(e => getComputedStyle(e).position === 'fixed' && !(nav && (nav === e || nav.contains(e))) && e.getBoundingClientRect().height < vh / 2)
+    for (const f of fixedEls) {
+      const fr = f.getBoundingClientRect()
+      for (const el of interactive) {
+        if (f.contains(el) || isFixedish(el)) continue
+        const r = el.getBoundingClientRect()
+        const ox = Math.min(r.right, fr.right) - Math.max(r.left, fr.left)
+        const oy = Math.min(r.bottom, fr.bottom) - Math.max(r.top, fr.top)
+        if (ox > 2 && oy > 2) add('covered-by-fixed', el, `von ${sig(f)} „${txt(f)}“ verdeckt (${Math.round(ox)}×${Math.round(oy)})`)
+      }
+    }
   }
   // Sichtbarer Bereich innerhalb scrollender Vorfahren (Dialog-Body etc.)
   const hiddenInScroller = el => {

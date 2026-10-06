@@ -1,5 +1,7 @@
 # haushalt-app
 
+[![CI](https://github.com/sincs99/haushalt-app/actions/workflows/ci.yml/badge.svg)](https://github.com/sincs99/haushalt-app/actions/workflows/ci.yml)
+
 ## Datensicherung
 
 ### Backup erstellen

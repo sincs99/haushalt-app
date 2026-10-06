@@ -813,6 +813,8 @@ onUnmounted(() => {
 .doc-card__actions {
   display: flex;
   flex-shrink: 0;
+  /* Abstand, damit sich die 44-px-Tap-Flächen (.tap-target) nicht überlappen */
+  gap: var(--space-3);
 }
 
 .category-chip {
@@ -979,7 +981,8 @@ onUnmounted(() => {
 .page-row {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  /* Abstand, damit sich die 44-px-Tap-Flächen (.tap-target) nicht überlappen */
+  gap: var(--space-3);
   background: var(--chip);
   border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
@@ -1024,7 +1027,7 @@ onUnmounted(() => {
 }
 
 .page-row .icon-btn {
-  padding: var(--space-1);
+  padding: var(--space-2);
 }
 
 .icon-btn:disabled {

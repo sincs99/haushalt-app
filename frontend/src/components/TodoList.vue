@@ -664,7 +664,8 @@ async function saveEdit(todoId: string) {
 /* Aktions-Buttons */
 .todo-row__actions {
   display: flex;
-  gap: var(--space-1);
+  /* Abstand, damit sich die 44-px-Tap-Flächen (.tap-target) nicht überlappen */
+  gap: var(--space-3);
   flex-shrink: 0;
 }
 

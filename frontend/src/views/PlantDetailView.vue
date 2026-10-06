@@ -768,7 +768,8 @@ async function handleDeleteTask() {
 .care-task-card__actions {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  /* Abstand, damit sich die 44-px-Tap-Flächen (.tap-target) nicht überlappen */
+  gap: var(--space-3);
   flex-shrink: 0;
 }
 

@@ -1473,7 +1473,8 @@ async function handleDeleteCareTask() {
 
 .med-item__actions {
   display: flex;
-  gap: var(--space-1);
+  /* Abstand, damit sich die 44-px-Tap-Flächen (.tap-target) nicht überlappen */
+  gap: var(--space-3);
   flex-shrink: 0;
 }
 
@@ -1481,7 +1482,7 @@ async function handleDeleteCareTask() {
   background: none;
   border: none;
   cursor: pointer;
-  padding: var(--space-1);
+  padding: var(--space-2);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -1892,7 +1893,8 @@ async function handleDeleteCareTask() {
 .care-task-card__actions {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  /* Abstand, damit sich die 44-px-Tap-Flächen (.tap-target) nicht überlappen */
+  gap: var(--space-3);
   flex-shrink: 0;
 }
 /* ── Pet Photo ── */

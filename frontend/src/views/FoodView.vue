@@ -1115,6 +1115,7 @@ async function doCreateMealPoll() {
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-1) 0;
+  margin-top: var(--space-1); /* Tap-Fläche nicht über dem Eingabefeld */
   font-size: var(--text-sm);
   color: var(--acc);
   background: none;

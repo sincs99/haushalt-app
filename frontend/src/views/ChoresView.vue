@@ -1016,7 +1016,8 @@ const weekdayOptions = computed(() =>
 
 .rotation-item__actions {
   display: flex;
-  gap: var(--space-1);
+  /* Abstand, damit sich die 44-px-Tap-Flächen (.tap-target) nicht überlappen */
+  gap: var(--space-3);
 }
 
 /* ── Chore-Liste ── */
@@ -1092,7 +1093,8 @@ const weekdayOptions = computed(() =>
 
 .chore-card__actions {
   display: flex;
-  gap: var(--space-1);
+  /* Abstand, damit sich die 44-px-Tap-Flächen (.tap-target) nicht überlappen */
+  gap: var(--space-3);
   flex-shrink: 0;
 }
 

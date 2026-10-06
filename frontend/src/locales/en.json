@@ -929,7 +929,17 @@
         "non_toxic": "non-toxic",
         "toxic": "toxic"
       },
-      "vetDisclaimer": "Not veterinary advice. If in doubt, ask a vet or a poison control center."
+      "vetDisclaimer": "Not veterinary advice. If in doubt, ask a vet or a poison control center.",
+      "fetchForPlant": "Get care tips from AI",
+      "needName": "Enter the plant's name or species first.",
+      "applyPlan": "Will be applied: {create} new task(s), {update} to adjust.",
+      "applyToPlant": "Apply care tasks and notes",
+      "applyToForm": "Use suggestion",
+      "adopted": "Applied",
+      "adoptedForm": "Suggestion applied – tasks and notes are created when you save.",
+      "nothingSavedYet": "Nothing is saved until you apply it.",
+      "applied": "Care suggestion applied",
+      "applyError": "Could not apply the care suggestion"
     }
   },
   "tags": {

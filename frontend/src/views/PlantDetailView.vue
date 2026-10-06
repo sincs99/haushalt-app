@@ -11,10 +11,11 @@ import { createOnlineFilesRepository } from '../repositories/filesRepository'
 import { formatDate } from '../utils/dates'
 import { translateApiError } from '../utils/apiErrors'
 import { careTaskName, daysUntil, dueText } from '../utils/plantCare'
-import type { Plant, PlantCareLog, PlantCareTask, PlantCareType, StoredFile } from '../types'
+import type { AiPlantCareAdvice, Plant, PlantCareLog, PlantCareTask, PlantCareType, StoredFile } from '../types'
 import {
   PhArrowLeft, PhPencilSimple, PhPlus, PhCheck, PhTrash, PhCamera, PhPlant,
 } from '@phosphor-icons/vue'
+import AiPlantCareCard from '../components/AiPlantCareCard.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
@@ -220,6 +221,28 @@ async function handleSaveEdit() {
   }
 }
 
+// ── KI-Pflegehinweise ──
+
+const adviceApplying = ref(false)
+const adviceApplied = ref(false)
+
+// Neue Pflanze (Navigation) → Zustand zurücksetzen
+watch(plantId, () => { adviceApplied.value = false })
+
+async function handleApplyAdvice(advice: AiPlantCareAdvice) {
+  if (!plant.value || adviceApplying.value) return
+  adviceApplying.value = true
+  try {
+    await plantsStore.applyCareAdvice(plant.value, advice)
+    adviceApplied.value = true
+    showToast(t('ai.plant.applied'), 'success')
+  } catch {
+    showToast(t('ai.plant.applyError'), 'error')
+  } finally {
+    adviceApplying.value = false
+  }
+}
+
 // ── Add Care Task Dialog ──
 
 const CARE_TYPES: PlantCareType[] = ['water', 'fertilize', 'repot', 'mist', 'other']
@@ -373,6 +396,18 @@ async function handleDeleteTask() {
           <p class="info-block__text">{{ plant.notes }}</p>
         </div>
       </BaseCard>
+
+      <!-- ═══ KI-Pflegehinweise (nur mit Server-Schlüssel + Haushalts-Opt-in) ═══ -->
+      <AiPlantCareCard
+        :key="plant.id"
+        :plant-name="plant.species || plant.name"
+        :location="plant.location ?? undefined"
+        :apply-label="$t('ai.plant.applyToPlant')"
+        :existing-tasks="plantsStore.careTasks"
+        :busy="adviceApplying"
+        :done="adviceApplied"
+        @apply="handleApplyAdvice"
+      />
 
       <!-- ═══ Pflege ═══ -->
       <section class="section">

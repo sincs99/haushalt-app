@@ -201,7 +201,14 @@ Die Modell-Ausgabe (`RecipeOutput`) wird vor der Rückgabe in die Grenzen von `R
 
 Die Oberfläche zeigt zur Giftigkeit immer „Keine tierärztliche Auskunft“.
 
-**Einbindung im Pflanzen-Modul (Branch `claude/plants-module`):** Der Endpunkt ist bewusst unabhängig von einem `Plant`-Modell. Beim Anlegen einer Pflanze kann das Modul `POST /ai/plant-care` mit dem Namen aufrufen und die Pflegeaufgaben vorbefüllen: Gießen alle `watering_interval_days` Tage, Düngen alle `fertilizing_interval_days` Tage (falls nicht `null`), Umtopfen alle `repotting_interval_months` Monate; `light`, `location_tip`, `care_notes` und `pet_toxicity` als Felder bzw. Notiz der Pflanze. Der Nutzer bestätigt die Werte, bevor sie gespeichert werden.
+**Einbindung im Pflanzen-Modul (umgesetzt, Epic 34):** Der Endpunkt ist bewusst unabhängig von einem `Plant`-Modell. Im „Pflanze hinzufügen“-Dialog und in der Detailansicht gibt es den Button „Pflegehinweise von der KI holen“ (`components/AiPlantCareCard.vue`, nur sichtbar mit Server-Schlüssel **und** Haushalts-Opt-in, gleiches Muster wie die Rezept-Karte). Der Vorschlag wird angezeigt und erst auf Tipp übernommen; die Abbildung steckt in `utils/plantCare.ts` (`adviceTasks`, `planAdvice`, `mergeCareNotes`) und `stores/plants.ts` (`applyAdviceTasks`, `applyCareAdvice`). Es gibt keinen neuen Endpunkt — die Aufgaben laufen über `…/plants/{id}/care-tasks/`. Abbildung: Gießen alle `watering_interval_days` Tage, Düngen alle `fertilizing_interval_days` Tage (falls nicht `null`), Umtopfen alle `repotting_interval_months` Monate; `light`, `location_tip`, `care_notes` und `pet_toxicity` als Felder bzw. Notiz der Pflanze. Der Nutzer bestätigt die Werte, bevor sie gespeichert werden.
+
+Details der Übernahme:
+
+- Umtopfen: Monate × 30 = Tage; Werte ausserhalb von 1–3650 Tagen und `null`-Intervalle ergeben keine Aufgabe („nicht nötig“).
+- Pro Pflegeart gilt: gibt es schon eine Aufgabe ohne eigenes Label, wird ihr Intervall angepasst (nur bei Abweichung), sonst wird eine neue angelegt. Aufgaben mit eigenem Label bleiben unberührt. Die Aufgaben werden vor dem Abgleich frisch vom Server gelesen; schlägt das fehl, wird nichts angelegt (keine Duplikate).
+- `care_notes` werden an das Freitextfeld der Pflanze **angehängt** (nie überschrieben, nicht doppelt, auf 2000 Zeichen gekürzt). Der botanische Name füllt die Art nur, wenn sie leer ist.
+- Im Anlegen-Dialog wird nichts gespeichert, bevor „Speichern“ gedrückt wird; „Vorschlag übernehmen“ merkt sich den Vorschlag nur im Formular (Art, Pflegehinweise, Aufgaben). Der Giftigkeits-Hinweis zeigt weiter „Keine tierärztliche Auskunft“.
 
 ## 8. Weitere Funktionen ergänzen
 

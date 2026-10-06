@@ -5,9 +5,10 @@ import { useRouter } from 'vue-router'
 import { usePlantsStore } from '../stores/plants'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
-import { careTaskName, dueText, isWaterDue } from '../utils/plantCare'
-import type { Plant, PlantCareLog, PlantCareStatus, PlantCareStatusTask } from '../types'
+import { careTaskName, dueText, isWaterDue, mergeCareNotes } from '../utils/plantCare'
+import type { AiPlantCareAdvice, Plant, PlantCareLog, PlantCareStatus, PlantCareStatusTask } from '../types'
 import { PhPlant, PhPlus, PhDrop } from '@phosphor-icons/vue'
+import AiPlantCareCard from '../components/AiPlantCareCard.vue'
 import PlantPhotoAvatar from '../components/PlantPhotoAvatar.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
@@ -133,6 +134,8 @@ const formLocation = ref('')
 const formNotes = ref('')
 const formAddWaterTask = ref(true)
 const formSaving = ref(false)
+// Übernommener KI-Vorschlag: wird erst beim Speichern der Pflanze angelegt
+const formAdvice = ref<AiPlantCareAdvice | null>(null)
 
 function openAddDialog() {
   formName.value = ''
@@ -140,7 +143,13 @@ function openAddDialog() {
   formLocation.value = ''
   formNotes.value = ''
   formAddWaterTask.value = true
+  formAdvice.value = null
   showAddDialog.value = true
+}
+
+function adoptAdvice(advice: AiPlantCareAdvice) {
+  formAdvice.value = advice
+  if (!formSpecies.value.trim() && advice.botanical_name) formSpecies.value = advice.botanical_name.slice(0, 80)
 }
 
 function closeAddDialog() {
@@ -158,8 +167,15 @@ async function handleCreatePlant() {
       species: formSpecies.value.trim() || undefined,
       location: formLocation.value.trim() || undefined,
       notes: formNotes.value.trim() || undefined,
+      care_notes: formAdvice.value ? mergeCareNotes(null, formAdvice.value.care_notes) || undefined : undefined,
     })
-    if (created && formAddWaterTask.value) {
+    if (created && formAdvice.value) {
+      try {
+        await plantsStore.applyAdviceTasks(created.id, formAdvice.value)
+      } catch {
+        showToast(t('ai.plant.applyError'), 'error')
+      }
+    } else if (created && formAddWaterTask.value) {
       try {
         await plantsStore.createCareTask(created.id, { care_type: 'water' })
       } catch {
@@ -312,10 +328,19 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
         <BaseInput v-model="formSpecies" :label="$t('plants.species')" :placeholder="$t('plants.speciesPlaceholder')" />
         <BaseInput v-model="formLocation" :label="$t('plants.location')" :placeholder="$t('plants.locationPlaceholder')" />
         <BaseInput v-model="formNotes" :label="$t('plants.notes')" :placeholder="$t('plants.notes')" />
-        <label class="checkbox-row">
+        <label v-if="!formAdvice" class="checkbox-row">
           <input v-model="formAddWaterTask" type="checkbox" />
           <span>{{ $t('plants.addWaterTask') }}</span>
         </label>
+        <AiPlantCareCard
+          v-if="showAddDialog"
+          :plant-name="formSpecies.trim() || formName.trim()"
+          :location="formLocation"
+          :apply-label="$t('ai.plant.applyToForm')"
+          :done="!!formAdvice"
+          @apply="adoptAdvice"
+        />
+        <p v-if="formAdvice" class="form-hint">{{ $t('ai.plant.adoptedForm') }}</p>
       </form>
       <template #footer>
         <div class="dialog-actions">
@@ -494,6 +519,12 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+.form-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
 }
 
 .checkbox-row {

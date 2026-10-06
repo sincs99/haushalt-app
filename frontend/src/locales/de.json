@@ -929,7 +929,17 @@
         "non_toxic": "ungiftig",
         "toxic": "giftig"
       },
-      "vetDisclaimer": "Keine tierärztliche Auskunft. Im Zweifel Tierarztpraxis oder Tox-Info fragen."
+      "vetDisclaimer": "Keine tierärztliche Auskunft. Im Zweifel Tierarztpraxis oder Tox-Info fragen.",
+      "fetchForPlant": "Pflegehinweise von der KI holen",
+      "needName": "Zuerst Name oder Art der Pflanze eintragen.",
+      "applyPlan": "Wird übernommen: {create} Aufgabe(n) neu, {update} anpassen.",
+      "applyToPlant": "Pflegeaufgaben und Hinweise übernehmen",
+      "applyToForm": "Vorschlag übernehmen",
+      "adopted": "Übernommen",
+      "adoptedForm": "Vorschlag übernommen – Aufgaben und Hinweise werden beim Speichern angelegt.",
+      "nothingSavedYet": "Es wird erst gespeichert, wenn du übernimmst.",
+      "applied": "Pflegevorschlag übernommen",
+      "applyError": "Pflegevorschlag konnte nicht übernommen werden"
     }
   },
   "tags": {

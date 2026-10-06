@@ -3,8 +3,9 @@ import { ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlinePlantsRepository } from '../repositories/plantsRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
+import { planAdvice, mergeCareNotes } from '../utils/plantCare'
 import type {
-  Plant, PlantCreatePayload, PlantUpdatePayload, PlantCareStatus, PlantCareStatusTask,
+  AiPlantCareAdvice, Plant, PlantCreatePayload, PlantUpdatePayload, PlantCareStatus, PlantCareStatusTask,
   PlantCareTask, PlantCareTaskCreatePayload, PlantCareTaskUpdatePayload, PlantCareLog,
   HouseholdMemberInfo,
 } from '../types'
@@ -293,6 +294,38 @@ export const usePlantsStore = defineStore('plants', () => {
     }
   }
 
+  /**
+   * KI-Vorschlag als Pflegeaufgaben übernehmen: gleiche Pflegeart wird aktualisiert,
+   * fehlende angelegt. Liest die Aufgaben frisch vom Server (Fehler → Abbruch statt Duplikate).
+   * Liefert die Anzahl angelegter und aktualisierter Aufgaben.
+   */
+  async function applyAdviceTasks(plantId: string, advice: AiPlantCareAdvice) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return { created: 0, updated: 0 }
+
+    const existing = await repo.fetchCareTasks(householdId, plantId)
+    const plan = planAdvice(advice, existing)
+    for (const task of plan.update) {
+      await updateCareTask(plantId, task.id, { interval_days: task.interval_days })
+    }
+    for (const task of plan.create) {
+      await createCareTask(plantId, { care_type: task.care_type, interval_days: task.interval_days })
+    }
+    return { created: plan.create.length, updated: plan.update.length }
+  }
+
+  /** Aufgaben + Pflegehinweise (angehängt) + Art (nur wenn leer) einer bestehenden Pflanze übernehmen. */
+  async function applyCareAdvice(plant: Plant, advice: AiPlantCareAdvice) {
+    const result = await applyAdviceTasks(plant.id, advice)
+    const payload: PlantUpdatePayload = {}
+    const notes = mergeCareNotes(plant.care_notes, advice.care_notes)
+    if (notes !== (plant.care_notes ?? '')) payload.care_notes = notes
+    if (!plant.species?.trim() && advice.botanical_name) payload.species = advice.botanical_name.slice(0, 80)
+    if (Object.keys(payload).length > 0) await updatePlant(plant.id, payload)
+    return result
+  }
+
   async function removeCareTask(plantId: string, taskId: string) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
@@ -399,6 +432,8 @@ export const usePlantsStore = defineStore('plants', () => {
     completeCareTask,
     waterPlant,
     waterAll,
+    applyAdviceTasks,
+    applyCareAdvice,
     removeCareTask,
     fetchCareLog,
     // Socket-Handlers

@@ -3,12 +3,13 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.config import settings
 from app.core.deps import get_current_user
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
@@ -31,6 +32,32 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # Wird für Login-Versuche mit unbekannter E-Mail verwendet (Timing-Angleichung)
 _DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(16))
 
+# ---------------------------------------------------------------------------
+# Refresh-Token als HttpOnly-Cookie (Web-Client) + CSRF-Schutz
+# ---------------------------------------------------------------------------
+#
+# Der Web-Client (PWA) bekommt den Refresh-Token NICHT im Body, sondern als
+# HttpOnly-Cookie ``casa_rt`` — für JavaScript und damit für XSS unsichtbar.
+# Er kennzeichnet alle Auth-Requests mit dem Header ``X-Requested-With: casa``.
+# Dieser Header hat zwei Aufgaben:
+#
+#   1. Er schaltet die Cookie-Auslieferung ein. Ohne Header verhält sich die API
+#      wie bisher (Refresh-Token im Body) — für Swagger-UI (/docs → "Authorize")
+#      und künftige native Clients (Capacitor) ohne Browser-Cookie-Jar.
+#   2. Er ist der CSRF-Schutz für ``/refresh`` und ``/logout``, sobald der Token
+#      aus dem Cookie gelesen wird: HTML-Formulare können keine eigenen Header
+#      setzen, und ein fremder Origin kann ihn per fetch/XHR nur mit einem
+#      CORS-Preflight senden, den ausschliesslich die konfigurierten Origins
+#      bestehen. Dazu kommen SameSite=Strict und Path=/api/auth auf dem Cookie.
+#
+# Wird der Token im Body mitgeschickt, hat er Vorrang vor dem Cookie (native
+# Clients, einmalige Migration alter localStorage-Tokens im Web-Client).
+
+REFRESH_COOKIE_NAME = "casa_rt"
+REFRESH_COOKIE_PATH = "/api/auth"
+CSRF_HEADER_NAME = "X-Requested-With"
+CSRF_HEADER_VALUE = "casa"
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -51,17 +78,20 @@ class RegisterRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
-    refresh_token: str
+    # None, wenn der Refresh-Token als HttpOnly-Cookie geliefert wurde (Web-Client)
+    refresh_token: str | None
     token_type: str = "bearer"
     expires_in: int  # Sekunden bis Access-Token abläuft
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    # Optional: fehlt er, wird der Token aus dem Cookie ``casa_rt`` gelesen
+    refresh_token: str | None = None
 
 
 class LogoutRequest(BaseModel):
-    refresh_token: str
+    # Optional: fehlt er, wird der Token aus dem Cookie ``casa_rt`` gelesen
+    refresh_token: str | None = None
 
 
 class HouseholdOut(BaseModel):
@@ -83,14 +113,90 @@ class MeResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _uses_cookie_delivery(request: Request) -> bool:
+    """True für den Web-Client, der sich per ``X-Requested-With: casa`` ausweist."""
+    return request.headers.get(CSRF_HEADER_NAME, "").strip().lower() == CSRF_HEADER_VALUE
+
+
+def _set_refresh_cookie(response: Response, raw_refresh: str) -> None:
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=raw_refresh,
+        max_age=settings.refresh_token_expire_days * 24 * 3600,
+        path=REFRESH_COOKIE_PATH,
+        secure=settings.refresh_cookie_secure,
+        httponly=True,
+        samesite="strict",
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        path=REFRESH_COOKIE_PATH,
+        secure=settings.refresh_cookie_secure,
+        httponly=True,
+        samesite="strict",
+    )
+
+
+def _cleared_cookie_headers() -> dict[str, str]:
+    """Set-Cookie-Header, der den Cookie löscht — für Fehler-Responses (HTTPException)."""
+    tmp = Response()
+    _clear_refresh_cookie(tmp)
+    return {"set-cookie": tmp.headers["set-cookie"]}
+
+
+def _deliver(pair: TokenResponse, request: Request, response: Response) -> TokenResponse:
+    """Web-Client: Refresh-Token nur als Cookie, nicht im Body. Sonst unverändert im Body."""
+    if _uses_cookie_delivery(request):
+        _set_refresh_cookie(response, pair.refresh_token)
+        return pair.model_copy(update={"refresh_token": None})
+    return pair
+
+
+def _resolve_refresh_token(request: Request, body_token: str | None) -> tuple[str | None, bool]:
+    """Ermittelt den Refresh-Token aus Body (Vorrang) oder Cookie.
+
+    Returns:
+        (raw_token oder None, from_cookie)
+
+    Raises:
+        HTTPException 403, wenn der Token aus dem Cookie käme, der CSRF-Header
+        aber fehlt — der Token wird dann nicht angefasst.
+    """
+    if body_token:
+        return body_token, False
+    cookie_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not cookie_token:
+        return None, False
+    if not _uses_cookie_delivery(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_detail(
+                ErrorCode.CSRF_HEADER_MISSING,
+                f"Header '{CSRF_HEADER_NAME}: {CSRF_HEADER_VALUE}' is required for cookie-based requests",
+            ),
+        )
+    return cookie_token, True
+
+
+def _refresh_rejected(code: str, message: str, from_cookie: bool) -> HTTPException:
+    """401 für /refresh. Kam der Token aus dem Cookie, wird dieser gleich gelöscht,
+    damit der Browser den toten Token nicht bei jedem Start erneut schickt."""
+    return HTTPException(
+        status_code=401,
+        detail=error_detail(code, message),
+        headers=_cleared_cookie_headers() if from_cookie else None,
+    )
+
+
 def _create_token_pair(user_id: str, db: Session) -> tuple[TokenResponse, RefreshToken]:
     """Erzeugt Access- + Refresh-Token-Paar und persistiert den Refresh-Token.
 
     Returns:
         Tuple aus (TokenResponse für den Client, RefreshToken DB-Objekt).
     """
-    from app.core.config import settings
-
     access_token = create_access_token(user_id)
     raw_refresh = create_refresh_token()
 
@@ -137,7 +243,12 @@ def _cleanup_expired_tokens(user_id: uuid.UUID, db: Session) -> None:
 
 @router.post("/register", response_model=TokenResponse)
 @limiter.limit("3/hour")
-def register(request: Request, data: RegisterRequest, db: Session = Depends(get_db)):
+def register(
+    request: Request,
+    response: Response,
+    data: RegisterRequest,
+    db: Session = Depends(get_db),
+):
     existing = db.query(User).filter_by(email=data.email).first()
     if existing:
         raise HTTPException(status_code=400, detail=error_detail(ErrorCode.EMAIL_ALREADY_REGISTERED, "Email already registered"))
@@ -176,12 +287,17 @@ def register(request: Request, data: RegisterRequest, db: Session = Depends(get_
     db.flush()
 
     pair, _ = _create_token_pair(str(user.id), db)
-    return pair
+    return _deliver(pair, request, response)
 
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
-def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(
+    request: Request,
+    response: Response,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
     user = db.query(User).filter_by(email=form_data.username).first()
     # Auch bei unbekannter E-Mail einen bcrypt-Vergleich durchführen, damit die
     # Antwortzeit nicht verrät, ob ein Account existiert (User-Enumeration).
@@ -191,27 +307,39 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
         raise HTTPException(status_code=401, detail=error_detail(ErrorCode.INVALID_CREDENTIALS, "Incorrect email or password"))
 
     pair, _ = _create_token_pair(str(user.id), db)
-    return pair
+    return _deliver(pair, request, response)
 
 
 @router.post("/refresh", response_model=TokenResponse)
 @limiter.limit("30/minute")
-def refresh_endpoint(request: Request, data: RefreshRequest, db: Session = Depends(get_db)):
-    """Token-Rotation: tausche gültigen Refresh-Token gegen neues Token-Paar."""
-    token_hash = hash_refresh_token(data.refresh_token)
+def refresh_endpoint(
+    request: Request,
+    response: Response,
+    data: RefreshRequest | None = None,
+    db: Session = Depends(get_db),
+):
+    """Token-Rotation: tausche gültigen Refresh-Token gegen neues Token-Paar.
+
+    Der alte Token kommt aus dem Body (native Clients, Migration) oder aus dem
+    HttpOnly-Cookie (Web-Client, nur mit CSRF-Header). Das neue Paar wird auf
+    demselben Weg ausgeliefert, auf dem der Client sich ausweist (siehe oben).
+    """
+    raw_token, from_cookie = _resolve_refresh_token(request, data.refresh_token if data else None)
+    if raw_token is None:
+        raise HTTPException(
+            status_code=401,
+            detail=error_detail(ErrorCode.REFRESH_TOKEN_INVALID, "Refresh token missing"),
+        )
+
+    token_hash = hash_refresh_token(raw_token)
     old_token = db.query(RefreshToken).filter_by(token_hash=token_hash).first()
 
     # 1) Token nicht gefunden
     if old_token is None:
-        raise HTTPException(
-            status_code=401,
-            detail=error_detail(ErrorCode.REFRESH_TOKEN_INVALID, "Refresh token invalid"),
-        )
+        raise _refresh_rejected(ErrorCode.REFRESH_TOKEN_INVALID, "Refresh token invalid", from_cookie)
 
     # 2) Reuse-Detection MIT Grace Window
     if old_token.revoked_at is not None:
-        from app.core.config import settings
-
         # Prüfe ob innerhalb der Grace Period UND ein Replacement existiert
         revoked_at = old_token.revoked_at
         if revoked_at.tzinfo is None:
@@ -240,7 +368,7 @@ def refresh_endpoint(request: Request, data: RefreshRequest, db: Session = Depen
                     pair, new_rt = _create_token_pair(str(old_token.user_id), db)
                     replacement.replaced_by_id = new_rt.id
                     db.commit()
-                    return pair
+                    return _deliver(pair, request, response)
 
         # Grace Window nicht anwendbar → volle Reuse-Detection
         db.query(RefreshToken).filter(
@@ -248,9 +376,8 @@ def refresh_endpoint(request: Request, data: RefreshRequest, db: Session = Depen
             RefreshToken.revoked_at.is_(None),
         ).update({"revoked_at": datetime.now(timezone.utc)})
         db.commit()
-        raise HTTPException(
-            status_code=401,
-            detail=error_detail(ErrorCode.REFRESH_TOKEN_REUSED, "Refresh token reuse detected"),
+        raise _refresh_rejected(
+            ErrorCode.REFRESH_TOKEN_REUSED, "Refresh token reuse detected", from_cookie
         )
 
     # 3) Token abgelaufen (SQLite gibt naive datetimes, PostgreSQL aware)
@@ -258,10 +385,7 @@ def refresh_endpoint(request: Request, data: RefreshRequest, db: Session = Depen
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at < datetime.now(timezone.utc):
-        raise HTTPException(
-            status_code=401,
-            detail=error_detail(ErrorCode.REFRESH_TOKEN_EXPIRED, "Refresh token expired"),
-        )
+        raise _refresh_rejected(ErrorCode.REFRESH_TOKEN_EXPIRED, "Refresh token expired", from_cookie)
 
     # 4) Alles OK → alten Token revoken, neues Paar erstellen
     old_token.revoked_at = datetime.now(timezone.utc)
@@ -277,18 +401,31 @@ def refresh_endpoint(request: Request, data: RefreshRequest, db: Session = Depen
     except Exception:
         logger.warning("Refresh token cleanup failed for user %s", old_token.user_id, exc_info=True)
 
-    return pair
+    return _deliver(pair, request, response)
 
 
 @router.post("/logout", status_code=204)
 @limiter.limit("30/minute")
-def logout_endpoint(request: Request, data: LogoutRequest, db: Session = Depends(get_db)):
-    """Revoke einen Refresh-Token. Idempotent: unbekannte/bereits revoked Tokens → trotzdem 204."""
-    token_hash = hash_refresh_token(data.refresh_token)
-    existing = db.query(RefreshToken).filter_by(token_hash=token_hash).first()
-    if existing and existing.revoked_at is None:
-        existing.revoked_at = datetime.now(timezone.utc)
-        db.commit()
+def logout_endpoint(
+    request: Request,
+    response: Response,
+    data: LogoutRequest | None = None,
+    db: Session = Depends(get_db),
+):
+    """Revoke einen Refresh-Token (Body oder Cookie) und löscht den Cookie.
+
+    Idempotent: unbekannte/bereits revoked/fehlende Tokens → trotzdem 204.
+    """
+    raw_token, _from_cookie = _resolve_refresh_token(request, data.refresh_token if data else None)
+    if raw_token:
+        token_hash = hash_refresh_token(raw_token)
+        existing = db.query(RefreshToken).filter_by(token_hash=token_hash).first()
+        if existing and existing.revoked_at is None:
+            existing.revoked_at = datetime.now(timezone.utc)
+            db.commit()
+
+    if _uses_cookie_delivery(request) or REFRESH_COOKIE_NAME in request.cookies:
+        _clear_refresh_cookie(response)
     return None
 
 

@@ -93,8 +93,20 @@ class TestCors:
         resp = self._preflight(client, ORIGIN)
         assert resp.status_code == 200
         assert resp.headers["access-control-allow-origin"] == ORIGIN
-        # Bearer-Auth → keine Cookies → keine Credentials
-        assert "access-control-allow-credentials" not in resp.headers
+        # Refresh-Cookie (H-01) → Credentials erlaubt, aber nur für diesen Origin
+        assert resp.headers["access-control-allow-credentials"] == "true"
+
+    def test_preflight_allows_csrf_header(self, client):
+        resp = self._preflight(client, ORIGIN, headers="content-type,x-requested-with")
+        assert resp.status_code == 200
+        assert "x-requested-with" in resp.headers["access-control-allow-headers"].lower()
+
+    def test_foreign_origin_preflight_with_csrf_header_rejected(self, client):
+        """Fremder Origin besteht den Preflight für den Cookie-Endpunkt nicht
+        (kein Allow-Origin → Browser verwirft die Antwort, Credentials-Flag ist dann wirkungslos)."""
+        resp = self._preflight(client, "https://evil.example", headers="x-requested-with")
+        assert resp.status_code == 400
+        assert "access-control-allow-origin" not in resp.headers
 
     def test_preflight_foreign_origin_rejected(self, client):
         resp = self._preflight(client, "https://evil.example")

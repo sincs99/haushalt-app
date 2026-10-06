@@ -42,7 +42,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | #17 | Frontend-Stores: Geschäfts-Filter folgt dem Umbenennen, fehlgeschlagenes Löschen eines Ämtlis stellt dessen Zuweisungen wieder her; Unit-Tests für den Auth-Store |
 | #18 | Einkauf: Geschäftsnamen werden ohne Beachtung der Groß-/Kleinschreibung zusammengeführt (Backend und Frontend, keine Migration); bestehende Einträge behalten ihre Schreibweise |
 
-**Kennzahlen (nach #18):** Backend 576 Tests in 51 Dateien, Coverage 91 %; Frontend 156 Tests in 13 Dateien, Coverage 31,8 % (Statements); 700 i18n-Schlüssel; 33 Alembic-Migrationen (einziger Kopf `w1x2y3z4a5b6`).
+**Kennzahlen (nach Socket-Token-Ablauf):** Backend 590 Tests in 52 Dateien, Coverage 92 %; Frontend 170 Tests in 14 Dateien, Coverage 32,1 % (Statements); 700 i18n-Schlüssel; 33 Alembic-Migrationen (einziger Kopf `w1x2y3z4a5b6`).
 
 **Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Essen, Notizen, Kalender und Finanzen.
 
@@ -84,7 +84,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | [`app/main.py`](../backend/app/main.py) | FastAPI-App, CORS, Router-Mount (auth, shopping, todos, households, expenses, settlements, chores), Socket.IO-Mount | ✅ Fertig |
 | [`app/models.py`](../backend/app/models.py) | SQLAlchemy Models: Household (+timezone, +currency), User, HouseholdMember, ShoppingItem, Todo, Expense, ExpenseShare, Chore, ChoreAssignment | ✅ Fertig |
 | [`app/database.py`](../backend/app/database.py) | DB-Session, Engine, Base | ✅ Fertig |
-| [`app/socket_manager.py`](../backend/app/socket_manager.py) | Socket.IO Server, Auth, Room-Join, emit_to_household_sync | ✅ Fertig |
+| [`app/socket_manager.py`](../backend/app/socket_manager.py) | Socket.IO Server, Auth, Sitzungs-Ablauf (Timer + `reauth`), Room-Join, emit_to_household_sync, disconnect_user_sync | ✅ Fertig |
 | [`app/core/config.py`](../backend/app/core/config.py) | Pydantic Settings (DB-URL, JWT-Secret, CORS) | ✅ Fertig |
 | [`app/core/security.py`](../backend/app/core/security.py) | JWT-Erstellung, Passwort-Hashing/-Verify, Invite-Code-Generierung | ✅ Fertig |
 | [`app/core/deps.py`](../backend/app/core/deps.py) | Dependencies: get_current_user, verify_household_access, verify_household_admin | ✅ Fertig |
@@ -167,7 +167,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | [`utils/apiErrors.ts`](../frontend/src/utils/apiErrors.ts) | Error-Code-Extraktion, i18n-Mapping für maschinenlesbare Backend-Codes | ✅ Fertig |
 | [`utils/memberColor.ts`](../frontend/src/utils/memberColor.ts) | **NEU:** Deterministisches User→Farbe-Mapping (6 Farben: p1, p2, #94798C, #8A8272, acc, ok) | ✅ Fertig |
 | **Composables** | | |
-| [`composables/useSocket.ts`](../frontend/src/composables/useSocket.ts) | Socket.IO Client-Wrapper | ✅ Fertig |
+| [`composables/useSocket.ts`](../frontend/src/composables/useSocket.ts) | Socket.IO Client-Wrapper, Token-Übergabe nach Refresh (`reauth`), Reconnect nach serverseitigem Sitzungsende | ✅ Fertig |
 | [`composables/useConnectivity.ts`](../frontend/src/composables/useConnectivity.ts) | Online/Offline-Erkennung (navigator.onLine) | ✅ Fertig |
 | [`composables/useToast.ts`](../frontend/src/composables/useToast.ts) | App-weites Toast-System für Fehler-Feedback | ✅ Fertig |
 | **Views** | | |
@@ -245,6 +245,9 @@ Alle Änderungen kamen per Pull Request auf `master`:
 |---|---|---|
 | `join_household` | Client → Server | `{ household_id }` |
 | `leave_household` | Client → Server | `{ household_id }` |
+| **Sitzung** | | |
+| `reauth` | Client → Server | `{ token }` → Ack `{ ok }` |
+| `session_ended` | Server → Client (eine Verbindung) | `{ reason: "expired" \| "logout" \| "revoked" }`, danach trennt der Server |
 | **Shopping** | | |
 | `shopping_item_created` | Server → Room | `ShoppingItem` |
 | `shopping_item_updated` | Server → Room | `ShoppingItem` |
@@ -272,6 +275,20 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | `household_member_joined` | Server → Room | `{ household_id, user_id, display_name, role }` |
 | `household_member_left` | Server → Room | `{ household_id, user_id }` |
 | `household_member_removed` | Server → Room | `{ household_id, user_id }` |
+
+### Lebensdauer einer Socket-Verbindung
+
+Eine Verbindung gilt nur so lange wie das Access-Token (15 Min.), mit dem sie zuletzt authentifiziert wurde.
+
+- **connect:** Der Server prüft das JWT, merkt sich `user_id` und `exp` in der Socket-Session, legt die Verbindung in den persönlichen Raum `user_<id>` und startet einen Timer auf `exp`.
+- **Verlängern:** Nach jedem Token-Refresh (Axios-Interceptor, Cross-Tab-Sync) schickt der Client `reauth` mit dem neuen Token. Gehört es zum selben User, setzt der Server `exp` und Timer neu. Die Verbindung bleibt bestehen, Räume bleiben erhalten; früher baute der Client bei jedem Refresh eine neue Verbindung auf.
+- **Ablauf:** Läuft der Timer ab, schickt der Server `session_ended` (`expired`) und trennt. `join_household` prüft `exp` zusätzlich. Der Client holt sich per Refresh ein neues Token und verbindet neu; die Reconnect-Callbacks treten dem Haushalts-Raum wieder bei und laden die Daten nach.
+- **Logout:** `/api/auth/logout` trennt alle Verbindungen des Users (`session_ended` mit `logout`); die Reuse-Detection in `/refresh` trennt mit `revoked`. Der Access-Token kennt kein Gerät, deshalb trifft das auch andere Geräte. Diese verbinden sich mit ihrem noch gültigen Access-Token sofort neu, aber **ohne** Refresh: Der Refresh-Token könnte gerade widerrufen sein (z. B. zweiter Tab im selben Browser), ein Refresh würde dann die Reuse-Detection auslösen und alle Geräte abmelden. Das ausloggende Gerät trennt seinen Socket schon vor dem Logout-Aufruf und verbindet nicht neu.
+- **Abgelehnter Connect** (z. B. Token abgelaufen): höchstens ein Refresh-Versuch bis zur nächsten erfolgreichen Verbindung, kein Endlos-Loop.
+
+**Warum `exp` + Timer + `reauth` (und nicht nur eine Prüfung bei jedem Event):** Fast der ganze Verkehr läuft vom Server zum Client; ein Client, der nur zuhört, schickt nach `join_household` keine Events mehr und würde bei reiner Event-Prüfung nie getrennt. Ohne `reauth` wiederum müsste jede Verbindung alle 15 Minuten neu aufgebaut werden. Der Client erneuert sein Token ohnehin über den Axios-Interceptor; `reauth` gibt das Ergebnis nur an den Socket weiter.
+
+**Grenze:** Ein Access-Token bleibt bis zu seinem Ablauf gültig (zustandsloses JWT). Wer es hat, kann sich nach dem Logout bis zu 15 Minuten lang neu verbinden, genau wie bei der REST-API. Danach endet jede Verbindung spätestens mit dem Ablauf des Tokens. Timer und Räume liegen im Prozessspeicher (ein Worker, siehe Abschnitt 8).
 
 ---
 
@@ -476,7 +493,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Haushalt verlassen / Mitglied entfernen | ✅ POST /leave, DELETE /members/{uid} | ✅ HouseholdView | ✅ Socket |
 | Rollen-System (admin/member) | ✅ verify_household_admin | ✅ UI-Anzeige | — |
 | Währung pro Haushalt | ✅ Household.currency | ✅ /me Response | — |
-| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 51 Testdateien, 576 Tests (Coverage 91 %) | — | — |
+| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 52 Testdateien, 590 Tests (Coverage 92 %) | — | — |
 | Dashboard | ✅ | ✅ DashboardView | — |
 | Einkauf 2.0 (Multi-Listen, Stores) | ✅ | ✅ ShoppingView | ✅ Socket |
 | Aufgaben 2.0 (Unified Tasks) | ✅ | ✅ TodosView | ✅ Socket |
@@ -491,6 +508,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Web Push (Todo-Erinnerungen, Tierpflege) | ✅ | ✅ | — |
 | Dokument-Ablage (Verträge, Rechnungen, Garantien; mehrseitig, Vorschau, Speicher-Limit) | ✅ | ✅ DocumentsView | ✅ Socket |
 | Auth-Härtung (Rate-Limits, Refresh-Rotation, Security-Header/CSP) | ✅ | — | — |
+| Socket-Sitzungen enden mit Token-Ablauf und Logout | ✅ Ablauf-Timer, `reauth`, Trennen bei Logout | ✅ Token-Übergabe nach Refresh, Auto-Reconnect | ✅ |
 | Offline-Basis M0 (Client-IDs, `version`/`updated_at`) | ✅ Shopping, Todos, Chore-Zuweisungen | ✅ Stores | ✅ veraltete Events werden verworfen |
 | CI (Lint, Tests mit Coverage, Dependency-Audit) | — | — | — |
 | Produktions-Deployment (Docker, Nginx Proxy Manager) | ✅ | ✅ | — |
@@ -505,8 +523,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Push-Erinnerung zum Ablaufdatum von Dokumenten | Klein | 🔵 Niedrig | Garantieende, Kündigungsfrist |
 | Rate-Limit für Uploads | Klein | 🟡 Mittel | Upload-Endpunkte haben kein eigenes Limit (H-14, Epic-8-Review F-06); das Speicher-Limit pro Haushalt existiert |
 | Einladungscode läuft nie ab | Klein | 🔵 Niedrig | H-12; Rotation ist seit #11 möglich. Offen ist außerdem, ob der Code nur für Admins sichtbar sein soll |
-| Token-Ablauf auf Socket-Verbindungen | Klein | 🔵 Niedrig | Logout/Ablauf beendet bestehende WebSocket-Verbindungen serverseitig noch nicht |
-| Frontend-Testabdeckung | Mittel | 🟡 Mittel | 31,8 % Statements; Komponenten und weitere Stores (Kalender, Finanzen, Haustiere …) sind ungetestet; Coverage wird nur berichtet, es gibt keine Schwelle |
+| Frontend-Testabdeckung | Mittel | 🟡 Mittel | 32,1 % Statements; Komponenten und weitere Stores (Kalender, Finanzen, Haustiere …) sind ungetestet; Coverage wird nur berichtet, es gibt keine Schwelle |
 | Push-Notifications für Chores | Mittel | 🔵 Niedrig | „Du bist dran“-Benachrichtigung |
 | FR/IT-Sprachen | Klein | 🔵 Niedrig | Locale-Erweiterung |
 | Chores-Statistiken | Klein | 🔵 Niedrig | „Wer hat wie oft geputzt“ |
@@ -523,6 +540,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Kalender-Migration (#9) | Termine, die der alte Fehler beim Bearbeiten bereits verschoben hatte, kann die Migration nicht erkennen; sie gelten als zuletzt gespeicherte Zeit und müssen ggf. von Hand korrigiert werden | Einmalig |
 | PDF-Vorschau unter der CSP | Im eingebetteten PDF-Betrachter fehlen die Schaltflächen „Drucken“ und „Mehr“ (nicht durch Styles verursacht, nicht weiter untersucht); die App hat einen eigenen Download-Button. Die CSP wurde nur für `/documents` und `/shopping` im Browser geprüft | Gering |
 | Bestehende wiederkehrende Rechnungen | Haben noch keinen Standard-Zahler; beim ersten Buchen wird im Dialog die aktuelle Person vorgeschlagen | Gering |
+| Logout trennt Sockets aller Geräte | Der Access-Token trägt keine Geräte-Kennung; andere Geräte verbinden sich sofort selbst neu (kurzer Reconnect mit Nachladen). Ein gestohlenes Access-Token kann bis zu seinem Ablauf (15 Min.) weiter verbinden | Akzeptiert |
 | Rate-Limits nur pro IP, im Speicher | Zähler gehen beim Neustart verloren; passt zu einem Worker (Socket.IO ohne Message-Queue) | Akzeptiert |
 | Major-Updates ohne Gerätetest | Pillow 12 und cryptography 50 wurden über Tests und Stichproben geprüft, nicht mit einer echten Web-Push-Zustellung auf einem Gerät und nicht mit einem Upload über den laufenden Browser | Prüfen |
 | `deleteItem()` Rollback-Position | Bei paralleler Socket-Mutation kann die Position abweichen (kosmetisch) | Gering |

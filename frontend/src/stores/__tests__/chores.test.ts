@@ -129,6 +129,19 @@ describe('chores store', () => {
       await expect(s.removeChore('c1')).rejects.toThrow('fail')
       expect(s.chores.map(c => c.id)).toEqual(['x', 'c1', 'y'])
     })
+
+    it('restores the removed assignments on failure, in due-date order', async () => {
+      const s = useChoresStore()
+      s.chores = [chore()]
+      s.assignments = [
+        assignment({ id: 'a1', due_date: '2024-01-01' }),
+        assignment({ id: 'a2', chore_id: 'other', due_date: '2024-01-02' }),
+        assignment({ id: 'a3', due_date: '2024-01-03' }),
+      ]
+      repo.removeChore.mockRejectedValue(new Error('fail'))
+      await expect(s.removeChore('c1')).rejects.toThrow('fail')
+      expect(s.assignments.map(a => a.id)).toEqual(['a1', 'a2', 'a3'])
+    })
   })
 
   describe('completeAssignment', () => {

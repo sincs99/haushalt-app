@@ -239,6 +239,35 @@ describe('shopping store', () => {
     })
   })
 
+  describe('reassignStore', () => {
+    it('moves the active store filter along when the active store is renamed', async () => {
+      const s = useShoppingStore()
+      s.setStoreFilter('Coop')
+      repo.reassignStore.mockResolvedValue({ updated: 1 })
+      repo.fetchStores.mockResolvedValue(['Coop City']) // 'Coop' gibt es nicht mehr
+      await s.reassignStore('Coop', 'Coop City')
+      expect(s.activeStoreFilter).toBe('Coop City')
+    })
+
+    it('follows the canonical spelling when the backend merges into an existing store', async () => {
+      const s = useShoppingStore()
+      s.setStoreFilter('coop')
+      repo.reassignStore.mockResolvedValue({ updated: 1, to_store: 'Coop' })
+      repo.fetchStores.mockResolvedValue(['Coop']) // 'coop' wurde in 'Coop' überführt
+      await s.reassignStore('coop', 'coop')
+      expect(s.activeStoreFilter).toBe('Coop')
+    })
+
+    it('resets the filter to "all" when the active store is dissolved', async () => {
+      const s = useShoppingStore()
+      s.setStoreFilter('Coop')
+      repo.reassignStore.mockResolvedValue({ updated: 1 })
+      repo.fetchStores.mockResolvedValue([])
+      await s.reassignStore('Coop', null)
+      expect(s.activeStoreFilter).toBeNull()
+    })
+  })
+
   describe('socket handlers', () => {
     it('handleItemCreated is idempotent', () => {
       const s = useShoppingStore()

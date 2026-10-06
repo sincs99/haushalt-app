@@ -175,11 +175,16 @@ export const useShoppingStore = defineStore('shopping', () => {
       }
     }
 
+    // Vor fetchStores() merken: fetchStores() verwirft den Filter auf fromStore,
+    // weil dieser Store danach nicht mehr existiert
+    const wasActiveFilter =
+      activeStoreFilter.value !== null && storesEqual(activeStoreFilter.value, fromStore)
+
     // Stores-Liste aktualisieren
     await fetchStores()
 
     // Filter resetten falls der aktive Store umbenannt/aufgelöst wurde
-    if (activeStoreFilter.value !== null && storesEqual(activeStoreFilter.value, fromStore)) {
+    if (wasActiveFilter) {
       setStoreFilter(targetStore)
     }
 

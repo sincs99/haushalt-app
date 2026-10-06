@@ -12,16 +12,28 @@ from datetime import date, datetime
 from pathlib import PurePath
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Document, DocumentFile, HouseholdMember, StoredFile
 from app.routers.files import (
+    UPLOAD_RATE_LIMIT,
     StoredFileResponse,
     file_in_use,
     file_in_use_error,
@@ -321,7 +333,9 @@ def create_document(
 # hochladen und per POST / mit file_ids anlegen (so macht es das Frontend).
 # ---------------------------------------------------------------------------
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(UPLOAD_RATE_LIMIT)
 def upload_document(
+    request: Request,
     household_id: uuid.UUID,
     files: list[UploadFile] = File(...),
     title: str | None = Form(None),

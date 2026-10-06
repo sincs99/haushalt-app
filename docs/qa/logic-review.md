@@ -269,8 +269,8 @@ Tests nachweisen. Wo neue Tests „heute“ brauchen, wird `household_today`/`_u
 
 ## Zusammenfassung
 
-- **Geprüfte Regeln:** 118 Szenarien in 12 Modulen (Tabellen oben).
+- **Geprüfte Regeln:** 136 Szenarien in 12 Modulen (Tabellen oben), davon 10 mit neuen Tests belegt (Backend `test_household_time.py` +7, `test_recurring_bill_book.py` +1, `test_poll_scoping.py` +1, `test_dashboard_scoping.py` +1, `test_chores.py` +2, `test_pet_care_scoping.py` +1; Frontend `householdScope.test.ts` +2, `auth.test.ts` +2).
 - **Gefundene Fehler:** 8 — davon 2 mit falschen Geld-/Monatszuordnungen (L-01, L-02), 1 Absturz einer Ansicht (L-03), 2 falsche Anzeigen (L-04, L-07), 2 nicht mehr ausführbare Aktionen (L-05, L-08), 1 verlorene Erinnerung (L-06). Kein Datenverlust gefunden.
-- **Behoben:** alle 8, je ein Commit mit Test.
+- **Behoben:** alle 8, je ein Commit mit Test (Backend 805 Tests, Frontend 367 Tests, Coverage 75 % Statements).
 - **Unschärfen:** 9 (L-09, L-12 bis L-16 sowie drei Randfälle in den Tabellen), nicht geändert.
 - **Offene Produktentscheidungen:** 10 (E-1 bis E-10).

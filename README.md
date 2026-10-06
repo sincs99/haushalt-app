@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sincs99/haushalt-app/actions/workflows/ci.yml/badge.svg)](https://github.com/sincs99/haushalt-app/actions/workflows/ci.yml)
 
-Web-App (PWA) für die gemeinsame Organisation eines Haushalts: Einkaufslisten, Aufgaben, Putzplan mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Notizen und eine Dokument-Ablage (Verträge, Rechnungen, Garantien). Mehrere Nutzer pro Haushalt, Echtzeit-Sync per WebSocket, Mobile-First, zweisprachig (DE/EN).
+Web-App (PWA) für die gemeinsame Organisation eines Haushalts: Einkaufslisten, Aufgaben, Putzplan mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Pflanzen, Notizen und eine Dokument-Ablage (Verträge, Rechnungen, Garantien). Mehrere Nutzer pro Haushalt, Echtzeit-Sync per WebSocket, Mobile-First, zweisprachig (DE/EN).
 
 Detaillierter Stand und Architektur: [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md).
 
@@ -92,7 +92,7 @@ Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` sel
 .\scripts\backup-db.ps1
 ```
 
-Erstellt einen komprimierten Datenbank-Dump unter `backups/casa-backup-<Zeitstempel>.dump` **und** ein Archiv der hochgeladenen Dateien (Dokument-Ablage, Tierfotos) unter `backups/casa-uploads-<Zeitstempel>.tar.gz`.  
+Erstellt einen komprimierten Datenbank-Dump unter `backups/casa-backup-<Zeitstempel>.dump` **und** ein Archiv der hochgeladenen Dateien (Dokument-Ablage, Tier- und Pflanzenfotos) unter `backups/casa-uploads-<Zeitstempel>.tar.gz`.  
 Es werden automatisch maximal **14 Backups** vorgehalten; ältere werden gelöscht. Beide Container (Postgres und Backend) müssen laufen.
 
 ### Backup wiederherstellen

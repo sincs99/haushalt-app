@@ -15,10 +15,31 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import SessionLocal
-from app.routers import auth, shopping, todos, households, expenses, settlements, chores, dashboard, tasks, budgets, recurring_bills, events, calendars, polls, pets, food, notes, files, push, documents
+from app.routers import (
+    auth,
+    budgets,
+    calendars,
+    chores,
+    dashboard,
+    documents,
+    events,
+    expenses,
+    files,
+    food,
+    households,
+    notes,
+    pets,
+    polls,
+    push,
+    recurring_bills,
+    settlements,
+    shopping,
+    tasks,
+    todos,
+)
 from app.services.file_cleanup import cleanup_loop
 from app.services.push_service import scheduler_loop
-from app.socket_manager import socket_app, set_event_loop
+from app.socket_manager import set_event_loop, socket_app
 
 logger = logging.getLogger("uvicorn.error")
 

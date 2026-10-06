@@ -7,16 +7,16 @@ für die Dashboard-View im Frontend.
 
 import uuid
 import zoneinfo
-from datetime import date, datetime, time as dt_time, timezone
+from datetime import date, datetime, timezone
+from datetime import time as dt_time
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import case, func
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.database import get_db
-from app.services.event_times import to_household_time
 from app.models import (
     Chore,
     ChoreAssignment,
@@ -31,6 +31,7 @@ from app.models import (
 )
 from app.services.balance_service import compute_user_saldo
 from app.services.chore_scheduler import today_in_tz
+from app.services.event_times import to_household_time
 
 # ---------------------------------------------------------------------------
 # Pydantic Schemas

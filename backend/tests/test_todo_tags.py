@@ -1,6 +1,5 @@
 """Tests für Todo-Tags (JSON-Feld)."""
 
-import pytest
 
 
 def test_create_todo_with_tags(client, household_a, token_a):

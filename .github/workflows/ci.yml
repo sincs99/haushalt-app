@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend (pytest)
+    name: Backend (ruff, pytest)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -31,11 +31,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Install test dependencies
-        run: pip install pytest httpx
+      - name: Install test and lint dependencies
+        run: pip install pytest httpx pytest-cov ruff
 
-      - name: Run tests
-        run: pytest -q
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Run tests with coverage
+        run: pytest -q --cov=app --cov-report=term
 
   frontend:
     name: Frontend (locales, typecheck, vitest)
@@ -61,8 +64,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit tests
-        run: npm test
+      - name: Unit tests with coverage
+        run: npm run test:coverage
 
   # Eigener Job ohne `needs`: läuft parallel und blockiert die Test-Jobs nicht.
   # Ein roter Audit bedeutet "neue Advisory" — Befunde werden in

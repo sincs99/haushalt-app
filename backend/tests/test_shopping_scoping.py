@@ -5,7 +5,6 @@ Stellt sicher, dass User NUR auf Shopping-Items/-Listen ihres eigenen Households
 zugreifen können. Cross-Household-Zugriffe müssen mit 403 abgelehnt werden.
 """
 
-import uuid
 
 
 # ===========================================================================

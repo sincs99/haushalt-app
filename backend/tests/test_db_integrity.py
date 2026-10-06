@@ -141,8 +141,8 @@ def test_moving_booked_expense_date_does_not_allow_rebooking(client, db, househo
 
 def test_duplicate_booking_blocked_by_constraint(client, db, household_a, token_a, user_a, bill_a):
     """Simuliert den Race: die Vorab-Prüfung sieht nichts, die DB lehnt ab → 409."""
-    from unittest.mock import patch
     from datetime import date
+    from unittest.mock import patch
 
     url = f"/api/households/{household_a.id}/recurring-bills/{bill_a.id}/book"
     assert client.post(url, headers=_auth(token_a)).status_code == 201

@@ -1,8 +1,6 @@
 """Tests für Household CRUD + Events."""
 import uuid
 
-import pytest
-
 
 class TestCreateHousehold:
     def test_create_success(self, client, db, user_a, token_a):

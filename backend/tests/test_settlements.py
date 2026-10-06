@@ -1,7 +1,6 @@
 """Umfassende Tests für Settlements: Scoping, CRUD, Validierung, Balance-Integration, Socket-Events."""
 import uuid
 
-
 # ---------------------------------------------------------------------------
 # 1. Scoping-Tests (Cross-Household-Isolation)
 # ---------------------------------------------------------------------------

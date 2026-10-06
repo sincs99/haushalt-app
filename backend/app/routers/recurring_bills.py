@@ -1,8 +1,8 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session

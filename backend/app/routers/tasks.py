@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access

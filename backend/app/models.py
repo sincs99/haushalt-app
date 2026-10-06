@@ -2,11 +2,23 @@ import uuid
 from datetime import date, datetime, timezone
 
 from sqlalchemy import (
-    Boolean, String, DateTime, ForeignKey, Enum, UniqueConstraint,
-    Integer, CheckConstraint, Index, Date, text, JSON, event, func,
+    JSON,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    event,
+    func,
+    text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship, object_session
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, object_session, relationship
 
 from app.database import Base
 

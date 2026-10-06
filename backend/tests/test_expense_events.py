@@ -1,5 +1,4 @@
 """Tests für Socket.IO-Events bei Expense-Operationen."""
-import uuid
 
 
 class TestExpenseSocketEvents:

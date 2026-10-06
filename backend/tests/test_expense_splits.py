@@ -1,11 +1,8 @@
 """Tests für Expense Split-Logik und API-Integration."""
 import uuid
 
-import pytest
-
 # Import der Service-Funktionen für Unit-Tests
 from app.routers.expenses import split_evenly
-
 
 # ---------------------------------------------------------------------------
 # Unit-Tests: split_evenly

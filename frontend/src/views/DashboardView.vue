@@ -32,14 +32,17 @@ const petsStore = usePetsStore()
 const calendarStore = useCalendarStore()
 const { run } = useAsyncAction()
 
+// Ergänzende Daten für die Karten; Fehler zeigt die Dashboard-Karte selbst
+// (Fehlerzustand), hier nur keine ungefangenen Rejections erzeugen.
+const ignore = () => {}
 // Kalender laden für Farbzuordnung
-calendarStore.fetchCalendars()
+calendarStore.fetchCalendars()?.catch(ignore)
 
 // Polls laden
-pollsStore.fetchPolls('offen')
+pollsStore.fetchPolls('offen')?.catch(ignore)
 
 // Pets-Fütterungsstatus laden
-petsStore.fetchFeedingStatus()
+petsStore.fetchFeedingStatus()?.catch(ignore)
 
 // ── Pets Feeding Widget ──
 const petsFedCount = computed(() => {

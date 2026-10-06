@@ -15,6 +15,8 @@ import { usePlantsStore } from './stores/plants'
 import { useSocket } from './composables/useSocket'
 import { useConnectivity } from './composables/useConnectivity'
 import BaseAvatar from './components/ui/BaseAvatar.vue'
+import BaseButton from './components/ui/BaseButton.vue'
+import BaseDialog from './components/ui/BaseDialog.vue'
 import TheBottomNav from './components/TheBottomNav.vue'
 import MoreSheet from './components/MoreSheet.vue'
 import { useToast } from './composables/useToast'
@@ -26,6 +28,17 @@ const route = useRoute()
 const { isOnline } = useConnectivity()
 const { toasts, dismissToast } = useToast()
 const moreOpen = ref(false)
+
+// Abmelden: offline nachfragen, weil Anmelden erst wieder mit Netz geht
+const logoutDialogOpen = ref(false)
+function requestLogout() {
+  if (isOnline.value) authStore.logout({ reason: 'user' })
+  else logoutDialogOpen.value = true
+}
+function confirmLogout() {
+  logoutDialogOpen.value = false
+  authStore.logout({ reason: 'user' })
+}
 // „Mehr“ ist aktiv für alle Seiten, die keinen eigenen Tab haben (inkl. Detailseiten)
 const TAB_ROUTES = ['/dashboard', '/calendar', '/todos', '/shopping']
 const moreActive = computed(() =>
@@ -257,42 +270,37 @@ watch(
       on('plant_created', dashboardStore.invalidate)
       on('plant_deleted', dashboardStore.invalidate)
 
-      shoppingStore.fetchLists()
-      shoppingStore.fetchItems()
-      shoppingStore.fetchStores()
-      todosStore.fetchTodos()
-      expensesStore.fetchExpenses()
-      expensesStore.fetchBalances()
-      settlementsStore.fetchAll()
-      choresStore.fetchChores()
-      choresStore.fetchAssignments()
-      financeStore.fetchSummary()
-      financeStore.fetchBills()
-      dashboardStore.fetchDashboard()
-      pollsStore.fetchPolls('offen')
+      refreshAllStores()
     }
   },
   { immediate: true }
 )
+
+// Hintergrund-Aktualisierung aller Stores. Fehler werden hier bewusst
+// verschluckt: die Ansichten zeigen ihren eigenen Fehlerzustand mit „Erneut versuchen“.
+function refreshAllStores() {
+  const quiet = (p: Promise<unknown> | void) => { if (p) p.catch(() => {}) }
+  quiet(shoppingStore.fetchLists())
+  quiet(shoppingStore.fetchItems())
+  quiet(shoppingStore.fetchStores())
+  quiet(todosStore.fetchTodos())
+  quiet(expensesStore.fetchExpenses())
+  quiet(expensesStore.fetchBalances())
+  quiet(settlementsStore.fetchAll())
+  quiet(choresStore.fetchChores())
+  quiet(choresStore.fetchAssignments())
+  quiet(financeStore.fetchSummary())
+  quiet(financeStore.fetchBills())
+  quiet(dashboardStore.fetchDashboard())
+  quiet(pollsStore.fetchPolls('offen'))
+}
 
 // Reconnect-Handler: Room neu beitreten + Daten nachladen
 function handleReconnect() {
   const householdId = authStore.currentHouseholdId
   if (householdId) {
     joinHousehold(householdId)
-    shoppingStore.fetchLists()
-    shoppingStore.fetchItems()
-    shoppingStore.fetchStores()
-    todosStore.fetchTodos()
-    expensesStore.fetchExpenses()
-    expensesStore.fetchBalances()
-    settlementsStore.fetchAll()
-    choresStore.fetchChores()
-    choresStore.fetchAssignments()
-    financeStore.fetchSummary()
-    financeStore.fetchBills()
-    dashboardStore.fetchDashboard()
-    pollsStore.fetchPolls('offen')
+    refreshAllStores()
   }
 }
 
@@ -436,7 +444,7 @@ onUnmounted(() => {
             :user-id="authStore.user.id"
             size="md"
           />
-          <button class="top-bar__logout" @click="authStore.logout({ reason: 'user' })">{{ $t('auth.logout') }}</button>
+          <button class="top-bar__logout" @click="requestLogout">{{ $t('auth.logout') }}</button>
           <span
             class="sync-dot"
             :class="`sync-dot--${syncStatus}`"
@@ -460,6 +468,23 @@ onUnmounted(() => {
       @toggle-more="moreOpen = !moreOpen"
     />
     <MoreSheet :open="moreOpen" @close="moreOpen = false" />
+
+    <BaseDialog
+      :open="logoutDialogOpen"
+      :title="$t('auth.logoutOfflineTitle')"
+      danger
+      @close="logoutDialogOpen = false"
+    >
+      <p>{{ $t('auth.logoutOfflineConfirm') }}</p>
+      <template #footer>
+        <BaseButton variant="ghost" size="sm" @click="logoutDialogOpen = false">
+          {{ $t('common.cancel') }}
+        </BaseButton>
+        <BaseButton variant="danger" size="sm" @click="confirmLogout">
+          {{ $t('auth.logout') }}
+        </BaseButton>
+      </template>
+    </BaseDialog>
   </div>
 
   <!-- Unauthenticated: nur Router-View (Login/Register) -->

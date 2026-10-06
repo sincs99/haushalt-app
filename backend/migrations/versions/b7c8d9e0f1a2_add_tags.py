@@ -3,8 +3,8 @@
 Physische Tags (NFC-Chip oder QR-Sticker), die beim Scannen eine
 Ein-Tipp-Aktion auslösen. Siehe app/services/tag_actions.py.
 
-Revision ID: x1y2z3a4b5c6
-Revises: w1x2y3z4a5b6
+Revision ID: b7c8d9e0f1a2
+Revises: x1y2z3a4b5c6
 Create Date: 2026-10-06 18:00:00.000000
 
 """
@@ -16,8 +16,8 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'x1y2z3a4b5c6'
-down_revision: Union[str, Sequence[str], None] = 'w1x2y3z4a5b6'
+revision: str = 'b7c8d9e0f1a2'
+down_revision: Union[str, Sequence[str], None] = 'x1y2z3a4b5c6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

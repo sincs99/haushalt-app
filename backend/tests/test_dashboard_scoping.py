@@ -102,3 +102,41 @@ def test_dashboard_contains_event_data(client, household_a, token_a, user_a, cal
     assert len(data["events"]["items"]) >= 1
     titles = [e["title"] for e in data["events"]["items"]]
     assert "Dashboard-Test-Event" in titles
+
+
+def test_dashboard_plants_water_section(client, db, household_a, household_b, token_a, plant_a, plant_b):
+    """Nur fällige/überfällige Gießaufgaben des eigenen Haushalts, Überfällige zuerst."""
+    from datetime import timedelta
+
+    from app.models import Plant, PlantCareTask
+    from app.services.chore_scheduler import today_in_tz
+
+    today = today_in_tz(household_a.timezone)
+    other = Plant(household_id=household_a.id, name="Aloe")
+    db.add(other)
+    db.flush()
+
+    def task(plant, care_type, due, household=household_a):
+        db.add(PlantCareTask(
+            household_id=household.id, plant_id=plant.id, care_type=care_type,
+            interval_days=7, next_due_at=due,
+        ))
+
+    task(plant_a, "water", today)
+    task(other, "water", today - timedelta(days=3))
+    task(plant_a, "fertilize", today - timedelta(days=9))      # keine Gießaufgabe
+    task(plant_a, "water", today + timedelta(days=2))          # noch nicht fällig
+    task(plant_b, "water", today - timedelta(days=5), household_b)  # fremder Haushalt
+    db.commit()
+
+    resp = client.get(f"/api/households/{household_a.id}/dashboard", headers={"Authorization": f"Bearer {token_a}"})
+    assert resp.status_code == 200
+    section = resp.json()["plants_water"]
+    assert section["due_count"] == 2
+    assert [i["plant_name"] for i in section["items"]] == ["Aloe", "Monstera"]
+    assert [i["is_overdue"] for i in section["items"]] == [True, False]
+
+
+def test_dashboard_plants_water_empty(client, household_a, token_a):
+    resp = client.get(f"/api/households/{household_a.id}/dashboard", headers={"Authorization": f"Bearer {token_a}"})
+    assert resp.json()["plants_water"] == {"due_count": 0, "items": []}

@@ -66,7 +66,8 @@
     "meals": "Meals",
     "notes": "Notes",
     "settings": "Settings",
-    "documents": "Documents"
+    "documents": "Documents",
+    "plants": "Plants"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -92,7 +93,8 @@
     "petCareDueToday": "Due today",
     "remindersTitle": "Upcoming Reminders",
     "remindersEmpty": "No upcoming reminders",
-    "reminderFor": "for \"{title}\""
+    "reminderFor": "for \"{title}\"",
+    "plantsWaterTitle": "Plants need water"
   },
   "calendar": {
     "title": "Calendar",
@@ -157,7 +159,8 @@
     "mealsSub": "Weekly menu & recipes",
     "notesSub": "Quick notes & ideas",
     "settingsSub": "Household, members & language",
-    "documentsSub": "Contracts, invoices & warranties"
+    "documentsSub": "Contracts, invoices & warranties",
+    "plantsSub": "Watering, feeding & care"
   },
   "shopping": {
     "title": "Shopping list",
@@ -406,6 +409,10 @@
   "household": {
     "title": "Household",
     "inviteCode": "Invite code",
+    "inviteValidUntil": "Valid until {date}",
+    "inviteExpired": "This invite code has expired.",
+    "inviteExpiredAction": "Generate new code",
+    "inviteExpiredAskAdmin": "Ask an admin to generate a new code.",
     "inviteHint": "Share this code so others can join your household:",
     "copyCode": "Copy",
     "codeCopied": "Invite code copied!",
@@ -471,6 +478,7 @@
     "INVALID_CREDENTIALS": "Invalid credentials",
     "EMAIL_ALREADY_REGISTERED": "This email is already registered",
     "NOT_HOUSEHOLD_MEMBER": "You are not a member of this household",
+    "INVITE_CODE_EXPIRED": "Invite code expired – please request a new one",
     "INVITE_CODE_NOT_FOUND": "Invite code not found",
     "ALREADY_MEMBER": "You are already a member of this household",
     "EXPENSE_NOT_FOUND": "Expense not found",
@@ -512,7 +520,9 @@
     "TAG_TARGET_NOT_FOUND": "The target of this tag was deleted",
     "TAG_NOT_EXECUTABLE": "This tag only opens a page",
     "TAG_NOTHING_TO_DO": "There is nothing to do right now",
-    "TOO_MANY_TAGS": "Maximum number of tags for this household reached"
+    "TOO_MANY_TAGS": "Maximum number of tags for this household reached",
+    "PLANT_NOT_FOUND": "Plant not found",
+    "PLANT_CARE_TASK_NOT_FOUND": "Care task not found"
   },
   "push": {
     "title": "Notifications",
@@ -645,6 +655,70 @@
     "taskCreated": "Care task created",
     "taskDeleted": "Care task deleted",
     "deleteConfirm": "Really delete this care task?"
+  },
+  "plants": {
+    "title": "Plants",
+    "addPlant": "Add plant",
+    "editPlant": "Edit plant",
+    "name": "Name",
+    "species": "Species",
+    "speciesPlaceholder": "e.g. Monstera",
+    "location": "Location / room",
+    "locationPlaceholder": "e.g. Living room",
+    "notes": "Notes",
+    "careNotes": "Care instructions",
+    "noInfo": "No details yet",
+    "addWaterTask": "Water every 7 days",
+    "created": "Plant added",
+    "updated": "Plant updated",
+    "deleted": "Plant deleted",
+    "deleteConfirm": "Really delete this plant?",
+    "deleteHint": "Care tasks and history will be lost.",
+    "emptyState": "No plants yet",
+    "emptyStateHint": "Add your first plant",
+    "createError": "Failed to create",
+    "updateError": "Failed to update",
+    "deleteError": "Failed to delete",
+    "careError": "Could not save care",
+    "notFound": "Plant not found",
+    "watered": "Watered",
+    "waterAll": "Water all due",
+    "waterAllDone": "All due plants watered",
+    "waterAllNone": "Nothing to water",
+    "overviewToday": "Care today",
+    "dueToday": "Due today",
+    "overdue": "Overdue",
+    "dueIn": "in {n} days",
+    "allGood": "All good",
+    "noTasksShort": "No care tasks",
+    "careTypes": {
+      "water": "Water",
+      "fertilize": "Fertilize",
+      "repot": "Repot",
+      "mist": "Mist",
+      "other": "Other"
+    },
+    "careTasks": "Care",
+    "addTask": "Add care task",
+    "careType": "Care type",
+    "taskLabel": "Label (optional)",
+    "intervalDays": "Interval (days)",
+    "nextDueDate": "Next due date (optional)",
+    "every": "every {days} days",
+    "dueAt": "due on {date}",
+    "complete": "Done",
+    "noTasks": "No care tasks yet",
+    "completed": "Done! Next care: {date}",
+    "taskCreated": "Care task created",
+    "taskDeleted": "Care task deleted",
+    "deleteTaskConfirm": "Really delete this care task?",
+    "careLog": "Care history",
+    "noLog": "No care logged yet",
+    "loggedBy": "{name} · {date}",
+    "invalidInterval": "Please enter an interval between 1 and 3650 days",
+    "photoUploading": "Uploading photo…",
+    "photoUploadSuccess": "Photo updated",
+    "photoUploadError": "Photo could not be uploaded"
   },
   "food": {
     "title": "Food",

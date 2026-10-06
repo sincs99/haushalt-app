@@ -62,6 +62,9 @@ class Household(Base):
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     invite_code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    invite_code_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -130,6 +133,9 @@ class Household(Base):
         back_populates="household", cascade="all, delete-orphan"
     )
     care_tasks: Mapped[list["PetCareTask"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
+    plants: Mapped[list["Plant"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
     todo_reminders: Mapped[list["TodoReminder"]] = relationship(
@@ -956,6 +962,106 @@ class PetCareTask(Base):
 
     household: Mapped["Household"] = relationship(back_populates="care_tasks")
     pet: Mapped["Pet"] = relationship(back_populates="care_tasks")
+
+
+PLANT_CARE_TYPES = ("water", "fertilize", "repot", "mist", "other")
+
+
+class Plant(Base):
+    __tablename__ = "plants"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    species: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # Freitext-Pflegehinweise (Platz für spätere KI-Pflegehinweise)
+    care_notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    photo_file_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("stored_files.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    household: Mapped["Household"] = relationship(back_populates="plants")
+    care_tasks: Mapped[list["PlantCareTask"]] = relationship(
+        back_populates="plant", cascade="all, delete-orphan"
+    )
+    care_logs: Mapped[list["PlantCareLog"]] = relationship(
+        back_populates="plant", cascade="all, delete-orphan"
+    )
+
+
+class PlantCareTask(Base):
+    __tablename__ = "plant_care_tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "care_type IN ('water', 'fertilize', 'repot', 'mist', 'other')",
+            name="ck_plant_care_task_type",
+        ),
+        Index("ix_plant_care_tasks_household_due", "household_id", "next_due_at"),
+        Index("ix_plant_care_tasks_plant", "plant_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    plant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("plants.id", ondelete="CASCADE"), nullable=False
+    )
+    care_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    label: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    interval_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    next_due_at: Mapped[date] = mapped_column(Date, nullable=False)
+    last_done_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    plant: Mapped["Plant"] = relationship(back_populates="care_tasks")
+
+
+class PlantCareLog(Base):
+    __tablename__ = "plant_care_logs"
+    __table_args__ = (
+        Index("ix_plant_care_logs_plant_done", "plant_id", "done_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    plant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("plants.id", ondelete="CASCADE"), nullable=False
+    )
+    care_task_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("plant_care_tasks.id", ondelete="SET NULL"), nullable=True
+    )
+    care_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    label: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    done_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    done_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    plant: Mapped["Plant"] = relationship(back_populates="care_logs")
 
 
 class Recipe(Base):

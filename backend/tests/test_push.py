@@ -12,7 +12,7 @@ import pytest
 from pywebpush import WebPushException
 
 from app.core.config import settings
-from app.models import PetCareTask, PushSubscription, TodoReminder
+from app.models import PetCareTask, PlantCareTask, PushSubscription, TodoReminder
 from app.services import push_service
 
 FCM = "https://fcm.googleapis.com/fcm/send/"
@@ -274,3 +274,54 @@ def test_pet_care_not_due_yet(db, pet_a, user_a, mock_webpush):
     _care_task(db, pet_a, date(2026, 10, 1))
     now = datetime(2026, 9, 29, 10, 0, tzinfo=timezone.utc)
     assert push_service.process_pet_care_tasks(db, now) == 0
+
+
+# ---------------------------------------------------------------------------
+# Scheduler: Pflanzenpflege
+# ---------------------------------------------------------------------------
+def _plant_task(db, plant, due: date, care_type="water", label=None):
+    t = PlantCareTask(
+        household_id=plant.household_id, plant_id=plant.id, care_type=care_type,
+        label=label, interval_days=7, next_due_at=due,
+    )
+    db.add(t)
+    db.commit()
+    return t
+
+
+def test_plant_care_waits_for_morning(db, household_a, plant_a, user_a, mock_webpush):
+    household_a.timezone = "Europe/Zurich"
+    db.commit()
+    _add_sub(db, user_a)
+    task = _plant_task(db, plant_a, date(2026, 9, 29))
+
+    early = datetime(2026, 9, 29, 4, 0, tzinfo=timezone.utc)  # 06:00 Zürich
+    assert push_service.process_plant_care_tasks(db, early) == 0
+    db.refresh(task)
+    assert task.notified_at is None
+
+    later = datetime(2026, 9, 29, 7, 0, tzinfo=timezone.utc)  # 09:00 Zürich
+    assert push_service.process_plant_care_tasks(db, later) == 1
+    payload = _payloads(mock_webpush)[0]
+    assert payload["title"] == "Pflanzenpflege fällig"
+    assert payload["body"] == "Monstera: Gießen"
+    assert payload["url"] == f"/plants/{plant_a.id}"
+
+    mock_webpush.reset_mock()
+    assert push_service.process_plant_care_tasks(db, later) == 0
+
+
+def test_plant_care_label_and_locale(db, plant_a, user_a, mock_webpush):
+    _add_sub(db, user_a, locale="en")
+    _plant_task(db, plant_a, date(2026, 9, 29), care_type="mist")
+    _plant_task(db, plant_a, date(2026, 9, 29), care_type="other", label="Wipe leaves")
+    now = datetime(2026, 9, 29, 12, 0, tzinfo=timezone.utc)
+    assert push_service.process_plant_care_tasks(db, now) == 2
+    assert sorted(p["body"] for p in _payloads(mock_webpush)) == ["Monstera: Mist", "Monstera: Wipe leaves"]
+
+
+def test_plant_care_not_due_yet(db, plant_a, user_a, mock_webpush):
+    _add_sub(db, user_a)
+    _plant_task(db, plant_a, date(2026, 10, 1))
+    now = datetime(2026, 9, 29, 10, 0, tzinfo=timezone.utc)
+    assert push_service.process_plant_care_tasks(db, now) == 0

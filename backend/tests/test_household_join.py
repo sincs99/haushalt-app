@@ -195,3 +195,86 @@ def test_join_with_lowercase_and_whitespace(client, db, household_a, user_b, tok
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"] == str(household_a.id)
+
+
+# ---------------------------------------------------------------------------
+# Ablauf von Einladungscodes (H-12)
+# ---------------------------------------------------------------------------
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+from app.services.invite_code import INVITE_CODE_TTL  # noqa: E402
+
+
+def _auth(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_join_with_not_yet_expired_code(client, db, household_a, token_b):
+    household_a.invite_code_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    db.commit()
+    resp = client.post(
+        "/api/households/join", headers=_auth(token_b), json={"invite_code": household_a.invite_code}
+    )
+    assert resp.status_code == 200
+
+
+def test_join_with_expired_code_is_rejected(client, db, household_a, user_b, token_b):
+    household_a.invite_code_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    db.commit()
+    resp = client.post(
+        "/api/households/join", headers=_auth(token_b), json={"invite_code": household_a.invite_code}
+    )
+    assert resp.status_code == 410
+    assert resp.json()["detail"]["code"] == "INVITE_CODE_EXPIRED"
+    assert (
+        db.query(HouseholdMember).filter_by(household_id=household_a.id, user_id=user_b.id).first()
+        is None
+    )
+
+
+def test_register_with_expired_code_is_rejected(client, db, household_a):
+    household_a.invite_code_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    db.commit()
+    resp = client.post(
+        "/api/auth/register",
+        json={
+            "email": "new@example.com",
+            "password": "password123",
+            "display_name": "Neu",
+            "invite_code": household_a.invite_code,
+        },
+    )
+    assert resp.status_code == 410
+    assert resp.json()["detail"]["code"] == "INVITE_CODE_EXPIRED"
+
+
+def test_create_household_sets_expiry(client, db, token_a):
+    resp = client.post("/api/households/", headers=_auth(token_a), json={"name": "Neu"})
+    assert resp.status_code == 201
+    h = db.get(Household, uuid.UUID(resp.json()["id"]))
+    exp = h.invite_code_expires_at
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    delta = exp - datetime.now(timezone.utc)
+    assert INVITE_CODE_TTL - timedelta(minutes=1) < delta <= INVITE_CODE_TTL
+
+
+def test_rotate_sets_new_expiry_and_revives_expired_code(client, db, household_a, token_a, user_a):
+    household_a.invite_code_expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+    db.commit()
+    url = f"/api/households/{household_a.id}/invite-code"
+    got = client.get(url, headers=_auth(token_a)).json()
+    assert got["expired"] is True
+
+    rotated = client.post(f"{url}/rotate", headers=_auth(token_a)).json()
+    assert rotated["expired"] is False
+    exp = datetime.fromisoformat(rotated["expires_at"])
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    assert exp > datetime.now(timezone.utc) + INVITE_CODE_TTL - timedelta(minutes=1)
+
+
+def test_code_without_expiry_never_expires(client, household_a, token_a):
+    got = client.get(f"/api/households/{household_a.id}/invite-code", headers=_auth(token_a)).json()
+    assert got["expires_at"] is None
+    assert got["expired"] is False

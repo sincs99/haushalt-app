@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/sincs99/haushalt-app/actions/workflows/ci.yml/badge.svg)](https://github.com/sincs99/haushalt-app/actions/workflows/ci.yml)
 
-Web-App (PWA) für die gemeinsame Organisation eines Haushalts: Einkaufslisten, Aufgaben, Putzplan mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Notizen und eine Dokument-Ablage (Verträge, Rechnungen, Garantien). Mehrere Nutzer pro Haushalt, Echtzeit-Sync per WebSocket, Mobile-First, zweisprachig (DE/EN).
+Web-App (PWA) für die gemeinsame Organisation eines Haushalts: Einkaufslisten, Aufgaben, Putzplan mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Pflanzen, Notizen und eine Dokument-Ablage (Verträge, Rechnungen, Garantien). Mehrere Nutzer pro Haushalt, Echtzeit-Sync per WebSocket, Mobile-First, zweisprachig (DE/EN).
 
 Detaillierter Stand und Architektur: [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md).
 
@@ -13,7 +13,7 @@ Detaillierter Stand und Architektur: [`docs/PROJECT-STATUS.md`](docs/PROJECT-STA
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2, Alembic, Socket.IO (`python-socketio`) |
 | Datenbank | PostgreSQL 16 |
 | Frontend | Vue 3, TypeScript, Vite, Pinia, vue-i18n, PWA (`vite-plugin-pwa`) |
-| Auth | JWT-Access-Token (15 Min.) + rotierender Refresh-Token, bcrypt |
+| Auth | JWT-Access-Token (15 Min.) + rotierender Refresh-Token als HttpOnly-Cookie, bcrypt |
 | Tests | Backend: pytest (SQLite in-memory, kein Postgres nötig); Frontend: Vitest |
 | Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager) |
 
@@ -119,7 +119,7 @@ Tags sind NFC-Chips oder QR-Sticker, die beim Scannen eine Aktion mit einem Tipp
 .\scripts\backup-db.ps1
 ```
 
-Erstellt einen komprimierten Datenbank-Dump unter `backups/casa-backup-<Zeitstempel>.dump` **und** ein Archiv der hochgeladenen Dateien (Dokument-Ablage, Tierfotos) unter `backups/casa-uploads-<Zeitstempel>.tar.gz`.  
+Erstellt einen komprimierten Datenbank-Dump unter `backups/casa-backup-<Zeitstempel>.dump` **und** ein Archiv der hochgeladenen Dateien (Dokument-Ablage, Tier- und Pflanzenfotos) unter `backups/casa-uploads-<Zeitstempel>.tar.gz`.  
 Es werden automatisch maximal **14 Backups** vorgehalten; ältere werden gelöscht. Beide Container (Postgres und Backend) müssen laufen.
 
 ### Backup wiederherstellen

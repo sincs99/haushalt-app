@@ -12,7 +12,7 @@
 
 | Datei | Bereich |
 |---|---|
-| `backend/app/models.py` (`Tag`), `backend/migrations/versions/x1y2z3a4b5c6_add_tags.py` | Datenmodell, Token-Spalte (unique) |
+| `backend/app/models.py` (`Tag`), `backend/migrations/versions/b7c8d9e0f1a2_add_tags.py` | Datenmodell, Token-Spalte (unique) |
 | `backend/app/routers/tags.py` | Verwaltung (Admin), Scan-Endpunkte, Prüfreihenfolge, Rate-Limits |
 | `backend/app/services/tag_actions.py` | Aktions-Registry, Ziel-Scoping, Wiederverwendung der Modul-Endpunkte |
 | `backend/app/core/log_redaction.py`, `backend/app/main.py` | Schwärzen der Tokens in Logs |

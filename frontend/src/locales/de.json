@@ -66,7 +66,8 @@
     "meals": "Essen",
     "notes": "Notizen",
     "settings": "Einstellungen",
-    "documents": "Ablage"
+    "documents": "Ablage",
+    "plants": "Pflanzen"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -92,7 +93,8 @@
     "petCareDueToday": "Heute fällig",
     "remindersTitle": "Nächste Erinnerungen",
     "remindersEmpty": "Keine anstehenden Erinnerungen",
-    "reminderFor": "für \"{title}\""
+    "reminderFor": "für \"{title}\"",
+    "plantsWaterTitle": "Pflanzen brauchen Wasser"
   },
   "calendar": {
     "title": "Kalender",
@@ -157,7 +159,8 @@
     "mealsSub": "Wochenmenü & Rezepte",
     "notesSub": "Schnelle Notizen & Ideen",
     "settingsSub": "Haushalt, Mitglieder & Sprache",
-    "documentsSub": "Verträge, Rechnungen & Garantien"
+    "documentsSub": "Verträge, Rechnungen & Garantien",
+    "plantsSub": "Gießen, Düngen & Pflege"
   },
   "shopping": {
     "title": "Einkaufsliste",
@@ -406,6 +409,10 @@
   "household": {
     "title": "Haushalt",
     "inviteCode": "Einladungscode",
+    "inviteValidUntil": "Gültig bis {date}",
+    "inviteExpired": "Dieser Einladungscode ist abgelaufen.",
+    "inviteExpiredAction": "Neuen Code erzeugen",
+    "inviteExpiredAskAdmin": "Bitte einen Admin, einen neuen Code zu erzeugen.",
     "inviteHint": "Teile diesen Code, damit andere deinem Haushalt beitreten können:",
     "copyCode": "Kopieren",
     "codeCopied": "Invite-Code kopiert!",
@@ -471,6 +478,7 @@
     "INVALID_CREDENTIALS": "Ungültige Anmeldedaten",
     "EMAIL_ALREADY_REGISTERED": "Diese E-Mail ist bereits registriert",
     "NOT_HOUSEHOLD_MEMBER": "Du bist kein Mitglied dieses Haushalts",
+    "INVITE_CODE_EXPIRED": "Einladungscode abgelaufen – bitte einen neuen Code anfordern",
     "INVITE_CODE_NOT_FOUND": "Einladungscode nicht gefunden",
     "ALREADY_MEMBER": "Du bist bereits Mitglied dieses Haushalts",
     "EXPENSE_NOT_FOUND": "Ausgabe nicht gefunden",
@@ -512,7 +520,9 @@
     "TAG_TARGET_NOT_FOUND": "Das Ziel dieses Tags wurde gelöscht",
     "TAG_NOT_EXECUTABLE": "Dieser Tag öffnet nur eine Seite",
     "TAG_NOTHING_TO_DO": "Gerade gibt es nichts zu tun",
-    "TOO_MANY_TAGS": "Maximale Anzahl Tags für diesen Haushalt erreicht"
+    "TOO_MANY_TAGS": "Maximale Anzahl Tags für diesen Haushalt erreicht",
+    "PLANT_NOT_FOUND": "Pflanze nicht gefunden",
+    "PLANT_CARE_TASK_NOT_FOUND": "Pflegeaufgabe nicht gefunden"
   },
   "push": {
     "title": "Benachrichtigungen",
@@ -645,6 +655,70 @@
     "taskCreated": "Pflegeaufgabe erstellt",
     "taskDeleted": "Pflegeaufgabe gelöscht",
     "deleteConfirm": "Pflegeaufgabe wirklich löschen?"
+  },
+  "plants": {
+    "title": "Pflanzen",
+    "addPlant": "Pflanze hinzufügen",
+    "editPlant": "Pflanze bearbeiten",
+    "name": "Name",
+    "species": "Art",
+    "speciesPlaceholder": "z.B. Monstera",
+    "location": "Standort / Raum",
+    "locationPlaceholder": "z.B. Wohnzimmer",
+    "notes": "Notizen",
+    "careNotes": "Pflegehinweise",
+    "noInfo": "Keine Angaben hinterlegt",
+    "addWaterTask": "Gießen alle 7 Tage anlegen",
+    "created": "Pflanze hinzugefügt",
+    "updated": "Pflanze aktualisiert",
+    "deleted": "Pflanze gelöscht",
+    "deleteConfirm": "Pflanze wirklich löschen?",
+    "deleteHint": "Pflegeaufgaben und Verlauf gehen verloren.",
+    "emptyState": "Noch keine Pflanzen",
+    "emptyStateHint": "Füge deine erste Pflanze hinzu",
+    "createError": "Fehler beim Erstellen",
+    "updateError": "Fehler beim Aktualisieren",
+    "deleteError": "Fehler beim Löschen",
+    "careError": "Pflege konnte nicht gespeichert werden",
+    "notFound": "Pflanze nicht gefunden",
+    "watered": "Gegossen",
+    "waterAll": "Alle fälligen gießen",
+    "waterAllDone": "Alle fälligen Pflanzen gegossen",
+    "waterAllNone": "Nichts zu gießen",
+    "overviewToday": "Pflege heute",
+    "dueToday": "Heute fällig",
+    "overdue": "Überfällig",
+    "dueIn": "in {n} Tagen",
+    "allGood": "Alles in Ordnung",
+    "noTasksShort": "Keine Pflegeaufgaben",
+    "careTypes": {
+      "water": "Gießen",
+      "fertilize": "Düngen",
+      "repot": "Umtopfen",
+      "mist": "Besprühen",
+      "other": "Sonstiges"
+    },
+    "careTasks": "Pflege",
+    "addTask": "Pflegeaufgabe hinzufügen",
+    "careType": "Pflegeart",
+    "taskLabel": "Bezeichnung (optional)",
+    "intervalDays": "Intervall (Tage)",
+    "nextDueDate": "Nächste Fälligkeit (optional)",
+    "every": "alle {days} Tage",
+    "dueAt": "fällig am {date}",
+    "complete": "Erledigt",
+    "noTasks": "Noch keine Pflegeaufgaben",
+    "completed": "Erledigt! Nächste Pflege: {date}",
+    "taskCreated": "Pflegeaufgabe erstellt",
+    "taskDeleted": "Pflegeaufgabe gelöscht",
+    "deleteTaskConfirm": "Pflegeaufgabe wirklich löschen?",
+    "careLog": "Pflege-Verlauf",
+    "noLog": "Noch keine Pflege eingetragen",
+    "loggedBy": "{name} · {date}",
+    "invalidInterval": "Bitte ein Intervall zwischen 1 und 3650 Tagen eingeben",
+    "photoUploading": "Foto wird hochgeladen…",
+    "photoUploadSuccess": "Foto aktualisiert",
+    "photoUploadError": "Foto konnte nicht hochgeladen werden"
   },
   "food": {
     "title": "Essen",

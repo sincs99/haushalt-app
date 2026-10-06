@@ -11,6 +11,7 @@ import { useFinanceStore } from './stores/finance'
 import { useDashboardStore } from './stores/dashboard'
 import { usePollsStore } from './stores/polls'
 import { usePetsStore } from './stores/pets'
+import { usePlantsStore } from './stores/plants'
 import { useSocket } from './composables/useSocket'
 import { useConnectivity } from './composables/useConnectivity'
 import BaseAvatar from './components/ui/BaseAvatar.vue'
@@ -38,7 +39,11 @@ const financeStore = useFinanceStore()
 const dashboardStore = useDashboardStore()
 const pollsStore = usePollsStore()
 const petsStore = usePetsStore()
-const { connect, reconnectWithToken, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect, isConnected } = useSocket()
+const plantsStore = usePlantsStore()
+const { updateToken, setTokenRefresher, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect, isConnected } = useSocket()
+
+// Trennt der Server den Socket wegen Token-Ablauf, holt sich der Socket hierüber ein frisches Token
+setTokenRefresher(() => authStore.refreshForSocket())
 
 // Push-Subscription dem eingeloggten User + aktueller Sprache zuordnen
 const { locale } = useI18n()
@@ -126,6 +131,15 @@ watch(
     off('pet_care_task_created', dashboardStore.invalidate)
     off('pet_care_task_updated', dashboardStore.invalidate)
     off('pet_care_task_deleted', dashboardStore.invalidate)
+    off('plant_care_task_created', plantsStore.handleCareTaskCreated)
+    off('plant_care_task_updated', plantsStore.handleCareTaskUpdated)
+    off('plant_care_task_deleted', plantsStore.handleCareTaskDeleted)
+    off('plant_care_task_created', dashboardStore.invalidate)
+    off('plant_care_task_updated', dashboardStore.invalidate)
+    off('plant_care_task_deleted', dashboardStore.invalidate)
+    off('plant_care_logged', dashboardStore.invalidate)
+    off('plant_created', dashboardStore.invalidate)
+    off('plant_deleted', dashboardStore.invalidate)
 
     // Wenn Token weg (Logout): Socket disconnecten
     if (!token) {
@@ -133,7 +147,8 @@ watch(
       return
     }
 
-    reconnectWithToken(token)
+    // Erstverbindung oder neues Token nach Refresh (Server verlängert die Verbindung per reauth)
+    updateToken(token)
 
     // Alten Room verlassen
     if (oldHouseholdId && oldHouseholdId !== householdId) {
@@ -230,6 +245,15 @@ watch(
       on('pet_care_task_created', dashboardStore.invalidate)
       on('pet_care_task_updated', dashboardStore.invalidate)
       on('pet_care_task_deleted', dashboardStore.invalidate)
+      on('plant_care_task_created', plantsStore.handleCareTaskCreated)
+      on('plant_care_task_updated', plantsStore.handleCareTaskUpdated)
+      on('plant_care_task_deleted', plantsStore.handleCareTaskDeleted)
+      on('plant_care_task_created', dashboardStore.invalidate)
+      on('plant_care_task_updated', dashboardStore.invalidate)
+      on('plant_care_task_deleted', dashboardStore.invalidate)
+      on('plant_care_logged', dashboardStore.invalidate)
+      on('plant_created', dashboardStore.invalidate)
+      on('plant_deleted', dashboardStore.invalidate)
 
       shoppingStore.fetchLists()
       shoppingStore.fetchItems()
@@ -331,7 +355,17 @@ onUnmounted(() => {
   off('pet_care_task_created', dashboardStore.invalidate)
   off('pet_care_task_updated', dashboardStore.invalidate)
   off('pet_care_task_deleted', dashboardStore.invalidate)
+  off('plant_care_task_created', plantsStore.handleCareTaskCreated)
+  off('plant_care_task_updated', plantsStore.handleCareTaskUpdated)
+  off('plant_care_task_deleted', plantsStore.handleCareTaskDeleted)
+  off('plant_care_task_created', dashboardStore.invalidate)
+  off('plant_care_task_updated', dashboardStore.invalidate)
+  off('plant_care_task_deleted', dashboardStore.invalidate)
+  off('plant_care_logged', dashboardStore.invalidate)
+  off('plant_created', dashboardStore.invalidate)
+  off('plant_deleted', dashboardStore.invalidate)
  offReconnect(handleReconnect)
+  setTokenRefresher(null)
   disconnect()
 })
 </script>

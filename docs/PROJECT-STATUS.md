@@ -42,7 +42,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | #17 | Frontend-Stores: Geschäfts-Filter folgt dem Umbenennen, fehlgeschlagenes Löschen eines Ämtlis stellt dessen Zuweisungen wieder her; Unit-Tests für den Auth-Store |
 | #18 | Einkauf: Geschäftsnamen werden ohne Beachtung der Groß-/Kleinschreibung zusammengeführt (Backend und Frontend, keine Migration); bestehende Einträge behalten ihre Schreibweise |
 
-**Kennzahlen (nach #18):** Backend 576 Tests in 51 Dateien, Coverage 91 %; Frontend 156 Tests in 13 Dateien, Coverage 31,8 % (Statements); 700 i18n-Schlüssel; 33 Alembic-Migrationen (einziger Kopf `w1x2y3z4a5b6`).
+**Kennzahlen (nach #18):** Backend 582 Tests in 51 Dateien, Coverage 91 %; Frontend 156 Tests in 13 Dateien, Coverage 31,8 % (Statements); 705 i18n-Schlüssel; 34 Alembic-Migrationen (einziger Kopf `x2y3z4a5b6c7`).
 
 **Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Essen, Notizen, Kalender und Finanzen.
 
@@ -92,7 +92,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | [`app/core/rate_limit.py`](../backend/app/core/rate_limit.py) | Zentraler `slowapi`-Limiter (pro IP, im Speicher; Client-IP aus `X-Forwarded-For` des Proxys) | ✅ Fertig |
 | [`app/core/security_headers.py`](../backend/app/core/security_headers.py) | ASGI-Middleware: HTTP-Security-Header (u. a. CSP) für alle API-Antworten | ✅ Fertig |
 | [`app/routers/auth.py`](../backend/app/routers/auth.py) | 5 Endpoints: register, login, refresh, logout, me (mit Rate-Limits) | ✅ Fertig |
-| [`app/routers/households.py`](../backend/app/routers/households.py) | 9 Endpoints: Haushalt erstellen/umbenennen/beitreten/verlassen, Mitglieder, Einladungscode (anzeigen/erneuern), Mitglied entfernen, Finanz-Zusammenfassung; Beitritt mit Rate-Limit | ✅ Fertig |
+| [`app/routers/households.py`](../backend/app/routers/households.py) | 9 Endpoints: Haushalt erstellen/umbenennen/beitreten/verlassen, Mitglieder, Einladungscode (anzeigen/erneuern, mit Ablaufdatum), Mitglied entfernen, Finanz-Zusammenfassung; Beitritt mit Rate-Limit | ✅ Fertig |
 | [`app/routers/shopping.py`](../backend/app/routers/shopping.py) | 10 Endpoints: Einkaufslisten (`list_router`) und Einkaufseinträge inkl. Geschäfts-Verwaltung (`router`) + Socket-Events | ✅ Fertig |
 | [`app/routers/todos.py`](../backend/app/routers/todos.py) | 7 Endpoints: Todos (CRUD, Claim) und Erinnerungen + Socket-Events | ✅ Fertig |
 | [`app/routers/tasks.py`](../backend/app/routers/tasks.py) | 1 Endpoint: vereinte Aufgabenliste (Todos + Putzplan-Zuweisungen) | ✅ Fertig |
@@ -656,6 +656,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 
 ## Geschäftsregeln
 
+- Einladungscodes laufen nach 7 Tagen ab (`INVITE_CODE_TTL` in `services/invite_code.py`). Das Ablaufdatum steht in `households.invite_code_expires_at` (UTC); es wird beim Anlegen des Haushalts und bei jeder Rotation (Admin-Button, Entfernen eines Mitglieds) neu gesetzt. `NULL` bedeutet „läuft nicht ab“. Ein abgelaufener Code wird bei `POST /join` und `POST /register` mit HTTP 410 und `INVITE_CODE_EXPIRED` abgelehnt (nicht als „nicht gefunden“). Die Migration setzt bei bestehenden Haushalten 7 Tage ab Upgrade; die Haushalts-Ansicht zeigt „gültig bis …“ bzw. einen Hinweis mit Link zur Rotation.
 ### Währungsregel
 - **Eine Währung pro Haushalt** (`Household.currency`, Default: CHF)
 - Expenses und Settlements müssen die Haushaltswährung verwenden
@@ -817,7 +818,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Refresh-Token nicht in `localStorage` | Mittel | 🟡 Mittel | Vorschlag HttpOnly-Cookie in `docs/security/hardening-review.md` (H-01); ändert den Vertrag von Login/Refresh/Logout und braucht CSRF-Schutz |
 | Dokumente verknüpfen | Mittel | 🔵 Niedrig | Verknüpfung mit Ausgaben/Terminen (Datenmodell ist vorbereitet, eigene Link-Tabelle) |
 | Push-Erinnerung zum Ablaufdatum von Dokumenten | Klein | 🔵 Niedrig | Garantieende, Kündigungsfrist |
-| Einladungscode läuft nie ab | Klein | 🔵 Niedrig | H-12; Rotation ist seit #11 möglich. Offen ist außerdem, ob der Code nur für Admins sichtbar sein soll |
+| Einladungscode nur für Admins sichtbar? | Klein | 🔵 Niedrig | Offene Produktfrage zu H-12: Der Code ist weiterhin für alle Mitglieder sichtbar (Ablauf und Rotation sind umgesetzt) |
 | Token-Ablauf auf Socket-Verbindungen | Klein | 🔵 Niedrig | Logout/Ablauf beendet bestehende WebSocket-Verbindungen serverseitig noch nicht |
 | Frontend-Testabdeckung | Mittel | 🟡 Mittel | 31,8 % Statements; Komponenten und weitere Stores (Kalender, Finanzen, Haustiere …) sind ungetestet; Coverage wird nur berichtet, es gibt keine Schwelle |
 | Push-Notifications für Chores | Mittel | 🔵 Niedrig | „Du bist dran“-Benachrichtigung |
@@ -851,7 +852,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 |---|---|---|
 | FastAPI | 0.141.1 | Web-Framework |
 | SQLAlchemy | (via requirements.txt) | ORM |
-| Alembic | 1.18.5 | DB-Migrationen (33 Versionen) |
+| Alembic | 1.18.5 | DB-Migrationen (34 Versionen) |
 | psycopg2-binary | 2.9.12 | PostgreSQL-Driver |
 | python-socketio | (via requirements.txt) | WebSocket |
 | bcrypt | 4.0.1 | Passwort-Hashing |

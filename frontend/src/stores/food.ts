@@ -181,7 +181,14 @@ export const useFoodStore = defineStore('food', () => {
     weekPlan.value = weekPlan.value.filter(e => e.date !== data.date)
   }
 
+  /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
+  function reset() {
+    recipes.value = []
+    weekPlan.value = []
+  }
+
   return {
+    reset,
     // State
     recipes,
     weekPlan,

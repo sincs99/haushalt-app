@@ -423,7 +423,18 @@ export const usePetsStore = defineStore('pets', () => {
     careTasks.value = careTasks.value.filter(t => t.id !== data.id)
   }
 
+  /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
+  function reset() {
+    pets.value = []
+    feedingStatus.value = []
+    members.value = []
+    medications.value = []
+    medicationLogs.value = {}
+    careTasks.value = []
+  }
+
   return {
+    reset,
     // State
     pets,
     feedingStatus,

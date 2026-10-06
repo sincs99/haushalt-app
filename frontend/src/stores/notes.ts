@@ -198,7 +198,14 @@ export const useNotesStore = defineStore('notes', () => {
     items.value = items.value.filter((i) => i.id !== data.id)
   }
 
+  /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
+  function reset() {
+    items.value = []
+    members.value = []
+  }
+
   return {
+    reset,
     // State
     items,
     members,

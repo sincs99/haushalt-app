@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { usePlantsStore } from '../stores/plants'
+import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
 import { careTaskName, dueText, isWaterDue, mergeCareNotes } from '../utils/plantCare'
@@ -19,6 +20,7 @@ import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 
 const plantsStore = usePlantsStore()
+const authStore = useAuthStore()
 const router = useRouter()
 const { on, off, onReconnect, offReconnect } = useSocket()
 const { showToast } = useToast()
@@ -68,6 +70,13 @@ function handleReconnect() {
   plantsStore.fetchPlants()
   plantsStore.fetchCareStatus()
 }
+
+// Haushaltswechsel: Daten des neuen Haushalts laden (App.vue hat den Store geleert)
+watch(() => authStore.currentHouseholdId, (id) => {
+  if (!id) return
+  plantsStore.fetchPlants()
+  plantsStore.fetchCareStatus()
+})
 
 // ── Status-Helpers ──
 function statusFor(plantId: string): PlantCareStatus | undefined {

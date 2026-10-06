@@ -317,7 +317,15 @@ export const useCalendarStore = defineStore('calendar', () => {
     events.value = events.value.filter(e => e.id !== data.id)
   }
 
+  /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
+  function reset() {
+    events.value = []
+    members.value = []
+    calendars.value = []
+  }
+
   return {
+    reset,
     // State
     events,
     members,

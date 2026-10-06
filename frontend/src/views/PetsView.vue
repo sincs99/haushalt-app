@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { usePetsStore } from '../stores/pets'
@@ -75,6 +75,14 @@ function handleReconnect() {
   petsStore.fetchPets()
   petsStore.fetchFeedingStatus()
 }
+
+// Haushaltswechsel: Daten des neuen Haushalts laden (App.vue hat den Store geleert)
+watch(() => authStore.currentHouseholdId, (id) => {
+  if (!id) return
+  petsStore.fetchPets()
+  petsStore.fetchFeedingStatus()
+  petsStore.fetchMembers()
+})
 
 // ── Current Slot ──
 const currentSlot = computed<FeedingSlot>(() => {

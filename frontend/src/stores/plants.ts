@@ -411,7 +411,19 @@ export const usePlantsStore = defineStore('plants', () => {
     prependLog(log)
   }
 
+  /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
+  function reset() {
+    plants.value = []
+    careStatus.value = []
+    members.value = []
+    careTasks.value = []
+    careTasksPlantId.value = null
+    careLog.value = []
+    careLogPlantId.value = null
+  }
+
   return {
+    reset,
     // State
     plants,
     careStatus,

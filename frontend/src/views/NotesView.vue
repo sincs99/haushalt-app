@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useNotesStore } from '../stores/notes'
+import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
 import { formatDateShort } from '../utils/dates'
@@ -21,6 +22,7 @@ const { showToast } = useToast()
 const socket = useSocket()
 
 const store = useNotesStore()
+const authStore = useAuthStore()
 
 // ── Quick-Add State ──
 const quickAddTitle = ref('')
@@ -122,6 +124,13 @@ const hasNotes = computed(() => store.items.length > 0)
 function handleReconnect() {
   store.fetchNotes()
 }
+
+// Haushaltswechsel: Daten des neuen Haushalts laden (App.vue hat den Store geleert)
+watch(() => authStore.currentHouseholdId, (id) => {
+  if (!id) return
+  store.fetchNotes()
+  store.fetchMembers()
+})
 
 // ── Lifecycle ──
 onMounted(() => {

@@ -65,6 +65,13 @@ function handleReconnect() {
   pollsStore.fetchPolls('offen')
 }
 
+// Haushaltswechsel: Daten des neuen Haushalts laden (App.vue hat den Store geleert)
+watch(() => authStore.currentHouseholdId, (id) => {
+  if (!id) return
+  foodStore.fetchRecipes()
+  foodStore.fetchWeekPlan()
+})
+
 // ── Kalenderwoche berechnen ──
 function getISOWeek(dateStr: string): number {
   const d = new Date(dateStr + 'T00:00:00')

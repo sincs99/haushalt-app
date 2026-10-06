@@ -2,7 +2,6 @@
 # Das ist korrekt und konsistent mit shopping/todos/expenses — kein 404-Pattern nötig.
 
 """Multi-Tenant Scoping Tests für Expenses."""
-import uuid
 
 
 def test_user_a_can_read_own_expenses(client, household_a, token_a, expense_a):

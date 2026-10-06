@@ -6,7 +6,6 @@ Stellt sicher, dass Cross-Household-Zugriffe mit 403 abgelehnt werden.
 
 from datetime import date, timedelta
 
-
 # ---------------------------------------------------------------------------
 # Helper: Care-Task inline erstellen
 # ---------------------------------------------------------------------------

@@ -30,19 +30,50 @@ def _compile_uuid_sqlite(type_, compiler, **kw):
 # --------------------------------------------------------------------------
 # 3) App- und DB-Imports (NACH Env-Vars und Compiler-Hook)
 # --------------------------------------------------------------------------
-import pytest  # noqa: E402
 from unittest.mock import patch  # noqa: E402
 
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine, event  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-from app.database import Base, get_db  # noqa: E402
-from app.models import Household, User, HouseholdMember, RefreshToken, ShoppingItem, ShoppingList, Todo, TodoReminder, Expense, ExpenseShare, Settlement, Budget, RecurringBill, Chore, ChoreAssignment, Calendar, Event, EventPoll, EventPollOption, EventPollVote, Pet, FeedingLog, Medication, MedicationLog, PetCareTask, Recipe, MealPlanEntry, Note, StoredFile, Document, DocumentFile  # noqa: E402
 from app.core.security import create_access_token, hash_password  # noqa: E402
+from app.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
-
-from fastapi.testclient import TestClient  # noqa: E402
+from app.models import (  # noqa: E402
+    Budget,
+    Calendar,
+    Chore,
+    ChoreAssignment,
+    Document,
+    DocumentFile,
+    Event,
+    EventPoll,
+    EventPollOption,
+    EventPollVote,
+    Expense,
+    ExpenseShare,
+    FeedingLog,
+    Household,
+    HouseholdMember,
+    MealPlanEntry,
+    Medication,
+    MedicationLog,
+    Note,
+    Pet,
+    PetCareTask,
+    Recipe,
+    RecurringBill,
+    RefreshToken,
+    Settlement,
+    ShoppingItem,
+    ShoppingList,
+    StoredFile,
+    Todo,
+    TodoReminder,
+    User,
+)
 
 # --------------------------------------------------------------------------
 # 4) SQLite In-Memory Engine + Session
@@ -506,7 +537,8 @@ def calendar_b(db, household_b) -> Calendar:
 
 @pytest.fixture()
 def event_a(db, household_a, user_a, calendar_a) -> Event:
-    from datetime import datetime, timezone as tz
+    from datetime import datetime
+    from datetime import timezone as tz
     e = Event(
         id=uuid.uuid4(),
         household_id=household_a.id,
@@ -525,7 +557,8 @@ def event_a(db, household_a, user_a, calendar_a) -> Event:
 
 @pytest.fixture()
 def event_b(db, household_b, user_b, calendar_b) -> Event:
-    from datetime import datetime, timezone as tz
+    from datetime import datetime
+    from datetime import timezone as tz
     e = Event(
         id=uuid.uuid4(),
         household_id=household_b.id,
@@ -806,7 +839,7 @@ def meal_plan_entry_b(db, household_b, recipe_b) -> MealPlanEntry:
 
 @pytest.fixture()
 def reminder_a(db, household_a, todo_a) -> TodoReminder:
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     reminder = TodoReminder(
         id=uuid.uuid4(),
         household_id=household_a.id,
@@ -821,7 +854,7 @@ def reminder_a(db, household_a, todo_a) -> TodoReminder:
 
 @pytest.fixture()
 def reminder_b(db, household_b, todo_b) -> TodoReminder:
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     reminder = TodoReminder(
         id=uuid.uuid4(),
         household_id=household_b.id,

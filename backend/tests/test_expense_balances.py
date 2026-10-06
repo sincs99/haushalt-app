@@ -2,10 +2,7 @@
 import uuid
 from datetime import date
 
-import pytest
-
 from app.routers.expenses import compute_settlements
-
 
 # ---------------------------------------------------------------------------
 # Unit-Tests: compute_settlements

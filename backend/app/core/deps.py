@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.security import decode_access_token
 from app.database import get_db
-from app.models import User, HouseholdMember
+from app.models import HouseholdMember, User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 

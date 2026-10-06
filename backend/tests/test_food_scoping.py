@@ -5,7 +5,6 @@ Stellt sicher, dass User NUR auf Rezepte und Wochenpläne ihres eigenen Househol
 zugreifen können. Cross-Household-Zugriffe müssen mit 403 abgelehnt werden.
 """
 
-import uuid
 
 
 # ===========================================================================

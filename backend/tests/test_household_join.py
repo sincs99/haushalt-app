@@ -4,6 +4,7 @@ Tests für Household-Beitritt per Invite-Code.
 import uuid
 
 import pytest
+
 from app.models import Household, HouseholdMember
 
 

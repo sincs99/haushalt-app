@@ -1,14 +1,14 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user, verify_household_access
+from app.core.deps import verify_household_access
 from app.database import get_db
-from app.models import HouseholdMember, ShoppingItem, ShoppingList, User
+from app.models import HouseholdMember, ShoppingItem, ShoppingList
 from app.services.client_ids import commit_or_get_existing, get_existing_by_client_id
 from app.socket_manager import emit_to_household_sync
 

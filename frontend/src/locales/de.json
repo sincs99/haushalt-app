@@ -335,7 +335,10 @@
     "billDay": "Tag im Monat (1–28)",
     "billSaved": "Rechnung gespeichert",
     "billDeleted": "Rechnung gelöscht",
-    "overspent": "Überschritten"
+    "overspent": "Überschritten",
+    "bookBillTitle": "«{name}» buchen",
+    "paidBy": "Bezahlt von",
+    "bookBillHint": "{amount} werden gleichmässig auf alle Mitglieder verteilt."
   },
   "settlements": {
     "title": "Ausgleichszahlungen",
@@ -494,7 +497,9 @@
     "STORAGE_QUOTA_EXCEEDED": "Speicherplatz des Haushalts ist voll – lösche alte Dokumente",
     "DOCUMENT_NOT_FOUND": "Dokument nicht gefunden",
     "DOCUMENT_TOO_MANY_FILES": "Zu viele Seiten für ein Dokument (max. 30)",
-    "DOCUMENT_LAST_FILE": "Die letzte Seite kann nicht entfernt werden – lösche stattdessen das Dokument"
+    "DOCUMENT_LAST_FILE": "Die letzte Seite kann nicht entfernt werden – lösche stattdessen das Dokument",
+    "BILL_PAYER_REQUIRED": "Bitte wähle aus, wer die Rechnung bezahlt hat",
+    "BILL_ALREADY_BOOKED": "Rechnung wurde bereits gebucht"
   },
   "push": {
     "title": "Benachrichtigungen",

@@ -434,10 +434,11 @@ def budget_a(db, household_a) -> Budget:
 
 
 @pytest.fixture()
-def bill_a(db, household_a) -> RecurringBill:
+def bill_a(db, household_a, user_a) -> RecurringBill:
     b = RecurringBill(
         id=uuid.uuid4(),
         household_id=household_a.id,
+        paid_by_user_id=user_a.id,  # Standard-Zahler, ohne ihn ist Buchen nicht möglich
         name="Miete",
         amount_rappen=150000,
         day_of_month=1,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { eventTime } from '../utils/dates'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -133,11 +134,8 @@ const todayEvents = computed(() => {
 
 function formatEventTime(item: DashboardEventItem): string {
   if (item.all_day) return t('calendar.allDay')
-  const date = new Date(item.starts_at)
-  return date.toLocaleTimeString(locale.value === 'de' ? 'de-CH' : 'en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  // Haushaltszeit direkt aus dem String (siehe utils/dates eventTime)
+  return eventTime(item.starts_at)
 }
 
 // ── Handlers ──

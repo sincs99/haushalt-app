@@ -1,6 +1,6 @@
 # Haushalt-App — Aktueller Projektstand
 
-**Stand:** 2026-08-12 (aktualisiert)
+**Stand:** 2026-10-06 (aktualisiert)
 **Autor:** Tech Lead (automatisch generiert)
 
 ---
@@ -17,6 +17,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Todos, wiederkehrende Putzplä
 | Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4 |
 | Auth | JWT (Bearer Token), bcrypt-Hashing |
 | i18n | vue-i18n, 615 Keys (DE + EN), Build-gesicherter Key-Sync |
+| Frontend-Tests | Vitest, 179 Tests, 65,4 % Statements / 65,0 % Lines (Stores 75 %); Coverage-Schwelle 62 % in `vitest.config.ts` |
 | Icons | Phosphor Icons (`@phosphor-icons/vue`) — regular/fill/bold |
 | UI | Custom Design-System (CSS Custom Properties, Nunito + Quicksand), Mobile-First |
 
@@ -451,6 +452,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Rollen-System (admin/member) | ✅ verify_household_admin | ✅ UI-Anzeige | — |
 | Währung pro Haushalt | ✅ Household.currency | ✅ /me Response | — |
 | Backend-Tests (Multi-Tenant + Auth) | ✅ 32 Testdateien, ~151 Tests | — | — |
+| Frontend-Store-Tests (Vitest) | — | ✅ 179 Tests: auth, shopping, todos, chores, calendar, finance, pets, food, notes, settlements, tasks | — |
 | Dashboard | ✅ | ✅ DashboardView | — |
 | Einkauf 2.0 (Multi-Listen, Stores) | ✅ | ✅ ShoppingView | ✅ Socket |
 | Aufgaben 2.0 (Unified Tasks) | ✅ | ✅ TodosView | ✅ Socket |
@@ -471,7 +473,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Offline-Phase 2 (IndexedDB + SyncQueue) | Gross | 🔵 Niedrig | Lokale Persistenz, Sync-Queue, Conflict Resolution |
 | PWA / Service Worker | Gross | 🔵 Niedrig | Offline-Shell, Cache-Strategie |
 | Push-Notifications (Todos) | Mittel | 🔵 Niedrig | Reminder für `due_date` |
-| Frontend-Tests (Rest) | Mittel | 🟡 Mittel | Unit-Tests für die übrigen Stores und für Komponenten (shopping/todos/chores/auth sind abgedeckt) |
+| Frontend-Tests (Rest) | Mittel | 🟡 Mittel | Stores `expenses`, `polls`, `documents`, `dashboard`, Repositories (0 %) und Komponenten; Schwelle in `vitest.config.ts` nach oben nachziehen |
 | Deployment (Azure/Docker) | Mittel | 🟡 Mittel | Produktiv-Deployment |
 | FR/IT-Sprachen | Klein | 🔵 Niedrig | Locale-Erweiterung |
 | Chores-Statistiken | Klein | 🔵 Niedrig | "Wer hat wie oft geputzt" |
@@ -485,7 +487,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | `updated_at` fehlt | Auf ShoppingItem und Todo — wird für Phase-2 Conflict Resolution gebraucht | Phase 2 |
 | `navigator.onLine` unzuverlässig | Captive Portals, WiFi ohne Internet werden nicht erkannt | Phase 2 |
 | `deleteItem()` Rollback-Position | Bei paralleler Socket-Mutation kann Position abweichen (kosmetisch) | Gering |
-| Frontend-Tests unvollständig | Vitest-Unit-Tests für die Stores `shopping`, `todos`, `chores` und `auth` (`frontend/src/stores/__tests__/`, 69 Tests); übrige Stores (calendar, expenses, finance, food, notes, pets, polls, settlements, tasks, dashboard) und alle Komponenten noch ohne Tests | Technische Schuld |
+| Frontend-Tests unvollständig | Vitest-Unit-Tests für auth, shopping, todos, chores, calendar, finance, pets, food, notes, settlements, tasks (`frontend/src/stores/__tests__/`, 179 Tests, 65,4 % Statements; vorher 24,9 %). `npm run test:coverage` bricht unter 62 % Statements/Lines ab. Ohne Tests: expenses, polls, dashboard, Repositories, Komponenten | Technische Schuld |
 | Auth-Styles dupliziert | Login/Register haben identische Scoped-CSS-Blöcke (Shared-Auth-Component wäre Refactoring) | Gering |
 | Emoji-/Icon-Sizes nicht tokenisiert | 48px, 22px Grössen sind hardcoded statt Design-Tokens | Gering |
 | Toast-Transitions hardcoded | Nutzen hardcoded Durations statt Design-Tokens | Gering |

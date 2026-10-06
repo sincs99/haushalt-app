@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 30
     refresh_token_reuse_grace_seconds: int = 30
     environment: str = "development"
+    # Speicher-Quota pro Haushalt über alle hochgeladenen Dateien (MB)
+    household_storage_quota_mb: int = 1024
     # Web Push (VAPID). Leer = Push deaktiviert. Generieren: python -m scripts.generate_vapid_keys
     vapid_public_key: str = ""
     vapid_private_key: str = ""

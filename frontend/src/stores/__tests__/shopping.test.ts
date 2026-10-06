@@ -39,6 +39,8 @@ function item(over: Partial<ShoppingItem> = {}): ShoppingItem {
     checked_at: null,
     store: null,
     assigned_to_user_id: null,
+    updated_at: '2024-01-01T00:00:00Z',
+    version: 1,
     ...over,
   }
 }
@@ -95,7 +97,7 @@ describe('shopping store', () => {
   })
 
   describe('addItem', () => {
-    it('adds an optimistic temp item and swaps in the server item', async () => {
+    it('adds an optimistic item with a client-generated id and keeps it when the server confirms', async () => {
       const s = useShoppingStore()
       s.activeListId = 'l1'
       let resolve!: (v: ShoppingItem) => void
@@ -104,13 +106,16 @@ describe('shopping store', () => {
       const p = s.addItem('Milk')
       expect(s.items).toHaveLength(1)
       expect(s.items[0].name).toBe('Milk')
-      const tempId = s.items[0].id
+      expect(s.items[0].version).toBe(0) // noch nicht vom Server bestätigt
+      const clientId = s.items[0].id
+      // Die Client-ID wird mitgeschickt, der Server übernimmt sie
+      expect(repo.create).toHaveBeenCalledWith('h1', expect.objectContaining({ id: clientId, name: 'Milk' }))
 
-      resolve(item({ id: 'server-1' }))
+      resolve(item({ id: clientId, version: 1 }))
       await p
       expect(s.items).toHaveLength(1)
-      expect(s.items[0].id).toBe('server-1')
-      expect(s.items[0].id).not.toBe(tempId)
+      expect(s.items[0].id).toBe(clientId) // kein Temp-ID-Swap
+      expect(s.items[0].version).toBe(1)
     })
 
     it('rolls back the temp item and rethrows on failure', async () => {
@@ -128,11 +133,13 @@ describe('shopping store', () => {
       repo.create.mockReturnValue(new Promise(r => (resolve = r)))
 
       const p = s.addItem('Milk')
-      s.handleItemCreated(item({ id: 'server-1' }))
-      expect(s.items).toHaveLength(2) // temp + socket item
-      resolve(item({ id: 'server-1' }))
+      const clientId = s.items[0].id
+      // Eigenes Item trägt die Client-ID → das Socket-Event ersetzt es per ID
+      s.handleItemCreated(item({ id: clientId, version: 1 }))
+      expect(s.items.map(i => i.id)).toEqual([clientId])
+      resolve(item({ id: clientId, version: 1 }))
       await p
-      expect(s.items.map(i => i.id)).toEqual(['server-1'])
+      expect(s.items.map(i => i.id)).toEqual([clientId])
     })
 
     it('is a no-op without an active list', async () => {

@@ -11,7 +11,7 @@ export interface FinanceRepository {
   createBill(householdId: string, payload: RecurringBillCreatePayload): Promise<RecurringBill>
   updateBill(householdId: string, billId: string, payload: RecurringBillUpdatePayload): Promise<RecurringBill>
   removeBill(householdId: string, billId: string): Promise<void>
-  bookBill(householdId: string, billId: string): Promise<Expense>
+  bookBill(householdId: string, billId: string, paidByUserId?: string): Promise<Expense>
 
   // Finance Summary
   getSummary(householdId: string, month?: string): Promise<FinanceSummary>
@@ -41,7 +41,7 @@ export function createOnlineFinanceRepository(): FinanceRepository {
     async fetchBills(householdId, includeInactive = false) {
       const params = includeInactive ? { include_inactive: 'true' } : undefined
       const { data } = await api.get<RecurringBill[]>(
-        `/api/households/${householdId}/recurring-bills`,
+        `/api/households/${householdId}/recurring-bills/`,
         { params },
       )
       return data
@@ -49,7 +49,7 @@ export function createOnlineFinanceRepository(): FinanceRepository {
 
     async createBill(householdId, payload) {
       const { data } = await api.post<RecurringBill>(
-        `/api/households/${householdId}/recurring-bills`,
+        `/api/households/${householdId}/recurring-bills/`,
         payload,
       )
       return data
@@ -69,9 +69,11 @@ export function createOnlineFinanceRepository(): FinanceRepository {
       )
     },
 
-    async bookBill(householdId, billId) {
+    async bookBill(householdId, billId, paidByUserId) {
+      // Ohne Zahler gilt der Standard-Zahler der Rechnung
       const { data } = await api.post<Expense>(
         `/api/households/${householdId}/recurring-bills/${billId}/book`,
+        paidByUserId ? { paid_by_user_id: paidByUserId } : undefined,
       )
       return data
     },

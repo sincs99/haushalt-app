@@ -31,6 +31,7 @@ from app.models import (
 )
 from app.services.balance_service import compute_user_saldo
 from app.services.chore_scheduler import today_in_tz
+from app.services.event_times import to_household_time
 
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
@@ -230,8 +231,10 @@ def get_dashboard(
     # 5. Events (heute)
     # ------------------------------------------------------------------
     tz = zoneinfo.ZoneInfo(household.timezone or "Europe/Zurich")
-    today_start = datetime.combine(today, dt_time.min, tzinfo=tz)
-    today_end = datetime.combine(today, dt_time.max, tzinfo=tz)
+    # Explizit nach UTC: Termine sind in UTC gespeichert (SQLite würde den Offset
+    # beim Vergleich sonst ohne Umrechnung verwerfen)
+    today_start = datetime.combine(today, dt_time.min, tzinfo=tz).astimezone(timezone.utc)
+    today_end = datetime.combine(today, dt_time.max, tzinfo=tz).astimezone(timezone.utc)
 
     today_events = (
         db.query(Event)
@@ -250,7 +253,7 @@ def get_dashboard(
             DashboardEventItem(
                 id=ev.id,
                 title=ev.title,
-                starts_at=ev.starts_at,
+                starts_at=to_household_time(ev.starts_at, tz),
                 all_day=ev.all_day,
                 calendar_id=ev.calendar_id,
             )

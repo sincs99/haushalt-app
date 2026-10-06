@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse
 from app.core.config import settings
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import SessionLocal
 from app.routers import (
     auth,
@@ -20,6 +21,7 @@ from app.routers import (
     calendars,
     chores,
     dashboard,
+    documents,
     events,
     expenses,
     files,
@@ -35,6 +37,7 @@ from app.routers import (
     tasks,
     todos,
 )
+from app.services.file_cleanup import cleanup_loop
 from app.services.push_service import scheduler_loop
 from app.socket_manager import set_event_loop, socket_app
 
@@ -43,6 +46,18 @@ logger = logging.getLogger("uvicorn.error")
 _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 
 _JWT_PLACEHOLDER = "please-change-this-secret-in-production-min-32-chars"
+# Platzhalter-Muster aus .env.example / Doku / alten Compose-Defaults
+_JWT_PLACEHOLDER_MARKERS = ("change", "placeholder", "example", "einfuegen")
+
+
+def is_insecure_jwt_secret(secret: str) -> bool:
+    """True für zu kurze oder offensichtlich aus Vorlagen übernommene Secrets."""
+    lowered = secret.lower()
+    return (
+        len(secret) < 32
+        or secret == _JWT_PLACEHOLDER
+        or any(marker in lowered for marker in _JWT_PLACEHOLDER_MARKERS)
+    )
 
 
 async def _custom_rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
@@ -57,9 +72,9 @@ async def _custom_rate_limit_handler(request: Request, exc: RateLimitExceeded) -
 async def lifespan(app: FastAPI):
     """Startup-Checks und Event-Loop für sync→async Bridge setzen."""
     # JWT Secret Validierung
-    if settings.jwt_secret_key == _JWT_PLACEHOLDER or len(settings.jwt_secret_key) < 32:
+    if is_insecure_jwt_secret(settings.jwt_secret_key):
         raise RuntimeError(
-            "JWT_SECRET_KEY is insecure! It must be at least 32 characters and not the .env.example placeholder. "
+            "JWT_SECRET_KEY is insecure! It must be at least 32 characters and not a template placeholder. "
             'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
         )
 
@@ -90,24 +105,36 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Push notifications disabled (VAPID keys not configured)")
 
+    cleanup_task = asyncio.create_task(cleanup_loop())
+
     yield
 
+    cleanup_task.cancel()
     if push_task:
         push_task.cancel()
 
 
-app = FastAPI(title="Haushalt App API", lifespan=lifespan)
+# redirect_slashes=False: Kein 307 bei fehlendem/überzähligem Slash. Hinter dem Proxy
+# würde der Redirect sonst mit falschem Schema/Host gebaut und der Browser verwirft
+# dabei den Authorization-Header — Pfadfehler sollen als 404 sofort auffallen.
+app = FastAPI(title="Haushalt App API", lifespan=lifespan, redirect_slashes=False)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _custom_rate_limit_handler)
 
+# Auth läuft ausschliesslich über den Authorization-Header (keine Cookies),
+# daher allow_credentials=False und explizite Methoden-/Header-Listen.
+# In Produktion ist die API same-origin (nginx-Proxy) — CORS greift nur im
+# Dev-Setup bzw. bei gesetztem VITE_API_URL.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language"],
 )
+# Zuletzt hinzugefügt = äusserste Middleware → Header auch auf CORS-Preflights
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth.router)
 app.include_router(shopping.list_router)
@@ -130,6 +157,7 @@ app.include_router(food.recipe_router)
 app.include_router(food.meal_plan_router)
 app.include_router(notes.router)
 app.include_router(files.router)
+app.include_router(documents.router)
 app.include_router(push.router)
 
 # Socket.IO unter /socket.io mounten

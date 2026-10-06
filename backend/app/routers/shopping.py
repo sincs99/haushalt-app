@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import verify_household_access
 from app.database import get_db
 from app.models import HouseholdMember, ShoppingItem, ShoppingList
+from app.services.client_ids import commit_or_get_existing, get_existing_by_client_id
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -17,6 +18,8 @@ from app.socket_manager import emit_to_household_sync
 
 
 class ShoppingListCreate(BaseModel):
+    # Optional client-generierte ID → idempotenter Create (Offline-Sync)
+    id: uuid.UUID | None = None
     name: str = Field(..., min_length=1, max_length=100)
     icon: str | None = Field(None, max_length=50)
 
@@ -48,6 +51,8 @@ class ShoppingListResponse(BaseModel):
     icon: str | None
     position: int
     created_at: datetime
+    updated_at: datetime
+    version: int
     open_count: int = 0  # computed field
 
     model_config = ConfigDict(from_attributes=True)
@@ -59,6 +64,8 @@ class ShoppingListResponse(BaseModel):
 
 
 class ShoppingItemCreate(BaseModel):
+    # Optional client-generierte ID → idempotenter Create (Offline-Sync)
+    id: uuid.UUID | None = None
     name: str = Field(..., min_length=1, max_length=200)
     list_id: uuid.UUID
     quantity: str | None = Field(None, max_length=50)
@@ -117,6 +124,8 @@ class ShoppingItemResponse(BaseModel):
     checked_at: datetime | None
     store: str | None
     assigned_to_user_id: uuid.UUID | None
+    updated_at: datetime
+    version: int
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -145,6 +154,19 @@ class ReassignStoreResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Router — Shopping Lists
 # ---------------------------------------------------------------------------
+
+def _with_open_count(db: Session, lst: ShoppingList) -> ShoppingList:
+    """Setzt das berechnete Feld open_count (Anzahl unchecked Items)."""
+    lst.open_count = (
+        db.query(func.count(ShoppingItem.id))
+        .filter(
+            ShoppingItem.list_id == lst.id,
+            ShoppingItem.is_checked == False,  # noqa: E712
+        )
+        .scalar()
+    )
+    return lst
+
 
 list_router = APIRouter(
     prefix="/api/households/{household_id}/shopping-lists",
@@ -189,9 +211,16 @@ def list_shopping_lists(
 def create_shopping_list(
     household_id: uuid.UUID,
     body: ShoppingListCreate,
+    response: Response,
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
+    # Wiederholter Create mit gleicher Client-ID → bestehende Liste, kein neues Event
+    existing = get_existing_by_client_id(db, ShoppingList, body.id, household_id)
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK
+        return _with_open_count(db, existing)
+
     # Position = max(position) + 1 unter existierenden Listen des Haushalts
     max_pos = (
         db.query(func.max(ShoppingList.position))
@@ -206,8 +235,13 @@ def create_shopping_list(
         icon=body.icon,
         position=next_position,
     )
+    if body.id is not None:
+        lst.id = body.id
     db.add(lst)
-    db.commit()
+    existing = commit_or_get_existing(db, ShoppingList, body.id, household_id)
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK
+        return _with_open_count(db, existing)
     db.refresh(lst)
 
     lst.open_count = 0  # neue Liste hat keine Items
@@ -241,16 +275,7 @@ def update_shopping_list(
 
     db.commit()
     db.refresh(lst)
-
-    # open_count berechnen
-    lst.open_count = (
-        db.query(func.count(ShoppingItem.id))
-        .filter(
-            ShoppingItem.list_id == lst.id,
-            ShoppingItem.is_checked == False,  # noqa: E712
-        )
-        .scalar()
-    )
+    _with_open_count(db, lst)
 
     response_data = ShoppingListResponse.model_validate(lst).model_dump(mode="json")
     emit_to_household_sync(household_id, "shopping_list_updated", response_data)
@@ -394,9 +419,16 @@ def reassign_store(
 def create_shopping_item(
     household_id: uuid.UUID,
     body: ShoppingItemCreate,
+    response: Response,
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
+    # Wiederholter Create mit gleicher Client-ID → bestehendes Item, kein neues Event
+    existing = get_existing_by_client_id(db, ShoppingItem, body.id, household_id)
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK
+        return existing
+
     # Konsistenz-Check: list_id muss zu einer Liste des gleichen Haushalts gehören
     shopping_list = db.get(ShoppingList, body.list_id)
     if shopping_list is None or shopping_list.household_id != household_id:
@@ -431,8 +463,13 @@ def create_shopping_item(
         assigned_to_user_id=body.assigned_to_user_id,
         added_by_user_id=membership.user_id,
     )
+    if body.id is not None:
+        item.id = body.id
     db.add(item)
-    db.commit()
+    existing = commit_or_get_existing(db, ShoppingItem, body.id, household_id)
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK
+        return existing
     db.refresh(item)
 
     emit_to_household_sync(

@@ -26,7 +26,7 @@ const { isOnline } = useConnectivity()
 const { toasts, dismissToast } = useToast()
 const moreOpen = ref(false)
 const moreActive = computed(() =>
-  moreOpen.value || ['/expenses', '/chores', '/household'].includes(route.path)
+  moreOpen.value || ['/expenses', '/chores', '/household', '/documents'].includes(route.path)
 )
 const authStore = useAuthStore()
 const shoppingStore = useShoppingStore()

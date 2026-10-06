@@ -10,7 +10,7 @@ from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import Expense, ExpenseShare, Household, HouseholdMember
-from app.services.household_checks import assert_users_in_household
+from app.services.household_checks import assert_users_allowed, assert_users_in_household
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -139,7 +139,12 @@ class BalancesResponse(BaseModel):
 def split_evenly(amount_rappen: int, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
     """Ganzzahldivision, Rest-Rappen von vorne verteilen.
     Sortiert user_ids deterministisch nach UUID-String.
+
+    Doppelte user_ids werden abgelehnt — im Dict würden sie zusammenfallen und die
+    Anteile ergäben nicht mehr den Gesamtbetrag.
     """
+    if len(set(user_ids)) != len(user_ids):
+        raise HTTPException(422, detail=error_detail(ErrorCode.DUPLICATE_SHARE_USER, "Duplicate user in participant_ids"))
     sorted_ids = sorted(user_ids, key=str)
     base, rest = divmod(amount_rappen, len(sorted_ids))
     return {uid: base + (1 if i < rest else 0) for i, uid in enumerate(sorted_ids)}
@@ -367,12 +372,21 @@ def update_expense(
                 ),
             )
 
+    # Personen, die schon auf der Ausgabe stehen, dürfen inzwischen Ex-Mitglieder sein —
+    # sonst ließe sich eine alte Ausgabe nicht einmal mehr umbenennen
+    on_record = {s.user_id for s in expense.shares}
+    if expense.paid_by_user_id is not None:
+        on_record.add(expense.paid_by_user_id)
+    existing_share_user_ids = [s.user_id for s in expense.shares]
+
     # Einfache Felder aktualisieren (außer split-spezifische)
     simple_fields = {"description", "currency", "paid_by_user_id", "expense_date", "category"}
     for field in simple_fields:
         if field in update_data:
             if field == "paid_by_user_id":
-                assert_users_in_household(db, household_id, [update_data[field]])
+                if update_data[field] is None:
+                    raise HTTPException(422, detail=error_detail(ErrorCode.USERS_NOT_IN_HOUSEHOLD, "paid_by_user_id must not be null"))
+                assert_users_allowed(db, household_id, [update_data[field]], on_record)
             setattr(expense, field, update_data[field])
 
     # amount_rappen ändern
@@ -402,8 +416,12 @@ def update_expense(
 
         if effective_split_type == "even":
             if body.participant_ids:
-                assert_users_in_household(db, household_id, body.participant_ids)
+                assert_users_allowed(db, household_id, body.participant_ids, on_record)
                 user_ids = body.participant_ids
+            elif "participant_ids" not in update_data and "split_type" not in update_data and existing_share_user_ids:
+                # Nur Betrag geändert: auf die bisherigen Teilnehmer verteilen,
+                # nicht auf alle aktuellen Mitglieder
+                user_ids = existing_share_user_ids
             else:
                 members = (
                     db.query(HouseholdMember.user_id)
@@ -420,7 +438,7 @@ def update_expense(
             if not shares_input:
                 raise HTTPException(422, detail=error_detail(ErrorCode.SHARES_EMPTY, "custom split requires shares when changing amount"))
             share_user_ids = [s.user_id for s in shares_input]
-            assert_users_in_household(db, household_id, share_user_ids)
+            assert_users_allowed(db, household_id, share_user_ids, on_record)
             validate_custom_shares(amount, shares_input)
             share_map = {s.user_id: s.amount_rappen for s in shares_input}
 

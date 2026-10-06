@@ -93,6 +93,8 @@ async function confirmRemoveMember() {
     removeMemberDialogOpen.value = false
     memberToRemove.value = null
     await loadMembers()
+    // Backend erneuert beim Entfernen den Einladungscode
+    loadInviteCode()
   } catch (error: unknown) {
     showToast(translateApiError(error), 'error')
   } finally {
@@ -156,6 +158,22 @@ async function loadInviteCode() {
     showToast(t('household.inviteLoadError'), 'error')
   } finally {
     inviteCodeLoading.value = false
+  }
+}
+
+const rotateLoading = ref(false)
+
+async function rotateInviteCode() {
+  if (!authStore.currentHouseholdId) return
+  if (!confirm(t('household.rotateCodeConfirm'))) return
+  rotateLoading.value = true
+  try {
+    inviteCode.value = await repo.rotateInviteCode(authStore.currentHouseholdId)
+    showToast(t('household.rotateCodeSuccess'), 'success')
+  } catch (error: unknown) {
+    showToast(translateApiError(error), 'error')
+  } finally {
+    rotateLoading.value = false
   }
 }
 
@@ -389,7 +407,18 @@ watch(() => authStore.currentHouseholdId, () => {
           >
             {{ $t('household.copyCode') }}
           </BaseButton>
+          <BaseButton
+            v-if="isAdmin"
+            variant="ghost"
+            size="sm"
+            :loading="rotateLoading"
+            :disabled="!inviteCode"
+            @click="rotateInviteCode"
+          >
+            {{ $t('household.rotateCode') }}
+          </BaseButton>
         </div>
+        <p v-if="isAdmin" class="section-hint">{{ $t('household.rotateCodeHint') }}</p>
       </div>
 
       <!-- Beitreten -->
@@ -674,6 +703,7 @@ watch(() => authStore.currentHouseholdId, () => {
 
 .invite-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 

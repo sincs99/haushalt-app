@@ -39,6 +39,8 @@ function todo(over: Partial<TodoItem> = {}): TodoItem {
     done_at: null,
     tags: [],
     reminders: [],
+    updated_at: '2024-01-01T00:00:00Z',
+    version: 1,
     ...over,
   }
 }
@@ -75,12 +77,17 @@ describe('todos store', () => {
   })
 
   describe('addTodo', () => {
-    it('swaps the optimistic temp todo for the server todo', async () => {
+    it('keeps the client-generated id when the server confirms the todo', async () => {
       const s = useTodosStore()
-      repo.create.mockResolvedValue(todo({ id: 'srv' }))
+      repo.create.mockImplementation((_hid: string, payload: { id: string; title: string }) =>
+        Promise.resolve(todo({ id: payload.id, title: payload.title, tags: ['a'], version: 1 })),
+      )
       await s.addTodo('Task', undefined, undefined, undefined, ['a'])
-      expect(s.items.map(i => i.id)).toEqual(['srv'])
       expect(repo.create).toHaveBeenCalledWith('h1', expect.objectContaining({ title: 'Task', tags: ['a'] }))
+      const sentId = repo.create.mock.calls[0][1].id as string
+      expect(sentId).toMatch(/^[0-9a-f-]{36}$/)
+      expect(s.items.map(i => i.id)).toEqual([sentId]) // kein Temp-ID-Swap
+      expect(s.items[0].version).toBe(1)
     })
 
     it('shows the temp todo while pending and rolls back on failure', async () => {
@@ -95,12 +102,17 @@ describe('todos store', () => {
       expect(s.items).toHaveLength(0)
     })
 
-    it('removes the temp todo when the socket already delivered the server todo', async () => {
+    it('does not duplicate when the socket delivers the todo before the REST response', async () => {
       const s = useTodosStore()
-      s.items = [todo({ id: 'srv' })]
-      repo.create.mockResolvedValue(todo({ id: 'srv' }))
-      await s.addTodo('Task')
-      expect(s.items.map(i => i.id)).toEqual(['srv'])
+      let resolve!: (t: TodoItem) => void
+      repo.create.mockReturnValue(new Promise(r => (resolve = r)))
+      const p = s.addTodo('Task')
+      const sentId = s.items[0].id
+      s.handleTodoCreated(todo({ id: sentId, version: 1 }))
+      expect(s.items.map(i => i.id)).toEqual([sentId])
+      resolve(todo({ id: sentId, version: 1 }))
+      await p
+      expect(s.items.map(i => i.id)).toEqual([sentId])
     })
   })
 
@@ -223,16 +235,18 @@ describe('todos store', () => {
       expect(s.items[0].title).toBe('Changed')
     })
 
-    it('handleTodoCreated does not push while an own create is pending (REST swap does it)', async () => {
+    it('handleTodoCreated keeps todos from other users that arrive while an own create is pending', async () => {
       const s = useTodosStore()
       let resolve!: (t: TodoItem) => void
       repo.create.mockReturnValue(new Promise(r => (resolve = r)))
       const p = s.addTodo('Task')
-      s.handleTodoCreated(todo({ id: 'srv' }))
-      expect(s.items).toHaveLength(1) // only the temp item
-      resolve(todo({ id: 'srv' }))
+      const ownId = s.items[0].id
+      // Früher wurde das Event des anderen Nutzers hier verworfen
+      s.handleTodoCreated(todo({ id: 'other', title: 'From someone else', created_by_user_id: 'u2' }))
+      expect(s.items.map(i => i.id)).toEqual([ownId, 'other'])
+      resolve(todo({ id: ownId, version: 1 }))
       await p
-      expect(s.items.map(i => i.id)).toEqual(['srv'])
+      expect(s.items.map(i => i.id)).toEqual([ownId, 'other'])
     })
 
     it('handleTodoUpdated replaces known items only', () => {

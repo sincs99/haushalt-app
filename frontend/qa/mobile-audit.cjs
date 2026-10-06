@@ -170,6 +170,13 @@ function auditInPage(opts) {
   // 4. Tap-Ziele < 44×44
   const interactive = els.filter(el => inScope(el) && el.matches(
     'a[href], button, select, textarea, input:not([type=hidden]), [role=button], [role=tab], [role=checkbox], [role=switch]'))
+  const isFixedish = el => {
+    for (let p = el; p && p !== document.body; p = p.parentElement) {
+      const pos = getComputedStyle(p).position
+      if (pos === 'fixed' || pos === 'sticky') return p
+    }
+    return null
+  }
   const hitboxes = []
   for (const el of interactive) {
     const cs = getComputedStyle(el)
@@ -209,6 +216,8 @@ function auditInPage(opts) {
     if (!a.grown) continue
     for (const b of hitboxes) {
       if (a === b || a.el.contains(b.el) || b.el.contains(a.el)) continue
+      // fixe/sticky Elemente (Bottom-Nav, FAB, Sticky-Pill) liegen oben und bekommen den Tap selbst
+      if (isFixedish(b.el) && !isFixedish(a.el)) continue
       const ox = Math.min(a.hb.right, b.r.right) - Math.max(a.hb.left, b.r.left)
       const oy = Math.min(a.hb.bottom, b.r.bottom) - Math.max(a.hb.top, b.r.top)
       if (ox > 1 && oy > 1) add('hitbox-overlap', a.el, `Tap-Fläche überdeckt ${sig(b.el)} „${txt(b.el)}“ (${Math.round(ox)}×${Math.round(oy)})`)
@@ -220,13 +229,7 @@ function auditInPage(opts) {
   const navTop = nav && isVisible(nav) ? nav.getBoundingClientRect().top : vh
   const safeBottom = vh - (opts.insets?.bottom || 0)
   const safeTop = opts.insets?.top || 0
-  const isFixedish = el => {
-    for (let p = el; p && p !== document.body; p = p.parentElement) {
-      const pos = getComputedStyle(p).position
-      if (pos === 'fixed' || pos === 'sticky') return p
-    }
-    return null
-  }
+
   if (opts.checkNav) {
     // Seite ist ans Ende gescrollt: letzter Inhalt darf nicht hinter der Nav liegen
     for (const el of interactive.concat(els.filter(e => e.matches('p, h1, h2, h3, li, .card, [class*="card"]')))) {

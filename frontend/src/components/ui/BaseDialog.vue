@@ -1,3 +1,8 @@
+<script lang="ts">
+// Modulweit: offene Dialoge, der zuletzt geöffnete oben – nur er reagiert auf Escape/Tab
+const openStack: symbol[] = []
+</script>
+
 <script setup lang="ts">
 import { watch, nextTick, ref, onBeforeUnmount } from 'vue'
 import { PhX } from '@phosphor-icons/vue'
@@ -19,6 +24,8 @@ const dialogRef = ref<HTMLElement | null>(null)
 const titleId = `dialog-title-${Math.random().toString(36).slice(2, 9)}`
 let returnFocusTo: HTMLElement | null = null
 
+const instanceId = Symbol('dialog')
+
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 function focusables(): HTMLElement[] {
@@ -31,6 +38,7 @@ useBackClose(() => props.open, () => emit('close'))
 watch(() => props.open, async (isOpen) => {
   if (isOpen) {
     returnFocusTo = document.activeElement as HTMLElement | null
+    openStack.push(instanceId)
     document.addEventListener('keydown', onKeydown)
     await nextTick()
     // Erstes Feld mit autofocus bzw. erstes Eingabefeld, sonst das Panel
@@ -40,6 +48,7 @@ watch(() => props.open, async (isOpen) => {
       panel?.querySelector<HTMLElement>('.dialog-body input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([disabled]), .dialog-body textarea:not([disabled])')
     ;(target ?? panel)?.focus({ preventScroll: true })
   } else {
+    removeFromStack()
     document.removeEventListener('keydown', onKeydown)
     // Fokus zurück auf den auslösenden Button
     if (returnFocusTo && document.contains(returnFocusTo)) returnFocusTo.focus({ preventScroll: true })
@@ -47,9 +56,18 @@ watch(() => props.open, async (isOpen) => {
   }
 }, { immediate: true })
 
-onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
+function removeFromStack() {
+  const idx = openStack.indexOf(instanceId)
+  if (idx !== -1) openStack.splice(idx, 1)
+}
+
+onBeforeUnmount(() => {
+  removeFromStack()
+  document.removeEventListener('keydown', onKeydown)
+})
 
 function onKeydown(e: KeyboardEvent) {
+  if (openStack[openStack.length - 1] !== instanceId) return
   if (e.key === 'Escape') {
     e.stopPropagation()
     emit('close')

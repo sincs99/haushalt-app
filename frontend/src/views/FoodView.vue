@@ -675,8 +675,6 @@ async function doCreateMealPoll() {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4);
-  padding-bottom: calc(var(--space-6) + 80px); /* Platz für Bottom-Nav */
   max-width: 600px;
   margin: 0 auto;
 }

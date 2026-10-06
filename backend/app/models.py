@@ -1010,7 +1010,8 @@ DOCUMENT_CATEGORIES = ("contract", "invoice", "warranty", "insurance", "other")
 
 
 class Document(Base):
-    """Abgelegtes Dokument (Vertrag, Rechnung, Garantie, …) mit genau einer Datei.
+    """Abgelegtes Dokument (Vertrag, Rechnung, Garantie, …) mit einer oder mehreren
+    Dateien (Seiten), siehe DocumentFile.
 
     Verknüpfungen zu anderen Entitäten (Ausgaben, Termine, …) sind bewusst
     nicht Teil dieser Tabelle — sie kommen später als eigene Link-Tabelle
@@ -1045,12 +1046,6 @@ class Document(Base):
     document_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Ablauf-/Erinnerungsdatum (Garantieende, Kündigungsfrist)
     expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    file_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("stored_files.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,
-    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -1064,4 +1059,35 @@ class Document(Base):
     )
 
     household: Mapped["Household"] = relationship(back_populates="documents")
+    file_links: Mapped[list["DocumentFile"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="DocumentFile.position",
+    )
+
+    @property
+    def files(self) -> list["StoredFile"]:
+        """Dateien in Seitenreihenfolge."""
+        return [link.file for link in self.file_links]
+
+
+class DocumentFile(Base):
+    """Seite eines Dokuments. Eine Datei gehört zu höchstens einem Dokument."""
+
+    __tablename__ = "document_files"
+
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    file_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("stored_files.id", ondelete="CASCADE"),
+        primary_key=True,
+        unique=True,
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    document: Mapped["Document"] = relationship(back_populates="file_links")
     file: Mapped["StoredFile"] = relationship()

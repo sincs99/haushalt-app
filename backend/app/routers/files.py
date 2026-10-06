@@ -22,7 +22,7 @@ from app.core.config import settings
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import Document, HouseholdMember, Pet, StoredFile
+from app.models import Document, DocumentFile, HouseholdMember, Pet, StoredFile
 from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
 
@@ -372,7 +372,12 @@ def delete_file(
         )
 
     # Referenzprüfung: Gehört die Datei zu einem Dokument? (Löschen über /documents)
-    doc_ref = db.query(Document).filter(Document.file_id == file_id).first()
+    doc_ref = (
+        db.query(Document)
+        .join(DocumentFile, DocumentFile.document_id == Document.id)
+        .filter(DocumentFile.file_id == file_id)
+        .first()
+    )
     if doc_ref is not None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

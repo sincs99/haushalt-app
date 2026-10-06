@@ -1,9 +1,10 @@
 """
 Documents Router — Ablage für Verträge, Rechnungen, Garantien etc. pro Household.
 
-Jedes Dokument referenziert genau eine StoredFile. Dateien werden entweder
-vorab über /files hochgeladen (POST / mit file_id) oder direkt per Multipart
-(POST /upload). Beim Löschen eines Dokuments wird die Datei mit entfernt.
+Ein Dokument besteht aus einer oder mehreren Dateien (Seiten, z.B. mehrseitige
+Scans). Dateien werden entweder vorab einzeln über /files hochgeladen und dann
+per file_ids angehängt (POST /, POST /{id}/files) oder direkt per Multipart
+(POST /upload). Beim Löschen eines Dokuments werden alle Dateien mit entfernt.
 """
 
 import uuid
@@ -19,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import Document, HouseholdMember, Pet, StoredFile
+from app.models import Document, DocumentFile, HouseholdMember, Pet, StoredFile
 from app.routers.files import (
     StoredFileResponse,
     household_storage_quota,
@@ -30,6 +31,8 @@ from app.routers.files import (
 from app.socket_manager import emit_to_household_sync
 
 DocumentCategory = Literal["contract", "invoice", "warranty", "insurance", "other"]
+
+MAX_FILES_PER_DOCUMENT = 30
 
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
@@ -69,8 +72,28 @@ class DocumentMeta(BaseModel):
         return _normalize_notes(v)
 
 
+def _unique_ids(v: list[uuid.UUID]) -> list[uuid.UUID]:
+    if len(set(v)) != len(v):
+        raise ValueError("file_ids must be unique")
+    return v
+
+
 class DocumentCreate(DocumentMeta):
-    file_id: uuid.UUID
+    file_ids: list[uuid.UUID] = Field(..., min_length=1)
+
+    @field_validator("file_ids")
+    @classmethod
+    def file_ids_unique(cls, v):
+        return _unique_ids(v)
+
+
+class DocumentFilesBody(BaseModel):
+    file_ids: list[uuid.UUID] = Field(..., min_length=1)
+
+    @field_validator("file_ids")
+    @classmethod
+    def file_ids_unique(cls, v):
+        return _unique_ids(v)
 
 
 class DocumentUpdate(BaseModel):
@@ -106,7 +129,7 @@ class DocumentResponse(BaseModel):
     notes: str | None
     document_date: date | None
     expiry_date: date | None
-    file: StoredFileResponse
+    files: list[StoredFileResponse]
     created_by_user_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
@@ -155,6 +178,52 @@ def _emit(household_id: uuid.UUID, event: str, doc: Document) -> None:
         event,
         DocumentResponse.model_validate(doc).model_dump(mode="json"),
     )
+
+
+def _too_many_files() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=error_detail(
+            ErrorCode.DOCUMENT_TOO_MANY_FILES,
+            f"A document can have at most {MAX_FILES_PER_DOCUMENT} files",
+        ),
+    )
+
+
+def _claim_files(db: Session, household_id: uuid.UUID, file_ids: list[uuid.UUID]) -> list[StoredFile]:
+    """Prüft, dass alle Dateien zum Haushalt gehören und noch frei sind.
+
+    Eine Datei gehört zu höchstens einem Dokument und nicht gleichzeitig einem Pet.
+    """
+    files = db.query(StoredFile).filter(StoredFile.id.in_(file_ids)).all()
+    by_id = {f.id: f for f in files}
+    if len(by_id) != len(file_ids) or any(f.household_id != household_id for f in files):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.FILE_MISMATCH,
+                "File not found or does not belong to this household",
+            ),
+        )
+
+    in_use = (
+        db.query(DocumentFile.file_id).filter(DocumentFile.file_id.in_(file_ids)).first()
+        or db.query(Pet.id).filter(Pet.photo_file_id.in_(file_ids)).first()
+    )
+    if in_use is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(ErrorCode.FILE_IN_USE, "File is already in use"),
+        )
+    return [by_id[fid] for fid in file_ids]
+
+
+def _append_files(doc: Document, files: list[StoredFile]) -> None:
+    if len(doc.file_links) + len(files) > MAX_FILES_PER_DOCUMENT:
+        raise _too_many_files()
+    start = max((link.position for link in doc.file_links), default=-1) + 1
+    for offset, f in enumerate(files):
+        doc.file_links.append(DocumentFile(file=f, position=start + offset))
 
 
 def _escape_like(term: str) -> str:
@@ -219,7 +288,7 @@ def get_document(
 
 
 # ---------------------------------------------------------------------------
-# POST /  — Dokument aus bereits hochgeladener Datei anlegen
+# POST /  — Dokument aus bereits hochgeladenen Dateien anlegen
 # ---------------------------------------------------------------------------
 @router.post("/", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 def create_document(
@@ -228,32 +297,16 @@ def create_document(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    stored_file = db.get(StoredFile, body.file_id)
-    if stored_file is None or stored_file.household_id != household_id:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail(
-                ErrorCode.FILE_MISMATCH,
-                "File not found or does not belong to this household",
-            ),
-        )
-
-    # Eine Datei gehört zu höchstens einem Dokument und nicht gleichzeitig einem Pet
-    in_use = (
-        db.query(Document.id).filter(Document.file_id == body.file_id).first()
-        or db.query(Pet.id).filter(Pet.photo_file_id == body.file_id).first()
-    )
-    if in_use is not None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail(ErrorCode.FILE_IN_USE, "File is already in use"),
-        )
+    if len(body.file_ids) > MAX_FILES_PER_DOCUMENT:
+        raise _too_many_files()
+    files = _claim_files(db, household_id, body.file_ids)
 
     doc = Document(
         household_id=household_id,
         created_by_user_id=membership.user_id,
-        **body.model_dump(),
+        **body.model_dump(exclude={"file_ids"}),
     )
+    _append_files(doc, files)
     db.add(doc)
     db.commit()
     db.refresh(doc)
@@ -263,12 +316,12 @@ def create_document(
 
 
 # ---------------------------------------------------------------------------
-# POST /upload  — Datei + Metadaten in einem Multipart-Request
+# POST /upload  — Dateien + Metadaten in einem Multipart-Request
 # ---------------------------------------------------------------------------
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     household_id: uuid.UUID,
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     title: str | None = Form(None),
     category: str = Form("other"),
     notes: str | None = Form(None),
@@ -277,8 +330,11 @@ async def upload_document(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    # Metadaten vor dem Upload validieren; ohne Titel → Dateiname ohne Endung
-    fallback_title = PurePath(file.filename or "").stem[:150] or "Document"
+    if len(files) > MAX_FILES_PER_DOCUMENT:
+        raise _too_many_files()
+
+    # Metadaten vor dem Upload validieren; ohne Titel → erster Dateiname ohne Endung
+    fallback_title = PurePath(files[0].filename or "").stem[:150] or "Document"
     try:
         meta = DocumentMeta.model_validate(
             {
@@ -292,19 +348,23 @@ async def upload_document(
     except ValidationError as e:
         raise RequestValidationError(e.errors(include_url=False))
 
-    stored_file = await store_upload(db, household_id, membership.user_id, file)
     doc = Document(
         household_id=household_id,
-        file_id=stored_file.id,
         created_by_user_id=membership.user_id,
         **meta.model_dump(),
     )
-    db.add(doc)
+    stored: list[StoredFile] = []
     try:
+        for upload in files:
+            stored.append(await store_upload(db, household_id, membership.user_id, upload))
+        _append_files(doc, stored)
+        db.add(doc)
         db.commit()
     except Exception:
+        # Alles oder nichts: bereits gespeicherte Dateien wieder entfernen
         db.rollback()
-        remove_from_storage(stored_file.storage_path)
+        for f in stored:
+            remove_from_storage(f.storage_path)
         raise
     db.refresh(doc)
 
@@ -336,7 +396,97 @@ def update_document(
 
 
 # ---------------------------------------------------------------------------
-# DELETE /{document_id}  — Dokument inkl. Datei löschen
+# POST /{document_id}/files  — Bereits hochgeladene Dateien als Seiten anhängen
+# ---------------------------------------------------------------------------
+@router.post("/{document_id}/files", response_model=DocumentResponse)
+def add_document_files(
+    household_id: uuid.UUID,
+    document_id: uuid.UUID,
+    body: DocumentFilesBody,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    doc = _get_document_or_404(db, document_id, household_id)
+    _append_files(doc, _claim_files(db, household_id, body.file_ids))
+    db.commit()
+    db.refresh(doc)
+
+    _emit(household_id, "document_updated", doc)
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# PUT /{document_id}/files/order  — Seiten neu anordnen
+# ---------------------------------------------------------------------------
+@router.put("/{document_id}/files/order", response_model=DocumentResponse)
+def reorder_document_files(
+    household_id: uuid.UUID,
+    document_id: uuid.UUID,
+    body: DocumentFilesBody,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    doc = _get_document_or_404(db, document_id, household_id)
+    links = {link.file_id: link for link in doc.file_links}
+    if set(body.file_ids) != set(links) or len(body.file_ids) != len(links):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.FILE_MISMATCH,
+                "file_ids must contain exactly the files of this document",
+            ),
+        )
+    for position, file_id in enumerate(body.file_ids):
+        links[file_id].position = position
+    db.commit()
+    db.expire(doc, ["file_links"])
+
+    _emit(household_id, "document_updated", doc)
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# DELETE /{document_id}/files/{file_id}  — Einzelne Seite inkl. Datei löschen
+# ---------------------------------------------------------------------------
+@router.delete("/{document_id}/files/{file_id}", response_model=DocumentResponse)
+def remove_document_file(
+    household_id: uuid.UUID,
+    document_id: uuid.UUID,
+    file_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    doc = _get_document_or_404(db, document_id, household_id)
+    link = next((link for link in doc.file_links if link.file_id == file_id), None)
+    if link is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail(ErrorCode.FILE_NOT_FOUND, "File is not part of this document"),
+        )
+    if len(doc.file_links) == 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.DOCUMENT_LAST_FILE,
+                "A document needs at least one file; delete the document instead",
+            ),
+        )
+
+    stored_file = link.file
+    storage_path = stored_file.storage_path
+    doc.file_links.remove(link)
+    db.delete(stored_file)
+    db.commit()
+    db.refresh(doc)
+
+    remove_from_storage(storage_path)
+
+    _emit(household_id, "document_updated", doc)
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# DELETE /{document_id}  — Dokument inkl. aller Dateien löschen
 # ---------------------------------------------------------------------------
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(
@@ -346,18 +496,20 @@ def delete_document(
     db: Session = Depends(get_db),
 ):
     doc = _get_document_or_404(db, document_id, household_id)
-    stored_file = doc.file
-    file_id = stored_file.id
-    storage_path = stored_file.storage_path
+    files = doc.files
+    file_ids = [str(f.id) for f in files]
+    storage_paths = [f.storage_path for f in files]
 
     db.delete(doc)
-    db.delete(stored_file)
+    for f in files:
+        db.delete(f)
     db.commit()
 
-    remove_from_storage(storage_path)
+    for path in storage_paths:
+        remove_from_storage(path)
 
     emit_to_household_sync(
         household_id,
         "document_deleted",
-        {"id": str(document_id), "file_id": str(file_id)},
+        {"id": str(document_id), "file_ids": file_ids},
     )

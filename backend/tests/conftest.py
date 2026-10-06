@@ -38,7 +38,7 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.database import Base, get_db  # noqa: E402
-from app.models import Household, User, HouseholdMember, RefreshToken, ShoppingItem, ShoppingList, Todo, TodoReminder, Expense, ExpenseShare, Settlement, Budget, RecurringBill, Chore, ChoreAssignment, Calendar, Event, EventPoll, EventPollOption, EventPollVote, Pet, FeedingLog, Medication, MedicationLog, PetCareTask, Recipe, MealPlanEntry, Note, StoredFile, Document  # noqa: E402
+from app.models import Household, User, HouseholdMember, RefreshToken, ShoppingItem, ShoppingList, Todo, TodoReminder, Expense, ExpenseShare, Settlement, Budget, RecurringBill, Chore, ChoreAssignment, Calendar, Event, EventPoll, EventPollOption, EventPollVote, Pet, FeedingLog, Medication, MedicationLog, PetCareTask, Recipe, MealPlanEntry, Note, StoredFile, Document, DocumentFile  # noqa: E402
 from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -836,27 +836,27 @@ def reminder_b(db, household_b, todo_b) -> TodoReminder:
 # --- Documents ---
 
 
-def _make_document(db, household, user, title, category, expiry_date=None) -> Document:
-    sf = StoredFile(
-        id=uuid.uuid4(),
-        household_id=household.id,
-        original_name=f"{title}.pdf",
-        mime_type="application/pdf",
-        size_bytes=2048,
-        storage_path=f"{household.id}/{uuid.uuid4()}.pdf",
-        uploaded_by_user_id=user.id,
-    )
-    db.add(sf)
-    db.flush()
+def _make_document(db, household, user, title, category, expiry_date=None, pages=1) -> Document:
     doc = Document(
         id=uuid.uuid4(),
         household_id=household.id,
         title=title,
         category=category,
         expiry_date=expiry_date,
-        file_id=sf.id,
         created_by_user_id=user.id,
     )
+    for position in range(pages):
+        sf = StoredFile(
+            id=uuid.uuid4(),
+            household_id=household.id,
+            original_name=f"{title}-{position + 1}.pdf",
+            mime_type="application/pdf",
+            size_bytes=2048,
+            storage_path=f"{household.id}/{uuid.uuid4()}.pdf",
+            uploaded_by_user_id=user.id,
+        )
+        db.add(sf)
+        doc.file_links.append(DocumentFile(file=sf, position=position))
     db.add(doc)
     db.commit()
     db.refresh(doc)
@@ -866,7 +866,7 @@ def _make_document(db, household, user, title, category, expiry_date=None) -> Do
 @pytest.fixture()
 def document_a(db, household_a, user_a) -> Document:
     from datetime import date
-    return _make_document(db, household_a, user_a, "Mietvertrag", "contract", date(2027, 3, 31))
+    return _make_document(db, household_a, user_a, "Mietvertrag", "contract", date(2027, 3, 31), pages=2)
 
 
 @pytest.fixture()

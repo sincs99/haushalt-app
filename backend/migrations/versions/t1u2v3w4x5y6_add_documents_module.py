@@ -36,13 +36,6 @@ def upgrade() -> None:
         sa.Column("document_date", sa.Date(), nullable=True),
         sa.Column("expiry_date", sa.Date(), nullable=True),
         sa.Column(
-            "file_id",
-            PG_UUID(as_uuid=True),
-            sa.ForeignKey("stored_files.id", ondelete="CASCADE"),
-            nullable=False,
-            unique=True,
-        ),
-        sa.Column(
             "created_by_user_id",
             PG_UUID(as_uuid=True),
             sa.ForeignKey("users.id", ondelete="SET NULL"),
@@ -69,7 +62,27 @@ def upgrade() -> None:
         "ix_documents_household_category", "documents", ["household_id", "category"]
     )
 
+    # Seiten eines Dokuments (mehrseitige Scans); eine Datei gehört zu höchstens einem Dokument
+    op.create_table(
+        "document_files",
+        sa.Column(
+            "document_id",
+            PG_UUID(as_uuid=True),
+            sa.ForeignKey("documents.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
+        sa.Column(
+            "file_id",
+            PG_UUID(as_uuid=True),
+            sa.ForeignKey("stored_files.id", ondelete="CASCADE"),
+            primary_key=True,
+            unique=True,
+        ),
+        sa.Column("position", sa.Integer(), nullable=False, server_default="0"),
+    )
+
 
 def downgrade() -> None:
+    op.drop_table("document_files")
     op.drop_index("ix_documents_household_category", table_name="documents")
     op.drop_table("documents")

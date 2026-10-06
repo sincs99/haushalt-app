@@ -24,7 +24,7 @@ from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import get_db
-from app.models import Document, DocumentFile, HouseholdMember, Pet, StoredFile
+from app.models import Document, DocumentFile, HouseholdMember, Pet, Plant, StoredFile
 from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
 
@@ -269,9 +269,12 @@ def store_upload(
 
 
 def file_in_use(
-    db: Session, file_ids: list[uuid.UUID], exclude_pet_id: uuid.UUID | None = None
+    db: Session,
+    file_ids: list[uuid.UUID],
+    exclude_pet_id: uuid.UUID | None = None,
+    exclude_plant_id: uuid.UUID | None = None,
 ) -> str | None:
-    """Prüft, ob eine der Dateien von einem Pet-Foto oder einem Dokument referenziert wird.
+    """Prüft, ob eine der Dateien von einem Pet-/Pflanzenfoto oder einem Dokument referenziert wird.
 
     Gibt eine Beschreibung der ersten Referenz zurück (für die Fehlermeldung), sonst None.
     Eine Datei gehört zu höchstens einem Dokument bzw. Pet — sonst würde das Löschen
@@ -283,6 +286,13 @@ def file_in_use(
     pet_ref = pet_query.first()
     if pet_ref is not None:
         return f"pet '{pet_ref.name}'"
+
+    plant_query = db.query(Plant).filter(Plant.photo_file_id.in_(file_ids))
+    if exclude_plant_id is not None:
+        plant_query = plant_query.filter(Plant.id != exclude_plant_id)
+    plant_ref = plant_query.first()
+    if plant_ref is not None:
+        return f"plant '{plant_ref.name}'"
 
     doc_ref = (
         db.query(Document)
@@ -302,7 +312,7 @@ def file_in_use_error(reference: str) -> HTTPException:
     )
 
 
-# Hochgeladene, aber nie einem Pet oder Dokument zugeordnete Dateien (z.B. Tab
+# Hochgeladene, aber nie einem Pet, einer Pflanze oder einem Dokument zugeordnete Dateien (z.B. Tab
 # während eines mehrseitigen Uploads geschlossen) werden nach dieser Frist gelöscht
 ORPHAN_FILE_GRACE = timedelta(hours=24)
 
@@ -317,6 +327,7 @@ def delete_orphan_files(db: Session, now: datetime | None = None) -> int:
         db.query(StoredFile)
         .filter(StoredFile.created_at < cutoff)
         .filter(~db.query(Pet.id).filter(Pet.photo_file_id == StoredFile.id).exists())
+        .filter(~db.query(Plant.id).filter(Plant.photo_file_id == StoredFile.id).exists())
         .filter(~db.query(DocumentFile.file_id).filter(DocumentFile.file_id == StoredFile.id).exists())
         .all()
     )
@@ -431,7 +442,7 @@ def delete_file(
             ),
         )
 
-    # Referenzprüfung: Pet-Foto oder Dokumentseite? (Löschen dann über /pets bzw. /documents)
+    # Referenzprüfung: Pet-/Pflanzenfoto oder Dokumentseite? (Löschen dann über /pets, /plants bzw. /documents)
     reference = file_in_use(db, [file_id])
     if reference is not None:
         raise file_in_use_error(reference)

@@ -12,12 +12,13 @@ import { useTasksStore } from '../stores/tasks'
 import { usePetsStore } from '../stores/pets'
 import { useCalendarStore } from '../stores/calendar'
 import { formatRappen } from '../utils/money'
-import { PhShoppingBagOpen, PhListChecks, PhBroom, PhWallet, PhCalendarDots, PhCat, PhForkKnife, PhCaretRight, PhPawPrint, PhBell } from '@phosphor-icons/vue'
+import { PhShoppingBagOpen, PhListChecks, PhBroom, PhWallet, PhCalendarDots, PhCat, PhForkKnife, PhCaretRight, PhPawPrint, PhBell, PhPlant } from '@phosphor-icons/vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseCheckCircle from '../components/ui/BaseCheckCircle.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
-import type { DashboardTodoItem, DashboardEventItem, DashboardPetCareItem, DashboardReminderItem } from '../types'
+import { dueText } from '../utils/plantCare'
+import type { DashboardTodoItem, DashboardEventItem, DashboardPetCareItem, DashboardPlantItem, DashboardReminderItem } from '../types'
 
 const router = useRouter()
 const { t, locale } = useI18n()
@@ -160,6 +161,13 @@ function formatPetCareDue(item: DashboardPetCareItem): string {
   if (diffDays < 0) return t('dashboard.petCareOverdue')
   if (diffDays === 0) return t('dashboard.petCareDueToday')
   return t('dashboard.petCareDueIn', { n: diffDays })
+}
+
+// ── Plants Water Due ──
+const plantsWater = computed(() => data.value?.plants_water ?? { due_count: 0, items: [] as DashboardPlantItem[] })
+
+function formatPlantDue(item: DashboardPlantItem): string {
+  return dueText(item.next_due_at, t)
 }
 
 function formatReminderDate(isoString: string): string {
@@ -309,6 +317,36 @@ function formatReminderDate(isoString: string): string {
               }"
             >
               {{ formatPetCareDue(item) }}
+            </span>
+          </li>
+        </ul>
+      </BaseCard>
+
+      <!-- Karte: Pflanzen brauchen Wasser -->
+      <BaseCard v-if="plantsWater.due_count > 0" class="clickable-card" @click="router.push('/plants')">
+        <h2 class="card-title">
+          <PhPlant :size="18" style="vertical-align: -2px; margin-right: 4px" />
+          {{ t('dashboard.plantsWaterTitle') }} ({{ plantsWater.due_count }})
+        </h2>
+        <ul class="pet-care-list">
+          <li
+            v-for="item in plantsWater.items"
+            :key="item.id"
+            class="pet-care-item"
+            :class="{ 'pet-care-item--overdue': item.is_overdue }"
+            @click.stop="router.push('/plants/' + item.plant_id)"
+          >
+            <div class="pet-care-item__info">
+              <span class="pet-care-item__name">{{ item.plant_name }}</span>
+            </div>
+            <span
+              class="pet-care-item__due"
+              :class="{
+                'pet-care-item__due--overdue': item.is_overdue,
+                'pet-care-item__due--today': !item.is_overdue
+              }"
+            >
+              {{ formatPlantDue(item) }}
             </span>
           </li>
         </ul>

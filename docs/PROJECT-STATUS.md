@@ -7,7 +7,7 @@
 
 ## 1. Projektübersicht
 
-Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzpläne mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Notizen und eine Dokument-Ablage (Verträge, Rechnungen, Garantien) innerhalb eines Haushalts. Multi-User, Echtzeit-Sync via WebSocket, Mobile-First UI, installierbare PWA mit Web Push, zweisprachig (DE/EN).
+Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzpläne mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Pflanzen, Notizen und eine Dokument-Ablage (Verträge, Rechnungen, Garantien) innerhalb eines Haushalts. Multi-User, Echtzeit-Sync via WebSocket, Mobile-First UI, installierbare PWA mit Web Push, zweisprachig (DE/EN).
 
 | Aspekt | Technologie |
 |---|---|
@@ -16,7 +16,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzp
 | Realtime | Socket.IO (python-socketio) |
 | Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4, PWA (`vite-plugin-pwa`) |
 | Auth | JWT-Access-Token (15 Min., nur im Speicher) + rotierender Refresh-Token als HttpOnly-Cookie (`SameSite=Strict`, CSRF-Header) mit Reuse-Erkennung, bcrypt-Hashing |
-| i18n | vue-i18n, 700 Keys (DE + EN), Build-gesicherter Key-Sync |
+| i18n | vue-i18n, 770 Keys (DE + EN), Build-gesicherter Key-Sync |
 | Qualität / CI | GitHub Actions: Backend (ruff, pytest mit Coverage), Frontend (Locale-Check, Typecheck, Vitest mit Coverage), Dependency-Audit (pip-audit, npm audit) |
 | Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager), Backup-Skripte für Datenbank und Uploads |
 | Icons | Phosphor Icons (`@phosphor-icons/vue`) — regular/fill/bold |
@@ -42,9 +42,10 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | #17 | Frontend-Stores: Geschäfts-Filter folgt dem Umbenennen, fehlgeschlagenes Löschen eines Ämtlis stellt dessen Zuweisungen wieder her; Unit-Tests für den Auth-Store |
 | #18 | Einkauf: Geschäftsnamen werden ohne Beachtung der Groß-/Kleinschreibung zusammengeführt (Backend und Frontend, keine Migration); bestehende Einträge behalten ihre Schreibweise |
 
-**Kennzahlen (nach #24, inkl. Branch `claude/frontend-store-tests`):** Backend 631 Tests in 54 Dateien, Coverage 92 %; Frontend 269 Tests in 21 Dateien, Coverage 70,3 % (Statements; zuvor 32,9 %), Schwelle 66 %; 705 i18n-Schlüssel; 34 Alembic-Migrationen (einziger Kopf `x2y3z4a5b6c7`).
+**Kennzahlen (nach #27, inkl. Branch `claude/plants-module`):** Backend 667 Tests in 55 Dateien, Coverage 92 %; Frontend 292 Tests in 23 Dateien, Coverage 72,0 % (Statements), Schwelle 66 %; 770 i18n-Schlüssel; 35 Alembic-Migrationen (einziger Kopf `x1y2z3a4b5c6`).
 
-**Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Essen, Notizen, Kalender und Finanzen.
+
+**Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`, `plants`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `PlantsView`/`PlantDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Pflanzen, Essen, Notizen, Kalender und Finanzen.
 
 ---
 
@@ -795,11 +796,11 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Expenses-Modul (CRUD + Split + Saldo) | ✅ | ✅ ExpensesView, ExpenseList, BalanceSummary, ExpenseFormDialog | ✅ Socket |
 | Settlements-Modul | ✅ | ✅ | ✅ Socket |
 | Chores-Modul (Putzplan + Rotation) | ✅ | ✅ | ✅ Socket |
-| i18n (DE + EN, 700 Keys, Locale-Check) | ✅ | ✅ | — |
+| i18n (DE + EN, 765 Keys, Locale-Check) | ✅ | ✅ | — |
 | Error-Code-System (maschinenlesbar) | ✅ | ✅ i18n-Mapping | — |
 | Offline-Banner | — | ✅ | — |
 | Toast-System | — | ✅ | — |
-| Repository-Layer (Offline-Ready Seam) | — | ✅ (15 Repositories) | — |
+| Repository-Layer (Offline-Ready Seam) | — | ✅ (18 Repositories) | — |
 | Race-Condition-Schutz (vom Client erzeugte IDs, versionierte Merges, Toggle-Mutex) | — | ✅ | — |
 | Design-System (CSS Custom Properties) | — | ✅ theme.css + 11 UI-Komponenten | — |
 | Mobile-First UI | — | ✅ Bottom-Tab-Bar, Touch-optimiert | — |
@@ -808,7 +809,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Haushalt verlassen / Mitglied entfernen | ✅ POST /leave, DELETE /members/{uid} | ✅ HouseholdView | ✅ Socket |
 | Rollen-System (admin/member) | ✅ verify_household_admin | ✅ UI-Anzeige | — |
 | Währung pro Haushalt | ✅ Household.currency | ✅ /me Response | — |
-| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 52 Testdateien, 590 Tests (Coverage 92 %) | — | — |
+| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 55 Testdateien, 667 Tests (Coverage 92 %) | — | — |
 | Dashboard | ✅ | ✅ DashboardView | — |
 | Einkauf 2.0 (Multi-Listen, Stores) | ✅ | ✅ ShoppingView | ✅ Socket |
 | Aufgaben 2.0 (Unified Tasks) | ✅ | ✅ TodosView | ✅ Socket |
@@ -816,6 +817,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Kalender + Events | ✅ | ✅ CalendarView | ✅ Socket |
 | Abstimmungen (Polls) | ✅ | ✅ (integriert in Calendar/Food) | ✅ Socket |
 | Haustiere (Katzen) | ✅ | ✅ PetsView + PetDetailView | — |
+| Pflanzen (Pflegeaufgaben, Pflege-Log, Foto, Web Push, Dashboard-Kachel) | ✅ | ✅ PlantsView + PlantDetailView | ✅ Socket |
 | Essen (Wochenmenü + Rezepte) | ✅ | ✅ FoodView | — |
 | Notizen | ✅ | ✅ NotesView | — |
 | App-Shell (Bottom-Nav, MoreSheet, Sync-Status) | — | ✅ | — |
@@ -1213,3 +1215,22 @@ Die Nummerierung ist die der Dokumentation und nicht identisch mit den „Epic-N
 - **Abgeschlossen:** 2026-08-10 bis 2026-08-12 (direkte Commits)
 - **Umfang:** Datenintegrität (Backup, Aufräumen von Dateien, Pfad-Prüfung), Connection-Pool und Event-Loop-Blocking behoben, Zahleneingaben ohne `type=number` (Text mit `inputmode`), Gewicht in kg mit robustem Parsing, Nginx-Upload-Limit, Vitest-Einführung mit Tests für `parseAmountToRappen`
 - **Tests:** `test_pool_contention.py`, `utils/__tests__/money.test.ts`
+
+### Epic 31: Pflanzen ✅
+- **Abgeschlossen:** 2026-10-06
+- **Umfang:**
+  - Pflanzen pro Haushalt mit Name, Art (Freitext), Standort/Raum (Freitext), Notizen, Foto (bestehende Upload-Infrastruktur `StoredFile`, wie beim Tierfoto) und `care_notes` (Freitext-Pflegehinweise, Platzhalter für spätere KI-Pflegehinweise); kein Soft-Delete
+  - Pflegeaufgaben (`PlantCareTask`): mehrere pro Pflanze; Pflegeart als fester Wert (`water`, `fertilize`, `repot`, `mist`, `other`, per CHECK-Constraint) plus optionalem Freitext-Label; Intervall in Tagen (Standard: gießen 7, düngen 30, umtopfen 365, besprühen 3, sonstiges 30); ohne Angabe ist die erste Fälligkeit „heute + Intervall"
+  - Pflege-Log (`PlantCareLog`): wer hat wann welche Pflegeart erledigt, optional mit Notiz; „Erledigt" (`POST …/care-tasks/{id}/complete`) schreibt den Log-Eintrag und setzt die nächste Fälligkeit aus dem Intervall (Haushalts-Zeitzone); Log-Einträge überleben das Löschen der Aufgabe
+  - `GET /plants/care-status` (analog `feeding-status`): alle Pflanzen mit nächster Fälligkeit pro Aufgabe und den Flags `due_today`/`overdue`; `POST /plants/water-all` (analog `feed-all`) erledigt alle fälligen Gießaufgaben des Haushalts
+  - Foto: `PATCH` mit `photo_file_id`; `file_in_use`, Orphan-Cleanup und Pflanzenlöschung berücksichtigen Pflanzenfotos (eine Datei gehört höchstens einer Pflanze, einem Tier oder einem Dokument)
+  - Socket-Events: `plant_created/updated/deleted`, `plant_care_logged` sowie `plant_care_task_created/updated/deleted`
+  - Dashboard-Kachel „Pflanzen brauchen Wasser" (`plants_water`: Anzahl Pflanzen mit heute fälliger oder überfälliger Gießaufgabe, die fünf dringendsten)
+  - Web Push: `process_plant_care_tasks` im Scheduler, ab 8:00 Haushaltszeit, einmalig pro Fälligkeit (`notified_at`), Text pro Locale, Link `/plants/{id}`
+  - Frontend: `PlantsView` (Karten mit Fälligkeitsbadges überfällig/heute, Ein-Tipp „Gegossen", „Alle fälligen gießen"), `PlantDetailView` (Foto, Pflegearten, Pflege-Verlauf, Bearbeiten), Route `/plants` und `/plants/:id`, Eintrag im „Mehr"-Menü mit `PhPlant`
+- **Backend:** `Plant`, `PlantCareTask`, `PlantCareLog` Models, `routers/plants.py`, `services/push_service.py`, `routers/dashboard.py`, `routers/files.py`
+- **Migration:** `x1y2z3a4b5c6` (add_plants_module)
+- **Frontend:** `stores/plants.ts`, `repositories/plantsRepository.ts`, `utils/plantCare.ts`, `components/PlantPhotoAvatar.vue`, `PlantsView.vue`, `PlantDetailView.vue`, `DashboardView.vue`, `App.vue` (Socket-Registrierung), `MoreSheet.vue`
+- **Tests:** `test_plants.py` (31: CRUD, Cross-Household 403/404, Pflege-Log setzt Fälligkeit, Status-Endpunkt, `water-all`, Foto), +3 in `test_push.py`, +2 in `test_dashboard_scoping.py`; Frontend `stores/__tests__/plants.test.ts` (19) und `utils/__tests__/plantCare.test.ts` (4)
+- **i18n:** `plants.*` (DE + EN), `nav.plants`, `moreSheet.plantsSub`, `dashboard.plantsWaterTitle`, Error-Codes `PLANT_NOT_FOUND`, `PLANT_CARE_TASK_NOT_FOUND` → 765 Keys total
+- **Nicht enthalten:** NFC/QR-Tags und KI-Pflegehinweise (getrennte Vorhaben)

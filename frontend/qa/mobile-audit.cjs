@@ -187,7 +187,8 @@ function auditInPage(opts) {
     // Checkbox/Radio im <label>: das Label ist das Tap-Ziel
     let w = r.width, h = r.height
     const lab = el.closest('label')
-    if (lab && el.matches('input')) { const lr = lab.getBoundingClientRect(); w = Math.max(w, lr.width); h = Math.max(h, lr.height) }
+    let own = r // eigene Fläche (bei Checkbox im Label: das Label)
+    if (lab && el.matches('input')) { own = lab.getBoundingClientRect(); w = Math.max(w, own.width); h = Math.max(h, own.height) }
     // Hitbox-Vergrösserung per ::before/::after (position:absolute, negatives inset)
     for (const pseudo of ['::before', '::after']) {
       const ps = getComputedStyle(el, pseudo)
@@ -206,7 +207,7 @@ function auditInPage(opts) {
         if (/(auto|scroll)/.test(pcs.overflowX + pcs.overflowY) && (r.left < pr.left - 1 || r.right > pr.right + 1 || r.top < pr.top - 1 || r.bottom > pr.bottom + 1)) { w = h = Infinity; break }
         w = Math.min(w, 2 * Math.min(cx - pr.left, pr.right - cx))
         h = Math.min(h, 2 * Math.min(cy - pr.top, pr.bottom - cy))
-        w = Math.max(w, r.width); h = Math.max(h, r.height)
+        w = Math.max(w, own.width); h = Math.max(h, own.height)
       }
       if (pcs.position === 'fixed') break
     }
@@ -219,7 +220,9 @@ function auditInPage(opts) {
     for (const b of hitboxes) {
       if (a === b || a.el.contains(b.el) || b.el.contains(a.el)) continue
       // fixe/sticky Elemente (Bottom-Nav, FAB, Sticky-Pill) liegen oben und bekommen den Tap selbst
-      if (isFixedish(b.el) && !isFixedish(a.el)) continue
+      if (!!isFixedish(b.el) !== !!isFixedish(a.el)) continue
+      // Dropdowns (position:absolute mit z-index) liegen über dem Inhalt
+      if (b.el.closest('.kebab-menu, [role=menu]')) continue
       const ox = Math.min(a.hb.right, b.r.right) - Math.max(a.hb.left, b.r.left)
       const oy = Math.min(a.hb.bottom, b.r.bottom) - Math.max(a.hb.top, b.r.top)
       if (ox > 1 && oy > 1) add('hitbox-overlap', a.el, `Tap-Fläche überdeckt ${sig(b.el)} „${txt(b.el)}“ (${Math.round(ox)}×${Math.round(oy)})`)

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import BinaryIO
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from PIL import Image, ImageOps
 from pydantic import BaseModel, ConfigDict
@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Document, DocumentFile, HouseholdMember, Pet, StoredFile
 from app.services.storage import LocalStorageService
@@ -41,6 +42,9 @@ PDF_MAGIC = b"%PDF-"
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 CHUNK_SIZE = 64 * 1024  # 64 KB
 MAX_IMAGE_DIMENSION = 1600
+# Rate-Limit pro Client-IP für alle Upload-Endpunkte (H-14 / F-06): großzügig für
+# normale Nutzung (mehrere Fotos/Seiten nacheinander), bremst Massen-Uploads.
+UPLOAD_RATE_LIMIT = "30/minute;300/hour"
 JPEG_QUALITY = 85
 
 # ---------------------------------------------------------------------------
@@ -355,7 +359,9 @@ def file_response_headers(stored_file: StoredFile) -> dict[str, str]:
 
 # POST / — Datei hochladen
 @router.post("/", response_model=StoredFileResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(UPLOAD_RATE_LIMIT)
 def upload_file(
+    request: Request,
     household_id: uuid.UUID,
     file: UploadFile = File(...),
     membership: HouseholdMember = Depends(verify_household_access),

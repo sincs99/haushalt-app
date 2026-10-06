@@ -1,6 +1,6 @@
 # Haushalt-App — Aktueller Projektstand
 
-**Stand:** 2026-10-06 (Kopf, Kennzahlen, Feature-Status, Einschränkungen und Dependencies aktualisiert; die Tabellen in den Abschnitten 3–5 und 10 stammen noch vom Stand 2026-08-12 und sind unvollständig — maßgeblich sind der Code und die OpenAPI-Doku unter `/docs`)
+**Stand:** 2026-10-06 (Kopf, Kennzahlen, Feature-Status, Einschränkungen und Dependencies aktualisiert, H-01 Refresh-Token-Cookie ergänzt; Abschnitte 3–5 und 10 am Code und an der Git-Historie abgeglichen — die OpenAPI-Doku des Backends unter `/docs` bleibt für Details maßgeblich)
 **Autor:** Tech Lead (automatisch generiert)
 
 ---
@@ -15,7 +15,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzp
 | Datenbank | PostgreSQL (via psycopg2) |
 | Realtime | Socket.IO (python-socketio) |
 | Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4, PWA (`vite-plugin-pwa`) |
-| Auth | JWT-Access-Token (15 Min.) + rotierender Refresh-Token mit Reuse-Erkennung, bcrypt-Hashing |
+| Auth | JWT-Access-Token (15 Min., nur im Speicher) + rotierender Refresh-Token als HttpOnly-Cookie (`SameSite=Strict`, CSRF-Header) mit Reuse-Erkennung, bcrypt-Hashing |
 | i18n | vue-i18n, 700 Keys (DE + EN), Build-gesicherter Key-Sync |
 | Qualität / CI | GitHub Actions: Backend (ruff, pytest mit Coverage), Frontend (Locale-Check, Typecheck, Vitest mit Coverage), Dependency-Audit (pip-audit, npm audit) |
 | Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager), Backup-Skripte für Datenbank und Uploads |
@@ -42,7 +42,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | #17 | Frontend-Stores: Geschäfts-Filter folgt dem Umbenennen, fehlgeschlagenes Löschen eines Ämtlis stellt dessen Zuweisungen wieder her; Unit-Tests für den Auth-Store |
 | #18 | Einkauf: Geschäftsnamen werden ohne Beachtung der Groß-/Kleinschreibung zusammengeführt (Backend und Frontend, keine Migration); bestehende Einträge behalten ihre Schreibweise |
 
-**Kennzahlen (nach #18):** Backend 576 Tests in 51 Dateien, Coverage 91 %; Frontend 247 Tests in 20 Dateien, Coverage 69,1 % (Statements; zuvor 31,8 %), Schwelle 66 %; 700 i18n-Schlüssel; 33 Alembic-Migrationen (einziger Kopf `w1x2y3z4a5b6`).
+**Kennzahlen (nach #24, inkl. Branch `claude/frontend-store-tests`):** Backend 631 Tests in 54 Dateien, Coverage 92 %; Frontend 269 Tests in 21 Dateien, Coverage 70,3 % (Statements; zuvor 32,9 %), Schwelle 66 %; 705 i18n-Schlüssel; 34 Alembic-Migrationen (einziger Kopf `x2y3z4a5b6c7`).
 
 **Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Essen, Notizen, Kalender und Finanzen.
 
@@ -81,267 +81,599 @@ Alle Änderungen kamen per Pull Request auf `master`:
 
 | Datei | Zweck | Status |
 |---|---|---|
-| [`app/main.py`](../backend/app/main.py) | FastAPI-App, CORS, Router-Mount (auth, shopping, todos, households, expenses, settlements, chores), Socket.IO-Mount | ✅ Fertig |
-| [`app/models.py`](../backend/app/models.py) | SQLAlchemy Models: Household (+timezone, +currency), User, HouseholdMember, ShoppingItem, Todo, Expense, ExpenseShare, Chore, ChoreAssignment | ✅ Fertig |
+| [`app/main.py`](../backend/app/main.py) | FastAPI-App (`redirect_slashes=False`), Startup-Prüfung der Konfiguration, CORS, Security-Header-Middleware, Rate-Limit-Handler, Mount aller 23 Router, Socket.IO-Mount unter `/socket.io`, `GET /api/health` (mit DB-Check), Hintergrund-Tasks (Web-Push-Scheduler, Upload-Cleanup) | ✅ Fertig |
+| [`app/models.py`](../backend/app/models.py) | SQLAlchemy-Models (32 Tabellen, siehe Abschnitt 5) und `SyncVersionMixin` (`updated_at`/`version`) | ✅ Fertig |
 | [`app/database.py`](../backend/app/database.py) | DB-Session, Engine, Base | ✅ Fertig |
-| [`app/socket_manager.py`](../backend/app/socket_manager.py) | Socket.IO Server, Auth, Room-Join, emit_to_household_sync | ✅ Fertig |
-| [`app/core/config.py`](../backend/app/core/config.py) | Pydantic Settings (DB-URL, JWT-Secret, CORS) | ✅ Fertig |
-| [`app/core/security.py`](../backend/app/core/security.py) | JWT-Erstellung, Passwort-Hashing/-Verify, Invite-Code-Generierung | ✅ Fertig |
-| [`app/core/deps.py`](../backend/app/core/deps.py) | Dependencies: get_current_user, verify_household_access, verify_household_admin | ✅ Fertig |
-| [`app/core/error_codes.py`](../backend/app/core/error_codes.py) | Maschinenlesbare Error-Codes (+ Chore-Codes + CURRENCY_MISMATCH, ADMIN_REQUIRED, CANNOT_REMOVE_ADMIN, CANNOT_REMOVE_SELF) | ✅ Fertig |
-| [`app/routers/auth.py`](../backend/app/routers/auth.py) | POST /register (household_name ODER invite_code), POST /login, GET /me (inkl. household.currency) | ✅ Fertig |
-| [`app/routers/shopping.py`](../backend/app/routers/shopping.py) | CRUD Shopping-Items + Shopping-Lists + Store-Verwaltung (GET /stores, POST /reassign-store) + Socket-Events | ✅ Fertig |
-| [`app/routers/todos.py`](../backend/app/routers/todos.py) | CRUD Todos + Socket-Events | ✅ Fertig |
-| [`app/routers/households.py`](../backend/app/routers/households.py) | GET /members (inkl. role), GET /invite-code, POST /join (+Event), POST / (create), PATCH (rename, Admin), POST /leave, DELETE /members/{user_id} | ✅ Fertig |
-| [`app/routers/expenses.py`](../backend/app/routers/expenses.py) | CRUD Expenses + Split-Logik (even/custom), Pydantic-Schemas inline | ✅ Fertig |
-| [`app/routers/settlements.py`](../backend/app/routers/settlements.py) | CRUD Settlements (GET/POST/DELETE) + Socket-Events | ✅ Fertig |
-| [`app/routers/chores.py`](../backend/app/routers/chores.py) | CRUD Chores + 4 Assignment-Endpoints + Socket-Events | ✅ Fertig |
+| [`app/socket_manager.py`](../backend/app/socket_manager.py) | Socket.IO-Server: JWT-Auth beim Verbindungsaufbau, Haushalt-Räume (`join_household` prüft Mitgliedschaft), persönlicher Raum pro User, Sitzungs-Ablauf (Timer + `reauth`), `emit_to_household(_sync)` inkl. Rauswurf entfernter Mitglieder, `disconnect_user_sync` | ✅ Fertig |
+| [`app/core/config.py`](../backend/app/core/config.py) | Pydantic Settings (DB-URL, JWT-Secret, CORS, Token-Laufzeiten, Umgebung, VAPID-Schlüssel, Speicher-Limit pro Haushalt) | ✅ Fertig |
+| [`app/core/security.py`](../backend/app/core/security.py) | Access-/Refresh-Token-Erzeugung, Passwort-Hashing/-Verify (bcrypt), Invite-Code-Generierung | ✅ Fertig |
+| [`app/core/deps.py`](../backend/app/core/deps.py) | Dependencies: `get_current_user`, `verify_household_access`, `verify_household_admin` | ✅ Fertig |
+| [`app/core/error_codes.py`](../backend/app/core/error_codes.py) | Maschinenlesbare Error-Codes (`ErrorCode`, `error_detail`) | ✅ Fertig |
+| [`app/core/rate_limit.py`](../backend/app/core/rate_limit.py) | Zentraler `slowapi`-Limiter (pro IP, im Speicher; Client-IP aus `X-Forwarded-For` des Proxys) | ✅ Fertig |
+| [`app/core/security_headers.py`](../backend/app/core/security_headers.py) | ASGI-Middleware: HTTP-Security-Header (u. a. CSP) für alle API-Antworten | ✅ Fertig |
+| [`app/routers/auth.py`](../backend/app/routers/auth.py) | 5 Endpoints: register, login, refresh, logout, me (mit Rate-Limits) | ✅ Fertig |
+| [`app/routers/households.py`](../backend/app/routers/households.py) | 9 Endpoints: Haushalt erstellen/umbenennen/beitreten/verlassen, Mitglieder, Einladungscode (anzeigen/erneuern, mit Ablaufdatum), Mitglied entfernen, Finanz-Zusammenfassung; Beitritt mit Rate-Limit | ✅ Fertig |
+| [`app/routers/shopping.py`](../backend/app/routers/shopping.py) | 10 Endpoints: Einkaufslisten (`list_router`) und Einkaufseinträge inkl. Geschäfts-Verwaltung (`router`) + Socket-Events | ✅ Fertig |
+| [`app/routers/todos.py`](../backend/app/routers/todos.py) | 7 Endpoints: Todos (CRUD, Claim) und Erinnerungen + Socket-Events | ✅ Fertig |
+| [`app/routers/tasks.py`](../backend/app/routers/tasks.py) | 1 Endpoint: vereinte Aufgabenliste (Todos + Putzplan-Zuweisungen) | ✅ Fertig |
+| [`app/routers/expenses.py`](../backend/app/routers/expenses.py) | 5 Endpoints: Ausgaben (CRUD, Split even/custom) und Salden; Pydantic-Schemas inline | ✅ Fertig |
+| [`app/routers/settlements.py`](../backend/app/routers/settlements.py) | 3 Endpoints: Ausgleichszahlungen (GET/POST/DELETE) + Socket-Events | ✅ Fertig |
+| [`app/routers/chores.py`](../backend/app/routers/chores.py) | 8 Endpoints: Ämtli (CRUD) und Zuweisungen (Liste, abhaken, rückgängig, neu zuweisen) + Socket-Events | ✅ Fertig |
+| [`app/routers/budgets.py`](../backend/app/routers/budgets.py) | 3 Endpoints: Monatsbudget (setzen, lesen, löschen) | ✅ Fertig |
+| [`app/routers/recurring_bills.py`](../backend/app/routers/recurring_bills.py) | 5 Endpoints: wiederkehrende Rechnungen (CRUD, Buchen als Ausgabe; idempotent pro Monat) | ✅ Fertig |
+| [`app/routers/calendars.py`](../backend/app/routers/calendars.py) | 4 Endpoints: Kalender (Name/Farbe/Position) | ✅ Fertig |
+| [`app/routers/events.py`](../backend/app/routers/events.py) | 5 Endpoints: Termine (CRUD, Zeitraum-Abfrage in Haushaltszeit) | ✅ Fertig |
+| [`app/routers/polls.py`](../backend/app/routers/polls.py) | 7 Endpoints: Abstimmungen (Termin- und Essens-Umfragen, Stimme, Entscheidung) | ✅ Fertig |
+| [`app/routers/pets.py`](../backend/app/routers/pets.py) | 20 Endpoints: Haustiere, Fütterung, Medikamente (inkl. Verabreichungs-Log), Pflegeaufgaben | ✅ Fertig |
+| [`app/routers/food.py`](../backend/app/routers/food.py) | 9 Endpoints: Rezepte (`recipe_router`) und Wochenmenü (`meal_plan_router`, inkl. „Fehlende Zutaten zur Einkaufsliste“) | ✅ Fertig |
+| [`app/routers/notes.py`](../backend/app/routers/notes.py) | 4 Endpoints: Notizen (CRUD, angepinnt, Tag) | ✅ Fertig |
+| [`app/routers/files.py`](../backend/app/routers/files.py) | 3 Endpoints: Upload (Bild-Resize, Magic-Byte-Prüfung, Speicher-Limit), geschützter Download, Löschen (mit `FILE_IN_USE`-Schutz) | ✅ Fertig |
+| [`app/routers/documents.py`](../backend/app/routers/documents.py) | 10 Endpoints: Dokument-Ablage (mehrseitig, Kategorien, Ablaufdatum, Speicher-Auslastung) | ✅ Fertig |
+| [`app/routers/push.py`](../backend/app/routers/push.py) | 4 Endpoints: Web-Push-Konfiguration, Geräte an-/abmelden, Test-Benachrichtigung | ✅ Fertig |
+| [`app/routers/dashboard.py`](../backend/app/routers/dashboard.py) | 1 Endpoint: aggregierte Startseite (Aufgaben, Einkauf, Finanzen) | ✅ Fertig |
+| [`app/services/balance_service.py`](../backend/app/services/balance_service.py) | Saldo-Berechnung (von Ausgaben-Router und Dashboard gemeinsam genutzt) | ✅ Fertig |
 | [`app/services/chore_scheduler.py`](../backend/app/services/chore_scheduler.py) | Lazy-Materialisierung, Kalender-basierte Rotation, Datumsberechnung (weekly/biweekly/monthly) | ✅ Fertig |
-| [`app/services/invite_code.py`](../backend/app/services/invite_code.py) | Gemeinsame Invite-Code-Generierung mit Retry-Logik | ✅ Fertig |
-| `migrations/` | Alembic-Migrationen (9 Versionen) | ✅ Fertig |
-| [`scripts/regenerate_invite_codes.py`](../backend/scripts/regenerate_invite_codes.py) | Dry-Run/Apply Script für Invite-Code-Migration | ✅ Fertig |
+| [`app/services/client_ids.py`](../backend/app/services/client_ids.py) | Vom Client erzeugte IDs: idempotentes Anlegen (Offline-Meilenstein M0) | ✅ Fertig |
+| [`app/services/event_times.py`](../backend/app/services/event_times.py) | Termin-Zeiten als Wanduhrzeit in der Haushalts-Zeitzone (Speicherung UTC) | ✅ Fertig |
+| [`app/services/file_cleanup.py`](../backend/app/services/file_cleanup.py) | Periodisches Aufräumen verwaister Uploads | ✅ Fertig |
+| [`app/services/household_checks.py`](../backend/app/services/household_checks.py) | Prüfungen auf Haushaltsmitgliedschaft (Teilnehmer, Ausgleichs-Parteien, Ex-Mitglieder) | ✅ Fertig |
+| [`app/services/invite_code.py`](../backend/app/services/invite_code.py) | Eindeutige Invite-Code-Generierung mit Retry-Logik | ✅ Fertig |
+| [`app/services/push_service.py`](../backend/app/services/push_service.py) | Web-Push-Versand (Endpoint-Allowlist) und Scheduler für Todo-Erinnerungen und Tierpflege | ✅ Fertig |
+| [`app/services/storage.py`](../backend/app/services/storage.py) | `LocalStorageService`: Dateien unter `UPLOAD_DIR/{household_id}/` | ✅ Fertig |
+| [`alembic.ini`](../backend/alembic.ini), `migrations/` | Alembic-Konfiguration und -Migrationen (33 Versionen unter `migrations/versions/`, einziger Kopf `w1x2y3z4a5b6`) | ✅ Fertig |
+| [`scripts/regenerate_invite_codes.py`](../backend/scripts/regenerate_invite_codes.py) | Dry-Run/Apply-Script für Invite-Code-Migration | ✅ Fertig |
+| [`scripts/generate_vapid_keys.py`](../backend/scripts/generate_vapid_keys.py) | Erzeugt VAPID-Schlüssel für Web Push | ✅ Fertig |
+| [`pyproject.toml`](../backend/pyproject.toml) | ruff-Konfiguration (E, F, I, B) | ✅ Fertig |
 
 ### Backend-Tests (`backend/tests/`)
 
+51 Testdateien, 576 Tests (SQLite in-memory, Coverage 91 %). Die Mehrmandanten-Dateien (`*_scoping`) prüfen jeweils, dass Zugriffe auf fremde Haushalte mit 403 abgewiesen werden.
+
 | Datei | Abdeckung | Status |
 |---|---|---|
-| [`conftest.py`](../backend/tests/conftest.py) | SQLite in-memory DB (StaticPool), Multi-Tenant Fixtures (2 Households, 3 User), Socket-Mock | ✅ Fertig |
-| [`test_auth_guard.py`](../backend/tests/test_auth_guard.py) | Kein Token → 401, Ungültiger Token → 401, Abgelaufener Token → 401 | ✅ Fertig |
-| [`test_shopping_scoping.py`](../backend/tests/test_shopping_scoping.py) | Multi-Tenant Shopping: Eigene Items lesen ✅, Cross-Household GET/POST/PATCH/DELETE → 403 | ✅ Fertig |
-| [`test_shopping_stores.py`](../backend/tests/test_shopping_stores.py) | Store-Verwaltung: Distinct Stores, Rename, Dissolve, Cross-Tenant → 403 (9 Tests) | ✅ Fertig |
-| [`test_todo_scoping.py`](../backend/tests/test_todo_scoping.py) | Multi-Tenant Todos: Eigene Todos lesen ✅, Cross-Household GET/POST/PATCH/DELETE → 403 | ✅ Fertig |
-| [`test_household_join.py`](../backend/tests/test_household_join.py) | Join mit gültigem Code → 200, Ungültiger Code → 404, Bereits Mitglied → 409, Case-insensitiv | ✅ Fertig |
-| [`test_expense_scoping.py`](../backend/tests/test_expense_scoping.py) | Multi-Tenant Expenses: Eigene lesen ✅, Cross-Household GET/POST/PATCH/DELETE/Balances → 403 | ✅ Fertig |
-| [`test_expense_splits.py`](../backend/tests/test_expense_splits.py) | split_evenly Unit-Tests, Even/Custom-Split API, Validierung (422), PATCH Reshare, DELETE | ✅ Fertig |
-| [`test_expense_balances.py`](../backend/tests/test_expense_balances.py) | compute_settlements Unit-Tests (7), Balances-Endpoint Integration (3+1 Scoping) | ✅ Fertig |
-| [`test_expense_events.py`](../backend/tests/test_expense_events.py) | Socket.IO Events: create/update/delete emittiert, failed=kein Event, Room-Check | ✅ Fertig |
-| [`test_settlements.py`](../backend/tests/test_settlements.py) | CRUD, Scoping, Validierung, Balance-Integration, Socket-Events (23 Tests) | ✅ Fertig |
-| [`test_chores.py`](../backend/tests/test_chores.py) | Scheduler-Unit-Tests, API-Tests, Socket-Events (28 Tests) | ✅ Fertig |
-| [`test_chore_scoping.py`](../backend/tests/test_chore_scoping.py) | Cross-Household 403 auf alle 8 Endpoints (8 Tests) | ✅ Fertig |
-| [`test_currency.py`](../backend/tests/test_currency.py) | Währungs-Mismatch, Default-Currency, /me Response | ✅ Fertig |
-| [`test_admin_guard.py`](../backend/tests/test_admin_guard.py) | verify_household_admin: Admin pass, Non-admin reject | ✅ Fertig |
-| [`test_households.py`](../backend/tests/test_households.py) | Create, Rename, Join-Event, Members-Role (8 Tests) | ✅ Fertig |
-| [`test_leave_remove.py`](../backend/tests/test_leave_remove.py) | Leave/Remove: Auto-Promotion, Cascade, Balances, 403-Regeln (10 Tests) | ✅ Fertig |
-| [`test_register.py`](../backend/tests/test_register.py) | Register mit Code, ohne Code, beides/keines → 422 (6 Tests) | ✅ Fertig |
+| [`conftest.py`](../backend/tests/conftest.py) | SQLite in-memory DB (StaticPool), Multi-Tenant-Fixtures (2 Haushalte, 3 User), Socket-Mock | ✅ Fertig |
+| **Auth und Sicherheit** | | |
+| [`test_auth_guard.py`](../backend/tests/test_auth_guard.py) | Kein/ungültiger/abgelaufener Token → 401 | ✅ Fertig |
+| [`test_auth_refresh.py`](../backend/tests/test_auth_refresh.py) | Refresh-Token-Rotation, Reuse-Erkennung, Logout | ✅ Fertig |
+| [`test_register.py`](../backend/tests/test_register.py) | Registrierung mit Code, ohne Code, beides/keines → 422 | ✅ Fertig |
+| [`test_admin_guard.py`](../backend/tests/test_admin_guard.py) | `verify_household_admin`: Admin ok, Nicht-Admin abgewiesen | ✅ Fertig |
+| [`test_security_hardening.py`](../backend/tests/test_security_hardening.py) | HTTP-Header, CORS, Rate-Limits, JWT-Claims, Login-Timing | ✅ Fertig |
+| [`test_rate_limit_proxy.py`](../backend/tests/test_rate_limit_proxy.py) | Rate-Limiter unterscheidet Clients per `X-Forwarded-For` | ✅ Fertig |
+| [`test_startup_config.py`](../backend/tests/test_startup_config.py) | Startup-Validierung der Konfiguration | ✅ Fertig |
+| [`test_upload_security.py`](../backend/tests/test_upload_security.py) | Regressionstests Upload-Review (`docs/security/epic8-upload-review.md`) | ✅ Fertig |
+| **Haushalt** | | |
+| [`test_household_join.py`](../backend/tests/test_household_join.py) | Beitritt: gültiger/ungültiger Code, bereits Mitglied, Groß-/Kleinschreibung | ✅ Fertig |
+| [`test_households.py`](../backend/tests/test_households.py) | Erstellen, Umbenennen, Join-Event, Rollen in Mitgliederliste | ✅ Fertig |
+| [`test_leave_remove.py`](../backend/tests/test_leave_remove.py) | Verlassen/Entfernen: Auto-Promotion, Cascade, Salden, 403-Regeln | ✅ Fertig |
+| [`test_member_lifecycle.py`](../backend/tests/test_member_lifecycle.py) | Entfernte Mitglieder verlassen den Echtzeit-Raum, Einladungscode-Erneuerung | ✅ Fertig |
+| [`test_currency.py`](../backend/tests/test_currency.py) | Währungs-Mismatch, Default-Währung, `/me`-Antwort | ✅ Fertig |
+| [`test_db_integrity.py`](../backend/tests/test_db_integrity.py) | Löschregeln, eindeutige Stimmen und Buchungen | ✅ Fertig |
+| [`test_pool_contention.py`](../backend/tests/test_pool_contention.py) | Regressionstest Connection-Pool und Event-Loop-Blocking | ✅ Fertig |
+| **Einkauf und Aufgaben** | | |
+| [`test_shopping_scoping.py`](../backend/tests/test_shopping_scoping.py) | Einkaufseinträge und -listen: eigene lesen, Cross-Household → 403 | ✅ Fertig |
+| [`test_shopping_stores.py`](../backend/tests/test_shopping_stores.py) | Geschäfts-Verwaltung: Distinct, Umbenennen, Auflösen, Normalisierung (Groß-/Kleinschreibung), Cross-Tenant | ✅ Fertig |
+| [`test_todo_scoping.py`](../backend/tests/test_todo_scoping.py) | Todos: Mehrmandanten-Scoping | ✅ Fertig |
+| [`test_todo_tags.py`](../backend/tests/test_todo_tags.py) | Todo-Tags (JSON-Feld) | ✅ Fertig |
+| [`test_todo_claim.py`](../backend/tests/test_todo_claim.py) | `POST /todos/{id}/claim` | ✅ Fertig |
+| [`test_todo_reminders.py`](../backend/tests/test_todo_reminders.py) | Erinnerungen: CRUD, Scoping, Maximum 5 | ✅ Fertig |
+| [`test_chores.py`](../backend/tests/test_chores.py) | Scheduler-Unit-Tests, API-Tests, Socket-Events | ✅ Fertig |
+| [`test_chore_scoping.py`](../backend/tests/test_chore_scoping.py) | Cross-Household 403 auf alle Chore-Endpoints | ✅ Fertig |
+| **Finanzen** | | |
+| [`test_expense_scoping.py`](../backend/tests/test_expense_scoping.py) | Ausgaben: Mehrmandanten-Scoping inkl. Balances | ✅ Fertig |
+| [`test_expense_splits.py`](../backend/tests/test_expense_splits.py) | `split_evenly`, Even/Custom-Split-API, Validierung (422), Reshare, DELETE | ✅ Fertig |
+| [`test_expense_balances.py`](../backend/tests/test_expense_balances.py) | `compute_settlements` und Balances-Endpoint | ✅ Fertig |
+| [`test_expense_events.py`](../backend/tests/test_expense_events.py) | Socket.IO-Events bei Ausgaben, Room-Check | ✅ Fertig |
+| [`test_settlements.py`](../backend/tests/test_settlements.py) | Ausgleichszahlungen: Scoping, CRUD, Validierung, Salden, Events | ✅ Fertig |
+| [`test_finance_correctness.py`](../backend/tests/test_finance_correctness.py) | Datenkorrektheit: doppelte Teilnehmer, Ex-Mitglieder, Standard-Zahler | ✅ Fertig |
+| [`test_finance_summary.py`](../backend/tests/test_finance_summary.py) | `GET /finance-summary` | ✅ Fertig |
+| [`test_budget_scoping.py`](../backend/tests/test_budget_scoping.py) | Budget: Mehrmandanten-Scoping | ✅ Fertig |
+| [`test_recurring_bill_scoping.py`](../backend/tests/test_recurring_bill_scoping.py) | Wiederkehrende Rechnungen: Mehrmandanten-Scoping | ✅ Fertig |
+| [`test_recurring_bill_book.py`](../backend/tests/test_recurring_bill_book.py) | Idempotenz von `POST /recurring-bills/{id}/book` | ✅ Fertig |
+| [`test_dashboard_scoping.py`](../backend/tests/test_dashboard_scoping.py) | Dashboard: Mehrmandanten-Scoping | ✅ Fertig |
+| **Kalender, Haustiere, Essen, Notizen** | | |
+| [`test_calendar_scoping.py`](../backend/tests/test_calendar_scoping.py) | Kalender: Mehrmandanten-Scoping | ✅ Fertig |
+| [`test_event_scoping.py`](../backend/tests/test_event_scoping.py) | Termine: Mehrmandanten-Scoping | ✅ Fertig |
+| [`test_event_times.py`](../backend/tests/test_event_times.py) | Termin-Zeiten in Haushaltszeit, Zeitraum-Abfragen | ✅ Fertig |
+| [`test_poll_scoping.py`](../backend/tests/test_poll_scoping.py) | Abstimmungen: Mehrmandanten-Scoping | ✅ Fertig |
+| [`test_meal_poll.py`](../backend/tests/test_meal_poll.py) | Essens-Abstimmungen (`poll_type='meal'`) | ✅ Fertig |
+| [`test_pet_scoping.py`](../backend/tests/test_pet_scoping.py) | Haustiere: Mehrmandanten-Scoping | ✅ Fertig |
+| [`test_feeding_scoping.py`](../backend/tests/test_feeding_scoping.py) | Fütterungs-Log: Mehrmandanten-Scoping | ✅ Fertig |
+| [`test_medication_scoping.py`](../backend/tests/test_medication_scoping.py) | Medikamente: Mehrmandanten-Scoping | ✅ Fertig |
+| [`test_pet_care_scoping.py`](../backend/tests/test_pet_care_scoping.py) | Pflegeaufgaben: Mehrmandanten-Scoping | ✅ Fertig |
+| [`test_food_scoping.py`](../backend/tests/test_food_scoping.py) | Rezepte und Wochenmenü: Mehrmandanten-Scoping | ✅ Fertig |
+| [`test_food_shopping.py`](../backend/tests/test_food_shopping.py) | „Fehlende Zutaten zur Einkaufsliste“ | ✅ Fertig |
+| [`test_note_scoping.py`](../backend/tests/test_note_scoping.py) | Notizen: Mehrmandanten-Scoping | ✅ Fertig |
+| **Dateien, Dokumente, Push, Sync** | | |
+| [`test_files_scoping.py`](../backend/tests/test_files_scoping.py) | Upload-Infrastruktur: Cross-Tenant, Validierung, Upload/Download/Delete | ✅ Fertig |
+| [`test_file_references.py`](../backend/tests/test_file_references.py) | Datei-Referenzen zwischen Haustieren und Dokumenten, Aufräumen | ✅ Fertig |
+| [`test_documents.py`](../backend/tests/test_documents.py) | Dokument-Ablage: CRUD, mehrseitig, Speicher-Limit, Scoping | ✅ Fertig |
+| [`test_push.py`](../backend/tests/test_push.py) | Web Push: Subscription-API (SSRF-Allowlist), Scheduler | ✅ Fertig |
+| [`test_offline_sync.py`](../backend/tests/test_offline_sync.py) | Offline-Meilenstein M0: Client-IDs, `version`/`updated_at` | ✅ Fertig |
+
+### Betrieb und CI (Repository-Wurzel)
+
+| Datei | Zweck | Status |
+|---|---|---|
+| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | GitHub Actions: Jobs `backend` (ruff, pytest mit Coverage), `frontend` (Locale-Check, Typecheck, Vitest mit Coverage), `dependency-audit` (pip-audit, npm audit) | ✅ Fertig |
+| [`docker-compose.yml`](../docker-compose.yml) | Entwicklungs-Setup (Datenbank, Backend, Frontend; Ports nur lokal gebunden) | ✅ Fertig |
+| [`docker-compose.prod.yml`](../docker-compose.prod.yml) | Produktion hinter Nginx Proxy Manager (Healthchecks, keine veröffentlichten Ports) | ✅ Fertig |
+| [`.env.example`](../.env.example), [`.env.prod.example`](../.env.prod.example) | Vorlagen für Umgebungsvariablen | ✅ Fertig |
+| [`backend/Dockerfile`](../backend/Dockerfile), [`frontend/Dockerfile`](../frontend/Dockerfile), [`frontend/nginx.conf`](../frontend/nginx.conf), [`frontend/nginx/security-headers.conf`](../frontend/nginx/security-headers.conf) | Container-Images, Nginx-Konfiguration und Security-Header fürs Frontend | ✅ Fertig |
+| [`scripts/backup-db.ps1`](../scripts/backup-db.ps1), [`scripts/restore-db.ps1`](../scripts/restore-db.ps1) | Backup/Restore von Datenbank und Uploads (PowerShell) | ✅ Fertig |
 
 ### Frontend (`frontend/src/`)
 
 | Datei | Zweck | Status |
 |---|---|---|
-| [`App.vue`](../frontend/src/App.vue) | App-Shell: Desktop Top-Bar, Mobile Bottom-Tab-Bar (5 Module: 🛒 🧹 ✅ 💰 🏠), Socket-Binding, Offline-Banner, Toasts | ✅ Fertig |
-| [`main.ts`](../frontend/src/main.ts) | App-Bootstrap, Pinia, Router, i18n, Theme-CSS Import | ✅ Fertig |
-| [`i18n.ts`](../frontend/src/i18n.ts) | vue-i18n Setup, detectLocale (localStorage → navigator.language → en) | ✅ Fertig |
-| [`api/client.ts`](../frontend/src/api/client.ts) | Axios-Client mit JWT-Interceptor, 401-Handler | ✅ Fertig |
-| [`types/index.ts`](../frontend/src/types/index.ts) | ShoppingItem, TodoItem, UserInfo, HouseholdInfo (+currency), HouseholdMemberInfo (+role), MeResponse, ChoreInfo, ChoreAssignmentInfo, SettlementInfo | ✅ Fertig |
+| [`App.vue`](../frontend/src/App.vue) | App-Shell: Desktop-Top-Bar (6 Links), Mobile-Bottom-Nav (4 Tabs + „Mehr“), Socket-Binding und Handler für Echtzeit-Events, Offline-Banner, Sync-Status, Toasts | ✅ Fertig |
+| [`main.ts`](../frontend/src/main.ts) | App-Bootstrap, Pinia, Router, i18n, Theme-CSS-Import, PWA-Registrierung | ✅ Fertig |
+| [`pwa.ts`](../frontend/src/pwa.ts) | Service-Worker-Registrierung, Toast bei neuer Version | ✅ Fertig |
+| [`i18n.ts`](../frontend/src/i18n.ts) | vue-i18n-Setup, detectLocale (localStorage → navigator.language → en) | ✅ Fertig |
+| [`env.d.ts`](../frontend/src/env.d.ts) | Typen für Vite-Umgebungsvariablen | ✅ Fertig |
+| [`api/client.ts`](../frontend/src/api/client.ts) | Axios-Client (`API_BASE`) mit JWT-Interceptor und 401 → Refresh → Retry | ✅ Fertig |
+| [`types/index.ts`](../frontend/src/types/index.ts) | TypeScript-Typen aller Module (Haushalt, Einkauf, Aufgaben, Finanzen, Kalender, Haustiere, Essen, Notizen, Dokumente) | ✅ Fertig |
+| **Services** | | |
+| [`services/tokenStorage.ts`](../frontend/src/services/tokenStorage.ts) | Token-Persistenz (localStorage hinter `TokenStorage`-Interface) | ✅ Fertig |
+| [`services/pushService.ts`](../frontend/src/services/pushService.ts) | Web-Push-Abo im Browser verwalten und mit dem Backend synchronisieren | ✅ Fertig |
+| [`public/push-sw.js`](../frontend/public/push-sw.js) | Service-Worker-Teil für Push-Benachrichtigungen | ✅ Fertig |
 | **i18n** | | |
-| [`locales/de.json`](../frontend/src/locales/de.json) | Deutsche Übersetzungen (272 Keys) | ✅ Fertig |
-| [`locales/en.json`](../frontend/src/locales/en.json) | Englische Übersetzungen (272 Keys) | ✅ Fertig |
-| [`scripts/check-locales.js`](../frontend/scripts/check-locales.js) | Build-Script: Prüft Key-Sync zwischen DE und EN | ✅ Fertig |
+| [`locales/de.json`](../frontend/src/locales/de.json) | Deutsche Übersetzungen (700 Keys) | ✅ Fertig |
+| [`locales/en.json`](../frontend/src/locales/en.json) | Englische Übersetzungen (700 Keys) | ✅ Fertig |
+| [`scripts/check-locales.js`](../frontend/scripts/check-locales.js) | Build-Script: prüft Key-Sync zwischen DE und EN | ✅ Fertig |
 | **Design-System** | | |
-| [`assets/theme.css`](../frontend/src/assets/theme.css) | Design-Token-System: Farben (Light/Dark), Typografie (Nunito/Quicksand), Spacing, Radii (card 20px, btn 12px, dialog 24px), Schatten, Transitions, Avatar-Palette, Global Reset | ✅ Fertig |
-| [`components/ui/BaseButton.vue`](../frontend/src/components/ui/BaseButton.vue) | Button: 4 Varianten (primary=acc/secondary=chip/danger/ghost), 2 Grössen, Loading-State, radius 12px | ✅ Fertig |
-| [`components/ui/BaseInput.vue`](../frontend/src/components/ui/BaseInput.vue) | Input: Label, Error-State, v-model, iOS-Zoom-Prevention (16px), acc-Fokus, radius 12px | ✅ Fertig |
-| [`components/ui/BaseCard.vue`](../frontend/src/components/ui/BaseCard.vue) | Card: 3 Padding-Stufen, var(--card) Background, Shadow, radius 20px | ✅ Fertig |
-| [`components/ui/BaseCheckCircle.vue`](../frontend/src/components/ui/BaseCheckCircle.vue) | **NEU:** Runde Checkbox (22px), checked=ok+weisser Haken, Phosphor PhCheck bold | ✅ Fertig |
-| [`components/ui/BasePillTabs.vue`](../frontend/src/components/ui/BasePillTabs.vue) | **NEU:** Generische Pill-Filterleiste (aktiv=ink/card, inaktiv=chip/ink) | ✅ Fertig |
-| [`components/ui/BaseEmptyState.vue`](../frontend/src/components/ui/BaseEmptyState.vue) | Empty-State: Phosphor PhPackage Icon + Titel + Subtitle, zentriert, + Action-Slot | ✅ Fertig |
-| [`components/ui/BaseDialog.vue`](../frontend/src/components/ui/BaseDialog.vue) | Dialog (Teleport, Overlay, Esc, Transitions), Phosphor PhX, radius 24px | ✅ Fertig |
-| [`components/ui/BaseSkeleton.vue`](../frontend/src/components/ui/BaseSkeleton.vue) | Skeleton-Loading-Platzhalter, bg=chip | ✅ Fertig |
-| [`components/ui/BaseSpinner.vue`](../frontend/src/components/ui/BaseSpinner.vue) | CSS-only Spinner: 2 Grössen, accessible, acc-Farbe | ✅ Fertig |
+| [`assets/theme.css`](../frontend/src/assets/theme.css) | Design-Token-System: Farben (Light/Dark), Typografie (Nunito/Quicksand), Spacing, Radii, Schatten, Transitions, Avatar-Palette, Global Reset | ✅ Fertig |
+| [`components/ui/BaseButton.vue`](../frontend/src/components/ui/BaseButton.vue) | Button: Varianten, 2 Grössen, Loading-State | ✅ Fertig |
+| [`components/ui/BaseInput.vue`](../frontend/src/components/ui/BaseInput.vue) | Input: Label, Error-State, v-model, iOS-Zoom-Prevention (16px) | ✅ Fertig |
+| [`components/ui/BaseCard.vue`](../frontend/src/components/ui/BaseCard.vue) | Card: 3 Padding-Stufen | ✅ Fertig |
+| [`components/ui/BaseCheckCircle.vue`](../frontend/src/components/ui/BaseCheckCircle.vue) | Runde Checkbox | ✅ Fertig |
+| [`components/ui/BasePillTabs.vue`](../frontend/src/components/ui/BasePillTabs.vue) | Generische Pill-Filterleiste | ✅ Fertig |
+| [`components/ui/BaseEmptyState.vue`](../frontend/src/components/ui/BaseEmptyState.vue) | Empty-State mit Icon, Titel, Untertitel, Action-Slot | ✅ Fertig |
+| [`components/ui/BaseDialog.vue`](../frontend/src/components/ui/BaseDialog.vue) | Dialog (Teleport, Overlay, Esc, Transitions) | ✅ Fertig |
+| [`components/ui/BaseSkeleton.vue`](../frontend/src/components/ui/BaseSkeleton.vue) | Skeleton-Loading-Platzhalter | ✅ Fertig |
+| [`components/ui/BaseSpinner.vue`](../frontend/src/components/ui/BaseSpinner.vue) | CSS-only Spinner, 2 Grössen | ✅ Fertig |
+| [`components/ui/BaseAvatar.vue`](../frontend/src/components/ui/BaseAvatar.vue) | Avatar mit deterministischer Farbe pro User | ✅ Fertig |
+| [`components/ui/PageHeader.vue`](../frontend/src/components/ui/PageHeader.vue) | Einheitliche Seitenkopfzeile | ✅ Fertig |
 | **Stores** | | |
-| [`stores/auth.ts`](../frontend/src/stores/auth.ts) | Login, Register (+ invite_code Option), Token-Persistenz, fetchMe, Household-Wechsel, Socket-Handler (household_updated/member_joined/left/removed) | ✅ Fertig |
-| [`stores/shopping.ts`](../frontend/src/stores/shopping.ts) | Shopping CRUD, Optimistic Updates, Repository-Pattern, Race-Condition-Schutz, Store-Verwaltung (fetchStores, reassignStore, activeStoreFilter) | ✅ Fertig |
-| [`stores/todos.ts`](../frontend/src/stores/todos.ts) | Todos CRUD, Optimistic Updates, Repository-Pattern, Race-Condition-Schutz | ✅ Fertig |
-| [`stores/expenses.ts`](../frontend/src/stores/expenses.ts) | Expenses CRUD, Socket-Handler, debounced Balances-Refetch, Optimistic Delete | ✅ Fertig |
-| [`stores/settlements.ts`](../frontend/src/stores/settlements.ts) | Settlements CRUD, Socket-Handler | ✅ Fertig |
-| [`stores/chores.ts`](../frontend/src/stores/chores.ts) | Chores CRUD, Optimistic Updates, Toggle-Mutex, 5 Socket-Handler | ✅ Fertig |
-| **Repositories** | | |
-| [`repositories/shoppingRepository.ts`](../frontend/src/repositories/shoppingRepository.ts) | ShoppingRepository Interface + Online-Factory | ✅ Fertig |
-| [`repositories/todosRepository.ts`](../frontend/src/repositories/todosRepository.ts) | TodosRepository Interface + Online-Factory | ✅ Fertig |
-| [`repositories/householdsRepository.ts`](../frontend/src/repositories/householdsRepository.ts) | HouseholdsRepository Interface + Online-Factory (join, fetchInviteCode, fetchMembers, + create, rename, leave, removeMember) | ✅ Fertig |
-| [`repositories/expensesRepository.ts`](../frontend/src/repositories/expensesRepository.ts) | ExpensesRepository Interface + Online-Factory (CRUD + getBalances) | ✅ Fertig |
-| [`repositories/settlementsRepository.ts`](../frontend/src/repositories/settlementsRepository.ts) | SettlementsRepository Interface + Online-Factory | ✅ Fertig |
-| [`repositories/choresRepository.ts`](../frontend/src/repositories/choresRepository.ts) | ChoresRepository Interface + Online-Factory | ✅ Fertig |
+| [`stores/auth.ts`](../frontend/src/stores/auth.ts) | Login, Register (+ Invite-Code), Token-Persistenz und -Refresh, fetchMe, Haushalt-Wechsel, Socket-Handler (`household_*`) | ✅ Fertig |
+| [`stores/shopping.ts`](../frontend/src/stores/shopping.ts) | Einkauf: Listen und Einträge, Optimistic Updates, Race-Condition-Schutz, Geschäfts-Verwaltung | ✅ Fertig |
+| [`stores/todos.ts`](../frontend/src/stores/todos.ts) | Todos: CRUD, Claim, Erinnerungen, Optimistic Updates | ✅ Fertig |
+| [`stores/tasks.ts`](../frontend/src/stores/tasks.ts) | Vereinte Aufgabenliste (Todos + Putzplan) | ✅ Fertig |
+| [`stores/chores.ts`](../frontend/src/stores/chores.ts) | Ämtli: CRUD, Optimistic Updates, Toggle-Mutex, Socket-Handler | ✅ Fertig |
+| [`stores/expenses.ts`](../frontend/src/stores/expenses.ts) | Ausgaben: CRUD, Socket-Handler, debounced Balances-Refetch | ✅ Fertig |
+| [`stores/settlements.ts`](../frontend/src/stores/settlements.ts) | Ausgleichszahlungen: CRUD, Socket-Handler | ✅ Fertig |
+| [`stores/finance.ts`](../frontend/src/stores/finance.ts) | Budget, wiederkehrende Rechnungen, Finanz-Zusammenfassung | ✅ Fertig |
+| [`stores/dashboard.ts`](../frontend/src/stores/dashboard.ts) | Dashboard-Daten (mit Invalidierung) | ✅ Fertig |
+| [`stores/calendar.ts`](../frontend/src/stores/calendar.ts) | Kalender und Termine | ✅ Fertig |
+| [`stores/polls.ts`](../frontend/src/stores/polls.ts) | Abstimmungen | ✅ Fertig |
+| [`stores/pets.ts`](../frontend/src/stores/pets.ts) | Haustiere, Fütterung, Medikamente, Pflegeaufgaben | ✅ Fertig |
+| [`stores/food.ts`](../frontend/src/stores/food.ts) | Rezepte und Wochenmenü | ✅ Fertig |
+| [`stores/notes.ts`](../frontend/src/stores/notes.ts) | Notizen | ✅ Fertig |
+| [`stores/documents.ts`](../frontend/src/stores/documents.ts) | Dokument-Ablage: Liste mit Suche/Paginierung, Mehrseiten-Verwaltung, Speicher-Auslastung | ✅ Fertig |
+| **Repositories** (Offline-Ready Seam, aktuell nur Online-Variante) | | |
+| [`repositories/shoppingRepository.ts`](../frontend/src/repositories/shoppingRepository.ts) | Einkaufslisten, Einträge, Geschäfte | ✅ Fertig |
+| [`repositories/todosRepository.ts`](../frontend/src/repositories/todosRepository.ts) | Todos und Erinnerungen | ✅ Fertig |
+| [`repositories/tasksRepository.ts`](../frontend/src/repositories/tasksRepository.ts) | Vereinte Aufgabenliste | ✅ Fertig |
+| [`repositories/householdsRepository.ts`](../frontend/src/repositories/householdsRepository.ts) | Beitreten, Einladungscode, Mitglieder, Erstellen, Umbenennen, Verlassen, Entfernen | ✅ Fertig |
+| [`repositories/expensesRepository.ts`](../frontend/src/repositories/expensesRepository.ts) | Ausgaben (CRUD + Balances) | ✅ Fertig |
+| [`repositories/settlementsRepository.ts`](../frontend/src/repositories/settlementsRepository.ts) | Ausgleichszahlungen | ✅ Fertig |
+| [`repositories/choresRepository.ts`](../frontend/src/repositories/choresRepository.ts) | Ämtli und Zuweisungen | ✅ Fertig |
+| [`repositories/financeRepository.ts`](../frontend/src/repositories/financeRepository.ts) | Budget, wiederkehrende Rechnungen, Finanz-Zusammenfassung | ✅ Fertig |
+| [`repositories/dashboardRepository.ts`](../frontend/src/repositories/dashboardRepository.ts) | Dashboard | ✅ Fertig |
+| [`repositories/calendarRepository.ts`](../frontend/src/repositories/calendarRepository.ts) | Kalender und Termine | ✅ Fertig |
+| [`repositories/pollsRepository.ts`](../frontend/src/repositories/pollsRepository.ts) | Abstimmungen | ✅ Fertig |
+| [`repositories/petsRepository.ts`](../frontend/src/repositories/petsRepository.ts) | Haustiere, Fütterung, Medikamente, Pflegeaufgaben | ✅ Fertig |
+| [`repositories/foodRepository.ts`](../frontend/src/repositories/foodRepository.ts) | Rezepte und Wochenmenü | ✅ Fertig |
+| [`repositories/notesRepository.ts`](../frontend/src/repositories/notesRepository.ts) | Notizen | ✅ Fertig |
+| [`repositories/filesRepository.ts`](../frontend/src/repositories/filesRepository.ts) | Datei-Upload, geschützter Download, Löschen | ✅ Fertig |
+| [`repositories/documentsRepository.ts`](../frontend/src/repositories/documentsRepository.ts) | Dokumente und Seiten | ✅ Fertig |
+| [`repositories/pushRepository.ts`](../frontend/src/repositories/pushRepository.ts) | Web-Push-Konfiguration und -Abos | ✅ Fertig |
 | **Utils** | | |
 | [`utils/money.ts`](../frontend/src/utils/money.ts) | formatRappen (Intl.NumberFormat), parseAmountToRappen (String-basiert, kein Float) | ✅ Fertig |
 | [`utils/apiErrors.ts`](../frontend/src/utils/apiErrors.ts) | Error-Code-Extraktion, i18n-Mapping für maschinenlesbare Backend-Codes | ✅ Fertig |
-| [`utils/memberColor.ts`](../frontend/src/utils/memberColor.ts) | **NEU:** Deterministisches User→Farbe-Mapping (6 Farben: p1, p2, #94798C, #8A8272, acc, ok) | ✅ Fertig |
+| [`utils/memberColor.ts`](../frontend/src/utils/memberColor.ts) | Deterministisches User→Farbe-Mapping | ✅ Fertig |
+| [`utils/dates.ts`](../frontend/src/utils/dates.ts) | Datums-Helfer (z. B. `formatDateShort`) | ✅ Fertig |
+| [`utils/storeName.ts`](../frontend/src/utils/storeName.ts) | Geschäftsnamen normalisieren und ohne Beachtung der Schreibweise vergleichen | ✅ Fertig |
+| [`utils/syncVersion.ts`](../frontend/src/utils/syncVersion.ts) | Erkennung veralteter Events anhand von `version` | ✅ Fertig |
+| [`utils/documents.ts`](../frontend/src/utils/documents.ts) | Ablaufstatus von Dokumenten (abgelaufen / läuft bald ab) | ✅ Fertig |
+| [`utils/categoryColors.ts`](../frontend/src/utils/categoryColors.ts) | Standard-Farbpalette für neue Kalender | ✅ Fertig |
 | **Composables** | | |
-| [`composables/useSocket.ts`](../frontend/src/composables/useSocket.ts) | Socket.IO Client-Wrapper | ✅ Fertig |
+| [`composables/useSocket.ts`](../frontend/src/composables/useSocket.ts) | Socket.IO Client-Wrapper, Token-Übergabe nach Refresh (`reauth`), Reconnect nach serverseitigem Sitzungsende | ✅ Fertig |
 | [`composables/useConnectivity.ts`](../frontend/src/composables/useConnectivity.ts) | Online/Offline-Erkennung (navigator.onLine) | ✅ Fertig |
-| [`composables/useToast.ts`](../frontend/src/composables/useToast.ts) | App-weites Toast-System für Fehler-Feedback | ✅ Fertig |
+| [`composables/useToast.ts`](../frontend/src/composables/useToast.ts) | App-weites Toast-System | ✅ Fertig |
+| [`composables/useTheme.ts`](../frontend/src/composables/useTheme.ts) | Theme-Einstellung (hell/dunkel/System), gespeichert in localStorage | ✅ Fertig |
+| [`composables/useProtectedImage.ts`](../frontend/src/composables/useProtectedImage.ts) | JWT-geschützte Bilder als Blob-URL laden | ✅ Fertig |
 | **Views** | | |
-| [`views/LoginView.vue`](../frontend/src/views/LoginView.vue) | Login-Formular (BaseCard/BaseInput/BaseButton) | ✅ Fertig |
-| [`views/RegisterView.vue`](../frontend/src/views/RegisterView.vue) | Registrierung: Tab-Umschalter (Haushalt gründen / Mit Code beitreten), ?code= Query-Param | ✅ Fertig |
-| [`views/ShoppingView.vue`](../frontend/src/views/ShoppingView.vue) | Shopping-Seite | ✅ Fertig |
-| [`views/TodosView.vue`](../frontend/src/views/TodosView.vue) | Todos-Seite mit Aufgabenliste | ✅ Fertig |
-| [`views/HouseholdView.vue`](../frontend/src/views/HouseholdView.vue) | Haushalt-Verwaltung: 4 Sektionen (Haushalt, Mitglieder, Einladen, App), Leave/Remove, Share-Invite | ✅ Fertig |
-| [`views/ExpensesView.vue`](../frontend/src/views/ExpensesView.vue) | Ausgaben-Seite: BalanceSummary + ExpenseList | ✅ Fertig |
-| [`views/ChoresView.vue`](../frontend/src/views/ChoresView.vue) | Putzplan: "Diese Woche" (Assignments gruppiert nach Tag) + "Ämtli verwalten" (CRUD), BasePillTabs-Filter (Alle/Meine), Empty-State CTA | ✅ Fertig |
+| [`views/LoginView.vue`](../frontend/src/views/LoginView.vue) | Login-Formular | ✅ Fertig |
+| [`views/RegisterView.vue`](../frontend/src/views/RegisterView.vue) | Registrierung: Tab-Umschalter (Haushalt gründen / Mit Code beitreten), `?code=`-Query-Param | ✅ Fertig |
 | [`views/NoHouseholdView.vue`](../frontend/src/views/NoHouseholdView.vue) | Kein-Haushalt-Zustand: Gründen / Beitreten | ✅ Fertig |
+| [`views/DashboardView.vue`](../frontend/src/views/DashboardView.vue) | Startseite: Tagesgruss, Schnellzugriffe, Widgets | ✅ Fertig |
+| [`views/CalendarView.vue`](../frontend/src/views/CalendarView.vue) | Kalender: Monats-, Wochen- und Listenansicht, Termine, Kalender-Verwaltung, Abstimmungen | ✅ Fertig |
+| [`views/ShoppingView.vue`](../frontend/src/views/ShoppingView.vue) | Einkauf: Listen-Tabs, Einträge nach Geschäft | ✅ Fertig |
+| [`views/TodosView.vue`](../frontend/src/views/TodosView.vue) | Aufgaben: vereinte Zeitleiste (Überfällig / Heute / Diese Woche / Später), Link zu „Ämtli verwalten“ | ✅ Fertig |
+| [`views/ChoresView.vue`](../frontend/src/views/ChoresView.vue) | Putzplan: „Diese Woche“ + „Ämtli verwalten“, Filter Alle/Meine (Route `/chores`, nicht in der Top-Bar) | ✅ Fertig |
+| [`views/ExpensesView.vue`](../frontend/src/views/ExpensesView.vue) | Finanzen: Budget, offene Rechnungen, Ausgaben, Salden, Rechnungsverwaltung | ✅ Fertig |
+| [`views/PetsView.vue`](../frontend/src/views/PetsView.vue) | Haustiere: Übersicht mit Fütterungs-Widget | ✅ Fertig |
+| [`views/PetDetailView.vue`](../frontend/src/views/PetDetailView.vue) | Tierprofil: Stammdaten, Foto, Medikamente, Gesundheitseinträge, Pflegeaufgaben | ✅ Fertig |
+| [`views/FoodView.vue`](../frontend/src/views/FoodView.vue) | Essen: Wochenmenü, Rezepte, Essens-Abstimmungen | ✅ Fertig |
+| [`views/NotesView.vue`](../frontend/src/views/NotesView.vue) | Notizen: Pinnen, Tag-Filter | ✅ Fertig |
+| [`views/DocumentsView.vue`](../frontend/src/views/DocumentsView.vue) | Dokument-Ablage: Suche, Kategorien, Mehrseiten-Upload, Vorschau, Ablaufstatus | ✅ Fertig |
+| [`views/HouseholdView.vue`](../frontend/src/views/HouseholdView.vue) | Haushalt-Verwaltung: Mitglieder, Einladen (Code erneuern), Verlassen/Entfernen, App-Einstellungen inkl. Push | ✅ Fertig |
 | **Komponenten** | | |
-| [`components/ShoppingList.vue`](../frontend/src/components/ShoppingList.vue) | Shopping-Liste: Store-Chips-Filter, Gruppierung nach Geschäft, Quick-Add mit Store-Übernahme, Kebab-Menü (Rename/Dissolve), Edit-Sheet | ✅ Fertig |
-| [`components/ShoppingItemEditSheet.vue`](../frontend/src/components/ShoppingItemEditSheet.vue) | Item-Bearbeitung: Name, Menge, Geschäft (Chips + Freitext), Abteilung (Datalist) | ✅ Fertig |
-| [`components/TodoList.vue`](../frontend/src/components/TodoList.vue) | Todo-Liste: Quick-Add, Detail-Edit, BaseCheckCircle, Zuweisung, Fälligkeitsdatum, Überfällig-Badge | ✅ Fertig |
-| [`components/ExpenseList.vue`](../frontend/src/components/ExpenseList.vue) | Expense-Liste: Sticky Add-Button, Datum/Bezahlt-von Meta, Edit-Dialog, Optimistic Delete | ✅ Fertig |
-| [`components/BalanceSummary.vue`](../frontend/src/components/BalanceSummary.vue) | Saldo-Übersicht: Salden pro Mitglied, Ausgleichsvorschläge, Inline-Settlement-Erfassung | ✅ Fertig |
-| [`components/ExpenseFormDialog.vue`](../frontend/src/components/ExpenseFormDialog.vue) | Expense-Formular-Dialog: Create/Edit, Even/Custom Split, Betrags-Validierung | ✅ Fertig |
+| [`components/TheBottomNav.vue`](../frontend/src/components/TheBottomNav.vue) | Mobile Bottom-Nav: Start, Kalender, Aufgaben, Einkauf, „Mehr“ | ✅ Fertig |
+| [`components/MoreSheet.vue`](../frontend/src/components/MoreSheet.vue) | „Mehr“-Sheet: Finanzen, Katzen, Essen, Notizen, Dokumente, Einstellungen | ✅ Fertig |
+| [`components/ShoppingList.vue`](../frontend/src/components/ShoppingList.vue) | Einkaufsliste: Geschäfts-Chips, Gruppierung, Quick-Add, Kebab-Menü (Umbenennen/Auflösen) | ✅ Fertig |
+| [`components/ShoppingItemEditSheet.vue`](../frontend/src/components/ShoppingItemEditSheet.vue) | Eintrag bearbeiten: Name, Menge, Geschäft, Abteilung | ✅ Fertig |
+| [`components/TodoList.vue`](../frontend/src/components/TodoList.vue) | Aufgabenliste: Quick-Add, Detail-Edit, Zuweisung, Fälligkeit, Erinnerungen | ✅ Fertig |
+| [`components/ExpenseList.vue`](../frontend/src/components/ExpenseList.vue) | Ausgabenliste: Bearbeiten, Optimistic Delete | ✅ Fertig |
+| [`components/ExpenseFormDialog.vue`](../frontend/src/components/ExpenseFormDialog.vue) | Ausgabe-Dialog: Erstellen/Bearbeiten, Even/Custom-Split | ✅ Fertig |
+| [`components/BalanceSummary.vue`](../frontend/src/components/BalanceSummary.vue) | Saldo-Übersicht, Ausgleichsvorschläge, Inline-Erfassung von Ausgleichszahlungen | ✅ Fertig |
+| [`components/CalendarMonthGrid.vue`](../frontend/src/components/CalendarMonthGrid.vue) | Monatsraster des Kalenders mit Tagesdetails | ✅ Fertig |
+| [`components/PetPhotoAvatar.vue`](../frontend/src/components/PetPhotoAvatar.vue) | Tierfoto (sm/md/lg) mit geschütztem Bild-Download | ✅ Fertig |
+| [`components/PushSettings.vue`](../frontend/src/components/PushSettings.vue) | Web-Push ein-/ausschalten und testen | ✅ Fertig |
 | **Router** | | |
-| [`router/index.ts`](../frontend/src/router/index.ts) | Routen: /login, /register, /shopping, /chores, /todos, /expenses, /household, /no-household + Auth-Guard (+ 0-Haushalte-Guard) | ✅ Fertig |
+| [`router/index.ts`](../frontend/src/router/index.ts) | Routen: `/dashboard`, `/calendar`, `/shopping`, `/todos`, `/expenses`, `/chores`, `/pets`, `/pets/:id`, `/food`, `/notes`, `/documents`, `/household`, `/login`, `/register`, `/no-household`; `/` leitet auf `/dashboard`; Auth-Guard (+ 0-Haushalte-Guard) | ✅ Fertig |
+
+### Frontend-Tests (`frontend/src/**/__tests__/`)
+
+13 Testdateien, 156 Tests (Vitest, Umgebung `node`). Die Coverage (31,8 % Statements) misst nur `utils/`, `stores/` und `repositories/`. Views und Komponenten sind nicht getestet.
+
+| Datei | Abdeckung | Status |
+|---|---|---|
+| [`test/setup.ts`](../frontend/src/test/setup.ts) | Vitest-Setup | ✅ Fertig |
+| [`stores/__tests__/helpers.ts`](../frontend/src/stores/__tests__/helpers.ts) | Test-Hilfen für die Store-Tests | ✅ Fertig |
+| [`stores/__tests__/auth.test.ts`](../frontend/src/stores/__tests__/auth.test.ts) | Auth-Store: Initialisierung, Refresh, Haushalte, Logout | ✅ Fertig |
+| [`stores/__tests__/shopping.test.ts`](../frontend/src/stores/__tests__/shopping.test.ts) | Einkauf-Store: Optimistic Updates, Rollback, Geschäfts-Verwaltung | ✅ Fertig |
+| [`stores/__tests__/todos.test.ts`](../frontend/src/stores/__tests__/todos.test.ts) | Todos-Store | ✅ Fertig |
+| [`stores/__tests__/chores.test.ts`](../frontend/src/stores/__tests__/chores.test.ts) | Chores-Store: Toggle-Mutex, Rollback beim Löschen | ✅ Fertig |
+| [`stores/__tests__/expenses.test.ts`](../frontend/src/stores/__tests__/expenses.test.ts) | Expenses-Store | ✅ Fertig |
+| [`stores/__tests__/syncRaces.test.ts`](../frontend/src/stores/__tests__/syncRaces.test.ts) | Race-Conditions zwischen REST-Antworten und Socket-Events (versionierte Merges) | ✅ Fertig |
+| [`utils/__tests__/money.test.ts`](../frontend/src/utils/__tests__/money.test.ts) | `formatRappen`, `parseAmountToRappen` | ✅ Fertig |
+| [`utils/__tests__/apiErrors.test.ts`](../frontend/src/utils/__tests__/apiErrors.test.ts) | Error-Code-Extraktion | ✅ Fertig |
+| [`utils/__tests__/dates.test.ts`](../frontend/src/utils/__tests__/dates.test.ts) | Datums-Helfer | ✅ Fertig |
+| [`utils/__tests__/documents.test.ts`](../frontend/src/utils/__tests__/documents.test.ts) | Ablaufstatus von Dokumenten | ✅ Fertig |
+| [`utils/__tests__/memberColor.test.ts`](../frontend/src/utils/__tests__/memberColor.test.ts) | User→Farbe-Mapping | ✅ Fertig |
+| [`utils/__tests__/storeName.test.ts`](../frontend/src/utils/__tests__/storeName.test.ts) | Geschäftsnamen-Normalisierung | ✅ Fertig |
+| [`utils/__tests__/syncVersion.test.ts`](../frontend/src/utils/__tests__/syncVersion.test.ts) | Erkennung veralteter Versionen | ✅ Fertig |
 
 ---
 
 ## 4. API-Endpoints
 
+124 Endpoints (123 in den Routern plus Health-Check). Maßgeblich ist die OpenAPI-Doku des Backends unter `/docs`. Alle Pfade stehen ohne Weiterleitung bei fehlendem oder überzähligem Slash (`redirect_slashes=False`): Der abschliessende Slash muss exakt so verwendet werden, wie er hier steht. `{id}` steht für die Haushalts-ID; alle Endpoints unter `/api/households/{id}/…` prüfen die Mitgliedschaft (fremder Haushalt → 403). Rate-Limits gelten pro IP und im Speicher; bei Überschreitung antwortet der Server mit 429.
+
 | Method | Path | Auth | Beschreibung |
 |---|---|---|---|
-| POST | `/api/auth/register` | ❌ | **Geändert:** household_name ODER invite_code |
-| POST | `/api/auth/login` | ❌ | JWT zurückgeben |
-| GET | `/api/auth/me` | ✅ | User-Info + Households |
-| GET | `/api/households/{id}/members` | ✅ | Mitglieder-Liste |
-| GET | `/api/households/{id}/invite-code` | ✅ | Invite-Code des Households |
-| POST | `/api/households/join` | ✅ | Household per Invite-Code beitreten |
-| POST | `/api/households/` | ✅ | **NEU:** Haushalt erstellen (Ersteller wird Admin) |
-| PATCH | `/api/households/{id}` | ✅ Admin | **NEU:** Haushalt umbenennen |
-| POST | `/api/households/{id}/leave` | ✅ | **NEU:** Haushalt verlassen |
-| DELETE | `/api/households/{id}/members/{uid}` | ✅ Admin | **NEU:** Mitglied entfernen |
-| **Shopping** | | | |
-| GET | `/api/households/{id}/shopping-items/` | ✅ | Einkaufsliste |
-| GET | `/api/households/{id}/shopping-items/stores` | ✅ | Distinct Store-Werte |
-| POST | `/api/households/{id}/shopping-items/` | ✅ | Item hinzufügen |
-| POST | `/api/households/{id}/shopping-items/reassign-store` | ✅ | Store umbenennen/auflösen |
-| PATCH | `/api/households/{id}/shopping-items/{item_id}` | ✅ | Item aktualisieren |
-| DELETE | `/api/households/{id}/shopping-items/{item_id}` | ✅ | Item löschen |
+| **Auth** | | | |
+| POST | `/api/auth/register` | ❌ | Registrieren: `household_name` ODER `invite_code`; Rate-Limit 3/Stunde |
+| POST | `/api/auth/login` | ❌ | Login (Formular-Daten), gibt Access- und Refresh-Token zurück; Rate-Limit 5/Minute |
+| POST | `/api/auth/refresh` | ❌ | Refresh-Token-Rotation mit Reuse-Erkennung; Rate-Limit 30/Minute |
+| POST | `/api/auth/logout` | ❌ | Refresh-Token widerrufen (idempotent, 204); Rate-Limit 30/Minute |
+| GET | `/api/auth/me` | ✅ | User-Info + Haushalte (inkl. Rolle, Währung) |
+| **Haushalt** | | | |
+| POST | `/api/households/` | ✅ | Haushalt erstellen (Ersteller wird Admin) |
+| POST | `/api/households/join` | ✅ | Haushalt per Einladungscode beitreten; Rate-Limit 5/Minute und 20/Stunde |
+| PATCH | `/api/households/{id}` | ✅ Admin | Haushalt umbenennen |
+| GET | `/api/households/{id}/members` | ✅ | Mitglieder-Liste (inkl. Rolle) |
+| GET | `/api/households/{id}/invite-code` | ✅ | Einladungscode des Haushalts |
+| POST | `/api/households/{id}/invite-code/rotate` | ✅ Admin | Neuen Einladungscode erzeugen (alter wird ungültig) |
+| POST | `/api/households/{id}/leave` | ✅ | Haushalt verlassen (204) |
+| DELETE | `/api/households/{id}/members/{user_id}` | ✅ Admin | Mitglied entfernen (204) |
+| GET | `/api/households/{id}/finance-summary` | ✅ | Finanz-Zusammenfassung eines Monats (`month`, Default aktueller Monat) |
+| **Dashboard und Aufgaben** | | | |
+| GET | `/api/households/{id}/dashboard` | ✅ | Aggregierte Startseite (Aufgaben, Einkauf, Finanzen) |
+| GET | `/api/households/{id}/tasks` | ✅ | Vereinte Aufgabenliste (Todos + Putzplan-Zuweisungen) |
+| **Einkauf** | | | |
+| GET | `/api/households/{id}/shopping-lists/` | ✅ | Einkaufslisten |
+| POST | `/api/households/{id}/shopping-lists/` | ✅ | Liste erstellen |
+| PATCH | `/api/households/{id}/shopping-lists/{list_id}` | ✅ | Liste aktualisieren |
+| DELETE | `/api/households/{id}/shopping-lists/{list_id}` | ✅ | Liste löschen |
+| GET | `/api/households/{id}/shopping-items/` | ✅ | Einkaufseinträge |
+| POST | `/api/households/{id}/shopping-items/` | ✅ | Eintrag hinzufügen (Client-ID möglich, idempotent) |
+| GET | `/api/households/{id}/shopping-items/stores` | ✅ | Distinct Geschäfte (ohne Beachtung der Schreibweise) |
+| POST | `/api/households/{id}/shopping-items/reassign-store` | ✅ | Geschäft umbenennen/auflösen (Bulk-Update) |
+| PATCH | `/api/households/{id}/shopping-items/{item_id}` | ✅ | Eintrag aktualisieren |
+| DELETE | `/api/households/{id}/shopping-items/{item_id}` | ✅ | Eintrag löschen |
 | **Todos** | | | |
 | GET | `/api/households/{id}/todos/` | ✅ | Todo-Liste |
-| POST | `/api/households/{id}/todos/` | ✅ | Todo erstellen |
+| POST | `/api/households/{id}/todos/` | ✅ | Todo erstellen (Client-ID möglich, idempotent) |
 | PATCH | `/api/households/{id}/todos/{todo_id}` | ✅ | Todo aktualisieren |
 | DELETE | `/api/households/{id}/todos/{todo_id}` | ✅ | Todo löschen |
+| POST | `/api/households/{id}/todos/{todo_id}/claim` | ✅ | Todo übernehmen |
+| POST | `/api/households/{id}/todos/{todo_id}/reminders/` | ✅ | Erinnerung anlegen (maximal 5 pro Todo) |
+| DELETE | `/api/households/{id}/todos/{todo_id}/reminders/{reminder_id}` | ✅ | Erinnerung löschen |
 | **Expenses** | | | |
-| GET | `/api/households/{id}/expenses/` | ✅ | Ausgaben-Liste (sortiert nach Datum DESC, paginiert) |
-| GET | `/api/households/{id}/expenses/balances` | ✅ | Salden + Settlement-Vorschläge (Greedy-Algorithmus) |
+| GET | `/api/households/{id}/expenses/` | ✅ | Ausgaben-Liste (nach Datum absteigend, `limit`/`offset`) |
 | POST | `/api/households/{id}/expenses/` | ✅ | Ausgabe erstellen (even/custom Split) |
+| GET | `/api/households/{id}/expenses/balances` | ✅ | Salden + Ausgleichsvorschläge (Greedy-Algorithmus) |
 | PATCH | `/api/households/{id}/expenses/{expense_id}` | ✅ | Ausgabe aktualisieren (optional Shares neu berechnen) |
 | DELETE | `/api/households/{id}/expenses/{expense_id}` | ✅ | Ausgabe löschen (Shares via CASCADE) |
 | **Settlements** | | | |
-| GET | `/api/households/{id}/settlements/` | ✅ | Settlement-Liste |
-| POST | `/api/households/{id}/settlements/` | ✅ | Settlement erstellen |
-| DELETE | `/api/households/{id}/settlements/{sid}` | ✅ | Settlement löschen |
+| GET | `/api/households/{id}/settlements/` | ✅ | Ausgleichszahlungen (`limit`/`offset`) |
+| POST | `/api/households/{id}/settlements/` | ✅ | Ausgleichszahlung erstellen |
+| DELETE | `/api/households/{id}/settlements/{settlement_id}` | ✅ | Ausgleichszahlung löschen |
+| **Budget und wiederkehrende Rechnungen** | | | |
+| GET | `/api/households/{id}/budget` | ✅ | Budget eines Monats (`month`, Default aktueller Monat) |
+| PUT | `/api/households/{id}/budget` | ✅ | Budget eines Monats setzen (Upsert) |
+| DELETE | `/api/households/{id}/budget` | ✅ | Budget eines Monats löschen (`month`, 204) |
+| GET | `/api/households/{id}/recurring-bills/` | ✅ | Wiederkehrende Rechnungen (`include_inactive`) |
+| POST | `/api/households/{id}/recurring-bills/` | ✅ | Rechnung erstellen |
+| PATCH | `/api/households/{id}/recurring-bills/{bill_id}` | ✅ | Rechnung aktualisieren |
+| DELETE | `/api/households/{id}/recurring-bills/{bill_id}` | ✅ | Rechnung löschen |
+| POST | `/api/households/{id}/recurring-bills/{bill_id}/book` | ✅ | Rechnung als Ausgabe buchen (eine Buchung pro Rechnung und Monat) |
 | **Chores** | | | |
-| GET | `/api/households/{id}/chores/` | ✅ | Chore-Liste (inkl. inaktive) |
-| POST | `/api/households/{id}/chores/` | ✅ | Chore erstellen (Validierung, anchor_date) |
-| PATCH | `/api/households/{id}/chores/{cid}` | ✅ | Chore aktualisieren (Schedule-Änderung → zukünftige Assignments gelöscht) |
-| DELETE | `/api/households/{id}/chores/{cid}` | ✅ | Chore + Assignments löschen |
-| GET | `/api/households/{id}/chores/assignments` | ✅ | Assignments (triggert Materialisierung, Fenster max. 92d) |
-| POST | `/api/households/{id}/chores/assignments/{aid}/complete` | ✅ | Assignment abhaken (idempotent) |
-| POST | `/api/households/{id}/chores/assignments/{aid}/uncomplete` | ✅ | Abhaken rückgängig (idempotent) |
-| PATCH | `/api/households/{id}/chores/assignments/{aid}` | ✅ | Reassign (User muss Mitglied sein) |
+| GET | `/api/households/{id}/chores/` | ✅ | Ämtli-Liste (inkl. inaktive) |
+| POST | `/api/households/{id}/chores/` | ✅ | Ämtli erstellen (Validierung, `anchor_date`) |
+| PATCH | `/api/households/{id}/chores/{chore_id}` | ✅ | Ämtli aktualisieren (Schedule-Änderung → zukünftige Zuweisungen gelöscht) |
+| DELETE | `/api/households/{id}/chores/{chore_id}` | ✅ | Ämtli + Zuweisungen löschen |
+| GET | `/api/households/{id}/chores/assignments` | ✅ | Zuweisungen (`from`/`to`; triggert Materialisierung, Fenster max. 92 Tage) |
+| POST | `/api/households/{id}/chores/assignments/{assignment_id}/complete` | ✅ | Zuweisung abhaken (idempotent) |
+| POST | `/api/households/{id}/chores/assignments/{assignment_id}/uncomplete` | ✅ | Abhaken rückgängig (idempotent) |
+| PATCH | `/api/households/{id}/chores/assignments/{assignment_id}` | ✅ | Neu zuweisen (User muss Mitglied sein) |
+| **Kalender und Termine** | | | |
+| GET | `/api/households/{id}/calendars/` | ✅ | Kalender-Liste |
+| POST | `/api/households/{id}/calendars/` | ✅ | Kalender erstellen |
+| PATCH | `/api/households/{id}/calendars/{calendar_id}` | ✅ | Kalender aktualisieren |
+| DELETE | `/api/households/{id}/calendars/{calendar_id}` | ✅ | Kalender löschen |
+| GET | `/api/households/{id}/events/` | ✅ | Termine im Zeitraum (`from_date`, `to_date` Pflicht) |
+| POST | `/api/households/{id}/events/` | ✅ | Termin erstellen |
+| GET | `/api/households/{id}/events/{event_id}` | ✅ | Termin lesen |
+| PATCH | `/api/households/{id}/events/{event_id}` | ✅ | Termin aktualisieren |
+| DELETE | `/api/households/{id}/events/{event_id}` | ✅ | Termin löschen |
+| **Abstimmungen** | | | |
+| GET | `/api/households/{id}/polls/` | ✅ | Abstimmungen (Filter `status`) |
+| POST | `/api/households/{id}/polls/` | ✅ | Abstimmung erstellen (Termin- oder Essens-Umfrage) |
+| GET | `/api/households/{id}/polls/{poll_id}` | ✅ | Abstimmung lesen |
+| DELETE | `/api/households/{id}/polls/{poll_id}` | ✅ | Abstimmung löschen |
+| POST | `/api/households/{id}/polls/{poll_id}/vote` | ✅ | Abstimmen (eine Stimme pro Person und Abstimmung) |
+| POST | `/api/households/{id}/polls/{poll_id}/decide` | ✅ | Terminumfrage entscheiden → legt einen Termin an |
+| POST | `/api/households/{id}/polls/{poll_id}/meal-decide` | ✅ | Essensumfrage entscheiden → Wochenmenü-Eintrag |
+| **Haustiere** | | | |
+| GET | `/api/households/{id}/pets/` | ✅ | Haustiere |
+| POST | `/api/households/{id}/pets/` | ✅ | Haustier anlegen |
+| GET | `/api/households/{id}/pets/feeding-status` | ✅ | Fütterungsstatus aller Tiere (heute) |
+| POST | `/api/households/{id}/pets/feed-all` | ✅ | Alle Tiere füttern |
+| GET | `/api/households/{id}/pets/{pet_id}` | ✅ | Haustier lesen |
+| PATCH | `/api/households/{id}/pets/{pet_id}` | ✅ | Haustier aktualisieren (inkl. `photo_file_id`) |
+| DELETE | `/api/households/{id}/pets/{pet_id}` | ✅ | Haustier löschen |
+| POST | `/api/households/{id}/pets/{pet_id}/feedings` | ✅ | Fütterung erfassen |
+| DELETE | `/api/households/{id}/pets/{pet_id}/feedings/{feeding_id}` | ✅ | Fütterung löschen |
+| GET | `/api/households/{id}/pets/{pet_id}/medications` | ✅ | Medikamente |
+| POST | `/api/households/{id}/pets/{pet_id}/medications` | ✅ | Medikament anlegen |
+| PATCH | `/api/households/{id}/pets/{pet_id}/medications/{medication_id}` | ✅ | Medikament aktualisieren |
+| DELETE | `/api/households/{id}/pets/{pet_id}/medications/{medication_id}` | ✅ | Medikament löschen |
+| POST | `/api/households/{id}/pets/{pet_id}/medications/{medication_id}/give` | ✅ | Verabreichung erfassen |
+| GET | `/api/households/{id}/pets/{pet_id}/medications/{medication_id}/log` | ✅ | Verabreichungs-Log |
+| GET | `/api/households/{id}/pets/{pet_id}/care-tasks/` | ✅ | Pflegeaufgaben |
+| POST | `/api/households/{id}/pets/{pet_id}/care-tasks/` | ✅ | Pflegeaufgabe anlegen |
+| PATCH | `/api/households/{id}/pets/{pet_id}/care-tasks/{task_id}` | ✅ | Pflegeaufgabe aktualisieren |
+| DELETE | `/api/households/{id}/pets/{pet_id}/care-tasks/{task_id}` | ✅ | Pflegeaufgabe löschen |
+| POST | `/api/households/{id}/pets/{pet_id}/care-tasks/{task_id}/complete` | ✅ | Pflegeaufgabe erledigen (nächste Fälligkeit wird berechnet) |
+| **Essen** | | | |
+| GET | `/api/households/{id}/recipes/` | ✅ | Rezepte |
+| POST | `/api/households/{id}/recipes/` | ✅ | Rezept anlegen |
+| GET | `/api/households/{id}/recipes/{recipe_id}` | ✅ | Rezept lesen |
+| PATCH | `/api/households/{id}/recipes/{recipe_id}` | ✅ | Rezept aktualisieren |
+| DELETE | `/api/households/{id}/recipes/{recipe_id}` | ✅ | Rezept löschen |
+| GET | `/api/households/{id}/meal-plan/` | ✅ | Wochenmenü (`week`: beliebiges Datum der Woche) |
+| PUT | `/api/households/{id}/meal-plan/{entry_date}` | ✅ | Tageseintrag setzen (Rezept oder Freitext) |
+| DELETE | `/api/households/{id}/meal-plan/{entry_date}` | ✅ | Tageseintrag löschen |
+| POST | `/api/households/{id}/meal-plan/{entry_id}/add-missing-to-shopping` | ✅ | Fehlende Zutaten auf die Einkaufsliste setzen |
+| **Notizen** | | | |
+| GET | `/api/households/{id}/notes/` | ✅ | Notizen |
+| POST | `/api/households/{id}/notes/` | ✅ | Notiz erstellen |
+| PATCH | `/api/households/{id}/notes/{note_id}` | ✅ | Notiz aktualisieren |
+| DELETE | `/api/households/{id}/notes/{note_id}` | ✅ | Notiz löschen |
+| **Dateien** | | | |
+| POST | `/api/households/{id}/files/` | ✅ | Datei hochladen (JPEG/PNG/WebP/PDF, max. 10 MB; Bilder auf 1600 px verkleinert; Speicher-Limit pro Haushalt) |
+| GET | `/api/households/{id}/files/{file_id}` | ✅ | Datei herunterladen (JWT-geschützt) |
+| DELETE | `/api/households/{id}/files/{file_id}` | ✅ | Datei löschen (204; `FILE_IN_USE`, wenn noch referenziert) |
+| **Dokumente** | | | |
+| GET | `/api/households/{id}/documents/` | ✅ | Dokumente (`category`, Suche `q`, `limit`/`offset`) |
+| POST | `/api/households/{id}/documents/` | ✅ | Dokument aus bereits hochgeladenen Dateien anlegen (max. 30 Dateien) |
+| POST | `/api/households/{id}/documents/upload` | ✅ | Dokument mit Datei-Upload (mehrseitig) anlegen |
+| GET | `/api/households/{id}/documents/storage` | ✅ | Speicher-Auslastung des Haushalts |
+| GET | `/api/households/{id}/documents/{document_id}` | ✅ | Dokument lesen (inkl. Seiten) |
+| PATCH | `/api/households/{id}/documents/{document_id}` | ✅ | Dokument aktualisieren |
+| DELETE | `/api/households/{id}/documents/{document_id}` | ✅ | Dokument löschen (204) |
+| POST | `/api/households/{id}/documents/{document_id}/files` | ✅ | Seiten hinzufügen |
+| PUT | `/api/households/{id}/documents/{document_id}/files/order` | ✅ | Seiten umsortieren |
+| DELETE | `/api/households/{id}/documents/{document_id}/files/{file_id}` | ✅ | Seite entfernen |
+| **Web Push** | | | |
+| GET | `/api/push/config` | ✅ | Push-Konfiguration (öffentlicher VAPID-Schlüssel, aktiv/inaktiv) |
+| POST | `/api/push/subscriptions` | ✅ | Gerät anmelden (idempotent pro Endpoint) |
+| DELETE | `/api/push/subscriptions` | ✅ | Gerät abmelden (idempotent, 204) |
+| POST | `/api/push/test` | ✅ | Test-Benachrichtigung an die eigenen Geräte; Rate-Limit 5/Minute |
 | **Health** | | | |
-| GET | `/api/health` | ❌ | Health-Check |
+| GET | `/api/health` | ❌ | Health-Check mit DB-Prüfung |
 
 ### Socket.IO Events
+
+Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen an den Raum `household_{id}`; ein Client betritt ihn mit `join_household` (Mitgliedschaft wird geprüft). Wird ein Mitglied entfernt, wirft der Server seine Verbindungen nach dem Event `household_member_removed` aus dem Raum. Server-seitige Fehler beim Beitritt kommen als Event `error` (`{ message }`) an den Client.
 
 | Event | Richtung | Payload |
 |---|---|---|
 | `join_household` | Client → Server | `{ household_id }` |
 | `leave_household` | Client → Server | `{ household_id }` |
-| **Shopping** | | |
+| `error` | Server → Client | `{ message }` |
+| **Sitzung** | | |
+| `reauth` | Client → Server | `{ token }` → Ack `{ ok }` |
+| `session_ended` | Server → Client (eine Verbindung) | `{ reason: "expired" \| "logout" \| "revoked" }`, danach trennt der Server |
+| **Haushalt** | | |
+| `household_updated` | Server → Room | `{ id, name }` |
+| `household_member_joined` | Server → Room | `{ household_id, user_id, display_name, role }` |
+| `household_member_left` | Server → Room | `{ household_id, user_id }` |
+| `household_member_removed` | Server → Room | `{ household_id, user_id }` |
+| **Einkauf** | | |
+| `shopping_list_created` | Server → Room | `ShoppingList` (auch beim Übernehmen fehlender Zutaten) |
+| `shopping_list_updated` | Server → Room | `ShoppingList` |
+| `shopping_list_deleted` | Server → Room | `{ id }` |
 | `shopping_item_created` | Server → Room | `ShoppingItem` |
 | `shopping_item_updated` | Server → Room | `ShoppingItem` |
 | `shopping_item_deleted` | Server → Room | `{ id }` |
 | `shopping_items_bulk_updated` | Server → Room | `{ item_ids, changes: { store } }` |
 | **Todos** | | |
 | `todo_created` | Server → Room | `TodoItem` |
-| `todo_updated` | Server → Room | `TodoItem` |
+| `todo_updated` | Server → Room | `TodoItem` (auch bei Claim und Erinnerungen) |
 | `todo_deleted` | Server → Room | `{ id }` |
 | **Expenses** | | |
-| `expense_created` | Server → Room | `ExpenseResponse` (inkl. shares) |
+| `expense_created` | Server → Room | `ExpenseResponse` (inkl. shares; auch beim Buchen einer Rechnung) |
 | `expense_updated` | Server → Room | `ExpenseResponse` (inkl. shares) |
 | `expense_deleted` | Server → Room | `{ id, household_id }` |
 | **Settlements** | | |
 | `settlement_created` | Server → Room | `SettlementResponse` |
 | `settlement_deleted` | Server → Room | `{ id, household_id }` |
+| **Budget und Rechnungen** | | |
+| `budget_updated` | Server → Room | `BudgetResponse` |
+| `budget_deleted` | Server → Room | `{ household_id, month }` |
+| `recurring_bill_created` | Server → Room | `RecurringBillResponse` |
+| `recurring_bill_updated` | Server → Room | `RecurringBillResponse` |
+| `recurring_bill_deleted` | Server → Room | `{ id, household_id }` |
+| `recurring_bill_booked` | Server → Room | `{ bill_id, expense_id, household_id }` |
 | **Chores** | | |
 | `chore_created` | Server → Room | `ChoreResponse` |
 | `chore_updated` | Server → Room | `ChoreResponse` |
 | `chore_deleted` | Server → Room | `{ id, household_id }` |
 | `chore_assignment_created` | Server → Room | `ChoreAssignmentResponse` |
-| `chore_assignment_updated` | Server → Room | `ChoreAssignmentResponse` |
-| **Households** | | |
-| `household_updated` | Server → Room | `{ id, name }` |
-| `household_member_joined` | Server → Room | `{ household_id, user_id, display_name, role }` |
-| `household_member_left` | Server → Room | `{ household_id, user_id }` |
-| `household_member_removed` | Server → Room | `{ household_id, user_id }` |
+| `chore_assignment_updated` | Server → Room | `ChoreAssignmentResponse` (abhaken, rückgängig, neu zuweisen) |
+| **Kalender** | | |
+| `calendar_created` | Server → Room | `CalendarResponse` |
+| `calendar_updated` | Server → Room | `CalendarResponse` |
+| `calendar_deleted` | Server → Room | `{ id }` |
+| `event_created` | Server → Room | `EventResponse`; nach `decide` einer Umfrage `{ id, title }` |
+| `event_updated` | Server → Room | `EventResponse` |
+| `event_deleted` | Server → Room | `{ id }` |
+| **Abstimmungen** | | |
+| `poll_created` | Server → Room | `PollResponse` |
+| `poll_voted` | Server → Room | `PollResponse` |
+| `poll_decided` | Server → Room | `PollResponse` (Termin- und Essensumfragen) |
+| `poll_deleted` | Server → Room | `{ id }` |
+| **Haustiere** | | |
+| `pet_created` | Server → Room | `PetResponse` |
+| `pet_updated` | Server → Room | `PetResponse` |
+| `pet_deleted` | Server → Room | `{ id, household_id }` |
+| `feeding_created` | Server → Room | `FeedingLogResponse` (auch bei „Alle füttern“) |
+| `feeding_deleted` | Server → Room | `{ id, pet_id, household_id }` |
+| `medication_created` | Server → Room | `MedicationResponse` |
+| `medication_updated` | Server → Room | `MedicationResponse` |
+| `medication_deleted` | Server → Room | `{ id, pet_id, … }` |
+| `medication_given` | Server → Room | `MedicationLogResponse` |
+| `pet_care_task_created` | Server → Room | `CareTaskResponse` |
+| `pet_care_task_updated` | Server → Room | `CareTaskResponse` (auch beim Erledigen) |
+| `pet_care_task_deleted` | Server → Room | `{ id, pet_id }` |
+| **Essen** | | |
+| `recipe_created` | Server → Room | `RecipeResponse` |
+| `recipe_updated` | Server → Room | `RecipeResponse` |
+| `recipe_deleted` | Server → Room | `{ id }` |
+| `meal_plan_updated` | Server → Room | `MealPlanEntryResponse`; nach `meal-decide` `{ date }` |
+| `meal_plan_deleted` | Server → Room | `{ date }` |
+| **Notizen** | | |
+| `note_created` | Server → Room | `NoteResponse` |
+| `note_updated` | Server → Room | `NoteResponse` |
+| `note_deleted` | Server → Room | `{ id }` |
+| **Dateien und Dokumente** | | |
+| `file_uploaded` | Server → Room | `StoredFileResponse` |
+| `file_deleted` | Server → Room | `{ id }` |
+| `document_created` | Server → Room | `DocumentResponse` |
+| `document_updated` | Server → Room | `DocumentResponse` (auch bei Seiten-Änderungen) |
+| `document_deleted` | Server → Room | `{ id, file_ids }` |
+
+Der Client verarbeitet `budget_deleted`, `file_uploaded` und `file_deleted` nicht (kein Handler im Frontend). Web Push (Todo-Erinnerungen, Tierpflege) läuft nicht über Socket.IO, sondern über `/api/push/…` und den Scheduler im Backend.
+
+### Lebensdauer einer Socket-Verbindung
+
+Eine Verbindung gilt nur so lange wie das Access-Token (15 Min.), mit dem sie zuletzt authentifiziert wurde.
+
+- **connect:** Der Server prüft das JWT, merkt sich `user_id` und `exp` in der Socket-Session, legt die Verbindung in den persönlichen Raum `user_<id>` und startet einen Timer auf `exp`.
+- **Verlängern:** Nach jedem Token-Refresh (Axios-Interceptor, Cross-Tab-Sync) schickt der Client `reauth` mit dem neuen Token. Gehört es zum selben User, setzt der Server `exp` und Timer neu. Die Verbindung bleibt bestehen, Räume bleiben erhalten; früher baute der Client bei jedem Refresh eine neue Verbindung auf.
+- **Ablauf:** Läuft der Timer ab, schickt der Server `session_ended` (`expired`) und trennt. `join_household` prüft `exp` zusätzlich. Der Client holt sich per Refresh ein neues Token und verbindet neu; die Reconnect-Callbacks treten dem Haushalts-Raum wieder bei und laden die Daten nach.
+- **Logout:** `/api/auth/logout` trennt alle Verbindungen des Users (`session_ended` mit `logout`); die Reuse-Detection in `/refresh` trennt mit `revoked`. Der Access-Token kennt kein Gerät, deshalb trifft das auch andere Geräte. Diese verbinden sich mit ihrem noch gültigen Access-Token sofort neu, aber **ohne** Refresh: Der Refresh-Token könnte gerade widerrufen sein (z. B. zweiter Tab im selben Browser), ein Refresh würde dann die Reuse-Detection auslösen und alle Geräte abmelden. Das ausloggende Gerät trennt seinen Socket schon vor dem Logout-Aufruf und verbindet nicht neu.
+- **Abgelehnter Connect** (z. B. Token abgelaufen): höchstens ein Refresh-Versuch bis zur nächsten erfolgreichen Verbindung, kein Endlos-Loop.
+
+**Warum `exp` + Timer + `reauth` (und nicht nur eine Prüfung bei jedem Event):** Fast der ganze Verkehr läuft vom Server zum Client; ein Client, der nur zuhört, schickt nach `join_household` keine Events mehr und würde bei reiner Event-Prüfung nie getrennt. Ohne `reauth` wiederum müsste jede Verbindung alle 15 Minuten neu aufgebaut werden. Der Client erneuert sein Token ohnehin über den Axios-Interceptor; `reauth` gibt das Ergebnis nur an den Socket weiter.
+
+**Grenze:** Ein Access-Token bleibt bis zu seinem Ablauf gültig (zustandsloses JWT). Wer es hat, kann sich nach dem Logout bis zu 15 Minuten lang neu verbinden, genau wie bei der REST-API. Danach endet jede Verbindung spätestens mit dem Ablauf des Tokens. Timer und Räume liegen im Prozessspeicher (ein Worker, siehe Abschnitt 8).
 
 ---
 
 ## 5. Datenmodell
 
-```
-┌──────────────┐    ┌───────────────────┐    ┌──────────────┐
-│  Household   │    │ HouseholdMember   │    │    User      │
-│──────────────│    │───────────────────│    │──────────────│
-│ id (PK)      │◄──┤ household_id (FK) │    │ id (PK)      │
-│ name         │    │ user_id (FK)      ├───►│ email        │
-│ invite_code  │    │ role              │    │ password_hash│
-│ timezone     │    │ joined_at         │    │ display_name │
-│ currency     │    └───────────────────┘    │ created_at   │
-│ created_at   │                              └──────────────┘
-└──────┬───────┘
-       │
-       ├──────────────────┬──────────────────┬──────────────────┐
-       │                  │                  │                  │
-┌──────▼───────┐  ┌───────▼────────┐  ┌──────▼───────┐  ┌──────▼───────┐
-│ ShoppingItem │  │     Todo       │  │   Expense    │  │    Chore     │
-│──────────────│  │────────────────│  │──────────────│  │──────────────│
-│ id (PK)      │  │ id (PK)        │  │ id (PK)      │  │ id (PK)      │
-│ household_id │  │ household_id   │  │ household_id │  │ household_id │
-│ name         │  │ title          │  │ description  │  │ title        │
-│ quantity     │  │ description    │  │ amount_rappen│  │ description  │
-│ category     │  │ assigned_to_   │  │ currency     │  │ recurrence   │
-│ is_checked   │  │   user_id      │  │ paid_by_     │  │ weekday      │
-│ added_by_    │  │ due_date       │  │   user_id    │  │ day_of_month │
-│   user_id    │  │ is_done        │  │ expense_date │  │ rotation_    │
-│ created_at   │  │ created_by_    │  │ created_at   │  │   order (JSON│
-│ checked_at   │  │   user_id      │  │ updated_at   │  │ next_rotation│
-└──────────────┘  │ created_at     │  └──────┬───────┘  │   _index     │
-                  │ done_at        │         │          │ anchor_date  │
-                  └────────────────┘         │          │ active       │
-                                             │          │ created_at   │
-                                      ┌──────▼───────┐  │ created_by_  │
-                                      │ ExpenseShare │  │   user_id    │
-                                      │──────────────│  └──────┬───────┘
-                                      │ id (PK)      │         │
-                                      │ expense_id   │  ┌──────▼────────────┐
-                                      │ household_id │  │ ChoreAssignment   │
-                                      │ user_id      │  │───────────────────│
-                                      │ amount_rappen│  │ id (PK)           │
-                                      └──────────────┘  │ household_id      │
-                                                        │ chore_id (FK)     │
-┌──────────────┐                                        │ assigned_user_id  │
-│  Settlement  │                                        │ due_date          │
-│──────────────│                                        │ completed_at      │
-│ id (PK)      │                                        │ completed_by_     │
-│ household_id │                                        │   user_id         │
-│ paid_by_     │                                        │ created_at        │
-│   user_id    │                                        └───────────────────┘
-│ paid_to_     │
-│   user_id    │  Unique: (chore_id, due_date, assigned_user_id)
-│ amount_rappen│  Index:  (household_id, due_date)
-│ created_at   │
-└──────────────┘
+32 Tabellen in `backend/app/models.py` (Alembic-Migrationen: `backend/migrations/versions/`, 33 Versionen). Geldbeträge sind Integer in Rappen (`*_rappen`). Soweit nicht anders vermerkt, haben alle Haushalts-Tabellen `household_id` (FK auf `households`, `ON DELETE CASCADE`).
 
-Invariante: SUM(expense_shares.amount_rappen) == expense.amount_rappen
-(erzwungen im Service-Layer, nicht als DB-Constraint)
+### Übersicht
 
-Household.timezone: Default "Europe/Zurich", verwendet für Chore-Datumsberechnung
-Household.currency: Default "CHF", eine Währung pro Haushalt
 ```
+User ──< HouseholdMember >── Household
+ ├──< RefreshToken                │  (invite_code, timezone, currency)
+ └──< PushSubscription            │
+                                  ├── ShoppingList ──< ShoppingItem
+                                  ├── Todo ──< TodoReminder
+                                  ├── Expense ──< ExpenseShare   (Expense >── RecurringBill, optional)
+                                  ├── Settlement, Budget, RecurringBill
+                                  ├── Chore ──< ChoreAssignment
+                                  ├── Calendar ──< Event
+                                  ├── EventPoll ──< EventPollOption ──< EventPollVote
+                                  ├── Pet ──< FeedingLog, Medication ──< MedicationLog, PetCareTask
+                                  ├── Recipe, MealPlanEntry (>── Recipe)
+                                  ├── Note
+                                  └── StoredFile >──< Document   (über DocumentFile; Pet.photo_file_id → StoredFile)
+```
+
+### Tabellen
+
+| Tabelle | Wichtige Felder | Beziehungen / Regeln |
+|---|---|---|
+| `households` | `name`, `invite_code` (unique), `timezone` (Default `Europe/Zurich`), `currency` (Default `CHF`) | Wurzel aller Haushalts-Daten |
+| `users` | `email` (unique), `password_hash`, `display_name` | |
+| `household_members` | `household_id`, `user_id`, `role` (`admin`/`member`), `joined_at` | Unique `(household_id, user_id)` |
+| `refresh_tokens` | `user_id`, `token_hash` (unique), `expires_at`, `revoked_at`, `replaced_by_id` | Rotation mit Reuse-Erkennung; `user_id` CASCADE |
+| `push_subscriptions` | `user_id`, `endpoint` (unique), `p256dh`, `auth`, `locale` | Web-Push-Geräte; `user_id` CASCADE |
+| `shopping_lists` | `name`, `icon`, `position` | `version`/`updated_at` |
+| `shopping_items` | `list_id` (CASCADE), `name`, `quantity`, `category`, `store` (Freitext), `is_checked`, `checked_at`, `added_by_user_id`, `assigned_to_user_id` | `version`/`updated_at`; Geschäfte sind abgeleitete Freitext-Werte, keine eigene Tabelle |
+| `todos` | `title`, `description`, `assigned_to_user_id`, `due_date`, `is_done`, `done_at`, `tags` (JSON), `created_by_user_id` | `version`/`updated_at` |
+| `todo_reminders` | `todo_id` (CASCADE), `remind_at`, `notified_at` | Maximal 5 pro Todo (API); Index `(household_id, remind_at)` |
+| `expenses` | `description`, `amount_rappen`, `currency`, `split_type` (`even`/`custom`), `category`, `paid_by_user_id`, `expense_date`, `recurring_bill_id`, `booked_month` | `updated_at` (kein `version`); Unique `(recurring_bill_id, booked_month)` (eine Buchung pro Rechnung und Monat); Index `(household_id, expense_date)` |
+| `expense_shares` | `expense_id` (CASCADE), `user_id`, `amount_rappen` | Unique `(expense_id, user_id)` |
+| `settlements` | `from_user_id`, `to_user_id`, `amount_rappen`, `currency`, `settled_date`, `note`, `created_by_user_id` | Index `(household_id, settled_date)` |
+| `budgets` | `month` (1. des Monats), `amount_rappen` | `updated_at`; Unique `(household_id, month)` |
+| `recurring_bills` | `name`, `amount_rappen`, `day_of_month`, `category`, `split_type`, `active`, `paid_by_user_id` | Standard-Zahler beim Buchen |
+| `chores` | `title`, `description`, `recurrence` (`weekly`/`biweekly`/`monthly`), `weekday`, `day_of_month`, `rotation_order` (JSON), `next_rotation_index`, `anchor_date`, `active` | |
+| `chore_assignments` | `chore_id` (CASCADE), `assigned_user_id`, `due_date`, `completed_at`, `completed_by_user_id` | `version`/`updated_at`; Unique `(chore_id, due_date)`; Index `(household_id, due_date)` |
+| `calendars` | `name`, `color`, `position` | |
+| `events` | `calendar_id` (CASCADE), `title`, `starts_at`, `ends_at`, `all_day`, `participant_ids`, `note` | Zeiten UTC, Wanduhrzeit in Haushalts-Zeitzone; Index `(household_id, starts_at)` |
+| `event_polls` | `question`, `status`, `poll_type` (`event`/`meal`), `decided_event_id`, `decided_meal_date` | |
+| `event_poll_options` | `poll_id` (CASCADE), `label`, `starts_at`, `recipe_id` | |
+| `event_poll_votes` | `poll_id`, `option_id` (CASCADE), `user_id` | Unique `(option_id, user_id)` und `(poll_id, user_id)` (eine Stimme pro Person und Abstimmung) |
+| `pets` | `name`, `species`, `breed`, `birthdate`, `weight_grams`, `photo_url`, `photo_file_id`, `chip_number`, `insurance`, `vet_name`, `food_notes`, `health_entries`, `notes` | `photo_file_id` → `stored_files` (SET NULL) |
+| `feeding_logs` | `pet_id` (CASCADE), `slot`, `date`, `fed_at`, `fed_by_user_id` | Unique `(pet_id, date, slot)` |
+| `medications` | `pet_id` (CASCADE), `name`, `dosage`, `schedule`, `active` | |
+| `medication_logs` | `medication_id` (CASCADE), `given_at`, `given_by_user_id` | |
+| `pet_care_tasks` | `pet_id` (CASCADE), `name`, `interval_days`, `next_due_at`, `last_done_at`, `notified_at` | Push-Erinnerung bei Fälligkeit |
+| `recipes` | `name`, `servings`, `cost_rappen`, `duration_min`, `ingredients`, `is_favorite` | |
+| `meal_plan_entries` | `date`, `recipe_id` (SET NULL), `free_text` | Unique `(household_id, date)` |
+| `notes` | `title`, `body`, `tag`, `pinned`, `created_by_user_id` | `updated_at` |
+| `stored_files` | `original_name`, `mime_type`, `size_bytes`, `storage_path`, `uploaded_by_user_id` | Datei liegt unter `UPLOAD_DIR/{household_id}/` |
+| `documents` | `title`, `category`, `notes`, `document_date`, `expiry_date`, `created_by_user_id` | `updated_at`; Index `(household_id, category)` |
+| `document_files` | `document_id`, `file_id` (beide CASCADE), `position` | Seiten eines Dokuments; `file_id` unique (eine Datei gehört zu höchstens einem Dokument) |
+
+Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_user_id`, `assigned_to_user_id`, `paid_by_user_id` …) sind `ON DELETE SET NULL`. Beim Verlassen eines Haushalts bleiben Ausgaben und Anteile des Ex-Mitglieds bestehen („Ehemaliges Mitglied“-Muster, siehe Geschäftsregeln).
+
+### Synchronisations-Felder (`version` / `updated_at`)
+
+`SyncVersionMixin` (`backend/app/models.py`) fügt `updated_at` und `version` hinzu (`version` startet bei 1 und wird bei jeder Änderung serverseitig erhöht). Er ist auf vier Tabellen aktiv: `shopping_lists`, `shopping_items`, `todos`, `chore_assignments`. Die Clients verwerfen damit veraltete Socket-Events. Nur `updated_at` (ohne `version`) haben `expenses`, `budgets`, `notes` und `documents`; alle anderen Tabellen haben keines von beiden.
+
+### Invarianten
+
+- `SUM(expense_shares.amount_rappen) == expenses.amount_rappen` (im Service-Layer erzwungen, nicht als DB-Constraint).
+- `households.timezone` (Default `Europe/Zurich`) steuert Putzplan-Datumsberechnung und Termin-Uhrzeiten; `households.currency` (Default `CHF`): eine Währung pro Haushalt.
+- Beim Löschen eines Haushalts werden alle zugehörigen Tabellen per `CASCADE` geleert; die Dateien auf dem Datenträger entfernt der Router beim Auflösen des Haushalts (`POST /leave` durch das letzte Mitglied); verwaiste Uploads räumt `app/services/file_cleanup.py` periodisch auf.
+
+---
 
 ---
 
 ## Geschäftsregeln
 
+- Einladungscodes laufen nach 7 Tagen ab (`INVITE_CODE_TTL` in `services/invite_code.py`). Das Ablaufdatum steht in `households.invite_code_expires_at` (UTC); es wird beim Anlegen des Haushalts und bei jeder Rotation (Admin-Button, Entfernen eines Mitglieds) neu gesetzt. `NULL` bedeutet „läuft nicht ab“. Ein abgelaufener Code wird bei `POST /join` und `POST /register` mit HTTP 410 und `INVITE_CODE_EXPIRED` abgelehnt (nicht als „nicht gefunden“). Die Migration setzt bei bestehenden Haushalten 7 Tage ab Upgrade; die Haushalts-Ansicht zeigt „gültig bis …“ bzw. einen Hinweis mit Link zur Rotation.
 ### Währungsregel
 - **Eine Währung pro Haushalt** (`Household.currency`, Default: CHF)
 - Expenses und Settlements müssen die Haushaltswährung verwenden
@@ -467,16 +799,16 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Error-Code-System (maschinenlesbar) | ✅ | ✅ i18n-Mapping | — |
 | Offline-Banner | — | ✅ | — |
 | Toast-System | — | ✅ | — |
-| Repository-Layer (Offline-Ready Seam) | — | ✅ (17 Repos) | — |
+| Repository-Layer (Offline-Ready Seam) | — | ✅ (15 Repositories) | — |
 | Race-Condition-Schutz (vom Client erzeugte IDs, versionierte Merges, Toggle-Mutex) | — | ✅ | — |
-| Design-System (CSS Custom Properties) | — | ✅ theme.css + 7 UI-Komponenten | — |
+| Design-System (CSS Custom Properties) | — | ✅ theme.css + 11 UI-Komponenten | — |
 | Mobile-First UI | — | ✅ Bottom-Tab-Bar, Touch-optimiert | — |
 | Household erstellen (eigenständig) | ✅ POST /households/ | ✅ HouseholdView | — |
 | Household umbenennen | ✅ PATCH /households/{id} | ✅ HouseholdView | ✅ Socket |
 | Haushalt verlassen / Mitglied entfernen | ✅ POST /leave, DELETE /members/{uid} | ✅ HouseholdView | ✅ Socket |
 | Rollen-System (admin/member) | ✅ verify_household_admin | ✅ UI-Anzeige | — |
 | Währung pro Haushalt | ✅ Household.currency | ✅ /me Response | — |
-| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 51 Testdateien, 576 Tests (Coverage 91 %) | — | — |
+| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 52 Testdateien, 590 Tests (Coverage 92 %) | — | — |
 | Dashboard | ✅ | ✅ DashboardView | — |
 | Einkauf 2.0 (Multi-Listen, Stores) | ✅ | ✅ ShoppingView | ✅ Socket |
 | Aufgaben 2.0 (Unified Tasks) | ✅ | ✅ TodosView | ✅ Socket |
@@ -491,6 +823,8 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Web Push (Todo-Erinnerungen, Tierpflege) | ✅ | ✅ | — |
 | Dokument-Ablage (Verträge, Rechnungen, Garantien; mehrseitig, Vorschau, Speicher-Limit) | ✅ | ✅ DocumentsView | ✅ Socket |
 | Auth-Härtung (Rate-Limits, Refresh-Rotation, Security-Header/CSP) | ✅ | — | — |
+| Refresh-Token als HttpOnly-Cookie (H-01: `casa_rt`, CSRF-Header `X-Requested-With: casa`, Migration alter `localStorage`-Tokens) | ✅ | ✅ Auth-Store, API-Client, Cross-Tab über Sitzungs-Marker | — |
+| Socket-Sitzungen enden mit Token-Ablauf und Logout | ✅ Ablauf-Timer, `reauth`, Trennen bei Logout | ✅ Token-Übergabe nach Refresh, Auto-Reconnect | ✅ |
 | Offline-Basis M0 (Client-IDs, `version`/`updated_at`) | ✅ Shopping, Todos, Chore-Zuweisungen | ✅ Stores | ✅ veraltete Events werden verworfen |
 | CI (Lint, Tests mit Coverage, Dependency-Audit) | — | — | — |
 | Produktions-Deployment (Docker, Nginx Proxy Manager) | ✅ | ✅ | — |
@@ -500,13 +834,11 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Feature | Aufwand | Prio | Beschreibung |
 |---|---|---|---|
 | Offline-Betrieb ab M1 | Gross | 🔵 Niedrig | IndexedDB, Änderungs-Warteschlange, Synchronisation; Plan und Etappen in `docs/offline-first-phase2.md`. Vorher offen: Entscheidung E8 (nur kürzlich abgehakte Einkäufe synchronisieren oder Funktion „Abgehakte löschen“) |
-| Refresh-Token nicht in `localStorage` | Mittel | 🟡 Mittel | Vorschlag HttpOnly-Cookie in `docs/security/hardening-review.md` (H-01); ändert den Vertrag von Login/Refresh/Logout und braucht CSRF-Schutz |
 | Dokumente verknüpfen | Mittel | 🔵 Niedrig | Verknüpfung mit Ausgaben/Terminen (Datenmodell ist vorbereitet, eigene Link-Tabelle) |
 | Push-Erinnerung zum Ablaufdatum von Dokumenten | Klein | 🔵 Niedrig | Garantieende, Kündigungsfrist |
-| Rate-Limit für Uploads | Klein | 🟡 Mittel | Upload-Endpunkte haben kein eigenes Limit (H-14, Epic-8-Review F-06); das Speicher-Limit pro Haushalt existiert |
-| Einladungscode läuft nie ab | Klein | 🔵 Niedrig | H-12; Rotation ist seit #11 möglich. Offen ist außerdem, ob der Code nur für Admins sichtbar sein soll |
-| Token-Ablauf auf Socket-Verbindungen | Klein | 🔵 Niedrig | Logout/Ablauf beendet bestehende WebSocket-Verbindungen serverseitig noch nicht |
-| Frontend-Testabdeckung | Mittel | 🟡 Mittel | 69,1 % Statements (Schwelle 66 % in `vitest.config.ts`, CI bricht darunter ab); Komponenten, Stores `polls`/`dashboard` und die Repositories sind ungetestet; Schwelle bei Verbesserung nachziehen |
+| Einladungscode nur für Admins sichtbar? | Klein | 🔵 Niedrig | Offene Produktfrage zu H-12: Der Code ist weiterhin für alle Mitglieder sichtbar (Ablauf und Rotation sind umgesetzt) |
+| „Überall abmelden“ | Klein | 🔵 Niedrig | Es gibt keinen Endpunkt, der alle Refresh-Tokens eines Users revoked; das passiert heute nur über die Reuse-Erkennung. Nützlich zusammen mit Passwort-Ändern |
+| Frontend-Testabdeckung | Mittel | 🟡 Mittel | 70,3 % Statements (Schwelle 66 % in `vitest.config.ts`, CI bricht darunter ab); Komponenten, Stores `polls`/`dashboard` und die Repositories sind ungetestet; Schwelle bei Verbesserung nachziehen |
 | Push-Notifications für Chores | Mittel | 🔵 Niedrig | „Du bist dran“-Benachrichtigung |
 | FR/IT-Sprachen | Klein | 🔵 Niedrig | Locale-Erweiterung |
 | Chores-Statistiken | Klein | 🔵 Niedrig | „Wer hat wie oft geputzt“ |
@@ -523,7 +855,10 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Kalender-Migration (#9) | Termine, die der alte Fehler beim Bearbeiten bereits verschoben hatte, kann die Migration nicht erkennen; sie gelten als zuletzt gespeicherte Zeit und müssen ggf. von Hand korrigiert werden | Einmalig |
 | PDF-Vorschau unter der CSP | Im eingebetteten PDF-Betrachter fehlen die Schaltflächen „Drucken“ und „Mehr“ (nicht durch Styles verursacht, nicht weiter untersucht); die App hat einen eigenen Download-Button. Die CSP wurde nur für `/documents` und `/shopping` im Browser geprüft | Gering |
 | Bestehende wiederkehrende Rechnungen | Haben noch keinen Standard-Zahler; beim ersten Buchen wird im Dialog die aktuelle Person vorgeschlagen | Gering |
+| Logout trennt Sockets aller Geräte | Der Access-Token trägt keine Geräte-Kennung; andere Geräte verbinden sich sofort selbst neu (kurzer Reconnect mit Nachladen). Ein gestohlenes Access-Token kann bis zu seinem Ablauf (15 Min.) weiter verbinden | Akzeptiert |
 | Rate-Limits nur pro IP, im Speicher | Zähler gehen beim Neustart verloren; passt zu einem Worker (Socket.IO ohne Message-Queue) | Akzeptiert |
+| Start ohne Netz | Der Access-Token wird nicht mehr persistiert; ohne Netz zeigt die App die Shell („offline eingeloggt“), hat aber keinen Token, bis der erste Request nach Rückkehr des Netzes ihn per Cookie-Refresh holt. Ohne Offline-Daten (M1) ist das gleichwertig zum früheren Verhalten | Phase 2 |
+| Native Builds (Capacitor) | Der HttpOnly-Cookie setzt einen Browser voraus; ein nativer Client müsste die Body-Variante von `/refresh` (ohne `X-Requested-With`) mit SecureStorage nutzen — siehe H-01 im Hardening-Review | Später |
 | Major-Updates ohne Gerätetest | Pillow 12 und cryptography 50 wurden über Tests und Stichproben geprüft, nicht mit einer echten Web-Push-Zustellung auf einem Gerät und nicht mit einem Upload über den laufenden Browser | Prüfen |
 | `deleteItem()` Rollback-Position | Bei paralleler Socket-Mutation kann die Position abweichen (kosmetisch) | Gering |
 | Auth-Styles dupliziert | Login/Register haben identische Scoped-CSS-Blöcke | Gering |
@@ -538,7 +873,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 |---|---|---|
 | FastAPI | 0.141.1 | Web-Framework |
 | SQLAlchemy | (via requirements.txt) | ORM |
-| Alembic | 1.18.5 | DB-Migrationen (33 Versionen) |
+| Alembic | 1.18.5 | DB-Migrationen (34 Versionen) |
 | psycopg2-binary | 2.9.12 | PostgreSQL-Driver |
 | python-socketio | (via requirements.txt) | WebSocket |
 | bcrypt | 4.0.1 | Passwort-Hashing |
@@ -564,11 +899,13 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 
 ## 10. Abgeschlossene Epics
 
+Die Nummerierung ist die der Dokumentation und nicht identisch mit den „Epic-N“-Angaben in einzelnen Commit-Meldungen (dort steht „Epic 11“ für den Connection-Pool-Fix, „Epic 12/12b“ für die Auth-Härtung, „Epic 13“ für Mobile-Eingaben und Vitest, „Epic 14“ für das Produktions-Deployment). Die Git-Historie ist in dieser Umgebung nur ab 2026-08-06 verfügbar (flacher Klon); Epics 1–6 und 8 lassen sich daher nur über den Code belegen. Die Epics 9–16 sind im Repository als Sammel-Commits vom 2026-08-08 eingegangen, die genannten Abschlussdaten stammen aus der früheren Fassung dieses Dokuments. Epic 20 und höher folgen der Git-Historie (Merge-Commits und direkte Commits auf `master`).
+
 ### Epic 1: UI/UX-Überarbeitung — Design-System + Mobile-First ✅
 - **Abgeschlossen:** 05.08.2026
 - **Umfang:** Design-Token-System, 5 Basis-Komponenten, App-Shell mit Mobile Tab-Bar + Desktop Top-Bar, alle Views migriert
 - **Review:** UI-Polish-Review durchlaufen, 13 Findings behoben
-- **Details:** siehe [`.zoocode/todo.md`](../.zoocode/todo.md)
+- **Details:** die frühere Detailliste ist nicht mehr im Repository (`.zoocode/todo.md` beschreibt inzwischen die Docker-Produktion, Epic 22)
 
 ### Epic 2: Todo-Frontend + Household-Beitritt ✅
 - **Abgeschlossen:** 05.08.2026
@@ -675,6 +1012,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 - **Backend:** `ShoppingList` Model, `app/routers/shopping.py` (list_router + router), Socket-Events `shopping_list_created/updated/deleted`
 - **Migration:** `e8f4b2a6c9d3` (add_shopping_lists), `0f34ff355756` (add_ondelete_to_shopping_items_fks)
 - **Frontend:** ShoppingView.vue überarbeitet (Listen-Tabs, Gruppen-Toggle, Artikeldetails), `stores/shopping.ts` erweitert
+- **Hinweis:** Der Gruppen-Umschalter (Geschäft/Kategorie) ist seit Epic 19 nicht mehr in der Oberfläche; die i18n-Schlüssel `shopping.groupByStore`/`shopping.groupByCategory` sind nur noch in den Sprachdateien vorhanden
 - **i18n:** `shopping.lists`, `shopping.newList`, `shopping.groupByStore`, `shopping.groupByCategory`, `shopping.storePlaceholder`, `shopping.assignToMe` etc.
 
 ### Epic 11: Aufgaben 2.0 – Unified Tasks ✅
@@ -698,10 +1036,11 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 
 ### Epic 13: Kalender + Polls ✅
 - **Abgeschlossen:** 2026-08-07
-- **Umfang:** Event-Kalender (Wochenansicht + Liste), Event-CRUD, Ganztägige Events, Kategorien (arbeit, katzen, haushalt, freunde, geburtstage, essen, sonstiges), Abstimmungen (EventPoll) mit Vote + Entscheidung → Event-Erstellung
+- **Umfang:** Event-Kalender (Wochenansicht + Liste), Event-CRUD, Ganztägige Events, Abstimmungen (EventPoll) mit Vote + Entscheidung → Event-Erstellung
 - **Backend:** `Event`, `EventPoll`, `EventPollOption`, `EventPollVote` Models, `app/routers/events.py`, `app/routers/polls.py`
 - **Migration:** `4678310121c3` (add_events_table), `d155cbf3f424` (add_event_polls), `k5l6m7n8o9p0` (add_poll_type_and_recipe_id)
 - **Frontend:** CalendarView.vue (Wochen- und Listenansicht), `stores/calendar.ts`, `stores/polls.ts`, `repositories/calendarRepository.ts`, `repositories/pollsRepository.ts`, `utils/categoryColors.ts`
+- **Hinweis:** Die ursprünglichen festen Termin-Kategorien (arbeit, katzen, haushalt, …) gibt es nicht mehr; `Event` hat keine Kategorie, sondern gehört zu einem Kalender (Epic 20). `utils/categoryColors.ts` enthält nur noch die Standard-Farbpalette für neue Kalender.
 - **Tests:** `test_event_scoping.py`, `test_poll_scoping.py`
 - **i18n:** `calendar.*` Keys (25+ Keys), `polls.*` Keys (18+ Keys)
 - **Socket-Events:** `event_created/updated/deleted`, `poll_created/voted/decided/deleted`
@@ -738,7 +1077,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 - **Abgeschlossen:** 2026-08-08
 - **Umfang:**
   - Mobile Bottom-Nav vereinfacht auf 4 Tabs + "Mehr"-Sheet (Start, Kalender, Aufgaben, Einkauf, Mehr)
-  - MoreSheet-Komponente: Overlay-Bottom-Sheet mit 5 Einträgen (Finanzen, Katzen, Essen, Notizen, Einstellungen)
+  - MoreSheet-Komponente: Overlay-Bottom-Sheet mit 5 Einträgen (Finanzen, Katzen, Essen, Notizen, Einstellungen); inzwischen 6 Einträge, seit Epic 25 zusätzlich „Dokumente“
   - Desktop Top-Bar: 6 direkte Nav-Links (Start, Kalender, Einkauf, Aufgaben, Finanzen, Haushalt) — Putzplan-Link entfernt, stattdessen "Ämtli verwalten"-Link in der Aufgaben-View
   - Sync-Status-Indikator (grün/gelb/grau) in Bottom-Nav und Top-Bar
   - BaseAvatar-Komponente mit deterministic User→Farbe-Mapping
@@ -788,3 +1127,89 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
   - Vergleich läuft Python-seitig (`str.lower`) statt per SQL `lower()`, damit SQLite (Tests) und PostgreSQL (Prod) identisch arbeiten (SQLite kennt `lower()` nur für ASCII); keine Migration, keine neue Tabelle
   - Frontend: `utils/storeName.ts` (`normalizeStoreName`, `storesEqual`, `findCanonicalStore`) — Chip-Filter, Gruppierung, Edit-Sheet-Chips und Merge-Warnung vergleichen case-insensitive; `reassignStore` übernimmt `to_store` aus der Response
   - Tests: +14 Backend-Tests in `test_shopping_stores.py` (Normalisierung Create/Update, case-insensitive distinct, Reassign mit abweichender Schreibweise, Merge, Cross-Tenant), +6 Vitest-Tests in `utils/__tests__/storeName.test.ts`
+
+### Epic 20: Kalender-Verwaltung + Monatsansicht ✅
+- **Abgeschlossen:** 2026-08-10 (Monatsansicht 2026-08-12)
+- **Umfang:** Eigene Kalender (Name, Farbe, Position) ersetzen die festen Termin-Kategorien; Termine und Abstimmungen gehören zu einem Kalender. Monatsraster mit Tagesdetails und Avatar-Stapel neben Wochen- und Listenansicht
+- **Backend:** `Calendar` Model, `app/routers/calendars.py` (4 Endpoints), Anpassungen in `events.py`, `polls.py`, `dashboard.py`; Socket-Events `calendar_created/updated/deleted`
+- **Migration:** `p1q2r3s4t5u6` (add_calendars_replace_category)
+- **Frontend:** Kalender-Verwaltung und Monatsraster in `CalendarView.vue`, `components/CalendarMonthGrid.vue`, `stores/calendar.ts`
+- **Tests:** `test_calendar_scoping.py`
+- **Reviews:** `docs/review-epic5-calendars.md`, `docs/security/epic5-calendars-review.md`, `docs/review-epic16-month-view.md`
+
+### Epic 21: Todo-Erinnerungen + Tierpflege-Aufgaben ✅
+- **Abgeschlossen:** 2026-08-10
+- **Umfang:** Bis zu 5 Erinnerungen pro Todo; wiederkehrende Pflegeaufgaben pro Haustier (Intervall in Tagen, nächste Fälligkeit, „Erledigt“)
+- **Backend:** `TodoReminder` und `PetCareTask` Models, Endpoints in `routers/todos.py` (2) und `routers/pets.py` (5), Socket-Events `pet_care_task_created/updated/deleted` (Erinnerungen laufen über `todo_updated`)
+- **Migration:** `n1o2p3q4r5s6` (add_pet_care_tasks), `o1p2q3r4s5t6` (add_todo_reminders)
+- **Frontend:** `TodoList.vue` (Erinnerungen), `PetDetailView.vue` (Pflegeaufgaben), `stores/todos.ts`, `stores/pets.ts`, Repositories
+- **Tests:** `test_todo_reminders.py`, `test_pet_care_scoping.py`
+- **Reviews:** `docs/review-todo-reminders.md`, `docs/security/todo-reminders-review.md`
+- **Benachrichtigung:** Zustellung per Web Push, siehe Epic 24
+
+### Epic 22: Docker-Deployment ✅
+- **Abgeschlossen:** Entwicklungs-Setup 2026-08-08; Produktion hinter Nginx Proxy Manager 2026-08-25 (PR #3)
+- **Umfang:** Multi-Stage-Images und Compose-Orchestrierung (Postgres, Backend, Frontend/Nginx), Windows-Server-Anleitung, Produktions-Compose ohne veröffentlichte Ports mit Healthchecks, `FRONTEND_PORT`, Non-root-Backend, Health-Endpoint mit DB-Check, Backup-/Restore-Skripte, `API_BASE` für same-origin-Betrieb
+- **Dateien:** `docker-compose.yml`, `docker-compose.prod.yml`, `.env.example`, `.env.prod.example`, `backend/Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf`, `scripts/backup-db.ps1`, `scripts/restore-db.ps1`
+- **Tests:** `test_rate_limit_proxy.py`
+- **Doku:** `docs/deployment.md`, `docs/DEPLOYMENT-WINDOWS-SERVER.md`, `.zoocode/todo.md`
+- **Migrations-Fixes:** Postgres-Enum-Typen und `ondelete` in der Notizen-Migration (Commits 2026-08-08)
+
+### Epic 23: Auth-Lebenszyklus (Refresh-Tokens) ✅
+- **Abgeschlossen:** 2026-08-25 (PR #1 und #2)
+- **Umfang:** Kurzlebiger Access-Token (15 Min.) plus rotierender Refresh-Token (30 Tage) mit Reuse-Erkennung und Kulanzfenster, Session-Persistenz im Frontend (`tokenStorage`), automatischer Refresh bei 401, Logout widerruft den Token, Rate-Limits und Transport-Robustheit
+- **Backend:** `RefreshToken` Model, `POST /api/auth/refresh`, `POST /api/auth/logout`
+- **Migration:** `r1s2t3u4v5w6` (add_refresh_tokens)
+- **Frontend:** `services/tokenStorage.ts`, `api/client.ts` (Refresh-Interceptor), `stores/auth.ts`
+- **Tests:** `test_auth_refresh.py`
+- **Review:** `docs/security/epic12-auth-lifecycle-review.md`
+
+### Epic 24: PWA + Web Push ✅
+- **Abgeschlossen:** 2026-09-29 (PR #5)
+- **Umfang:** Installierbare PWA (Manifest, Icons, Service Worker mit Hinweis auf neue Version); Web Push für Todo-Erinnerungen und Tierpflege-Aufgaben mit Scheduler im Backend, Geräte-Verwaltung in den Haushalt-Einstellungen
+- **Backend:** `PushSubscription` Model, `routers/push.py` (4 Endpoints), `services/push_service.py`, `scripts/generate_vapid_keys.py`
+- **Migration:** `s1t2u3v4w5x6` (add_push_subscriptions)
+- **Frontend:** `pwa.ts`, `public/push-sw.js`, `services/pushService.ts`, `components/PushSettings.vue`, `repositories/pushRepository.ts`
+- **Tests:** `test_push.py`
+- **Offen:** Push für Chores und Ablaufdaten von Dokumenten (siehe Abschnitt 7)
+
+### Epic 25: Dokument-Ablage ✅
+- **Abgeschlossen:** 2026-10-06 (PR #7)
+- **Umfang:** Verträge, Rechnungen und Garantien ablegen: Kategorien, Dokumentdatum, Ablaufdatum, Suche, mehrseitige Dokumente (bis 30 Dateien, Seiten umsortieren), Vorschau, Speicher-Limit pro Haushalt; schliesst die Upload-Befunde F-02 bis F-04
+- **Backend:** `Document` und `DocumentFile` Models, `routers/documents.py` (10 Endpoints), `services/file_cleanup.py` (periodisches Aufräumen verwaister Uploads), Socket-Events `document_created/updated/deleted`
+- **Migration:** `t1u2v3w4x5y6` (add_documents_module)
+- **Frontend:** `DocumentsView.vue`, `stores/documents.ts`, `repositories/documentsRepository.ts`, `utils/documents.ts`; Eintrag „Dokumente“ im MoreSheet
+- **Tests:** `test_documents.py`, `test_file_references.py`, `utils/__tests__/documents.test.ts`
+
+### Epic 26: CI und Qualitätssicherung ✅
+- **Abgeschlossen:** 2026-10-06 (PR #6, #15, #17, #19)
+- **Umfang:** GitHub-Actions-Pipeline mit den Jobs `backend` (ruff, pytest mit Coverage), `frontend` (Locale-Check, Typecheck, Vitest mit Coverage) und `dependency-audit` (pip-audit, npm audit); Status-Badge in der README; Unit-Tests für Utils und die Stores Auth, Einkauf, Todos, Ämtli und Ausgaben; Store-Korrekturen (Geschäfts-Filter folgt dem Umbenennen, Rollback beim Löschen eines Ämtlis)
+- **Dateien:** `.github/workflows/ci.yml`, `backend/pyproject.toml`, `frontend/vitest.config.ts`, `frontend/src/**/__tests__/`
+- **Doku:** README und `docs/PROJECT-STATUS.md` neu geschrieben (PR #16, #19)
+
+### Epic 27: Sicherheits- und Betriebs-Härtung ✅
+- **Abgeschlossen:** 2026-10-06 (PR #8, #13, #14)
+- **Umfang:** Rate-Limit-Umgehung per gefälschtem `X-Forwarded-For` behoben; HTTP-Security-Header und CSP, engeres CORS, Rate-Limits für Refresh/Logout/Beitritt; Pflicht-Secrets und lokal gebundene Ports in den Compose-Dateien; Backup inkl. Uploads; Abhängigkeits-Updates gegen bekannte Schwachstellen (u. a. Pillow 12, cryptography 50, PyJWT 2.15)
+- **Dateien:** `backend/app/core/rate_limit.py`, `backend/app/core/security_headers.py`, `frontend/nginx/security-headers.conf`, `scripts/backup-db.ps1`
+- **Tests:** `test_security_hardening.py`, `test_rate_limit_proxy.py`, `test_startup_config.py`
+- **Review:** `docs/security/hardening-review.md`
+
+### Epic 28: Datenkorrektheit, DB-Integrität, Mitglieder-Lebenszyklus ✅
+- **Abgeschlossen:** 2026-10-06 (PR #9, #10, #11)
+- **Umfang:** Ämtli-Rotation springt beim Umbenennen nicht mehr; Kalender-Uhrzeiten in der Haushalts-Zeitzone (inkl. Migration bestehender Termine); doppelte Teilnehmer bei Ausgaben abgelehnt; Ausgleich mit Ex-Mitgliedern; Standard-Zahler bei wiederkehrenden Rechnungen; Löschregeln (`ondelete`), eine Stimme pro Person und Abstimmung, eine Buchung pro Rechnung und Monat, `household_id`-Indizes; entfernte Mitglieder verlassen den Echtzeit-Raum, Einladungscode wird beim Entfernen erneuert (`POST …/invite-code/rotate`), Dateien werden beim Auflösen eines Haushalts entfernt
+- **Migration:** `u1v2w3x4y5z6` (event_times_and_bill_payer), `v1w2x3y4z5a6` (integrity_constraints)
+- **Services:** `event_times.py`, `household_checks.py`, `file_cleanup.py`
+- **Tests:** `test_event_times.py`, `test_finance_correctness.py`, `test_db_integrity.py`, `test_member_lifecycle.py`
+
+### Epic 29: Offline-first Meilenstein M0 ✅
+- **Abgeschlossen:** 2026-10-06 (PR #12)
+- **Umfang:** Konzeptdokument `docs/offline-first-phase2.md`; vom Client erzeugte IDs mit idempotentem Anlegen (Einkauf, Todos, Putzplan-Zuweisungen), `updated_at`/`version` auf vier Tabellen, Clients verwerfen veraltete Socket-Events. Weitere Meilensteine (IndexedDB, Warteschlange) sind offen
+- **Migration:** `w1x2y3z4a5b6` (add_sync_version_fields)
+- **Backend:** `SyncVersionMixin`, `services/client_ids.py`
+- **Frontend:** `utils/syncVersion.ts`, versionierte Merges in den Stores
+- **Tests:** `test_offline_sync.py`, `stores/__tests__/syncRaces.test.ts`, `utils/__tests__/syncVersion.test.ts`
+
+### Epic 30: Stabilisierung August 2026 ✅
+- **Abgeschlossen:** 2026-08-10 bis 2026-08-12 (direkte Commits)
+- **Umfang:** Datenintegrität (Backup, Aufräumen von Dateien, Pfad-Prüfung), Connection-Pool und Event-Loop-Blocking behoben, Zahleneingaben ohne `type=number` (Text mit `inputmode`), Gewicht in kg mit robustem Parsing, Nginx-Upload-Limit, Vitest-Einführung mit Tests für `parseAmountToRappen`
+- **Tests:** `test_pool_contention.py`, `utils/__tests__/money.test.ts`

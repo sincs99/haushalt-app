@@ -30,13 +30,21 @@ def get_access_token_expires_in() -> int:
 
 
 def decode_access_token(token: str) -> str:
+    return decode_access_token_with_expiry(token)[0]  # user_id
+
+
+def decode_access_token_with_expiry(token: str) -> tuple[str, float]:
+    """Wie decode_access_token, liefert zusätzlich den Ablauf (Unix-Zeit in Sekunden).
+
+    Für Socket-Verbindungen, die länger leben als ein einzelnes Access-Token.
+    """
     payload = jwt.decode(
         token,
         settings.jwt_secret_key,
         algorithms=[ALGORITHM],
         options={"require": ["exp", "sub"]},
     )
-    return payload["sub"]  # user_id
+    return payload["sub"], float(payload["exp"])
 
 
 # ---------------------------------------------------------------------------

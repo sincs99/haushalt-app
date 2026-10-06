@@ -123,6 +123,8 @@ Erstelle in Nginx Proxy Manager einen neuen **Proxy Host** für die Casa-Domain:
 
 > ℹ️ `casa-frontend` ist der `container_name` aus `docker-compose.prod.yml`. NPM löst diesen Namen über das gemeinsame Docker-Netzwerk auf.
 
+**Refresh-Token-Cookie:** Die Anmeldung setzt einen HttpOnly-Cookie `casa_rt` (`Secure`, `SameSite=Strict`, Path `/api/auth`). NPM reicht `Set-Cookie` standardmässig durch — in der „Advanced“-Konfiguration des Proxy Hosts nichts eintragen, das Cookies filtert oder umschreibt (`proxy_hide_header Set-Cookie`, `proxy_cookie_path`, `proxy_cookie_domain`). Weil der Cookie `Secure` ist, muss die App über HTTPS laufen (`ENVIRONMENT=production` in `.env.prod`); für einen reinen HTTP-Test `AUTH_COOKIE_SECURE=false` setzen. Empfohlen: im SSL-Tab zusätzlich **HSTS enabled**.
+
 ### Architektur-Überblick
 
 ```

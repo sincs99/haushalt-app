@@ -2,7 +2,7 @@
 
 **Datum:** 2026-10-05
 **Reviewer:** Security-Review Agent
-**Status:** ✅ Umgesetzt (Header, CORS, Rate-Limits, Upload-Formate, CI-Audit) — ⚠️ offen: Token-Storage (Vorschlag), Dependency-Updates
+**Status:** ✅ Umgesetzt (Header, CORS, Rate-Limits, Upload-Formate, CI-Audit) — ⚠️ offen: Token-Storage (Vorschlag). Dependency-Updates (H-10) sind seit #14 eingespielt, H-11 seit #8 behoben (Stand 2026-10-06)
 **Branch:** `claude/security-hardening`
 **Scope:** Auth-Token-Lifecycle, HTTP-Security-Header + CORS, Rate-Limiting, Dependency-Audit
 
@@ -42,8 +42,8 @@
 | H-07 | 🟢 Gering | JWT-Validierung erzwingt `exp`/`sub` nicht explizit | ✅ Behoben |
 | H-08 | 🟡 Mittel | Pillow dekodiert jedes bekannte Format, obwohl nur JPEG/PNG/WEBP erlaubt sind (MIME kommt vom Client) | ✅ Behoben |
 | H-09 | 🟢 Gering | `GET /recurring-bills` ohne Trailing-Slash → 307 auf absolute `http://`-URL (Mixed Content / CSP-Block) | ✅ Behoben |
-| H-10 | 🟡 Mittel | Dependencies mit bekannten Advisories (Pillow, PyJWT, urllib3, cryptography, axios, …) | 📝 Dokumentiert, CI-Audit-Job |
-| H-11 | 🟢 Gering | nginx überschreibt `X-Forwarded-Proto` mit `$scheme` (= `http` hinter NPM) | 📝 Offen |
+| H-10 | 🟡 Mittel | Dependencies mit bekannten Advisories (Pillow, PyJWT, urllib3, cryptography, axios, …) | ✅ Behoben mit #14 (Updates), CI-Audit-Job aktiv |
+| H-11 | 🟢 Gering | nginx überschreibt `X-Forwarded-Proto` mit `$scheme` (= `http` hinter NPM) | ✅ Behoben mit #8 |
 | H-12 | 🟢 Gering | Invite-Codes laufen nie ab / nicht rotierbar | 📝 Offen |
 | H-13 | ℹ️ Info | Rate-Limits nur per IP, In-Memory-Storage (Reset bei Neustart) | Akzeptiert (1 Worker) |
 | H-14 | ℹ️ Info | Upload-Endpoint weiterhin ohne Rate-Limit (vgl. Epic 8 F-06) | 📝 Offen |
@@ -148,7 +148,9 @@ object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 
 Der CSP-Test fand genau einen Verstoss: `GET /api/households/{id}/recurring-bills` (ohne Slash) → FastAPI-307 auf `http://<host>/…/recurring-bills/`. Hinter NPM wäre das von einer HTTPS-Seite aus Mixed Content (also schon vorher kaputt bzw. vom Browser blockiert), mit CSP wird es zusätzlich geblockt. Fix: `financeRepository.ts` ruft `…/recurring-bills/` direkt auf (GET + POST). Alle anderen Repositories nutzen bereits den kanonischen Pfad (Backend-Log zeigte keine weiteren 307).
 
-### H-11 — `X-Forwarded-Proto` (📝 Offen)
+### H-11 — `X-Forwarded-Proto` (✅ Behoben mit #8)
+
+**Nachtrag 2026-10-06:** `frontend/nginx.conf` reicht den Header seit #8 über `map $http_x_forwarded_proto $forwarded_proto` (Fallback `$scheme`) durch. Der folgende Text beschreibt den Zustand vor #8.
 
 `nginx.conf` setzt `X-Forwarded-Proto $scheme`; hinter NPM ist das `http`. uvicorn (`--proxy-headers`) hält die Requests daher für HTTP und erzeugt `http://`-Redirect-URLs (Ursache von H-09). Empfehlung: in `location /api/` und `/socket.io/` den Header von NPM durchreichen (`map $http_x_forwarded_proto $fwd_proto { default $http_x_forwarded_proto; "" $scheme; }`) — nicht in diesem Branch geändert, weil es das Deployment-Setup betrifft und lokal nicht verifizierbar ist.
 
@@ -191,7 +193,7 @@ Die Limits von `refresh` sind so gewählt, dass mehrere Geräte hinter einem NAT
 
 ## 4. Dependency-Audit
 
-Neuer CI-Job `dependency-audit` in `.github/workflows/ci.yml`: eigener Job ohne `needs`, blockiert `backend`/`frontend` nicht. Beide Audits laufen immer (`continue-on-error`), ein abschliessender Schritt macht den Job rot, wenn einer Befunde hat. **Der Job ist mit dem heutigen Stand rot** (Befunde unten) — er sollte nicht als Required Check konfiguriert werden, bis H-10 abgearbeitet ist.
+Neuer CI-Job `dependency-audit` in `.github/workflows/ci.yml`: eigener Job ohne `needs`, blockiert `backend`/`frontend` nicht. Beide Audits laufen immer (`continue-on-error`), ein abschliessender Schritt macht den Job rot, wenn einer Befunde hat. Zum Zeitpunkt dieses Reviews war der Job rot (Befunde unten). **Nachtrag 2026-10-06:** Nach den Updates aus #14 meldet er keine Befunde mehr und läuft grün; ob er als Required Check konfiguriert wird, ist eine GitHub-Einstellung des Repositorys.
 
 ### H-10 — Befunde (Stand 2026-10-05, nicht blind aktualisiert)
 
@@ -232,8 +234,8 @@ Neuer CI-Job `dependency-audit` in `.github/workflows/ci.yml`: eigener Job ohne 
 Die Auth-Architektur (kurzlebige JWTs, gehashte opake Refresh-Tokens, Rotation mit Reuse-Detection) ist solide und war bereits umgesetzt. Die grössten Lücken lagen in fehlenden HTTP-Security-Headern und einem ungeschützten Join-Endpoint — beides ist behoben, und die strikte CSP verringert das Hauptrisiko des localStorage-Token-Storage erheblich.
 
 **Als Nächstes empfohlen (Reihenfolge):**
-1. **Pillow → 12.3.0, PyJWT → 2.15.0, axios → ≥ 1.20.0**, urllib3 → 2.8.0; `npm audit fix` für transitive Dev-Pakete. Danach `dependency-audit` als Required Check.
+1. ✅ **Umgesetzt mit #14:** Pillow 12.3.0, PyJWT 2.15.0, urllib3 2.8.0, Werkzeug 3.1.9, multidict 6.9.1, cryptography 50.0.0 sowie `npm audit fix` (axios 1.20.0 u. a.). Offen: `dependency-audit` als Required Check einstellen.
 2. **H-01:** HttpOnly-Refresh-Cookie gemäss Vorschlag oben (2 Releases).
-3. **H-11:** `X-Forwarded-Proto` von NPM durchreichen; HSTS in NPM aktivieren.
+3. ✅ **H-11** durch #8 behoben. Offen: HSTS in NPM aktivieren.
 4. **H-12/H-14:** Invite-Code-Rotation, Upload-Rate-Limit/Quota.
 5. CSP-Monitoring: optional `report-to`-Endpoint, um Violations aus dem Feld zu sehen.

@@ -295,7 +295,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
 
           <div class="plant-card__actions">
             <button
-              class="plant-card__delete"
+              class="plant-card__delete tap-target"
               @click.stop="deletingPlantId = plant.id"
               :aria-label="$t('common.delete')"
             >

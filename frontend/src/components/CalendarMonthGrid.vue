@@ -259,13 +259,13 @@ function handleDayClick(day: GridDay) {
   <div class="month-grid">
     <!-- Navigation Header -->
     <div class="month-grid__header">
-      <button class="month-grid__arrow" @click="handleNavigate(-1)" :aria-label="t('calendar.prevMonth')">
+      <button class="month-grid__arrow tap-target" @click="handleNavigate(-1)" :aria-label="t('calendar.prevMonth')">
         <PhCaretLeft :size="20" />
       </button>
-      <button class="month-grid__title" @click="handleGoToday">
+      <button class="month-grid__title tap-target" @click="handleGoToday">
         {{ monthTitle }}
       </button>
-      <button class="month-grid__arrow" @click="handleNavigate(1)" :aria-label="t('calendar.nextMonth')">
+      <button class="month-grid__arrow tap-target" @click="handleNavigate(1)" :aria-label="t('calendar.nextMonth')">
         <PhCaretRight :size="20" />
       </button>
     </div>
@@ -374,7 +374,7 @@ function handleDayClick(day: GridDay) {
       </div>
 
       <!-- + Termin Button -->
-      <button class="month-grid__add-btn" @click="emit('create-event', expandedDay!)">
+      <button class="month-grid__add-btn tap-target" @click="emit('create-event', expandedDay!)">
         <PhPlus :size="16" />
         {{ t('calendar.newEvent') }}
       </button>

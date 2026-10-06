@@ -396,13 +396,13 @@ function formatReminderDate(isoString: string): string {
 
       <!-- Quick Actions -->
       <div class="quick-actions">
-        <router-link to="/shopping?new=1" class="quick-chip">
+        <router-link to="/shopping?new=1" class="quick-chip tap-target">
           <PhShoppingBagOpen :size="16" /> {{ t('dashboard.quickShopping') }}
         </router-link>
-        <router-link to="/todos?new=1" class="quick-chip">
+        <router-link to="/todos?new=1" class="quick-chip tap-target">
           <PhListChecks :size="16" /> {{ t('dashboard.quickTask') }}
         </router-link>
-        <router-link to="/expenses?new=1" class="quick-chip">
+        <router-link to="/expenses?new=1" class="quick-chip tap-target">
           <PhWallet :size="16" /> {{ t('dashboard.quickExpense') }}
         </router-link>
       </div>

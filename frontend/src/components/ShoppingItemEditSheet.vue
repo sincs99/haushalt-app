@@ -146,10 +146,10 @@ function handleSubmit() {
 
       <!-- Actions -->
       <div class="edit-actions">
-        <button type="button" class="btn-secondary" @click="emit('close')">
+        <button type="button" class="btn-secondary tap-target" @click="emit('close')">
           {{ t('common.cancel') }}
         </button>
-        <button type="submit" class="btn-primary" :disabled="!canSave">
+        <button type="submit" class="btn-primary tap-target" :disabled="!canSave">
           {{ t('common.save') }}
         </button>
       </div>

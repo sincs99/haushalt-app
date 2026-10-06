@@ -693,7 +693,7 @@ watch(
   <div class="calendar-view">
     <PageHeader :title="t('calendar.title')">
       <template #actions>
-        <button class="manage-btn" @click="manageDialogOpen = true" :aria-label="t('calendars.manage')">
+        <button class="manage-btn tap-target" @click="manageDialogOpen = true" :aria-label="t('calendars.manage')">
           <PhGear :size="20" />
         </button>
       </template>
@@ -713,7 +713,7 @@ watch(
       <button
         v-for="cal in store.calendars"
         :key="cal.id"
-        class="filter-chip"
+        class="filter-chip tap-target"
         :class="{ 'filter-chip--active': activeCalendarIds.includes(cal.id) }"
         :style="activeCalendarIds.includes(cal.id)
           ? { background: cal.color, color: '#fff', borderColor: cal.color }
@@ -727,11 +727,11 @@ watch(
     <!-- Week Strip (nur im Woche-Modus) -->
     <div v-if="activeTab === 'week'" class="week-nav">
       <div class="week-nav__header">
-        <button class="week-nav__arrow" @click="store.navigateWeek(-1)" :aria-label="t('common.back')">
+        <button class="week-nav__arrow tap-target" @click="store.navigateWeek(-1)" :aria-label="t('common.back')">
           <PhCaretLeft :size="20" />
         </button>
         <span class="week-nav__label">{{ weekLabel }}</span>
-        <button class="week-nav__arrow" @click="store.navigateWeek(1)" aria-label="Next week">
+        <button class="week-nav__arrow tap-target" @click="store.navigateWeek(1)" aria-label="Next week">
           <PhCaretRight :size="20" />
         </button>
       </div>
@@ -785,7 +785,7 @@ watch(
           <button
             v-for="option in poll.options"
             :key="option.id"
-            class="poll-option"
+            class="poll-option tap-target"
             :class="{ 'poll-option--selected': isMyVote(poll, option.id) }"
             @click="handleVote(poll.id, option.id)"
           >
@@ -1020,7 +1020,7 @@ watch(
               v-for="cal in store.calendars"
               :key="cal.id"
               type="button"
-              class="category-chip"
+              class="category-chip tap-target"
               :class="{ 'category-chip--active': formCalendarId === cal.id }"
               @click="formCalendarId = cal.id"
             >
@@ -1043,7 +1043,7 @@ watch(
               v-for="member in store.members"
               :key="member.id"
               type="button"
-              class="participant-chip"
+              class="participant-chip tap-target"
               :class="{ 'participant-chip--active': formParticipants.includes(member.id) }"
               @click="toggleParticipant(member.id)"
             >
@@ -1118,7 +1118,7 @@ watch(
               v-for="option in decidingPoll.options"
               :key="option.id"
               type="button"
-              class="poll-option"
+              class="poll-option tap-target"
               :class="{ 'poll-option--selected': decideOptionId === option.id }"
               @click="decideOptionId = option.id"
             >
@@ -1138,7 +1138,7 @@ watch(
               v-for="cal in store.calendars"
               :key="cal.id"
               type="button"
-              class="category-chip"
+              class="category-chip tap-target"
               :class="{ 'category-chip--active': decideCalendarId === cal.id }"
               @click="decideCalendarId = cal.id"
             >
@@ -1180,7 +1180,7 @@ watch(
             class="calendar-name-input"
             maxlength="50"
           />
-          <button @click="handleDeleteCalendar(cal.id)" class="delete-btn" :aria-label="t('calendars.delete')">
+          <button @click="handleDeleteCalendar(cal.id)" class="delete-btn tap-target" :aria-label="t('calendars.delete')">
             <PhTrash :size="16" />
           </button>
         </div>

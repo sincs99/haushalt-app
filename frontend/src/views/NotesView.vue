@@ -156,7 +156,7 @@ onUnmounted(() => {
       />
       <button
         type="submit"
-        class="quick-add__btn"
+        class="quick-add__btn tap-target"
         :disabled="!quickAddTitle.trim()"
         :aria-label="$t('common.add')"
       >
@@ -194,7 +194,7 @@ onUnmounted(() => {
             <div class="note-card__top">
               <span class="note-card__title">{{ note.title }}</span>
               <button
-                class="pin-btn pin-btn--active"
+                class="pin-btn pin-btn--active tap-target"
                 @click="handleTogglePin(note.id, $event)"
                 :aria-label="$t('notes.pinLabel')"
               >
@@ -220,7 +220,7 @@ onUnmounted(() => {
             <div class="note-card__top">
               <span class="note-card__title">{{ note.title }}</span>
               <button
-                class="pin-btn"
+                class="pin-btn tap-target"
                 @click="handleTogglePin(note.id, $event)"
                 :aria-label="$t('notes.pinLabel')"
               >

@@ -624,7 +624,7 @@ async function handleDeleteCareTask() {
             <PhCat v-else :size="48" class="pet-photo__placeholder-icon" />
           </div>
           <button
-            class="pet-photo__camera-btn"
+            class="pet-photo__camera-btn tap-target"
             @click="fileInputRef?.click()"
             :disabled="photoUploading"
             :aria-label="$t('pets.photoUploading')"
@@ -646,14 +646,14 @@ async function handleDeleteCareTask() {
 
       <!-- ═══ Header ═══ -->
       <div class="detail-header">
-        <button class="back-btn" @click="router.back()" :aria-label="$t('common.back')">
+        <button class="back-btn tap-target" @click="router.back()" :aria-label="$t('common.back')">
           <PhArrowLeft :size="22" weight="bold" />
         </button>
         <div class="detail-header__info">
           <span class="detail-header__emoji">{{ speciesEmoji(pet.species) }}</span>
           <h1 class="detail-header__name">{{ pet.name }}</h1>
         </div>
-        <button class="edit-btn" @click="openEditPetDialog" :aria-label="$t('common.edit')">
+        <button class="edit-btn tap-target" @click="openEditPetDialog" :aria-label="$t('common.edit')">
           <PhPencilSimple :size="20" weight="bold" />
         </button>
       </div>
@@ -675,7 +675,7 @@ async function handleDeleteCareTask() {
                 </span>
               </div>
               <button
-                class="feed-toggle"
+                class="feed-toggle tap-target"
                 :class="{ 'feed-toggle--fed': isFed('morning') }"
                 :title="$t('pets.morningShort')"
                 :aria-label="$t('pets.morning')"
@@ -696,7 +696,7 @@ async function handleDeleteCareTask() {
                 </span>
               </div>
               <button
-                class="feed-toggle"
+                class="feed-toggle tap-target"
                 :class="{ 'feed-toggle--fed': isFed('evening') }"
                 :title="$t('pets.eveningShort')"
                 :aria-label="$t('pets.evening')"
@@ -748,14 +748,14 @@ async function handleDeleteCareTask() {
                 </div>
                 <div class="med-item__actions">
                   <button
-                    class="med-action-btn med-action-btn--edit"
+                    class="med-action-btn med-action-btn--edit tap-target"
                     @click="openEditMedDialog(med)"
                     :aria-label="$t('common.edit')"
                   >
                     <PhPencilSimple :size="16" />
                   </button>
                   <button
-                    class="med-action-btn med-action-btn--delete"
+                    class="med-action-btn med-action-btn--delete tap-target"
                     @click="confirmDeleteMed(med.id)"
                     :aria-label="$t('common.delete')"
                   >
@@ -817,14 +817,14 @@ async function handleDeleteCareTask() {
                   </div>
                   <div class="med-item__actions">
                     <button
-                      class="med-action-btn med-action-btn--edit"
+                      class="med-action-btn med-action-btn--edit tap-target"
                       @click="openEditMedDialog(med)"
                       :aria-label="$t('common.edit')"
                     >
                       <PhPencilSimple :size="16" />
                     </button>
                     <button
-                      class="med-action-btn med-action-btn--delete"
+                      class="med-action-btn med-action-btn--delete tap-target"
                       @click="confirmDeleteMed(med.id)"
                       :aria-label="$t('common.delete')"
                     >
@@ -853,7 +853,7 @@ async function handleDeleteCareTask() {
       <section class="section">
         <div class="section-header">
           <h3 class="section-title">{{ $t('petCare.title') }}</h3>
-          <button class="icon-btn" @click="openAddCareTaskDialog" :aria-label="$t('petCare.addTask')">
+          <button class="icon-btn tap-target" @click="openAddCareTaskDialog" :aria-label="$t('petCare.addTask')">
             <PhPlus :size="20" weight="bold" />
           </button>
         </div>
@@ -889,7 +889,7 @@ async function handleDeleteCareTask() {
                 {{ $t('petCare.complete') }}
               </BaseButton>
               <button
-                class="icon-btn icon-btn--danger"
+                class="icon-btn icon-btn--danger tap-target"
                 @click="confirmDeleteCareTask(task.id)"
                 :aria-label="$t('common.delete')"
               >
@@ -1182,7 +1182,7 @@ async function handleDeleteCareTask() {
             </div>
             <button
               type="button"
-              class="health-editor__delete"
+              class="health-editor__delete tap-target"
               @click="removeHealthEntry(i)"
               :aria-label="$t('common.delete')"
             >
@@ -1191,7 +1191,7 @@ async function handleDeleteCareTask() {
           </div>
           <button
             type="button"
-            class="health-editor__add"
+            class="health-editor__add tap-target"
             @click="addHealthEntry"
           >
             <PhPlus :size="14" weight="bold" />

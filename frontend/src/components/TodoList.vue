@@ -235,7 +235,7 @@ async function saveEdit(todoId: string) {
       />
       <button
         type="submit"
-        class="quick-add__btn"
+        class="quick-add__btn tap-target"
         :disabled="!newTodoTitle.trim()"
         :aria-label="$t('common.add')"
       >
@@ -244,7 +244,7 @@ async function saveEdit(todoId: string) {
     </form>
 
     <!-- Details Toggle -->
-    <button type="button" class="details-toggle" @click="showAddDetails = !showAddDetails">
+    <button type="button" class="details-toggle tap-target" @click="showAddDetails = !showAddDetails">
       {{ showAddDetails ? '▾ ' + $t('todos.detailsHide') : '▸ ' + $t('todos.detailsShow') }}
     </button>
 
@@ -277,14 +277,14 @@ async function saveEdit(todoId: string) {
             type="datetime-local"
             class="add-details__input reminder-row__input"
           />
-          <button type="button" class="action-btn action-btn--danger" @click="newReminders.splice(idx, 1)">
+          <button type="button" class="action-btn action-btn--danger tap-target" @click="newReminders.splice(idx, 1)">
             <PhX :size="14" />
           </button>
         </div>
         <button
           v-if="newReminders.length < 5"
           type="button"
-          class="reminder-add-btn"
+          class="reminder-add-btn tap-target"
           @click="newReminders.push('')"
         >
           + {{ $t('todos.addReminder') }}
@@ -341,8 +341,8 @@ async function saveEdit(todoId: string) {
             </div>
           </div>
           <div class="todo-row__actions">
-            <button class="action-btn" @click="startEdit(todo)" :title="$t('common.edit')" :aria-label="$t('common.edit')"><PhPencilSimple :size="16" /></button>
-            <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><PhX :size="16" /></button>
+            <button class="action-btn tap-target" @click="startEdit(todo)" :title="$t('common.edit')" :aria-label="$t('common.edit')"><PhPencilSimple :size="16" /></button>
+            <button class="action-btn action-btn--danger tap-target" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><PhX :size="16" /></button>
           </div>
         </template>
 
@@ -363,7 +363,7 @@ async function saveEdit(todoId: string) {
               <label class="reminder-section__label">{{ $t('todos.reminders') }}</label>
               <div v-for="rem in todo.reminders" :key="rem.id" class="reminder-row">
                 <span class="reminder-row__text">{{ formatReminderDate(rem.remind_at) }}</span>
-                <button type="button" class="action-btn action-btn--danger" @click="handleDeleteReminder(todo.id, rem.id)">
+                <button type="button" class="action-btn action-btn--danger tap-target" @click="handleDeleteReminder(todo.id, rem.id)">
                   <PhX :size="14" />
                 </button>
               </div>
@@ -374,14 +374,14 @@ async function saveEdit(todoId: string) {
                   type="datetime-local"
                   class="add-details__input reminder-row__input"
                 />
-                <button type="button" class="action-btn action-btn--danger" @click="editNewReminders.splice(idx, 1)">
+                <button type="button" class="action-btn action-btn--danger tap-target" @click="editNewReminders.splice(idx, 1)">
                   <PhX :size="14" />
                 </button>
               </div>
               <button
                 v-if="(todo.reminders.length + editNewReminders.length) < 5"
                 type="button"
-                class="reminder-add-btn"
+                class="reminder-add-btn tap-target"
                 @click="editNewReminders.push('')"
               >
                 + {{ $t('todos.addReminder') }}
@@ -433,7 +433,7 @@ async function saveEdit(todoId: string) {
               </div>
             </div>
           </div>
-          <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><PhX :size="16" /></button>
+          <button class="action-btn action-btn--danger tap-target" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><PhX :size="16" /></button>
         </li>
       </ul>
     </div>

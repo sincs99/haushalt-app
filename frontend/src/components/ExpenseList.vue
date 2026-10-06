@@ -131,7 +131,7 @@ async function handleDelete(expenseId: string) {
         </div>
         <div class="expense-row__actions">
           <button
-            class="action-btn action-btn--danger"
+            class="action-btn action-btn--danger tap-target"
             @click.stop="handleDelete(expense.id)"
             :title="$t('common.delete')"
             :aria-label="$t('common.delete')"

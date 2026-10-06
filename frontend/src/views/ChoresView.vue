@@ -409,7 +409,7 @@ const weekdayOptions = computed(() =>
                   size="sm"
                 />
                 <button
-                  class="action-btn"
+                  class="action-btn tap-target"
                   :title="$t('chores.reassignTo')"
                   :aria-label="$t('chores.reassignTo')"
                   @click="openReassignDialog(assignment.id)"
@@ -422,7 +422,7 @@ const weekdayOptions = computed(() =>
               <div v-if="reassignDialogId === assignment.id" class="reassign-dropdown">
                 <div class="reassign-dropdown__header">
                   <span>{{ $t('chores.reassignTo') }}</span>
-                  <button class="action-btn" @click="closeReassignDialog"><PhX :size="16" /></button>
+                  <button class="action-btn tap-target" @click="closeReassignDialog"><PhX :size="16" /></button>
                 </div>
                 <button
                   v-for="member in choresStore.members"
@@ -527,14 +527,14 @@ const weekdayOptions = computed(() =>
                 <div class="rotation-item__actions">
                   <button
                     type="button"
-                    class="action-btn"
+                    class="action-btn tap-target"
                     :disabled="index === 0"
                     @click="moveUp(index)"
                     :aria-label="$t('chores.moveUp')"
                   >↑</button>
                   <button
                     type="button"
-                    class="action-btn"
+                    class="action-btn tap-target"
                     :disabled="index === formRotationOrder.length - 1"
                     @click="moveDown(index)"
                     :aria-label="$t('chores.moveDown')"
@@ -599,13 +599,13 @@ const weekdayOptions = computed(() =>
           </div>
           <div class="chore-card__actions">
             <button
-              class="action-btn"
+              class="action-btn tap-target"
               @click="openEditForm(chore)"
               :title="$t('common.edit')"
               :aria-label="$t('common.edit')"
             ><PhPencilSimple :size="16" /></button>
             <button
-              class="action-btn action-btn--danger"
+              class="action-btn action-btn--danger tap-target"
               @click="confirmDelete(chore.id)"
               :title="$t('common.delete')"
               :aria-label="$t('common.delete')"

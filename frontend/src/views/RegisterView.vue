@@ -61,14 +61,14 @@ async function handleRegister() {
       <!-- Tab-Umschalter -->
       <div class="register-tabs">
         <button
-          class="register-tab"
+          class="register-tab tap-target"
           :class="{ 'register-tab--active': mode === 'create' }"
           @click="mode = 'create'"
         >
           {{ $t('auth.tabCreate') }}
         </button>
         <button
-          class="register-tab"
+          class="register-tab tap-target"
           :class="{ 'register-tab--active': mode === 'join' }"
           @click="mode = 'join'"
         >

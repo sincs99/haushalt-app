@@ -344,7 +344,7 @@ watch(() => authStore.currentHouseholdId, () => {
           <h3 class="detail__heading">{{ $t('tags.qrTitle') }}</h3>
           <img class="qr" :src="detailQr" :alt="$t('tags.qrAlt', { label: detail.label })" width="220" height="220" />
           <p class="field__hint">{{ $t('tags.qrHint') }}</p>
-          <a class="link-btn" :href="detailQr" :download="qrFileName">
+          <a class="link-btn tap-target" :href="detailQr" :download="qrFileName">
             <PhDownloadSimple :size="16" /> {{ $t('tags.downloadQr') }}
           </a>
         </section>

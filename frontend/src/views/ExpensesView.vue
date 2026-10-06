@@ -286,7 +286,7 @@ onMounted(() => {
             {{ isOverspent ? $t('finance.overspent') : $t('finance.available') }}
           </span>
           <button
-            class="budget-card__amount"
+            class="budget-card__amount tap-target"
             :class="{ 'budget-card__amount--danger': isOverspent }"
             @click="startBudgetEdit"
             :title="$t('finance.editBudget')"
@@ -447,7 +447,7 @@ onMounted(() => {
             </div>
           </div>
           <button
-            class="action-btn action-btn--danger"
+            class="action-btn action-btn--danger tap-target"
             @click.stop="handleDeleteExpense(expense.id)"
             :title="$t('common.delete')"
             :aria-label="$t('common.delete')"
@@ -503,7 +503,7 @@ onMounted(() => {
             <span v-if="s.note" class="settlement-item__note">{{ s.note }}</span>
           </div>
           <button
-            class="action-btn action-btn--danger"
+            class="action-btn action-btn--danger tap-target"
             @click="handleDeleteSettlement(s.id)"
             :title="$t('common.delete')"
             :aria-label="$t('settlements.deleteConfirm')"

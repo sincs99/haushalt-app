@@ -273,7 +273,7 @@ async function handleSubmit() {
                 v-for="cat in categories"
                 :key="cat.key"
                 type="button"
-                class="category-chip"
+                class="category-chip tap-target"
                 :class="{ 'category-chip--active': selectedCategory === cat.key }"
                 @click="selectedCategory = selectedCategory === cat.key ? null : cat.key"
               >

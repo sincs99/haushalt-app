@@ -326,11 +326,11 @@ async function doCreateMealPoll() {
     <PageHeader :title="t('food.title')">
       <template #actions>
         <div class="week-nav">
-          <button class="week-nav__btn" @click="foodStore.navigateWeek(-1)" :aria-label="t('common.back')">
+          <button class="week-nav__btn tap-target" @click="foodStore.navigateWeek(-1)" :aria-label="t('common.back')">
             <PhCaretLeft :size="20" weight="bold" />
           </button>
           <span class="week-nav__label">{{ t('food.kwLabel', { week: currentWeekNumber }) }}</span>
-          <button class="week-nav__btn" @click="foodStore.navigateWeek(1)" aria-label="Next week">
+          <button class="week-nav__btn tap-target" @click="foodStore.navigateWeek(1)" aria-label="Next week">
             <PhCaretRight :size="20" weight="bold" />
           </button>
         </div>
@@ -382,7 +382,7 @@ async function doCreateMealPoll() {
             <!-- Favoriten-Stern -->
             <button
               v-if="getEntryForDate(date)?.recipe"
-              class="week-row__fav"
+              class="week-row__fav tap-target"
               :class="{ 'week-row__fav--active': getEntryForDate(date)?.recipe?.is_favorite }"
               @click.stop="toggleFavorite(getEntryForDate(date)!.recipe!.id, $event)"
               :aria-label="t('food.favorite')"
@@ -504,7 +504,7 @@ async function doCreateMealPoll() {
           </button>
         </div>
 
-        <button class="poll-form__add-btn" @click="addPollOption">
+        <button class="poll-form__add-btn tap-target" @click="addPollOption">
           <PhPlus :size="16" />
           {{ t('food.addOption') }}
         </button>

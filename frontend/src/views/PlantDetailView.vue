@@ -349,7 +349,7 @@ async function handleDeleteTask() {
             <PhPlant v-else :size="48" class="plant-photo__placeholder-icon" />
           </div>
           <button
-            class="plant-photo__camera-btn"
+            class="plant-photo__camera-btn tap-target"
             :disabled="photoUploading"
             :aria-label="$t('plants.photoUploading')"
             @click="fileInputRef?.click()"
@@ -371,7 +371,7 @@ async function handleDeleteTask() {
 
       <!-- ═══ Header ═══ -->
       <div class="detail-header">
-        <button class="back-btn" :aria-label="$t('common.back')" @click="router.back()">
+        <button class="back-btn tap-target" :aria-label="$t('common.back')" @click="router.back()">
           <PhArrowLeft :size="22" weight="bold" />
         </button>
         <div class="detail-header__info">
@@ -380,7 +380,7 @@ async function handleDeleteTask() {
             {{ [plant.species, plant.location].filter(Boolean).join(' · ') }}
           </span>
         </div>
-        <button class="edit-btn" :aria-label="$t('common.edit')" @click="openEditDialog">
+        <button class="edit-btn tap-target" :aria-label="$t('common.edit')" @click="openEditDialog">
           <PhPencilSimple :size="20" weight="bold" />
         </button>
       </div>
@@ -447,7 +447,7 @@ async function handleDeleteTask() {
                 {{ $t('plants.complete') }}
               </BaseButton>
               <button
-                class="icon-btn icon-btn--danger"
+                class="icon-btn icon-btn--danger tap-target"
                 :aria-label="$t('common.delete')"
                 @click="deletingTaskId = task.id"
               >
@@ -507,7 +507,7 @@ async function handleDeleteTask() {
               v-for="type in CARE_TYPES"
               :key="type"
               type="button"
-              class="type-chip"
+              class="type-chip tap-target"
               :class="{ 'type-chip--active': taskType === type }"
               @click="selectTaskType(type)"
             >

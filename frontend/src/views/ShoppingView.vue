@@ -107,7 +107,7 @@ onMounted(async () => {
       :subtitle="$t('shopping.noListsSubtitle')"
     >
       <template #action>
-        <button type="button" class="btn-primary" @click="showNewListDialog = true">
+        <button type="button" class="btn-primary tap-target" @click="showNewListDialog = true">
           {{ $t('shopping.createFirstList') }}
         </button>
       </template>
@@ -134,10 +134,10 @@ onMounted(async () => {
           autofocus
         />
         <div class="dialog-actions">
-          <button type="button" class="btn-secondary" @click="showNewListDialog = false">
+          <button type="button" class="btn-secondary tap-target" @click="showNewListDialog = false">
             {{ $t('common.cancel') }}
           </button>
-          <button type="submit" class="btn-primary" :disabled="!newListName.trim()">
+          <button type="submit" class="btn-primary tap-target" :disabled="!newListName.trim()">
             {{ $t('common.add') }}
           </button>
         </div>

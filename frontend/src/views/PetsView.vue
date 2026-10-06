@@ -311,7 +311,7 @@ function navigateToPet(petId: string) {
               </div>
               <div class="feeding-row__toggles">
                 <button
-                  class="feed-toggle"
+                  class="feed-toggle tap-target"
                   :class="{ 'feed-toggle--fed': isFed(status.pet_id, 'morning') }"
                   :title="$t('pets.morning')"
                   :aria-label="$t('pets.morning')"
@@ -320,7 +320,7 @@ function navigateToPet(petId: string) {
                   <PhSun :size="16" weight="bold" />
                 </button>
                 <button
-                  class="feed-toggle"
+                  class="feed-toggle tap-target"
                   :class="{ 'feed-toggle--fed': isFed(status.pet_id, 'evening') }"
                   :title="$t('pets.evening')"
                   :aria-label="$t('pets.evening')"
@@ -371,7 +371,7 @@ function navigateToPet(petId: string) {
           </div>
           <div class="pet-card__actions">
             <button
-              class="pet-card__delete"
+              class="pet-card__delete tap-target"
               @click.stop="confirmDelete(pet.id)"
               :aria-label="$t('common.delete')"
             >

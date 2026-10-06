@@ -330,8 +330,19 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function _handleRemoval(householdId: string, userId: string) {
+    // Jemand anderes ist gegangen: Verlässt der einzige Admin den Haushalt, befördert der
+    // Server das dienstälteste Mitglied — vielleicht uns. Rollen kommen nur über /me,
+    // deshalb neu laden statt bis zum nächsten Start mit alter Rolle weiterzuarbeiten.
+    if (userId !== user.value?.id) {
+      if (households.value.some(h => h.id === householdId)) {
+        fetchMe().catch(() => {
+          // Best-effort — der nächste Start lädt /me ohnehin
+        })
+      }
+      return
+    }
     // Betrifft es den EIGENEN User im AKTUELLEN Haushalt?
-    if (userId === user.value?.id && householdId === currentHouseholdId.value) {
+    if (householdId === currentHouseholdId.value) {
       const removedName = households.value.find(h => h.id === householdId)?.name ?? ''
       // Haushalt aus Liste entfernen
       households.value = households.value.filter(h => h.id !== householdId)

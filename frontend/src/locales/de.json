@@ -537,7 +537,7 @@
   },
   "push": {
     "title": "Benachrichtigungen",
-    "hint": "Erinnerungen für Aufgaben und Tierpflege auf diesem Gerät erhalten.",
+    "hint": "Erinnerungen für Aufgaben, Ämtli, Tier- und Pflanzenpflege und ablaufende Dokumente auf diesem Gerät erhalten. Die Zahl am App-Icon zeigt, was heute ansteht.",
     "enable": "Aktivieren",
     "disable": "Deaktivieren",
     "test": "Test-Benachrichtigung senden",

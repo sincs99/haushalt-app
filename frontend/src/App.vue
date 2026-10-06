@@ -19,6 +19,7 @@ import TheBottomNav from './components/TheBottomNav.vue'
 import MoreSheet from './components/MoreSheet.vue'
 import { useToast } from './composables/useToast'
 import { syncPushSubscription } from './services/pushService'
+import { BADGE_EVENTS, refreshAppBadge, refreshAppBadgeSoon, setAppBadgeHousehold } from './composables/useAppBadge'
 import { useI18n } from 'vue-i18n'
 import { PhShoppingBagOpen, PhListChecks, PhWallet, PhHouse, PhCalendarDots, PhWifiSlash, PhCheckCircle, PhWarningCircle, PhInfo } from '@phosphor-icons/vue'
 
@@ -140,10 +141,12 @@ watch(
     off('plant_care_logged', dashboardStore.invalidate)
     off('plant_created', dashboardStore.invalidate)
     off('plant_deleted', dashboardStore.invalidate)
+    BADGE_EVENTS.forEach((event) => off(event, refreshAppBadgeSoon))
 
-    // Wenn Token weg (Logout): Socket disconnecten
+    // Wenn Token weg (Logout): Socket disconnecten, Zahl am App-Icon entfernen
     if (!token) {
       disconnect()
+      setAppBadgeHousehold(null)
       return
     }
 
@@ -255,6 +258,10 @@ watch(
       on('plant_created', dashboardStore.invalidate)
       on('plant_deleted', dashboardStore.invalidate)
 
+      // Zahl am App-Icon aktuell halten
+      BADGE_EVENTS.forEach((event) => on(event, refreshAppBadgeSoon))
+      setAppBadgeHousehold(householdId)
+
       shoppingStore.fetchLists()
       shoppingStore.fetchItems()
       shoppingStore.fetchStores()
@@ -291,6 +298,7 @@ function handleReconnect() {
     financeStore.fetchBills()
     dashboardStore.fetchDashboard()
     pollsStore.fetchPolls('offen')
+    void refreshAppBadge()
   }
 }
 
@@ -364,7 +372,8 @@ onUnmounted(() => {
   off('plant_care_logged', dashboardStore.invalidate)
   off('plant_created', dashboardStore.invalidate)
   off('plant_deleted', dashboardStore.invalidate)
- offReconnect(handleReconnect)
+  BADGE_EVENTS.forEach((event) => off(event, refreshAppBadgeSoon))
+  offReconnect(handleReconnect)
   setTokenRefresher(null)
   disconnect()
 })

@@ -537,7 +537,7 @@
   },
   "push": {
     "title": "Notifications",
-    "hint": "Get reminders for tasks and pet care on this device.",
+    "hint": "Get reminders for tasks, chores, pet and plant care and expiring documents on this device. The number on the app icon shows what is due today.",
     "enable": "Enable",
     "disable": "Disable",
     "test": "Send test notification",

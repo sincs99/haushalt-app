@@ -66,10 +66,10 @@ const EXTRA = {
   '/todos': [['details-form', ['summary, .details-toggle, button:has-text("Details")'], false], ['edit-inline', ['.todo-row__actions button'], false]],
   '/chores': [['chore-edit', ['.chore-card__actions button'], false]],
   '/expenses': [['expense-edit', ['.expense-row__main, .expense-item__main'], true]],
-  '/calendar': [['day-week', ['.week-strip__day >> nth=3'], false], ['day-month', ['.pill-tab >> nth=1', '.month-grid__cell >> nth=10'], false], ['event-edit', ['.event-card'], true]],
+  '/calendar': [['day-week', ['.week-strip__day >> nth=3'], false], ['day-month', ['.pill-tab >> nth=1', '.month-grid__cell >> nth=10'], false], ['event-edit', ['.pill-tab >> nth=2', '.event-card'], true]],
   'pet-detail': [['care-task-add', ['.icon-btn'], true], ['med-add', ['button:has-text("Medikament hinzufügen"), button:has-text("Add medication")'], true]],
   'plant-detail': [['task-add', ['button:has-text("Pflegeaufgabe"), button:has-text("care task")'], true]],
-  '/food': [['meal-detail', ['.week-row >> nth=2'], true], ['meal-poll', ['button:has-text("Abstimmung starten"), button:has-text("Start poll")'], true]],
+  '/food': [['meal-detail', ['.week-row >> nth=2'], true], ['meal-poll', ['button:has-text("Abstimmung starten"), button:has-text("Start vote")'], true]],
   '/notes': [['note-edit', ['.note-card'], true]],
   '/documents': [['doc-edit', ['.doc-card'], true], ['upload', ['button:has-text("Hochladen"), button:has-text("Upload")'], true]],
   '/household': [['leave-confirm', ['button:has-text("Haushalt verlassen"), button:has-text("Leave household")'], true]],
@@ -205,8 +205,11 @@ function auditInPage(opts) {
         const cx = r.left + r.width / 2, cy = r.top + r.height / 2
         // (teilweise) weggescrollt: nicht vollständig sichtbar, wird beim Scrollen geprüft
         if (/(auto|scroll)/.test(pcs.overflowX + pcs.overflowY) && (r.left < pr.left - 1 || r.right > pr.right + 1 || r.top < pr.top - 1 || r.bottom > pr.bottom + 1)) { w = h = Infinity; break }
-        w = Math.min(w, 2 * Math.min(cx - pr.left, pr.right - cx))
-        h = Math.min(h, 2 * Math.min(cy - pr.top, pr.bottom - cy))
+        // entlang einer scrollbaren Achse ist der Rand nur vorübergehend (Nutzer scrollt)
+        const scrollX = /(auto|scroll)/.test(pcs.overflowX) && p.scrollWidth > p.clientWidth + 1
+        const scrollY = /(auto|scroll)/.test(pcs.overflowY) && p.scrollHeight > p.clientHeight + 1
+        if (!scrollX) w = Math.min(w, 2 * Math.min(cx - pr.left, pr.right - cx))
+        if (!scrollY) h = Math.min(h, 2 * Math.min(cy - pr.top, pr.bottom - cy))
         w = Math.max(w, own.width); h = Math.max(h, own.height)
       }
       if (pcs.position === 'fixed') break

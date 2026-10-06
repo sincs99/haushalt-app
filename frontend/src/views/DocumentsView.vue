@@ -828,15 +828,16 @@ onUnmounted(() => {
   padding: var(--space-0-5) 10px;
   font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
-  color: var(--card);
 }
 
 .expiry-badge--soon {
-  background: var(--color-warning);
+  background: var(--color-warning-soft);
+  color: var(--color-warning-strong);
 }
 
 .expiry-badge--expired {
   background: var(--color-danger);
+  color: var(--color-on-danger);
 }
 
 .icon-btn {

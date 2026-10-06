@@ -786,7 +786,8 @@ async function handleDeleteTask() {
 }
 
 .due-badge--today {
-  background: var(--color-warning);
+  background: var(--color-warning-soft);
+  color: var(--color-warning-strong);
 }
 
 .icon-btn {

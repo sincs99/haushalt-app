@@ -1500,7 +1500,7 @@ watch(
   height: 52px;
   border-radius: var(--radius-full);
   background: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
   border: none;
   cursor: pointer;
   display: flex;

@@ -238,7 +238,7 @@ async function confirmSettlement() {
   flex-shrink: 0;
   padding: var(--space-1) var(--space-2);
   background: var(--color-success);
-  color: var(--color-surface);
+  color: var(--color-on-success);
   border: none;
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);

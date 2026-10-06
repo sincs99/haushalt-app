@@ -554,7 +554,7 @@ async function confirmDissolve() {
   border-radius: var(--radius-full);
   border: none;
   background: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -872,7 +872,7 @@ async function confirmDissolve() {
   border-radius: var(--radius-btn);
   border: none;
   background: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
   font-family: var(--font-family);
@@ -909,7 +909,7 @@ async function confirmDissolve() {
   border-radius: var(--radius-btn);
   border: none;
   background: var(--color-danger);
-  color: var(--card);
+  color: var(--color-on-danger);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
   font-family: var(--font-family);

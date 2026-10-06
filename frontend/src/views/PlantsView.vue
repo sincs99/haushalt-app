@@ -486,8 +486,8 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
 }
 
 .due-badge--today {
-  background: var(--color-warning);
-  color: var(--color-on-danger);
+  background: var(--color-warning-soft);
+  color: var(--color-warning-strong);
 }
 
 /* ── FAB ── */

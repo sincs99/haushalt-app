@@ -256,7 +256,7 @@ function handleSubmit() {
   border-radius: var(--radius-btn);
   border: none;
   background: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
   font-family: var(--font-family);

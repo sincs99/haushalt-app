@@ -322,7 +322,7 @@ onMounted(resolve)
 }
 
 .scan-icon--warn {
-  color: var(--color-warning);
+  color: var(--color-warning-strong);
 }
 
 .scan-label {

@@ -720,7 +720,7 @@ function formatReminderDate(isoString: string): string {
 }
 
 .pet-care-item__due--today {
-  color: var(--color-warning);
+  color: var(--color-warning-strong);
   font-weight: var(--font-weight-semibold);
 }
 

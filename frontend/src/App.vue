@@ -699,17 +699,17 @@ onUnmounted(() => {
 
 .toast--error {
   background-color: var(--color-danger);
-  color: var(--color-surface);
+  color: var(--color-on-danger);
 }
 
 .toast--success {
   background-color: var(--color-success);
-  color: var(--color-surface);
+  color: var(--color-on-success);
 }
 
 .toast--info {
   background-color: var(--color-primary);
-  color: var(--color-surface);
+  color: var(--color-on-primary);
 }
 
 /* ── Toast-Transitions ── */

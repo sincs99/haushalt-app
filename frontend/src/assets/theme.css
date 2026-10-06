@@ -13,18 +13,18 @@
   --bg: #DDE8E4;          /* App-Hintergrund */
   --card: #FBF8F3;        /* Karten, Sheets, Dialoge */
   --ink: #3A423F;         /* Primärtext */
-  --sub: #5F6D69;         /* Sekundärtext */
+  --sub: #5D6A66;         /* Sekundärtext (AA auf bg, chip, card) */
   --line: rgba(58,66,63,.10);        /* Trennlinien */
   --line-strong: rgba(58,66,63,.22); /* Rahmen von Eingaben/Checkboxen */
   --chip: #EAF1EE;        /* Chips, Pills, sekundäre Flächen */
-  --acc: #A0714A;         /* Akzent: Primär-Buttons, aktive Zustände */
+  --acc: #896140;         /* Akzent: Primär-Buttons, aktive Zustände (AA) */
   --acc-soft: #F2E8DC;    /* Akzent-Fläche: Hover, Fokus-Halo */
   --nav: #E8F0EC;         /* Navigationsleiste */
-  --p1: #3F827A;          /* Teal: Info, Mitglied 1 */
-  --p2: #9C6E79;          /* Rosa: Mitglied 2 */
-  --ok: #6E9273;          /* Erfolg/erledigt */
-  --member-3: #94798C;    /* Mauve: Mitglied 3 */
-  --member-4: #8A8272;    /* Olive: Mitglied 4 */
+  --p1: #3D7D75;          /* Teal: Info, Mitglied 1 */
+  --p2: #936570;          /* Rosa: Mitglied 2 */
+  --ok: #5B795F;          /* Erfolg/erledigt */
+  --member-3: #7F6577;    /* Mauve: Mitglied 3 */
+  --member-4: #77705F;    /* Olive: Mitglied 4 */
 
   /* --- 2. Semantische Farben --- */
   --color-primary: var(--p1);
@@ -55,7 +55,7 @@
   --color-on-accent: var(--card);
   --color-on-primary: var(--card);
   --color-on-success: var(--card);
-  --color-on-danger: var(--card);
+  --color-on-danger: #FFFFFF;
   --color-on-warning: #26302D;
   --color-on-member: #FFFFFF;
 
@@ -181,7 +181,7 @@ html[data-theme="dark"] {
   --bg: #182220;
   --card: #22302D;
   --ink: #E8EFEC;
-  --sub: #93A29E;
+  --sub: #96A4A0;
   --line: rgba(255,255,255,.10);
   --line-strong: rgba(255,255,255,.26);
   --chip: #2C3B38;
@@ -191,11 +191,11 @@ html[data-theme="dark"] {
   --p1: #5FA79E;
   --p2: #C1919B;
   --ok: #8AB08F;
-  --member-3: #94798C;
-  --member-4: #8A8272;
+  --member-3: #B49AAC;
+  --member-4: #ABA390;
 
-  --color-danger: #DC2626;
-  --color-danger-hover: #B91C1C;
+  --color-danger: #E86E6E;
+  --color-danger-hover: #F08A8A;
   --color-danger-soft: #3A2424;
   --color-danger-strong: #F0A3A3;
   --color-danger-border: #6B3434;
@@ -204,6 +204,7 @@ html[data-theme="dark"] {
   --color-warning-strong: #E5C79A;
 
   --color-on-danger: var(--card);
+  --color-on-member: var(--bg);
   --color-scrim: rgba(0, 0, 0, 0.6);
 
   /* Schatten im Dark-Mode weicher/dunkler */

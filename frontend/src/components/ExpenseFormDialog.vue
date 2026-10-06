@@ -482,7 +482,7 @@ async function handleSubmit() {
 
 .split-toggle__btn--active {
   background: var(--color-primary);
-  color: var(--color-surface);
+  color: var(--color-on-primary);
 }
 
 /* Teilnehmer-Checkboxen */

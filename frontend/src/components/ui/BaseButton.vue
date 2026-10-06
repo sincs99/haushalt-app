@@ -69,7 +69,7 @@ withDefaults(defineProps<{
 /* --- Variants --- */
 .base-btn--primary {
   background-color: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
 }
 .base-btn--primary:hover:not(:disabled) {
   filter: brightness(1.08);
@@ -96,7 +96,7 @@ withDefaults(defineProps<{
 
 .base-btn--danger {
   background-color: var(--color-danger);
-  color: var(--card);
+  color: var(--color-on-danger);
 }
 .base-btn--danger:hover:not(:disabled) {
   background-color: var(--color-danger-hover);

@@ -975,7 +975,7 @@ onMounted(() => {
 
 .action-btn--danger:hover {
   background: var(--color-danger);
-  color: var(--card);
+  color: var(--color-on-danger);
 }
 
 /* ── Skeleton ── */

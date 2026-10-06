@@ -495,7 +495,7 @@ async function saveEdit(todoId: string) {
   border-radius: var(--radius-full);
   border: none;
   background: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -1,13 +1,13 @@
 # Haushalt-App — Aktueller Projektstand
 
-**Stand:** 2026-10-06 (Kopf, Kennzahlen, Feature-Status, Einschränkungen und Dependencies aktualisiert, H-01 Refresh-Token-Cookie ergänzt; Abschnitte 3–5 und 10 am Code und an der Git-Historie abgeglichen — die OpenAPI-Doku des Backends unter `/docs` bleibt für Details maßgeblich)
+**Stand:** 2026-10-06 (Kopf, Kennzahlen, Feature-Status, Einschränkungen und Dependencies aktualisiert, H-01 Refresh-Token-Cookie, Pflanzen, Tags und KI-Assistent ergänzt; Abschnitte 3–5 und 10 am Code und an der Git-Historie abgeglichen — die OpenAPI-Doku des Backends unter `/docs` bleibt für Details maßgeblich)
 **Autor:** Tech Lead (automatisch generiert)
 
 ---
 
 ## 1. Projektübersicht
 
-Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzpläne mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Pflanzen, Notizen und eine Dokument-Ablage (Verträge, Rechnungen, Garantien) innerhalb eines Haushalts. Multi-User, Echtzeit-Sync via WebSocket, Mobile-First UI, installierbare PWA mit Web Push, zweisprachig (DE/EN).
+Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzpläne mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Pflanzen, Notizen und eine Dokument-Ablage (Verträge, Rechnungen, Garantien) innerhalb eines Haushalts. Multi-User, Echtzeit-Sync via WebSocket, Mobile-First UI, installierbare PWA mit Web Push, zweisprachig (DE/EN). Optional dazu ein KI-Assistent (Rezeptvorschläge, Pflanzenpflege-Hinweise) über die Anthropic-API, nur mit Server-Schlüssel und Opt-in des Haushalts.
 
 | Aspekt | Technologie |
 |---|---|
@@ -16,7 +16,8 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzp
 | Realtime | Socket.IO (python-socketio) |
 | Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4, PWA (`vite-plugin-pwa`) |
 | Auth | JWT-Access-Token (15 Min., nur im Speicher) + rotierender Refresh-Token als HttpOnly-Cookie (`SameSite=Strict`, CSRF-Header) mit Reuse-Erkennung, bcrypt-Hashing |
-| i18n | vue-i18n, 891 Keys (DE + EN), Build-gesicherter Key-Sync |
+| i18n | vue-i18n, 964 Keys (DE + EN), Build-gesicherter Key-Sync |
+| KI (optional) | Anthropic-API (`claude-opus-5-5`) über das offizielle `anthropic`-SDK, Structured Outputs; ohne `ANTHROPIC_API_KEY` ausgeblendet |
 | Qualität / CI | GitHub Actions: Backend (ruff, pytest mit Coverage), Frontend (Locale-Check, Typecheck, Vitest mit Coverage), Dependency-Audit (pip-audit, npm audit) |
 | Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager), Backup-Skripte für Datenbank und Uploads |
 | Icons | Phosphor Icons (`@phosphor-icons/vue`) — regular/fill/bold |
@@ -42,11 +43,12 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | #17 | Frontend-Stores: Geschäfts-Filter folgt dem Umbenennen, fehlgeschlagenes Löschen eines Ämtlis stellt dessen Zuweisungen wieder her; Unit-Tests für den Auth-Store |
 | #18 | Einkauf: Geschäftsnamen werden ohne Beachtung der Groß-/Kleinschreibung zusammengeführt (Backend und Frontend, keine Migration); bestehende Einträge behalten ihre Schreibweise |
 | Branch `claude/nfc-qr-tags` | Tags (NFC-Chips/QR-Sticker) mit Ein-Tipp-Aktionen: Füttern, Pflegeaufgabe, Ämtli, Todo abhaken, Einkaufsliste öffnen; Verwaltung mit QR-Code und Web NFC; Review `docs/security/tags-review.md` (Epic 32) |
+| Branch `claude/ai-assistant` | KI-Assistent Etappe 1: Rezeptvorschlag und Pflanzenpflege, Opt-in pro Haushalt, Tageslimit; Rezepte erhalten Zubereitungsschritte und Tags (Epic 33, `docs/ai-assistant.md`) |
 
-**Kennzahlen (nach #25, inkl. Branch `claude/nfc-qr-tags`):** Backend 719 Tests in 56 Dateien, Coverage 93 %; Frontend 334 Tests in 25 Dateien, Coverage 72,4 % (Statements), Schwelle 66 %; 891 i18n-Schlüssel; 36 Alembic-Migrationen (einziger Kopf `b7c8d9e0f1a2`).
+**Kennzahlen (nach #26, inkl. Branch `claude/ai-assistant`):** Backend 778 Tests in 58 Dateien, Coverage 94 %; Frontend 350 Tests in 26 Dateien, Coverage 73,2 % (Statements), Schwelle 66 %; 964 i18n-Schlüssel; 37 Alembic-Migrationen (einziger Kopf `y1z2a3b4c5d6`).
 
 
-**Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`, `plants`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `PlantsView`/`PlantDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Pflanzen, Essen, Notizen, Kalender und Finanzen.
+**Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`, `plants`, `tags`, `ai`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `PlantsView`/`PlantDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Pflanzen, Essen, Notizen, Kalender und Finanzen.
 
 ---
 
@@ -810,7 +812,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Expenses-Modul (CRUD + Split + Saldo) | ✅ | ✅ ExpensesView, ExpenseList, BalanceSummary, ExpenseFormDialog | ✅ Socket |
 | Settlements-Modul | ✅ | ✅ | ✅ Socket |
 | Chores-Modul (Putzplan + Rotation) | ✅ | ✅ | ✅ Socket |
-| i18n (DE + EN, 891 Keys, Locale-Check) | ✅ | ✅ | — |
+| i18n (DE + EN, 964 Keys, Locale-Check) | ✅ | ✅ | — |
 | Error-Code-System (maschinenlesbar) | ✅ | ✅ i18n-Mapping | — |
 | Offline-Banner | — | ✅ | — |
 | Toast-System | — | ✅ | — |
@@ -823,7 +825,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Haushalt verlassen / Mitglied entfernen | ✅ POST /leave, DELETE /members/{uid} | ✅ HouseholdView | ✅ Socket |
 | Rollen-System (admin/member) | ✅ verify_household_admin | ✅ UI-Anzeige | — |
 | Währung pro Haushalt | ✅ Household.currency | ✅ /me Response | — |
-| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 56 Testdateien, 719 Tests (Coverage 93 %) | — | — |
+| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 58 Testdateien, 778 Tests (Coverage 94 %) | — | — |
 | Dashboard | ✅ | ✅ DashboardView | — |
 | Einkauf 2.0 (Multi-Listen, Stores) | ✅ | ✅ ShoppingView | ✅ Socket |
 | Aufgaben 2.0 (Unified Tasks) | ✅ | ✅ TodosView | ✅ Socket |
@@ -845,6 +847,8 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | CI (Lint, Tests mit Coverage, Dependency-Audit) | — | — | — |
 | Tags (NFC-Chips/QR-Sticker, Ein-Tipp-Aktionen) | ✅ Registry, CRUD, resolve/execute | ✅ TagsView, Scan-Seite `/t/:token`, QR, Web NFC | ✅ Socket |
 | Produktions-Deployment (Docker, Nginx Proxy Manager) | ✅ | ✅ | — |
+| KI-Assistent (optional): Rezeptvorschlag aus Zutaten, Pflanzenpflege-Hinweise; Opt-in pro Haushalt, Tageslimit | ✅ `routers/ai.py`, `services/ai/` | ✅ Karte in FoodView, `/assistant`, Einstellungen | ✅ `household_updated` (Opt-in) |
+| Rezepte mit Zubereitungsschritten und Tags | ✅ | ✅ Anzeige in den Rezept-Details | ✅ Socket |
 
 ### ❌ Offen (nächste Schritte)
 
@@ -859,6 +863,10 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Push-Notifications für Chores | Mittel | 🔵 Niedrig | „Du bist dran“-Benachrichtigung |
 | FR/IT-Sprachen | Klein | 🔵 Niedrig | Locale-Erweiterung |
 | Chores-Statistiken | Klein | 🔵 Niedrig | „Wer hat wie oft geputzt“ |
+| KI-Assistent: globales Tageslimit oder Limit pro Nutzer | Klein | 🟡 Mittel | Das Tageslimit gilt pro Haushalt; über weitere Haushalte lässt es sich vervielfachen (A-01 in `docs/security/ai-assistant-review.md`) |
+| KI-Assistent Etappe 2 | Mittel | 🔵 Niedrig | Beleg-Scan per Foto (Ausgabe vorbefüllen), Wochenplan-Vorschlag; Plan in `docs/ai-assistant.md` |
+| Pflanzen-Modul: KI-Pflegehinweise einbinden | Klein | 🔵 Niedrig | `POST /ai/plant-care` als Vorbefüllung der Pflegeaufgaben (Schema in `docs/ai-assistant.md`) |
+| Rezepte im Frontend anlegen/bearbeiten | Mittel | 🔵 Niedrig | Es gibt keine Rezept-Verwaltung in der Oberfläche; Rezepte entstehen bisher nur über die API bzw. den KI-Vorschlag |
 
 ---
 
@@ -876,6 +884,10 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Rate-Limits nur pro IP, im Speicher | Zähler gehen beim Neustart verloren; passt zu einem Worker (Socket.IO ohne Message-Queue) | Akzeptiert |
 | Start ohne Netz | Der Access-Token wird nicht mehr persistiert; ohne Netz zeigt die App die Shell („offline eingeloggt“), hat aber keinen Token, bis der erste Request nach Rückkehr des Netzes ihn per Cookie-Refresh holt. Ohne Offline-Daten (M1) ist das gleichwertig zum früheren Verhalten | Phase 2 |
 | Native Builds (Capacitor) | Der HttpOnly-Cookie setzt einen Browser voraus; ein nativer Client müsste die Body-Variante von `/refresh` (ohne `X-Requested-With`) mit SecureStorage nutzen — siehe H-01 im Hardening-Review | Später |
+| KI-Assistent ohne echten API-Test | Entwickelt und getestet mit gemocktem Client und einem lokalen Fake des Messages-Endpunkts; es gab keinen Aufruf gegen die echte API (kein Schlüssel in der Entwicklungsumgebung). Token-Zahlen in `docs/ai-assistant.md` sind Schätzungen | Prüfen |
+| KI-Tageslimit nach UTC-Tag | `ai_usage` zählt pro UTC-Tag, nicht nach der Zeitzone des Haushalts (Wechsel um 01:00/02:00 Uhr Schweizer Zeit) | Gering |
+| Lange KI-Anfragen hinter Nginx Proxy Manager | Rezeptvorschläge können über 60 s dauern; `nginx.conf` erlaubt 200 s, NPM muss ggf. angepasst werden | Prüfen |
+| `BaseCard` ohne `#header`-Slot | Die Karte „Was essen wir heute?“ in `FoodView.vue` übergibt ihren Titel per `#header`; `BaseCard` rendert nur den Default-Slot, der Titel wird nicht angezeigt (vorbestehend, nicht in diesem Branch behoben) | Gering |
 | Major-Updates ohne Gerätetest | Pillow 12 und cryptography 50 wurden über Tests und Stichproben geprüft, nicht mit einer echten Web-Push-Zustellung auf einem Gerät und nicht mit einem Upload über den laufenden Browser | Prüfen |
 | `deleteItem()` Rollback-Position | Bei paralleler Socket-Mutation kann die Position abweichen (kosmetisch) | Gering |
 | Auth-Styles dupliziert | Login/Register haben identische Scoped-CSS-Blöcke | Gering |
@@ -890,7 +902,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 |---|---|---|
 | FastAPI | 0.141.1 | Web-Framework |
 | SQLAlchemy | (via requirements.txt) | ORM |
-| Alembic | 1.18.5 | DB-Migrationen (34 Versionen) |
+| Alembic | 1.18.5 | DB-Migrationen (37 Versionen) |
 | psycopg2-binary | 2.9.12 | PostgreSQL-Driver |
 | python-socketio | (via requirements.txt) | WebSocket |
 | bcrypt | 4.0.1 | Passwort-Hashing |
@@ -898,6 +910,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | PyJWT | 2.15.0 | JWT |
 | Pillow | 12.3.0 | Bildverarbeitung (Uploads) |
 | pywebpush | 2.5.0 | Web Push |
+| anthropic | 1.11.0 | KI-Assistent (offizielles SDK, basiert auf `httpx2`) |
 | pytest, httpx, pytest-cov, ruff | (nicht in `requirements.txt`) | Tests und Lint; werden in der CI separat installiert |
 
 ### Frontend (Node.js)
@@ -1267,3 +1280,24 @@ Die Nummerierung ist die der Dokumentation und nicht identisch mit den „Epic-N
 - **Tests:** `test_tags.py` (52 Tests: CRUD/Rollen, resolve/execute je Aktion, 403/404/410, Rate-Limit, Log-Schwärzung); Vitest `stores/__tests__/tags.test.ts`, `utils/__tests__/tagScan.test.ts` (+42); E2E mit headless Chromium gegen Produktions-Build und echte nginx-Konfiguration: 0 CSP-Verstösse
 - **Security-Review:** `docs/security/tags-review.md`
 - **i18n:** `tags.*` und `errors.TAG_*` (+121 Keys) → 821 Keys
+
+### Epic 33: KI-Assistent — Etappe 1 (Rezeptvorschlag, Pflanzenpflege) ✅
+- **Abgeschlossen:** 2026-10-06 (Branch `claude/ai-assistant`)
+- **Umfang:**
+  - Anbindung der Anthropic-API über das offizielle `anthropic`-SDK (1.11.0), Modell `claude-opus-5-5`; Tiefe über `output_config.effort` (Rezept `medium`, Pflege `low`), kein `thinking`-Parameter, kein Prefill, kein erzwungenes Tool
+  - Strukturierte Ausgaben über `client.beta.messages.parse()` mit Pydantic-Modellen (JSON-Schema in `output_config.format`), kein Textparsing; Ausgabe wird in die Grenzen der App-Schemas gebracht
+  - Serverseitige Fallbacks (`server-side-fallback-2026-07-01`, `fallbacks="default"`); `stop_reason == "refusal"` → 422 `AI_REFUSED`; typisierte SDK-Exceptions → 502/503 mit eigenen Codes; Timeout 90 s, `max_retries=1`, max. 4 gleichzeitige Aufrufe
+  - Opt-in pro Haushalt (`households.ai_enabled`, Standard aus, nur Admins), Datenschutz-Hinweis in den Einstellungen; ohne `ANTHROPIC_API_KEY` meldet `GET /api/ai/status` `enabled: false` und das Frontend blendet alles aus
+  - Kostenschutz: 10/min pro IP (slowapi) und Tageslimit pro Haushalt (`ai_usage`, atomare Reservierung, `AI_DAILY_LIMIT_PER_HOUSEHOLD`, Standard 50) mit Token-Zählern aus `response.usage`
+  - Rezeptvorschlag im Format von `RecipeCreate`, nicht gespeichert; Speichern über den Rezept-Endpunkt, fehlende Zutaten über den Shopping-Endpunkt
+  - Pflanzenpflege unabhängig von einem Plant-Modell (Intervalle, Lichtbedarf, Giftigkeit für Haustiere mit Hinweis „keine tierärztliche Auskunft“); Schema dokumentiert als Vorlage für das Pflanzen-Modul
+  - Prompts DE/EN nach Sprache der Oberfläche; Nutzereingaben als escapter JSON-Block, Rolle nur im Systemprompt
+  - Rezepte erhalten `steps` und `tags` (Schema, Endpunkte, Anzeige)
+- **Backend:** `services/ai/` (`client`, `prompts`, `schemas`, `recipe`, `plant_care`, `usage`, `errors`, `text`), `routers/ai.py`, `models.py` (`Household.ai_enabled`, `AiUsage`, `Recipe.steps/tags`), `core/config.py`, `core/error_codes.py` (`AI_*`), `routers/auth.py` (`/me` mit `ai_enabled`), `routers/food.py`
+- **Migrationen:** `c8d9e0f1a2b3_add_recipe_steps_and_tags`, `y1z2a3b4c5d6_add_ai_assistant` (einziger Kopf `y1z2a3b4c5d6`); auf PostgreSQL 16 hin und zurück geprüft
+- **Frontend:** `stores/ai.ts`, `repositories/aiRepository.ts`, `components/AiRecipeCard.vue`, `components/AiSettingsCard.vue`, `views/AssistantView.vue` (`/assistant`), FoodView (Karte + Schritte in den Details), HouseholdView, MoreSheet (Eintrag nur bei aktivem Assistenten), `stores/auth.ts` (`ai_enabled` aus `household_updated`)
+- **Betrieb:** `.env.example`, `.env.prod.example`, beide Compose-Dateien; `nginx.conf` mit `proxy_read_timeout 200s` für die KI-Endpunkte
+- **Tests:** 55 Backend-Tests in `test_ai_assistant.py` (Client gemockt), 4 in `test_recipe_steps_tags.py`; 15 Vitest-Tests in `stores/__tests__/ai.test.ts`, 1 neuer im Auth-Store-Test
+- **Reviews:** Security-Review `docs/security/ai-assistant-review.md` (kein kritischer/hoher Befund; offen A-01: Tageslimit pro Haushalt lässt sich über weitere Haushalte vervielfachen)
+- **i18n:** 73 neue Keys (`ai.*`, `errors.AI_*`, `errors.RATE_LIMITED`, `nav.assistant`, `moreSheet.assistantSub`, `food.steps`) → 773 Keys total
+- **Nicht gemessen:** kein echter API-Aufruf (kein Schlüssel in der Entwicklungsumgebung); Kosten-Schätzung in `docs/ai-assistant.md`

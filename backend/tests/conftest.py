@@ -42,6 +42,7 @@ from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import (  # noqa: E402
+    AiUsage,
     Budget,
     Calendar,
     Chore,
@@ -139,7 +140,9 @@ def _mock_socket_emit():
                                                             with patch("app.routers.calendars.emit_to_household_sync", mock_emit):
                                                                 with patch("app.routers.files.emit_to_household_sync", mock_emit):
                                                                     with patch("app.routers.documents.emit_to_household_sync", mock_emit):
-                                                                        with patch("app.routers.tags.emit_to_household_sync", mock_emit):
+                                                                        with patch("app.routers.tags.emit_to_household_sync", mock_emit), patch(
+                                                                            "app.routers.ai.emit_to_household_sync", mock_emit
+                                                                        ):
                                                                             yield mock_emit
 
 

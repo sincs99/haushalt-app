@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PhWallet, PhCat, PhPlant, PhForkKnife, PhNote, PhFolderOpen, PhGear, PhCaretRight } from '@phosphor-icons/vue'
+import { PhWallet, PhCat, PhPlant, PhForkKnife, PhNote, PhFolderOpen, PhGear, PhCaretRight, PhSparkle } from '@phosphor-icons/vue'
 import { useI18n } from 'vue-i18n'
+import { useAiStore } from '../stores/ai'
 
 const props = defineProps<{
   open: boolean
@@ -14,6 +15,7 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const { t } = useI18n()
+const aiStore = useAiStore()
 
 function navigate(path: string) {
   router.push(path)
@@ -39,7 +41,7 @@ watch(() => props.open, (isOpen) => {
   document.body.style.overflow = isOpen ? 'hidden' : ''
 })
 
-const entries = [
+const baseEntries = [
   { label: 'nav.expenses', sub: 'moreSheet.expensesSub', icon: PhWallet, action: () => navigate('/expenses'), disabled: false, highlight: true },
   { label: 'nav.cats', sub: 'moreSheet.catsSub', icon: PhCat, action: () => navigate('/pets'), disabled: false, highlight: false },
   { label: 'nav.plants', sub: 'moreSheet.plantsSub', icon: PhPlant, action: () => navigate('/plants'), disabled: false, highlight: false },
@@ -48,6 +50,19 @@ const entries = [
   { label: 'nav.documents', sub: 'moreSheet.documentsSub', icon: PhFolderOpen, action: () => navigate('/documents'), disabled: false, highlight: false },
   { label: 'nav.settings', sub: 'moreSheet.settingsSub', icon: PhGear, action: () => navigate('/household'), disabled: false, highlight: false },
 ]
+
+// KI-Assistent nur, wenn auf dem Server eingerichtet und im Haushalt eingeschaltet
+const assistantEntry = { label: 'nav.assistant', sub: 'moreSheet.assistantSub', icon: PhSparkle, action: () => navigate('/assistant'), disabled: false, highlight: false }
+
+const entries = computed(() => {
+  if (!aiStore.enabledForHousehold) return baseEntries
+  const settingsIdx = baseEntries.length - 1
+  return [...baseEntries.slice(0, settingsIdx), assistantEntry, baseEntries[settingsIdx]]
+})
+
+watch(() => props.open, (isOpen) => {
+  if (isOpen) aiStore.fetchStatus()
+})
 </script>
 
 <template>

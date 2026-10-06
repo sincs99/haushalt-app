@@ -338,6 +338,20 @@ describe('Haushalte', () => {
     expect(store.currentHouseholdId).toBe('hh-1')
     expect(showToast).not.toHaveBeenCalled()
   })
+
+  test('household_updated übernimmt Name und KI-Opt-in', async () => {
+    api.get.mockResolvedValue(meResponse())
+    const store = useAuthStore()
+    await store.fetchMe()
+
+    store.handleHouseholdUpdated({ id: 'hh-1', name: 'WG neu', ai_enabled: true })
+    expect(store.currentHousehold?.name).toBe('WG neu')
+    expect(store.currentHousehold?.ai_enabled).toBe(true)
+
+    // Umbenennen ohne Feld lässt das Opt-in unverändert
+    store.handleHouseholdUpdated({ id: 'hh-1', name: 'WG' })
+    expect(store.currentHousehold?.ai_enabled).toBe(true)
+  })
 })
 
 describe('logout', () => {

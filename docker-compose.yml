@@ -37,6 +37,9 @@ services:
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
       HOUSEHOLD_STORAGE_QUOTA_MB: ${HOUSEHOLD_STORAGE_QUOTA_MB:-1024}
+      # KI-Assistent (optional): ohne Schlüssel sind alle KI-Funktionen ausgeblendet
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_DAILY_LIMIT_PER_HOUSEHOLD: ${AI_DAILY_LIMIT_PER_HOUSEHOLD:-50}
     # Nur lokal (API-Debugging); das Frontend erreicht das Backend über das Docker-Netz
     ports:
       - "127.0.0.1:8000:8000"

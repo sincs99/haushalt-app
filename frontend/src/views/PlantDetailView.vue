@@ -400,6 +400,7 @@ async function handleDeleteTask() {
       <!-- ═══ KI-Pflegehinweise (nur mit Server-Schlüssel + Haushalts-Opt-in) ═══ -->
       <AiPlantCareCard
         :key="plant.id"
+        class="ai-care"
         :plant-name="plant.species || plant.name"
         :location="plant.location ?? undefined"
         :apply-label="$t('ai.plant.applyToPlant')"
@@ -698,6 +699,11 @@ async function handleDeleteTask() {
 /* ── Sections ── */
 .section {
   margin-bottom: var(--space-5);
+}
+
+/* KI-Block steht frei zwischen Notizen und Pflege: eigener Abstand wie eine Section */
+.ai-care {
+  margin-bottom: var(--space-6);
 }
 
 .section-header {

@@ -105,9 +105,11 @@ Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` sel
 
 ## Tags (NFC/QR)
 
-Tags sind NFC-Chips oder QR-Sticker, die beim Scannen eine Aktion mit einem Tipp auslösen: Tier füttern, Pflegeaufgabe oder Ämtli abhaken, Aufgabe erledigen, Einkaufsliste öffnen. Auf dem Tag steht nur eine Adresse der App, `https://<host>/t/<token>`. Welche Aktion dazugehört, steht in der Datenbank — ein Tag lässt sich deshalb später neu zuordnen, ohne ihn neu zu beschreiben.
+Tags sind NFC-Chips oder QR-Sticker, die beim Scannen eine Aktion mit einem Tipp auslösen: Tier füttern, Pflanze gießen, Pflegeaufgabe oder Ämtli abhaken, Aufgabe erledigen, Einkaufsliste öffnen. Auf dem Tag steht nur eine Adresse der App, `https://<host>/t/<token>`. Welche Aktion dazugehört, steht in der Datenbank — ein Tag lässt sich deshalb später neu zuordnen, ohne ihn neu zu beschreiben.
 
-**Ablauf beim Scannen:** Das Telefon öffnet die Adresse. Wer nicht eingeloggt ist, landet beim Login und danach wieder auf dem Tag. Die App zeigt eine Bestätigung (z. B. „Mia füttern?“ mit der letzten Fütterung); erst der Tipp auf den grossen Button führt die Aktion aus. Tags zum Öffnen einer Liste navigieren direkt. Ausführen dürfen alle Mitglieder des Haushalts, Fremde mit dem Sticker in der Hand nichts.
+**Ablauf beim Scannen:** Das Telefon öffnet die Adresse. Wer nicht eingeloggt ist, landet beim Login und danach wieder auf dem Tag. Die App zeigt eine Bestätigung (z. B. „Mia füttern?“ mit der letzten Fütterung oder „Monstera gegossen?“ mit letzter Gießung und nächster Fälligkeit); erst der Tipp auf den grossen Button führt die Aktion aus. Tags zum Öffnen einer Liste navigieren direkt. Ausführen dürfen alle Mitglieder des Haushalts, Fremde mit dem Sticker in der Hand nichts.
+
+**Beispiel Pflanze:** Der Sticker am Blumentopf (Zieltyp „Pflanze“, Aktion „Pflanze gießen“) trägt die Gießaufgabe der Pflanze ein; nach dem Scan führt „Ansehen“ auf die Pflanze. Ohne Ziel gewählt, giesst der Tag alle heute fälligen Pflanzen auf einmal. Wer lieber eine einzelne Aufgabe abhakt (Düngen, Umtopfen), nimmt „Pflanzenpflege“ mit der Pflegeaufgabe als Ziel.
 
 **Einrichten (Admin):** Haushalt → „Tags verwalten“ → „Tag anlegen“: Bezeichnung, Zieltyp, Ziel und Aktion wählen. Danach zeigt die App QR-Code, Adresse und — auf Android/Chrome — „Auf NFC-Chip schreiben“.
 

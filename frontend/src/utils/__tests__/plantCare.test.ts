@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { careTaskName, daysUntil, dueText, isWaterDue } from '../plantCare'
+import { adviceTasks, careTaskName, daysUntil, dueText, isWaterDue, mergeCareNotes, planAdvice } from '../plantCare'
 import type { PlantCareStatus } from '../../types'
 
 const t = (key: string, params?: Record<string, unknown>) =>
@@ -40,5 +40,57 @@ describe('plantCare utils', () => {
     expect(isWaterDue(base)).toBe(false)
     base.tasks.push({ ...base.tasks[0], task_id: 'w', care_type: 'water', due_today: false, overdue: true })
     expect(isWaterDue(base)).toBe(true)
+  })
+})
+
+describe('KI-Pflegevorschlag → Pflegeaufgaben', () => {
+  const advice = {
+    watering_interval_days: 7,
+    fertilizing_interval_days: 30,
+    repotting_interval_months: 24,
+  }
+
+  it('adviceTasks maps intervals and converts repotting months to days', () => {
+    expect(adviceTasks(advice)).toEqual([
+      { care_type: 'water', interval_days: 7 },
+      { care_type: 'fertilize', interval_days: 30 },
+      { care_type: 'repot', interval_days: 720 },
+    ])
+  })
+
+  it('adviceTasks skips null intervals', () => {
+    expect(adviceTasks({ ...advice, fertilizing_interval_days: null, repotting_interval_months: null }))
+      .toEqual([{ care_type: 'water', interval_days: 7 }])
+  })
+
+  it('adviceTasks drops out-of-range intervals instead of sending them', () => {
+    expect(adviceTasks({ watering_interval_days: 0, fertilizing_interval_days: null, repotting_interval_months: 122 }))
+      .toEqual([])
+  })
+
+  it('planAdvice creates missing tasks and updates changed intervals only', () => {
+    const existing = [
+      { id: 'w', care_type: 'water' as const, label: null, interval_days: 10 },
+      { id: 'f', care_type: 'fertilize' as const, label: null, interval_days: 30 },
+    ]
+    expect(planAdvice(advice, existing)).toEqual({
+      create: [{ care_type: 'repot', interval_days: 720 }],
+      update: [{ id: 'w', interval_days: 7 }],
+    })
+  })
+
+  it('planAdvice leaves labelled custom tasks alone', () => {
+    const existing = [{ id: 'x', care_type: 'water' as const, label: 'Tauchbad', interval_days: 14 }]
+    const plan = planAdvice({ ...advice, fertilizing_interval_days: null, repotting_interval_months: null }, existing)
+    expect(plan.update).toEqual([])
+    expect(plan.create).toEqual([{ care_type: 'water', interval_days: 7 }])
+  })
+
+  it('mergeCareNotes appends, never overwrites, and is idempotent', () => {
+    expect(mergeCareNotes(null, ' Hell stellen. ')).toBe('Hell stellen.')
+    expect(mergeCareNotes('Eigene Notiz', 'Hell stellen.')).toBe('Eigene Notiz\n\nHell stellen.')
+    expect(mergeCareNotes('Eigene Notiz\n\nHell stellen.', 'Hell stellen.')).toBe('Eigene Notiz\n\nHell stellen.')
+    expect(mergeCareNotes('Alt', '   ')).toBe('Alt')
+    expect(mergeCareNotes('a'.repeat(1990), 'b'.repeat(100))).toHaveLength(2000)
   })
 })

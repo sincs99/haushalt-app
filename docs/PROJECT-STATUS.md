@@ -43,9 +43,10 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | #17 | Frontend-Stores: Geschäfts-Filter folgt dem Umbenennen, fehlgeschlagenes Löschen eines Ämtlis stellt dessen Zuweisungen wieder her; Unit-Tests für den Auth-Store |
 | #18 | Einkauf: Geschäftsnamen werden ohne Beachtung der Groß-/Kleinschreibung zusammengeführt (Backend und Frontend, keine Migration); bestehende Einträge behalten ihre Schreibweise |
 | Branch `claude/nfc-qr-tags` | Tags (NFC-Chips/QR-Sticker) mit Ein-Tipp-Aktionen: Füttern, Pflegeaufgabe, Ämtli, Todo abhaken, Einkaufsliste öffnen; Verwaltung mit QR-Code und Web NFC; Review `docs/security/tags-review.md` (Epic 32) |
+| Branch `claude/plants-ai-tags-integration` | Pflanzen × KI × Tags: KI-Pflegehinweise im Pflanzen-Formular und in der Detailansicht; Tag-Aktionen `plant.water` und `plant.care_task.done` (Epic 34) |
 | Branch `claude/ai-assistant` | KI-Assistent Etappe 1: Rezeptvorschlag und Pflanzenpflege, Opt-in pro Haushalt, Tageslimit; Rezepte erhalten Zubereitungsschritte und Tags (Epic 33, `docs/ai-assistant.md`) |
 
-**Kennzahlen (nach #26, inkl. Branch `claude/ai-assistant`):** Backend 778 Tests in 58 Dateien, Coverage 94 %; Frontend 350 Tests in 26 Dateien, Coverage 73,2 % (Statements), Schwelle 66 %; 964 i18n-Schlüssel; 37 Alembic-Migrationen (einziger Kopf `y1z2a3b4c5d6`).
+**Kennzahlen (nach #28, inkl. Branch `claude/plants-ai-tags-integration`):** Backend 792 Tests in 58 Dateien, Coverage 94 %; Frontend 363 Tests in 26 Dateien, Coverage 73,7 % (Statements), Schwelle 66 %; 993 i18n-Schlüssel; 37 Alembic-Migrationen (einziger Kopf `y1z2a3b4c5d6`).
 
 
 **Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`, `plants`, `tags`, `ai`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `PlantsView`/`PlantDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Pflanzen, Essen, Notizen, Kalender und Finanzen.
@@ -812,7 +813,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Expenses-Modul (CRUD + Split + Saldo) | ✅ | ✅ ExpensesView, ExpenseList, BalanceSummary, ExpenseFormDialog | ✅ Socket |
 | Settlements-Modul | ✅ | ✅ | ✅ Socket |
 | Chores-Modul (Putzplan + Rotation) | ✅ | ✅ | ✅ Socket |
-| i18n (DE + EN, 964 Keys, Locale-Check) | ✅ | ✅ | — |
+| i18n (DE + EN, 993 Keys, Locale-Check) | ✅ | ✅ | — |
 | Error-Code-System (maschinenlesbar) | ✅ | ✅ i18n-Mapping | — |
 | Offline-Banner | — | ✅ | — |
 | Toast-System | — | ✅ | — |
@@ -825,7 +826,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Haushalt verlassen / Mitglied entfernen | ✅ POST /leave, DELETE /members/{uid} | ✅ HouseholdView | ✅ Socket |
 | Rollen-System (admin/member) | ✅ verify_household_admin | ✅ UI-Anzeige | — |
 | Währung pro Haushalt | ✅ Household.currency | ✅ /me Response | — |
-| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 58 Testdateien, 778 Tests (Coverage 94 %) | — | — |
+| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 58 Testdateien, 792 Tests (Coverage 94 %) | — | — |
 | Dashboard | ✅ | ✅ DashboardView | — |
 | Einkauf 2.0 (Multi-Listen, Stores) | ✅ | ✅ ShoppingView | ✅ Socket |
 | Aufgaben 2.0 (Unified Tasks) | ✅ | ✅ TodosView | ✅ Socket |
@@ -834,6 +835,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Abstimmungen (Polls) | ✅ | ✅ (integriert in Calendar/Food) | ✅ Socket |
 | Haustiere (Katzen) | ✅ | ✅ PetsView + PetDetailView | — |
 | Pflanzen (Pflegeaufgaben, Pflege-Log, Foto, Web Push, Dashboard-Kachel) | ✅ | ✅ PlantsView + PlantDetailView | ✅ Socket |
+| Pflanzen: KI-Pflegehinweise (Vorschlag prüfen, Aufgaben/Hinweise übernehmen; nur mit Server-Schlüssel + Haushalts-Opt-in) | ✅ `POST /ai/plant-care` (unverändert) | ✅ `AiPlantCareCard` im Anlegen-Dialog und in PlantDetailView | — |
 | Essen (Wochenmenü + Rezepte) | ✅ | ✅ FoodView | — |
 | Notizen | ✅ | ✅ NotesView | — |
 | App-Shell (Bottom-Nav, MoreSheet, Sync-Status) | — | ✅ | — |
@@ -845,7 +847,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Socket-Sitzungen enden mit Token-Ablauf und Logout | ✅ Ablauf-Timer, `reauth`, Trennen bei Logout | ✅ Token-Übergabe nach Refresh, Auto-Reconnect | ✅ |
 | Offline-Basis M0 (Client-IDs, `version`/`updated_at`) | ✅ Shopping, Todos, Chore-Zuweisungen | ✅ Stores | ✅ veraltete Events werden verworfen |
 | CI (Lint, Tests mit Coverage, Dependency-Audit) | — | — | — |
-| Tags (NFC-Chips/QR-Sticker, Ein-Tipp-Aktionen) | ✅ Registry, CRUD, resolve/execute | ✅ TagsView, Scan-Seite `/t/:token`, QR, Web NFC | ✅ Socket |
+| Tags (NFC-Chips/QR-Sticker, Ein-Tipp-Aktionen inkl. Pflanze gießen / Pflegeaufgabe) | ✅ Registry, CRUD, resolve/execute | ✅ TagsView, Scan-Seite `/t/:token`, QR, Web NFC | ✅ Socket |
 | Produktions-Deployment (Docker, Nginx Proxy Manager) | ✅ | ✅ | — |
 | KI-Assistent (optional): Rezeptvorschlag aus Zutaten, Pflanzenpflege-Hinweise; Opt-in pro Haushalt, Tageslimit | ✅ `routers/ai.py`, `services/ai/` | ✅ Karte in FoodView, `/assistant`, Einstellungen | ✅ `household_updated` (Opt-in) |
 | Rezepte mit Zubereitungsschritten und Tags | ✅ | ✅ Anzeige in den Rezept-Details | ✅ Socket |
@@ -865,7 +867,6 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Chores-Statistiken | Klein | 🔵 Niedrig | „Wer hat wie oft geputzt“ |
 | KI-Assistent: globales Tageslimit oder Limit pro Nutzer | Klein | 🟡 Mittel | Das Tageslimit gilt pro Haushalt; über weitere Haushalte lässt es sich vervielfachen (A-01 in `docs/security/ai-assistant-review.md`) |
 | KI-Assistent Etappe 2 | Mittel | 🔵 Niedrig | Beleg-Scan per Foto (Ausgabe vorbefüllen), Wochenplan-Vorschlag; Plan in `docs/ai-assistant.md` |
-| Pflanzen-Modul: KI-Pflegehinweise einbinden | Klein | 🔵 Niedrig | `POST /ai/plant-care` als Vorbefüllung der Pflegeaufgaben (Schema in `docs/ai-assistant.md`) |
 | Rezepte im Frontend anlegen/bearbeiten | Mittel | 🔵 Niedrig | Es gibt keine Rezept-Verwaltung in der Oberfläche; Rezepte entstehen bisher nur über die API bzw. den KI-Vorschlag |
 
 ---
@@ -1301,3 +1302,14 @@ Die Nummerierung ist die der Dokumentation und nicht identisch mit den „Epic-N
 - **Reviews:** Security-Review `docs/security/ai-assistant-review.md` (kein kritischer/hoher Befund; offen A-01: Tageslimit pro Haushalt lässt sich über weitere Haushalte vervielfachen)
 - **i18n:** 73 neue Keys (`ai.*`, `errors.AI_*`, `errors.RATE_LIMITED`, `nav.assistant`, `moreSheet.assistantSub`, `food.steps`) → 773 Keys total
 - **Nicht gemessen:** kein echter API-Aufruf (kein Schlüssel in der Entwicklungsumgebung); Kosten-Schätzung in `docs/ai-assistant.md`
+
+### Epic 34: Pflanzen × KI × Tags ✅
+- **Abgeschlossen:** 2026-10-06 (Branch `claude/plants-ai-tags-integration`)
+- **Teil 1 — KI-Pflegehinweise im Pflanzen-Modul:** Button „Pflegehinweise von der KI holen“ im „Pflanze hinzufügen“-Dialog und in der Detailansicht, sichtbar nur bei Server-Schlüssel und Haushalts-Opt-in (`aiStore.enabledForHousehold`). Der Vorschlag (Intervalle, Licht, Standort, Giftigkeit mit „Keine tierärztliche Auskunft“) wird angezeigt und erst auf Tipp übernommen: Pflegeaufgaben `water`/`fertilize`/`repot` anlegen bzw. bei abweichendem Intervall aktualisieren (Umtopfen Monate × 30; `null` → keine Aufgabe), `care_notes` an das Freitextfeld anhängen, botanischer Name füllt eine leere Art. Im Anlegen-Dialog wird erst beim Speichern etwas geschrieben. Kein neuer Endpunkt, keine Migration.
+  - **Frontend:** `components/AiPlantCareCard.vue`, `components/AiPlantAdvice.vue` (Anzeige, vom Assistenten mitgenutzt), `utils/plantCare.ts` (`adviceTasks`, `planAdvice`, `mergeCareNotes`), `stores/plants.ts` (`applyAdviceTasks`, `applyCareAdvice`; liest die Aufgaben frisch, bei Fehler Abbruch statt Duplikate), `PlantsView`, `PlantDetailView`, `AssistantView`
+- **Teil 2 — Tag-Zieltyp Pflanze:** Registry-Einträge `plant.water` (Zieltyp `plant`; ein Ziel = alle Gießaufgaben der Pflanze, leer = alle fälligen Gießaufgaben über `water_all`) und `plant.care_task.done` (Zieltyp `plant_care_task`, Ziel = Pflegeaufgabe; eigener Zieltyp, weil das Ziel-Dropdown pro Zieltyp nur eine Zielliste kennt). Mutationen über `complete_care_task` und `water_all` (gleiche Logs und Socket-Events), `describe` aus `care_status` (Pflanzenname, letzte Gießung, nächste Fälligkeit). Keine Gießaufgabe → `can_execute=false` mit `NO_WATER_TASK` (bei „alle“ `NO_PLANTS`/`NOTHING_DUE`), `execute` → 409 `TAG_NOTHING_TO_DO`. Nach dem Scan führt „Ansehen“ auf `/plants/{id}`.
+  - **Backend:** `services/tag_actions.py`; **Frontend:** `utils/tagScan.ts` (`plantWaterLines`, `moduleRouteFor`), `TagScanView.vue`, Typ `TagActionKey`; `TagsView`/`stores/tags.ts` sind generisch und brauchten nur die i18n-Keys
+- **Tests:** `test_tags.py` +14 (66): resolve/execute, nur Gießaufgaben, keine Gießaufgabe, gelöschte Pflanze/Aufgabe, fremder Haushalt (403, 422 beim Anlegen), „alle fälligen“; Vitest +13 (`plantCare` +6, `plants` Store +3, `tagScan` +4)
+- **Doku:** `docs/security/tags-review.md` (Abschnitt „Zieltyp Pflanze“), README (Tags), `docs/ai-assistant.md` (Einbindung umgesetzt)
+- **i18n:** `ai.plant.*` (+10), `tags.targetTypes/targetNone/actions.plant.*/scan.*` (+19) → 993 Keys total
+- **Offen:** Der Vorschlag wird nicht gespeichert (Giftigkeit, Lichtbedarf und Standort-Tipp sind nur in der Vorschau sichtbar, nur `care_notes` landet in der Pflanze); Mehrfach-Scan von `plant.water` loggt mehrfach (siehe Review); nicht gegen die echte Anthropic-API geprüft (Client in Tests gemockt)

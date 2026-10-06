@@ -367,4 +367,47 @@ describe('plants store', () => {
     expect(s.careTasks).toEqual([])
     expect(s.careLog).toEqual([])
   })
+
+  describe('applyCareAdvice', () => {
+    const advice = {
+      plant_name: 'Monstera', botanical_name: 'Monstera deliciosa',
+      watering_interval_days: 7, fertilizing_interval_days: null, repotting_interval_months: 24,
+      light: 'bright_indirect' as const, location_tip: 'x', care_notes: 'Hell stellen.',
+      pet_toxicity: 'toxic' as const, pet_toxicity_note: null,
+    }
+
+    it('updates changed tasks, creates missing ones (null interval skipped) and merges notes', async () => {
+      repo.fetchCareTasks.mockResolvedValue([task({ id: 'w', interval_days: 10 })])
+      repo.updateCareTask.mockResolvedValue(task({ id: 'w', interval_days: 7 }))
+      repo.createCareTask.mockResolvedValue(task({ id: 'r', care_type: 'repot', interval_days: 720 }))
+      repo.update.mockResolvedValue(plant({ care_notes: 'Hell stellen.', species: 'Monstera deliciosa' }))
+      const s = usePlantsStore()
+      s.plants = [plant()]
+
+      const result = await s.applyCareAdvice(plant(), advice)
+
+      expect(result).toEqual({ created: 1, updated: 1 })
+      expect(repo.updateCareTask).toHaveBeenCalledWith('h1', 'p1', 'w', { interval_days: 7 })
+      expect(repo.createCareTask).toHaveBeenCalledTimes(1)
+      expect(repo.createCareTask).toHaveBeenCalledWith('h1', 'p1', { care_type: 'repot', interval_days: 720 })
+      expect(repo.update).toHaveBeenCalledWith('h1', 'p1', {
+        care_notes: 'Hell stellen.', species: 'Monstera deliciosa',
+      })
+    })
+
+    it('keeps existing species and does not rewrite identical notes', async () => {
+      repo.fetchCareTasks.mockResolvedValue([])
+      repo.createCareTask.mockResolvedValue(task())
+      const s = usePlantsStore()
+      await s.applyCareAdvice(plant({ species: 'Fensterblatt', care_notes: 'Hell stellen.' }), advice)
+      expect(repo.update).not.toHaveBeenCalled()
+    })
+
+    it('aborts without creating duplicates when the task list cannot be loaded', async () => {
+      repo.fetchCareTasks.mockRejectedValue(new Error('offline'))
+      const s = usePlantsStore()
+      await expect(s.applyCareAdvice(plant(), advice)).rejects.toThrow('offline')
+      expect(repo.createCareTask).not.toHaveBeenCalled()
+    })
+  })
 })

@@ -107,7 +107,17 @@ Wie H-13 im Hardening-Review: In-Memory, pro IP. Ein Haushalt hinter einem NAT t
 
 ### T-07 — Ziel-Scoping (✅ Abgesichert)
 
-`target_id` ist polymorph und hat keinen Fremdschlüssel. Jede Aktion lädt ihr Ziel über `load_target(db, tag.household_id, target_id)`, das `household_id` des Ziels gegen den Tag-Haushalt prüft — beim Anlegen, beim Ändern und bei **jedem** Scan. Ein Tag, der (etwa durch einen Bug oder manuelle DB-Änderung) auf ein fremdes Ziel zeigt, liefert 404 und ändert nichts (Test `test_todo_of_other_household_cannot_be_targeted_via_db_manipulation`). Die Mutation selbst läuft über die bestehenden Endpoint-Funktionen (`create_feeding`, `feed_all`, `complete_care_task`, `complete_assignment`, `update_todo`) mit derselben Mitgliedschaft (`membership`) und denselben Prüfungen wie in der App.
+`target_id` ist polymorph und hat keinen Fremdschlüssel. Jede Aktion lädt ihr Ziel über `load_target(db, tag.household_id, target_id)`, das `household_id` des Ziels gegen den Tag-Haushalt prüft — beim Anlegen, beim Ändern und bei **jedem** Scan. Ein Tag, der (etwa durch einen Bug oder manuelle DB-Änderung) auf ein fremdes Ziel zeigt, liefert 404 und ändert nichts (Test `test_todo_of_other_household_cannot_be_targeted_via_db_manipulation`). Die Mutation selbst läuft über die bestehenden Endpoint-Funktionen (`create_feeding`, `feed_all`, `complete_care_task` (Tier und Pflanze), `water_all`, `complete_assignment`, `update_todo`) mit derselben Mitgliedschaft (`membership`) und denselben Prüfungen wie in der App.
+
+### Zieltyp Pflanze (✅ Abgesichert, Epic 34)
+
+`plant.water` (Ziel: Pflanze, leer = alle fälligen) und `plant.care_task.done` (Ziel: Pflegeaufgabe, Zieltyp `plant_care_task`) folgen dem Muster der Tier-Aktionen und bleiben im Rahmen „Abhaken/Loggen“ — es gibt keine Lösch- oder Änderungs-Aktion.
+
+- **Scoping:** `load_target` prüft `household_id` für Pflanze und Pflegeaufgabe beim Anlegen, Ändern und bei jedem Scan (Tests: Pflanze/Aufgabe aus fremdem Haushalt → 422 beim Anlegen, fremdes Mitglied → 403, gelöschtes Ziel → 404 `TAG_TARGET_NOT_FOUND`, `target_missing` in der Liste).
+- **Mutation über die Router-Funktionen:** `complete_care_task` (je Gießaufgabe der Pflanze) und `water_all`; Log-Eintrag, `done_by_user_id` und Socket-Events `plant_care_task_updated`/`plant_care_logged` sind dieselben wie in der App.
+- **Keine Gießaufgabe:** `resolve` meldet `can_execute=false` mit `NO_WATER_TASK` (bei „alle“: `NO_PLANTS`/`NOTHING_DUE`); ein direkter `execute` liefert 409 `TAG_NOTHING_TO_DO` und schreibt nichts.
+- **Mehrfach-Scan:** Zwei Scans loggen zweimal (anders als `pet.feed` gibt es keinen Slot). Das ist harmlos — die Fälligkeit wird aus dem Intervall ab heute neu gesetzt — und liegt innerhalb des Scan-Rate-Limits (T-01/T-10).
+- **Keine neue Angriffsfläche:** Kein neuer Endpunkt, keine Migration; `describe` liest nur `care-status` des eigenen Haushalts (`care_status`-Funktion, gleicher Haushalt wie der Tag).
 
 ### Rollen
 
@@ -165,7 +175,7 @@ Jemand mit Zugang zur Wohnung könnte einen QR-Sticker durch einen mit fremder U
 
 ## Verifikation
 
-**Backend:** `backend/tests/test_tags.py`, 52 Tests: Token-Format; CRUD und Rollen; Aktion/Zieltyp-Validierung; Ziel aus fremdem Haushalt; resolve/execute für `pet.feed` (einzeln, alle Tiere, doppelt → 409, Slot-Wahl), `pet.care_task.done`, `chore.assignment.done` (aktuelle Periode vor Rückstand, pausiert, nichts fällig), `shopping_list.open` (nur Navigation, execute → 422), `todo.done` (idempotent); 401/403/404/410/422; Rate-Limit beider Endpunkte über verschiedene Tokens; Schwärzung in Log-Records und in der slowapi-Warnung.
+**Backend:** `backend/tests/test_tags.py`, 66 Tests: Token-Format; CRUD und Rollen; Aktion/Zieltyp-Validierung; Ziel aus fremdem Haushalt; resolve/execute für `pet.feed` (einzeln, alle Tiere, doppelt → 409, Slot-Wahl), `pet.care_task.done`, `chore.assignment.done` (aktuelle Periode vor Rückstand, pausiert, nichts fällig), `shopping_list.open` (nur Navigation, execute → 422), `todo.done` (idempotent), `plant.water` (eine Pflanze, nur fällige Gießaufgaben bei „alle“, keine Gießaufgabe → 409, gelöschte Pflanze → `TAG_TARGET_NOT_FOUND`, fremder Haushalt → 403, Pflanze aus fremdem Haushalt beim Anlegen → 422), `plant.care_task.done`; 401/403/404/410/422; Rate-Limit beider Endpunkte über verschiedene Tokens; Schwärzung in Log-Records und in der slowapi-Warnung.
 
 **E2E (wie H-02):** Produktions-Build (`vite build`) mit der echten `nginx.conf` + `security-headers.conf` (`nginx -t` ok) vor einem lokalen Backend (SQLite, Seed-Daten), headless Chromium (Playwright), Locale `de-DE`, Viewport 390×844:
 

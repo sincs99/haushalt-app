@@ -15,6 +15,7 @@ import { formatDateShort } from '../utils/dates'
 import {
   moduleRouteFor,
   nextScanStep,
+  plantWaterLines,
   scanErrorKind,
   suggestedSlot,
   type ScanErrorKind,
@@ -52,7 +53,7 @@ function actionText(suffix: string, params: Record<string, unknown> = {}): strin
 const title = computed(() => {
   const r = result.value
   if (!r) return ''
-  if (r.action === 'pet.feed' && !r.target_name) return actionText('confirmAll')
+  if ((r.action === 'pet.feed' || r.action === 'plant.water') && !r.target_name) return actionText('confirmAll')
   return actionText('confirm', { name: r.target_name ?? r.label })
 })
 
@@ -91,6 +92,19 @@ const detailLines = computed<string[]>(() => {
     }
     case 'pet.care_task.done':
       if (d.pet_name) lines.push(t('tags.scan.pet', { name: d.pet_name }))
+      if (d.next_due_at) lines.push(t('tags.scan.nextDue', { date: formatDateShort(d.next_due_at) }))
+      if (d.last_done_at) lines.push(t('tags.scan.lastDone', { date: formatDateShort(d.last_done_at) }))
+      break
+    case 'plant.water':
+      for (const line of plantWaterLines(d, !!r.target_name)) {
+        if (line.kind === 'neverWatered') lines.push(t('tags.scan.neverWatered'))
+        else if (line.kind === 'dueCount') lines.push(t('tags.scan.dueCount', { n: line.value }))
+        else if (line.kind === 'lastWatered') lines.push(t('tags.scan.lastWatered', { date: formatDateShort(String(line.value)) }))
+        else lines.push(t('tags.scan.plantDue', { date: formatDateShort(String(line.value)) }))
+      }
+      break
+    case 'plant.care_task.done':
+      if (d.plant_name) lines.push(t('tags.scan.plant', { name: d.plant_name }))
       if (d.next_due_at) lines.push(t('tags.scan.nextDue', { date: formatDateShort(d.next_due_at) }))
       if (d.last_done_at) lines.push(t('tags.scan.lastDone', { date: formatDateShort(d.last_done_at) }))
       break

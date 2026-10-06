@@ -15,7 +15,7 @@ Regeln für alle Aktionen:
 - **Keine Lösch-Aktionen.** Ein Tag kann von jedem gelesen werden, der den
   Sticker in die Hand bekommt; er darf höchstens etwas abhaken oder loggen.
 
-Neuen Zieltyp ergänzen (z. B. Pflanzen, ``plant.water``):
+Neuen Zieltyp ergänzen (Beispiel: Pflanzen, ``plant.water``):
 
 1. ``_plant_targets(db, household_id)`` schreiben: liefert ``TargetOption``\\s
    für das Dropdown (id + Anzeigename).
@@ -55,6 +55,8 @@ from app.models import (
     HouseholdMember,
     Pet,
     PetCareTask,
+    Plant,
+    PlantCareTask,
     ShoppingList,
     Tag,
     Todo,
@@ -317,6 +319,172 @@ def _execute_care_task_done(ctx: TagContext, params: dict[str, Any]) -> dict[str
 
 
 # ---------------------------------------------------------------------------
+# plant.water — Gießen loggen (eine Pflanze oder alle fälligen)
+# ---------------------------------------------------------------------------
+
+# Anzeigenamen der Pflegearten für das Ziel-Dropdown (Tags kennen keine i18n)
+PLANT_CARE_TYPE_NAMES = {
+    "water": "Gießen",
+    "fertilize": "Düngen",
+    "repot": "Umtopfen",
+    "mist": "Besprühen",
+    "other": "Sonstiges",
+}
+
+
+def _plant_task_name(task: PlantCareTask) -> str:
+    return (task.label or "").strip() or PLANT_CARE_TYPE_NAMES.get(task.care_type, task.care_type)
+
+
+def _plant_targets(db: Session, household_id: uuid.UUID) -> list[TargetOption]:
+    plants = db.query(Plant).filter(Plant.household_id == household_id).order_by(Plant.name).all()
+    return [TargetOption(p.id, p.name) for p in plants]
+
+
+def _load_plant(db: Session, household_id: uuid.UUID, target_id: uuid.UUID):
+    return _get_scoped(db, Plant, household_id, target_id)
+
+
+def _plant_care_status(ctx: TagContext) -> list:
+    """Pflegestatus aller Pflanzen — dieselben Daten wie ``GET …/plants/care-status``."""
+    from app.routers.plants import care_status
+
+    return care_status(household_id=ctx.household.id, membership=ctx.membership, db=ctx.db)
+
+
+def _status_row(item) -> dict[str, Any]:
+    water = [t for t in item.tasks if t.care_type == "water"]
+    last_done = [t.last_done_at for t in water if t.last_done_at is not None]
+    return {
+        "id": str(item.plant_id),
+        "name": item.plant_name,
+        "has_water_task": bool(water),
+        "last_watered_at": _iso(max(last_done)) if last_done else None,
+        "next_due_at": _iso(min(t.next_due_at for t in water)) if water else None,
+        "due": any(t.due_today or t.overdue for t in water),
+    }
+
+
+def _describe_plant_water(ctx: TagContext) -> TagDescription:
+    rows = [_status_row(item) for item in _plant_care_status(ctx)]
+    if ctx.target is not None:
+        row = next((r for r in rows if r["id"] == str(ctx.target.id)), None)
+        details = {
+            "plant_id": str(ctx.target.id),
+            "plants": [row] if row else [],
+            "last_watered_at": row["last_watered_at"] if row else None,
+            "next_due_at": row["next_due_at"] if row else None,
+        }
+        name = ctx.target.name
+        if row is None or not row["has_water_task"]:
+            return TagDescription(name, f"'{name}' has no watering task", details, False, "NO_WATER_TASK")
+        return TagDescription(name, f"Water {name}", details)
+
+    due = [r for r in rows if r["due"]]
+    details = {"plants": rows, "due_count": len(due)}
+    if not rows:
+        return TagDescription(None, "No plants in this household", details, False, "NO_PLANTS")
+    if not due:
+        return TagDescription(None, "No plant needs water today", details, False, "NOTHING_DUE")
+    return TagDescription(None, "Water all plants that are due", details)
+
+
+def _execute_plant_water(ctx: TagContext, params: dict[str, Any]) -> dict[str, Any]:
+    from app.routers.plants import CareLogResponse, complete_care_task, water_all
+
+    household_id = ctx.household.id
+    if ctx.target is not None:
+        tasks = (
+            ctx.db.query(PlantCareTask)
+            .filter(
+                PlantCareTask.household_id == household_id,
+                PlantCareTask.plant_id == ctx.target.id,
+                PlantCareTask.care_type == "water",
+            )
+            .all()
+        )
+        if not tasks:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=error_detail(ErrorCode.TAG_NOTHING_TO_DO, "Plant has no watering task"),
+            )
+        logs = [
+            complete_care_task(
+                household_id=household_id,
+                plant_id=ctx.target.id,
+                task_id=task.id,
+                body=None,
+                membership=ctx.membership,
+                db=ctx.db,
+            ).log
+            for task in tasks
+        ]
+    else:
+        logs = water_all(household_id=household_id, membership=ctx.membership, db=ctx.db)
+    return {
+        "changed": bool(logs),
+        "logs": [CareLogResponse.model_validate(log).model_dump(mode="json") for log in logs],
+    }
+
+
+# ---------------------------------------------------------------------------
+# plant.care_task.done — Pflegeaufgabe einer Pflanze erledigen
+# ---------------------------------------------------------------------------
+
+
+def _plant_care_task_targets(db: Session, household_id: uuid.UUID) -> list[TargetOption]:
+    rows = (
+        db.query(PlantCareTask, Plant.name)
+        .join(Plant, PlantCareTask.plant_id == Plant.id)
+        .filter(PlantCareTask.household_id == household_id)
+        .order_by(Plant.name, PlantCareTask.care_type, PlantCareTask.label)
+        .all()
+    )
+    return [TargetOption(task.id, f"{plant_name} – {_plant_task_name(task)}") for task, plant_name in rows]
+
+
+def _load_plant_care_task(db: Session, household_id: uuid.UUID, target_id: uuid.UUID):
+    return _get_scoped(db, PlantCareTask, household_id, target_id)
+
+
+def _describe_plant_care_task_done(ctx: TagContext) -> TagDescription:
+    task: PlantCareTask = ctx.target
+    plant = ctx.db.get(Plant, task.plant_id)
+    plant_name = plant.name if plant else None
+    name = _plant_task_name(task)
+    return TagDescription(
+        target_name=name,
+        description=f"Mark '{name}' as done" + (f" for {plant_name}" if plant_name else ""),
+        details={
+            "plant_id": str(task.plant_id),
+            "plant_name": plant_name,
+            "care_type": task.care_type,
+            "interval_days": task.interval_days,
+            "next_due_at": _iso(task.next_due_at),
+            "last_done_at": _iso(task.last_done_at),
+        },
+    )
+
+
+def _execute_plant_care_task_done(ctx: TagContext, params: dict[str, Any]) -> dict[str, Any]:
+    from app.routers.plants import CareLogResponse, CareTaskResponse, complete_care_task
+
+    done = complete_care_task(
+        household_id=ctx.household.id,
+        plant_id=ctx.target.plant_id,
+        task_id=ctx.target.id,
+        body=None,
+        membership=ctx.membership,
+        db=ctx.db,
+    )
+    return {
+        "changed": True,
+        "care_task": CareTaskResponse.model_validate(done.task).model_dump(mode="json"),
+        "log": CareLogResponse.model_validate(done.log).model_dump(mode="json"),
+    }
+
+
+# ---------------------------------------------------------------------------
 # chore.assignment.done — aktuelle Putzplan-Zuweisung eines Ämtlis abhaken
 # ---------------------------------------------------------------------------
 
@@ -534,6 +702,23 @@ TAG_ACTIONS: dict[str, TagAction] = {
             load_target=_load_care_task,
             describe=_describe_care_task_done,
             execute=_execute_care_task_done,
+        ),
+        TagAction(
+            key="plant.water",
+            target_type="plant",
+            list_targets=_plant_targets,
+            load_target=_load_plant,
+            describe=_describe_plant_water,
+            execute=_execute_plant_water,
+            target_optional=True,  # leer = alle fälligen Gießaufgaben (water-all)
+        ),
+        TagAction(
+            key="plant.care_task.done",
+            target_type="plant_care_task",
+            list_targets=_plant_care_task_targets,
+            load_target=_load_plant_care_task,
+            describe=_describe_plant_care_task_done,
+            execute=_execute_plant_care_task_done,
         ),
         TagAction(
             key="chore.assignment.done",

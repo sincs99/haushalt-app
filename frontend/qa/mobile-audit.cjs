@@ -193,6 +193,7 @@ function auditInPage(opts) {
       if (pcs.overflowX !== 'visible' || pcs.overflowY !== 'visible') {
         const pr = p.getBoundingClientRect()
         const cx = r.left + r.width / 2, cy = r.top + r.height / 2
+        if (cx < pr.left || cx > pr.right || cy < pr.top || cy > pr.bottom) { w = h = Infinity; break } // weggescrollt
         w = Math.min(w, 2 * Math.min(cx - pr.left, pr.right - cx))
         h = Math.min(h, 2 * Math.min(cy - pr.top, pr.bottom - cy))
         w = Math.max(w, r.width); h = Math.max(h, r.height)

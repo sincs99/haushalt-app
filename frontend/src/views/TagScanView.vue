@@ -243,7 +243,7 @@ onMounted(resolve)
 
       <!-- Erledigt -->
       <template v-else-if="state === 'done' && result">
-        <PhCheckCircle :size="56" weight="fill" class="scan-icon scan-icon--ok" />
+        <PhCheckCircle :size="48" weight="fill" class="scan-icon scan-icon--ok" />
         <h1 class="scan-title">
           {{ execResult?.changed === false ? $t('tags.scan.successNoChange') : actionText('done') }}
         </h1>

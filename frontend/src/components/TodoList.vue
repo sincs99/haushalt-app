@@ -278,7 +278,7 @@ async function saveEdit(todoId: string) {
             class="add-details__input reminder-row__input"
           />
           <button type="button" class="action-btn action-btn--danger" @click="newReminders.splice(idx, 1)">
-            <PhX :size="14" />
+            <PhX :size="16" />
           </button>
         </div>
         <button
@@ -364,7 +364,7 @@ async function saveEdit(todoId: string) {
               <div v-for="rem in todo.reminders" :key="rem.id" class="reminder-row">
                 <span class="reminder-row__text">{{ formatReminderDate(rem.remind_at) }}</span>
                 <button type="button" class="action-btn action-btn--danger" @click="handleDeleteReminder(todo.id, rem.id)">
-                  <PhX :size="14" />
+                  <PhX :size="16" />
                 </button>
               </div>
               <!-- Neue Reminders hinzufügen -->
@@ -375,7 +375,7 @@ async function saveEdit(todoId: string) {
                   class="add-details__input reminder-row__input"
                 />
                 <button type="button" class="action-btn action-btn--danger" @click="editNewReminders.splice(idx, 1)">
-                  <PhX :size="14" />
+                  <PhX :size="16" />
                 </button>
               </div>
               <button

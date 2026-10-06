@@ -72,7 +72,7 @@ async function joinHousehold() {
     <div class="no-household-cards">
       <!-- Karte: Haushalt gründen -->
       <BaseCard>
-        <h2 class="card-title"><PhHouse :size="18" /> {{ $t('noHousehold.createTitle') }}</h2>
+        <h2 class="card-title"><PhHouse :size="20" /> {{ $t('noHousehold.createTitle') }}</h2>
         <p class="card-hint">{{ $t('noHousehold.createHint') }}</p>
         <form @submit.prevent="createHousehold" class="card-form">
           <BaseInput
@@ -93,7 +93,7 @@ async function joinHousehold() {
 
       <!-- Karte: Mit Code beitreten -->
       <BaseCard>
-        <h2 class="card-title"><PhUsers :size="18" /> {{ $t('noHousehold.joinTitle') }}</h2>
+        <h2 class="card-title"><PhUsers :size="20" /> {{ $t('noHousehold.joinTitle') }}</h2>
         <p class="card-hint">{{ $t('noHousehold.joinHint') }}</p>
         <form @submit.prevent="joinHousehold" class="card-form">
           <BaseInput

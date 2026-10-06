@@ -219,7 +219,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
     <div v-if="plantsStore.loading && plantsStore.plants.length === 0" class="skeleton-list">
       <div class="skeleton-row" v-for="n in 3" :key="n">
         <BaseSkeleton width="40px" height="40px" rounded />
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-1);">
           <BaseSkeleton :width="['75%', '60%', '85%'][n - 1]" height="16px" />
           <BaseSkeleton width="40%" height="12px" />
         </div>
@@ -253,7 +253,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
             :disabled="wateringAll"
             @click="handleWaterAll"
           >
-            <PhDrop :size="18" weight="bold" />
+            <PhDrop :size="20" weight="bold" />
             {{ $t('plants.waterAll') }}
           </BaseButton>
         </BaseCard>
@@ -308,7 +308,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
               :disabled="wateringIds.has(plant.id)"
               @click.stop="handleWater(plant.id)"
             >
-              <PhDrop :size="18" weight="bold" />
+              <PhDrop :size="20" weight="bold" />
               {{ $t('plants.watered') }}
             </BaseButton>
           </div>

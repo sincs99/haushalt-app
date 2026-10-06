@@ -18,6 +18,7 @@ import type {
 import {
   PhArrowLeft, PhPencilSimple, PhSun, PhMoon, PhPlus, PhPill,
   PhCheck, PhTrash, PhCalendarCheck, PhCamera, PhCat,
+  PhUser,
 } from '@phosphor-icons/vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
@@ -647,7 +648,7 @@ async function handleDeleteCareTask() {
       <!-- ═══ Header ═══ -->
       <div class="detail-header">
         <button class="back-btn" @click="router.back()" :aria-label="$t('common.back')">
-          <PhArrowLeft :size="22" weight="bold" />
+          <PhArrowLeft :size="24" weight="bold" />
         </button>
         <div class="detail-header__info">
           <span class="detail-header__emoji">{{ speciesEmoji(pet.species) }}</span>
@@ -716,7 +717,7 @@ async function handleDeleteCareTask() {
 
           <!-- Keine Medikamente -->
           <div v-if="petsStore.medications.length === 0" class="med-empty">
-            <PhPill :size="32" weight="light" class="med-empty__icon" />
+            <PhPill :size="32" weight="regular" class="med-empty__icon" />
             <p class="med-empty__title">{{ $t('pets.noMedications') }}</p>
             <p class="med-empty__hint">{{ $t('pets.noMedicationsHint') }}</p>
           </div>
@@ -787,7 +788,7 @@ async function handleDeleteCareTask() {
                     :key="log.id"
                     class="med-log__entry"
                   >
-                    <span class="med-log__user">👤 {{ getMemberName(log.given_by_user_id) }}</span>
+                    <span class="med-log__user"><PhUser :size="12" aria-hidden="true" /> {{ getMemberName(log.given_by_user_id) }}</span>
                     <span class="med-log__time">{{ formatLogDateTime(log.given_at) }}</span>
                   </li>
                 </ul>
@@ -885,7 +886,7 @@ async function handleDeleteCareTask() {
                 size="sm"
                 @click="handleCompleteCareTask(task.id)"
               >
-                <PhCheck :size="18" weight="bold" />
+                <PhCheck :size="20" weight="bold" />
                 {{ $t('petCare.complete') }}
               </BaseButton>
               <button
@@ -893,7 +894,7 @@ async function handleDeleteCareTask() {
                 @click="confirmDeleteCareTask(task.id)"
                 :aria-label="$t('common.delete')"
               >
-                <PhTrash :size="18" />
+                <PhTrash :size="20" />
               </button>
             </div>
           </div>
@@ -1194,7 +1195,7 @@ async function handleDeleteCareTask() {
             class="health-editor__add"
             @click="addHealthEntry"
           >
-            <PhPlus :size="14" weight="bold" />
+            <PhPlus :size="16" weight="bold" />
             {{ $t('pets.addHealthEntry') }}
           </button>
         </div>
@@ -1533,6 +1534,9 @@ async function handleDeleteCareTask() {
 }
 
 .med-log__user {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font-weight: var(--font-weight-medium);
 }
 

@@ -35,7 +35,7 @@ const isTabActive = (to: string) => route.path === to
       class="bottom-nav__tab"
       :class="{ 'bottom-nav__tab--active': isTabActive(tab.to) }"
     >
-      <component :is="tab.icon" :size="22" :weight="isTabActive(tab.to) ? 'fill' : 'regular'" class="bottom-nav__icon" />
+      <component :is="tab.icon" :size="24" :weight="isTabActive(tab.to) ? 'fill' : 'regular'" class="bottom-nav__icon" />
       <span class="bottom-nav__label">{{ tab.label }}</span>
     </router-link>
 
@@ -45,7 +45,7 @@ const isTabActive = (to: string) => route.path === to
       @click="emit('toggle-more')"
     >
       <span class="bottom-nav__icon-wrap">
-        <PhDotsThreeCircle :size="22" :weight="moreActive ? 'fill' : 'regular'" class="bottom-nav__icon" />
+        <PhDotsThreeCircle :size="24" :weight="moreActive ? 'fill' : 'regular'" class="bottom-nav__icon" />
         <span
           class="bottom-nav__sync-dot sync-dot"
           :class="`sync-dot--${syncStatus}`"

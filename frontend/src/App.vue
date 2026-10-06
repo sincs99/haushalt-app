@@ -386,22 +386,22 @@ onUnmounted(() => {
         <span class="top-bar__brand"><PhHouse :size="20" /> {{ $t('nav.brand') }}</span>
         <nav class="top-bar__nav">
           <router-link to="/dashboard" class="top-bar__link" active-class="top-bar__link--active">
-            <PhHouse :size="18" /> {{ $t('nav.start') }}
+            <PhHouse :size="16" /> {{ $t('nav.start') }}
           </router-link>
           <router-link to="/calendar" class="top-bar__link" active-class="top-bar__link--active">
-            <PhCalendarDots :size="18" /> {{ $t('nav.calendar') }}
+            <PhCalendarDots :size="16" /> {{ $t('nav.calendar') }}
           </router-link>
           <router-link to="/shopping" class="top-bar__link" active-class="top-bar__link--active">
-            <PhShoppingBagOpen :size="18" /> {{ $t('nav.shopping') }}
+            <PhShoppingBagOpen :size="16" /> {{ $t('nav.shopping') }}
           </router-link>
           <router-link to="/todos" class="top-bar__link" active-class="top-bar__link--active">
-            <PhListChecks :size="18" /> {{ $t('nav.todos') }}
+            <PhListChecks :size="16" /> {{ $t('nav.todos') }}
           </router-link>
           <router-link to="/expenses" class="top-bar__link" active-class="top-bar__link--active">
-            <PhWallet :size="18" /> {{ $t('nav.expenses') }}
+            <PhWallet :size="16" /> {{ $t('nav.expenses') }}
           </router-link>
           <router-link to="/household" class="top-bar__link" active-class="top-bar__link--active">
-            <PhHouse :size="18" /> {{ $t('nav.household') }}
+            <PhHouse :size="16" /> {{ $t('nav.household') }}
           </router-link>
         </nav>
         <div class="top-bar__right">

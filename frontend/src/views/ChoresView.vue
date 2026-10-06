@@ -7,7 +7,7 @@ import { useAuthStore } from '../stores/auth'
 import { useToast } from '../composables/useToast'
 import { formatDateShort } from '../utils/dates'
 import type { ChoreInfo, ChoreAssignmentInfo, ChoreCreatePayload, ChoreUpdatePayload } from '../types'
-import { PhBroom, PhCalendarCheck, PhPencilSimple, PhX } from '@phosphor-icons/vue'
+import { PhBroom, PhCalendarCheck, PhPencilSimple, PhUserSwitch, PhX } from '@phosphor-icons/vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
@@ -328,7 +328,7 @@ const weekdayOptions = computed(() =>
     <div v-if="choresStore.loading" class="skeleton-list">
       <div class="skeleton-row" v-for="n in 3" :key="n">
         <BaseSkeleton width="22px" height="22px" rounded />
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-1);">
           <BaseSkeleton :width="['75%', '60%', '85%'][n - 1]" height="16px" />
           <BaseSkeleton width="40%" height="12px" />
         </div>
@@ -414,7 +414,7 @@ const weekdayOptions = computed(() =>
                   :aria-label="$t('chores.reassignTo')"
                   @click="openReassignDialog(assignment.id)"
                 >
-                  👤
+                  <PhUserSwitch :size="20" />
                 </button>
               </div>
 

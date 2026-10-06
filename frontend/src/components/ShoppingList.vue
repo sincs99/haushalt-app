@@ -363,7 +363,7 @@ async function confirmDissolve() {
             class="group-header__kebab"
             @click.stop="kebabOpen = kebabOpen === groupName ? null : groupName"
           >
-            <PhDotsThreeVertical :size="18" />
+            <PhDotsThreeVertical :size="20" />
           </button>
           <!-- Kebab-Dropdown -->
           <div v-if="kebabOpen === groupName" class="kebab-menu" @click.stop>
@@ -412,7 +412,7 @@ async function confirmDissolve() {
       <div class="done-section__header">
         <button type="button" class="done-section__toggle" @click="showDone = !showDone">
           <PhCaretDown
-            :size="18"
+            :size="20"
             class="done-section__chevron"
             :class="{ 'done-section__chevron--open': showDone }"
           />

@@ -10,7 +10,7 @@ import { formatRappen, parseAmountToRappen } from '../utils/money'
 import { formatDate } from '../utils/dates'
 import { translateApiError } from '../utils/apiErrors'
 import { useAuthStore } from '../stores/auth'
-import { PhX } from '@phosphor-icons/vue'
+import { PhCheck, PhX } from '@phosphor-icons/vue'
 import type { Expense, PendingBillInfo } from '../types'
 import BalanceSummary from '../components/BalanceSummary.vue'
 import ExpenseFormDialog from '../components/ExpenseFormDialog.vue'
@@ -276,8 +276,8 @@ onMounted(() => {
         <!-- Budget wird geladen -->
         <template v-if="financeStore.loading && !financeStore.summary">
           <BaseSkeleton width="50%" height="28px" />
-          <BaseSkeleton width="100%" height="8px" style="margin-top: 12px" />
-          <BaseSkeleton width="60%" height="14px" style="margin-top: 8px" />
+          <BaseSkeleton width="100%" height="8px" style="margin-top: var(--space-3)" />
+          <BaseSkeleton width="60%" height="14px" style="margin-top: var(--space-2)" />
         </template>
 
         <!-- Budget vorhanden -->
@@ -376,7 +376,7 @@ onMounted(() => {
           </div>
           <div class="bill-row__action">
             <span v-if="bill.is_booked_this_month" class="bill-badge">
-              {{ $t('finance.booked') }} ✓
+              {{ $t('finance.booked') }} <PhCheck :size="12" weight="bold" aria-hidden="true" />
             </span>
             <BaseButton
               v-else
@@ -412,7 +412,7 @@ onMounted(() => {
       <div v-if="expensesStore.loading && expensesStore.expenses.length === 0" class="skeleton-list">
         <div class="skeleton-row" v-for="n in 3" :key="n">
           <BaseSkeleton width="32px" height="32px" rounded />
-          <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-1);">
             <BaseSkeleton :width="['60%', '50%', '70%'][n - 1]" height="16px" />
             <BaseSkeleton width="45%" height="12px" />
           </div>
@@ -783,6 +783,7 @@ onMounted(() => {
 .bill-badge {
   display: inline-flex;
   align-items: center;
+  gap: var(--space-1);
   padding: var(--space-1) var(--space-2);
   font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);

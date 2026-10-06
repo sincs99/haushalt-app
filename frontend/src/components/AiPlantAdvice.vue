@@ -42,7 +42,7 @@ const { t } = useI18n()
     <p class="advice__text">{{ advice.care_notes }}</p>
 
     <div class="advice__pets" :class="`advice__pets--${advice.pet_toxicity}`">
-      <PhWarning v-if="advice.pet_toxicity === 'toxic'" :size="18" />
+      <PhWarning v-if="advice.pet_toxicity === 'toxic'" :size="20" />
       <div>
         <strong>{{ t('ai.plant.petToxicity') }}: {{ t(`ai.plant.toxicity.${advice.pet_toxicity}`) }}</strong>
         <p v-if="advice.pet_toxicity_note" class="advice__text">{{ advice.pet_toxicity_note }}</p>

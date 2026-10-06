@@ -372,7 +372,7 @@ async function handleDeleteTask() {
       <!-- ═══ Header ═══ -->
       <div class="detail-header">
         <button class="back-btn" :aria-label="$t('common.back')" @click="router.back()">
-          <PhArrowLeft :size="22" weight="bold" />
+          <PhArrowLeft :size="24" weight="bold" />
         </button>
         <div class="detail-header__info">
           <h1 class="detail-header__name">{{ plant.name }}</h1>
@@ -443,7 +443,7 @@ async function handleDeleteTask() {
             </div>
             <div class="care-task-card__actions">
               <BaseButton variant="primary" size="sm" @click="handleComplete(task.id)">
-                <PhCheck :size="18" weight="bold" />
+                <PhCheck :size="20" weight="bold" />
                 {{ $t('plants.complete') }}
               </BaseButton>
               <button
@@ -451,7 +451,7 @@ async function handleDeleteTask() {
                 :aria-label="$t('common.delete')"
                 @click="deletingTaskId = task.id"
               >
-                <PhTrash :size="18" />
+                <PhTrash :size="20" />
               </button>
             </div>
           </div>

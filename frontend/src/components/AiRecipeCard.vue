@@ -186,7 +186,7 @@ function discard() {
           {{ t('ai.recipe.addedMissing', { n: missingAdded }, missingAdded) }}
         </p>
         <BaseButton v-else variant="secondary" size="sm" :loading="addingMissing" @click="addMissing">
-          <PhShoppingBagOpen :size="16" style="margin-right: 6px" />
+          <PhShoppingBagOpen :size="16" style="margin-right: var(--space-1-5)" />
           {{ t('ai.recipe.addMissing') }}
         </BaseButton>
       </div>

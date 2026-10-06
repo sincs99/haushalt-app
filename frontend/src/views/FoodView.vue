@@ -388,7 +388,7 @@ async function doCreateMealPoll() {
               :aria-label="t('food.favorite')"
             >
               <PhStar
-                :size="18"
+                :size="20"
                 :weight="getEntryForDate(date)?.recipe?.is_favorite ? 'fill' : 'regular'"
               />
             </button>
@@ -639,7 +639,7 @@ async function doCreateMealPoll() {
             :loading="addToShoppingLoading"
             @click="doAddToShopping"
           >
-            <PhShoppingBagOpen :size="18" style="margin-right: 6px" />
+            <PhShoppingBagOpen :size="20" style="margin-right: var(--space-1-5)" />
             {{ t('food.addToShopping') }}
           </BaseButton>
 

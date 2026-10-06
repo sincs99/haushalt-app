@@ -428,7 +428,7 @@ onUnmounted(() => {
 
     <!-- Suche -->
     <div class="search">
-      <PhMagnifyingGlass :size="18" class="search__icon" aria-hidden="true" />
+      <PhMagnifyingGlass :size="20" class="search__icon" aria-hidden="true" />
       <BaseInput
         v-model="searchInput"
         type="search"
@@ -499,7 +499,7 @@ onUnmounted(() => {
             :aria-label="$t('documents.preview')"
             @click.stop="openPreview(doc)"
           >
-            <PhEye :size="18" />
+            <PhEye :size="20" />
           </button>
           <!-- Mehrseitige Dokumente: Download pro Seite im Dialog/Vorschau -->
           <button
@@ -508,7 +508,7 @@ onUnmounted(() => {
             :aria-label="$t('documents.download')"
             @click.stop="handleDownload(doc.files[0])"
           >
-            <PhDownloadSimple :size="18" />
+            <PhDownloadSimple :size="20" />
           </button>
         </div>
       </li>
@@ -592,7 +592,7 @@ onUnmounted(() => {
               :disabled="pagesBusy || formLoading || pageCount >= MAX_DOCUMENT_FILES"
               @click="fileInputRef?.click()"
             >
-              <PhPlus :size="14" weight="bold" />
+              <PhPlus :size="16" weight="bold" />
               {{ pageCount > 0 ? $t('documents.addPages') : $t('documents.chooseFiles') }}
             </BaseButton>
             <BaseButton
@@ -601,7 +601,7 @@ onUnmounted(() => {
               :disabled="pagesBusy || formLoading || pageCount >= MAX_DOCUMENT_FILES"
               @click="cameraInputRef?.click()"
             >
-              <PhCamera :size="14" />
+              <PhCamera :size="16" />
               {{ $t('documents.takePhoto') }}
             </BaseButton>
           </div>
@@ -691,13 +691,13 @@ onUnmounted(() => {
         <div class="preview-footer">
           <div v-if="previewDoc && previewDoc.files.length > 1" class="preview-nav">
             <button class="icon-btn" :disabled="previewIndex === 0" :aria-label="$t('documents.previousPage')" @click="showPreviewPage(previewIndex - 1)">
-              <PhCaretLeft :size="18" />
+              <PhCaretLeft :size="20" />
             </button>
             <span class="preview-nav__label">
               {{ $t('documents.pageOf', { current: previewIndex + 1, total: previewDoc.files.length }) }}
             </span>
             <button class="icon-btn" :disabled="previewIndex >= previewDoc.files.length - 1" :aria-label="$t('documents.nextPage')" @click="showPreviewPage(previewIndex + 1)">
-              <PhCaretRight :size="18" />
+              <PhCaretRight :size="20" />
             </button>
           </div>
           <span v-else />

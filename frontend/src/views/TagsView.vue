@@ -259,7 +259,7 @@ watch(() => authStore.currentHouseholdId, () => {
           :class="{ 'tag-row--disabled': !tag.enabled }"
           @click="openDetail(tag)"
         >
-          <PhQrCode :size="28" class="tag-row__icon" />
+          <PhQrCode :size="24" class="tag-row__icon" />
           <span class="tag-row__body">
             <span class="tag-row__title">
               {{ tag.label }}

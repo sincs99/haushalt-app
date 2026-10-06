@@ -388,7 +388,7 @@ watch(() => authStore.currentHouseholdId, () => {
             :aria-label="$t('household.removeMemberButton')"
             @click="openRemoveMemberDialog(member)"
           >
-            <PhUserMinus :size="18" />
+            <PhUserMinus :size="20" />
           </button>
         </div>
       </div>

@@ -707,7 +707,7 @@ watch(() => authStore.currentHouseholdId, () => {
 .admin-badge {
   display: inline-flex;
   align-items: center;
-  padding: var(--space-0-5) var(--space-2);
+  padding: var(--space-1) var(--space-2); /* --space-0-5 existiert nicht */
   background: var(--color-primary-light);
   color: var(--color-primary);
   font-size: var(--text-xs);

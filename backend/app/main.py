@@ -76,7 +76,10 @@ async def lifespan(app: FastAPI):
         push_task.cancel()
 
 
-app = FastAPI(title="Haushalt App API", lifespan=lifespan)
+# redirect_slashes=False: Kein 307 bei fehlendem/überzähligem Slash. Hinter dem Proxy
+# würde der Redirect sonst mit falschem Schema/Host gebaut und der Browser verwirft
+# dabei den Authorization-Header — Pfadfehler sollen als 404 sofort auffallen.
+app = FastAPI(title="Haushalt App API", lifespan=lifespan, redirect_slashes=False)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _custom_rate_limit_handler)

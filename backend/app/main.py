@@ -24,6 +24,18 @@ logger = logging.getLogger("uvicorn.error")
 _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 
 _JWT_PLACEHOLDER = "please-change-this-secret-in-production-min-32-chars"
+# Platzhalter-Muster aus .env.example / Doku / alten Compose-Defaults
+_JWT_PLACEHOLDER_MARKERS = ("change", "placeholder", "example", "einfuegen")
+
+
+def is_insecure_jwt_secret(secret: str) -> bool:
+    """True für zu kurze oder offensichtlich aus Vorlagen übernommene Secrets."""
+    lowered = secret.lower()
+    return (
+        len(secret) < 32
+        or secret == _JWT_PLACEHOLDER
+        or any(marker in lowered for marker in _JWT_PLACEHOLDER_MARKERS)
+    )
 
 
 async def _custom_rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
@@ -38,9 +50,9 @@ async def _custom_rate_limit_handler(request: Request, exc: RateLimitExceeded) -
 async def lifespan(app: FastAPI):
     """Startup-Checks und Event-Loop für sync→async Bridge setzen."""
     # JWT Secret Validierung
-    if settings.jwt_secret_key == _JWT_PLACEHOLDER or len(settings.jwt_secret_key) < 32:
+    if is_insecure_jwt_secret(settings.jwt_secret_key):
         raise RuntimeError(
-            "JWT_SECRET_KEY is insecure! It must be at least 32 characters and not the .env.example placeholder. "
+            "JWT_SECRET_KEY is insecure! It must be at least 32 characters and not a template placeholder. "
             'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
         )
 
@@ -80,7 +92,10 @@ async def lifespan(app: FastAPI):
         push_task.cancel()
 
 
-app = FastAPI(title="Haushalt App API", lifespan=lifespan)
+# redirect_slashes=False: Kein 307 bei fehlendem/überzähligem Slash. Hinter dem Proxy
+# würde der Redirect sonst mit falschem Schema/Host gebaut und der Browser verwirft
+# dabei den Authorization-Header — Pfadfehler sollen als 404 sofort auffallen.
+app = FastAPI(title="Haushalt App API", lifespan=lifespan, redirect_slashes=False)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _custom_rate_limit_handler)

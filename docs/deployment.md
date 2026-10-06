@@ -2,7 +2,7 @@
 
 Production-Deployment auf einem Windows-Host mit Docker Desktop, hinter Nginx Proxy Manager (NPM) für TLS-Terminierung.
 
-> ℹ️ Dieses Dokument beschreibt das **Docker-basierte Production-Deployment**. Für ein alternatives Setup ohne Docker siehe [DEPLOYMENT-WINDOWS-SERVER.md](./DEPLOYMENT-WINDOWS-SERVER.md).
+> ℹ️ Dieses Dokument beschreibt das **empfohlene Production-Deployment**. [DEPLOYMENT-WINDOWS-SERVER.md](./DEPLOYMENT-WINDOWS-SERVER.md) beschreibt einen einfachen HTTP-Testbetrieb mit der Entwicklungs-Konfiguration.
 
 ---
 
@@ -245,13 +245,20 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 .\scripts\backup-db.ps1 -ComposeFile docker-compose.prod.yml -EnvFile .env.prod
 ```
 
-Erstellt einen komprimierten PostgreSQL-Dump unter `backups\casa-backup-YYYY-MM-DD_HH-mm.dump`. Das Skript hält maximal 14 Backups und rotiert ältere automatisch.
+Erstellt mit gleichem Zeitstempel:
+
+- `backups\casa-backup-YYYY-MM-DD_HH-mm.dump` — komprimierter PostgreSQL-Dump
+- `backups\casa-uploads-YYYY-MM-DD_HH-mm.tar.gz` — alle hochgeladenen Dateien (Ablage-Dokumente, Tierfotos) aus dem Volume `uploaddata`
+
+Postgres- und Backend-Container müssen laufen (die Uploads werden über den Backend-Container gelesen). Das Skript hält maximal 14 Backups je Typ und rotiert ältere automatisch.
 
 ### 6.2 Restore
 
 ```powershell
 .\scripts\restore-db.ps1 .\backups\casa-backup-YYYY-MM-DD_HH-mm.dump -ComposeFile docker-compose.prod.yml -EnvFile .env.prod
 ```
+
+Liegt neben dem Dump ein `casa-uploads-…tar.gz` mit gleichem Zeitstempel, werden auch die Uploads wiederhergestellt (bestehende Dateien werden ersetzt). Ein anderes Archiv lässt sich mit `-UploadsFile` angeben. Ohne Archiv bleiben die Dateien unverändert — Dokumente und Fotos aus dem Dump können dann auf fehlende Dateien zeigen.
 
 ### 6.3 Restore in Throwaway-Projekt (zum Testen)
 
@@ -280,8 +287,6 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod --project-name ca
 ### 6.5 Offsite-Kopie
 
 Empfehlung: Den `backups\`-Ordner regelmässig auf ein zweites Laufwerk oder in Cloud-Speicher (z.B. OneDrive, S3) kopieren.
-
-> ℹ️ **Hinweis zu File Uploads:** Sobald Epic 9 (File Uploads) produktiv genutzt wird, muss auch das Docker-Volume `uploaddata` in die Backup-Strategie einbezogen werden. Der Volume-Pfad lässt sich mit `docker volume inspect <project>_uploaddata` ermitteln.
 
 ---
 

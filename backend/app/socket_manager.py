@@ -8,7 +8,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.security import decode_access_token
 from app.database import SessionLocal
-from app.models import User, HouseholdMember
+from app.models import HouseholdMember, User
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,14 @@ def _is_household_member(household_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         )
 
 
+def _user_room(user_id) -> str:
+    return f"user_{user_id}"
+
+
+def _household_room(household_id) -> str:
+    return f"household_{household_id}"
+
+
 # ---------------------------------------------------------------------------
 # Socket.IO Events
 # ---------------------------------------------------------------------------
@@ -84,6 +92,9 @@ async def connect(sid, environ, auth):
         return False
 
     await sio.save_session(sid, {"user_id": user_id})
+    # Persönlicher Raum: erlaubt, alle Verbindungen eines Users serverseitig zu
+    # erreichen (z.B. um sie bei Entfernung aus einem Haushalt aus dessen Raum zu werfen)
+    await sio.enter_room(sid, _user_room(user_id))
     logger.info("Socket connected (sid=%s, user=%s)", sid, user_id)
 
 
@@ -136,7 +147,7 @@ async def join_household(sid, data):
         )
         return
 
-    await sio.enter_room(sid, f"household_{household_id}")
+    await sio.enter_room(sid, _household_room(household_id))
     logger.info(
         "User %s joined room household_%s (sid=%s)", user_id, household_id, sid
     )
@@ -150,7 +161,7 @@ async def leave_household(sid, data):
         return
     try:
         household_id = uuid.UUID(household_id_str)
-        await sio.leave_room(sid, f"household_{household_id}")
+        await sio.leave_room(sid, _household_room(household_id))
         logger.info("Client left room household_%s (sid=%s)", household_id, sid)
     except ValueError:
         pass
@@ -165,19 +176,35 @@ async def disconnect(sid):
 # Helper für REST-Endpoints
 # ---------------------------------------------------------------------------
 
-async def emit_to_household(household_id: uuid.UUID, event_name: str, data: dict):
-    """Emittiert ein Event an alle Clients im Household-Room."""
-    await sio.emit(event_name, data, room=f"household_{household_id}")
+async def emit_to_household(
+    household_id: uuid.UUID, event_name: str, data: dict, evict_user_id: uuid.UUID | None = None
+):
+    """Emittiert ein Event an alle Clients im Household-Room.
+
+    Mit evict_user_id werden danach alle Verbindungen dieses Users aus dem Room
+    entfernt — er bekommt das Event (z.B. household_member_removed) also noch,
+    aber keine weiteren Daten des Haushalts. Ohne das würde ein entferntes Mitglied
+    mit einem manipulierten Client weiter alle Echtzeit-Events empfangen.
+    """
+    room = _household_room(household_id)
+    await sio.emit(event_name, data, room=room)
+    if evict_user_id is not None:
+        for sid, _ in list(sio.manager.get_participants("/", _user_room(evict_user_id))):
+            await sio.leave_room(sid, room)
+        logger.info("Evicted user %s from room %s", evict_user_id, room)
 
 
-def emit_to_household_sync(household_id: uuid.UUID, event_name: str, data: dict):
+def emit_to_household_sync(
+    household_id: uuid.UUID, event_name: str, data: dict, evict_user_id: uuid.UUID | None = None
+):
     """Synchroner Wrapper — aufgerufen aus sync FastAPI-Endpoints.
 
     Nutzt run_coroutine_threadsafe, da sync Endpoints in einem Thread laufen.
+    Emit und Eviction laufen in einer Coroutine, damit die Reihenfolge garantiert ist.
     """
     if _event_loop is not None and _event_loop.is_running():
         asyncio.run_coroutine_threadsafe(
-            sio.emit(event_name, data, room=f"household_{household_id}"),
+            emit_to_household(household_id, event_name, data, evict_user_id),
             _event_loop,
         )
     else:

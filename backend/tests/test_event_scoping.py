@@ -5,8 +5,6 @@ Stellt sicher, dass User NUR auf Events ihres eigenen Households
 zugreifen können. Cross-Household-Zugriffe müssen mit 403 abgelehnt werden.
 """
 
-import uuid
-from datetime import datetime, timezone
 
 
 # ---------------------------------------------------------------------------

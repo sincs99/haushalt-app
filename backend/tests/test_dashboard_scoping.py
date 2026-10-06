@@ -6,10 +6,10 @@ lesen können. Cross-Household-Zugriffe müssen mit 403 abgelehnt werden.
 """
 
 import uuid
-from datetime import datetime, timezone as tz
+from datetime import datetime
+from datetime import timezone as tz
 
 from app.models import Event
-
 
 # ---------------------------------------------------------------------------
 # Positiv: User A liest eigenes Dashboard → 200, alle Sektionen vorhanden

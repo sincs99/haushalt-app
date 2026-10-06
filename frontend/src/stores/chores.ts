@@ -4,6 +4,7 @@ import { useAuthStore } from './auth'
 import { createOnlineChoresRepository } from '../repositories/choresRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import type { ChoreInfo, ChoreCreatePayload, ChoreUpdatePayload, ChoreAssignmentInfo, HouseholdMemberInfo } from '../types'
+import { upsertVersioned } from '../utils/syncVersion'
 
 export const useChoresStore = defineStore('chores', () => {
   const repo = createOnlineChoresRepository()
@@ -138,9 +139,8 @@ export const useChoresStore = defineStore('chores', () => {
 
     try {
       const updated = await repo.completeAssignment(householdId, assignmentId)
-      // Server gewinnt
-      const currentIdx = assignments.value.findIndex(a => a.id === assignmentId)
-      if (currentIdx !== -1) assignments.value[currentIdx] = updated
+      // Server gewinnt, ausser ein Socket-Event hat schon einen neueren Stand geliefert
+      upsertVersioned(assignments.value, updated, false)
     } catch (error) {
       // Rollback
       const currentItem = assignments.value.find(a => a.id === assignmentId)
@@ -179,8 +179,7 @@ export const useChoresStore = defineStore('chores', () => {
 
     try {
       const updated = await repo.uncompleteAssignment(householdId, assignmentId)
-      const currentIdx = assignments.value.findIndex(a => a.id === assignmentId)
-      if (currentIdx !== -1) assignments.value[currentIdx] = updated
+      upsertVersioned(assignments.value, updated, false)
     } catch (error) {
       const currentItem = assignments.value.find(a => a.id === assignmentId)
       if (currentItem) {
@@ -199,8 +198,7 @@ export const useChoresStore = defineStore('chores', () => {
     if (!householdId) return
 
     const updated = await repo.reassignAssignment(householdId, assignmentId, assignedUserId)
-    const idx = assignments.value.findIndex(a => a.id === assignmentId)
-    if (idx !== -1) assignments.value[idx] = updated
+    upsertVersioned(assignments.value, updated, false)
   }
 
   // Socket-Handler — Idempotent (Server gewinnt)
@@ -226,21 +224,17 @@ export const useChoresStore = defineStore('chores', () => {
   }
 
   function handleAssignmentCreated(serverAssignment: ChoreAssignmentInfo) {
-    const idx = assignments.value.findIndex(a => a.id === serverAssignment.id)
-    if (idx !== -1) {
-      assignments.value[idx] = serverAssignment
-    } else {
-      assignments.value.push(serverAssignment)
+    const isNew = !assignments.value.some(a => a.id === serverAssignment.id)
+    upsertVersioned(assignments.value, serverAssignment, true)
+    if (isNew) {
       // Sortierung nach due_date beibehalten
       assignments.value.sort((a, b) => a.due_date.localeCompare(b.due_date))
     }
   }
 
   function handleAssignmentUpdated(serverAssignment: ChoreAssignmentInfo) {
-    const idx = assignments.value.findIndex(a => a.id === serverAssignment.id)
-    if (idx !== -1) {
-      assignments.value[idx] = serverAssignment
-    }
+    // Veraltete Events (niedrigere version) werden verworfen
+    upsertVersioned(assignments.value, serverAssignment, false)
   }
 
   return {

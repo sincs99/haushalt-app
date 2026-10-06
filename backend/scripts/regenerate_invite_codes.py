@@ -8,11 +8,10 @@ Nutzung:
 """
 import argparse
 import re
-import sys
 
+from app.core.security import generate_invite_code
 from app.database import SessionLocal
 from app.models import Household
-from app.core.security import generate_invite_code
 
 VALID_PATTERN = re.compile(r"^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$")
 

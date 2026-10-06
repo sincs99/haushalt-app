@@ -1,10 +1,10 @@
 """Tests für verify_household_admin Dependency."""
-import uuid
 import pytest
+from fastapi import HTTPException
+
 from app.core.deps import verify_household_admin
 from app.core.error_codes import ErrorCode
 from app.models import HouseholdMember
-from fastapi import HTTPException
 
 
 def test_admin_passes(db, household_a, user_a):

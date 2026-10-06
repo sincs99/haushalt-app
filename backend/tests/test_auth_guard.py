@@ -11,7 +11,6 @@ import jwt
 from app.core.config import settings
 from app.core.security import ALGORITHM
 
-
 # ---------------------------------------------------------------------------
 # 1) Kein Token → 401
 # ---------------------------------------------------------------------------

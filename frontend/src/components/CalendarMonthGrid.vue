@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { expandEventToDays } from '../utils/dates'
+import { expandEventToDays, eventTime } from '../utils/dates'
 import type { ExpandedEventDay } from '../utils/dates'
 import type { CalendarEvent, HouseholdMemberInfo } from '../types'
 import BaseCard from './ui/BaseCard.vue'
@@ -193,12 +193,8 @@ function getSpanBadge(event: CalendarEvent, dateStr: string): string | null {
 // ── Helpers ──
 
 function formatTime(isoStr: string): string {
-  const d = new Date(isoStr)
-  return d.toLocaleTimeString(locale.value === 'de' ? 'de-CH' : 'en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
+  // Haushaltszeit direkt aus dem String (siehe utils/dates eventTime)
+  return eventTime(isoStr)
 }
 
 function formatDayHeader(dateStr: string): string {

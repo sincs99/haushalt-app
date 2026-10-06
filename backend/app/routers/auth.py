@@ -1,27 +1,35 @@
 import logging
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
-from pydantic import BaseModel, EmailStr, Field, model_validator
 
-from app.database import get_db
-from app.models import User, Household, HouseholdMember, RefreshToken
+from app.core.deps import get_current_user
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.core.security import (
-    hash_password, verify_password, create_access_token,
-    create_refresh_token, hash_refresh_token, get_access_token_expires_in,
+    create_access_token,
+    create_refresh_token,
+    get_access_token_expires_in,
+    hash_password,
+    hash_refresh_token,
+    verify_password,
 )
+from app.database import get_db
+from app.models import Household, HouseholdMember, RefreshToken, User
 from app.services.invite_code import generate_unique_invite_code
-from app.core.deps import get_current_user
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# Wird für Login-Versuche mit unbekannter E-Mail verwendet (Timing-Angleichung)
+_DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(16))
 
 
 class RegisterRequest(BaseModel):
@@ -175,7 +183,11 @@ def register(request: Request, data: RegisterRequest, db: Session = Depends(get_
 @limiter.limit("5/minute")
 def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter_by(email=form_data.username).first()
-    if not user or not verify_password(form_data.password, user.password_hash):
+    # Auch bei unbekannter E-Mail einen bcrypt-Vergleich durchführen, damit die
+    # Antwortzeit nicht verrät, ob ein Account existiert (User-Enumeration).
+    password_hash = user.password_hash if user else _DUMMY_PASSWORD_HASH
+    password_ok = verify_password(form_data.password, password_hash)
+    if not user or not password_ok:
         raise HTTPException(status_code=401, detail=error_detail(ErrorCode.INVALID_CREDENTIALS, "Incorrect email or password"))
 
     pair, _ = _create_token_pair(str(user.id), db)
@@ -183,7 +195,8 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
 
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh_endpoint(data: RefreshRequest, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+def refresh_endpoint(request: Request, data: RefreshRequest, db: Session = Depends(get_db)):
     """Token-Rotation: tausche gültigen Refresh-Token gegen neues Token-Paar."""
     token_hash = hash_refresh_token(data.refresh_token)
     old_token = db.query(RefreshToken).filter_by(token_hash=token_hash).first()
@@ -268,7 +281,8 @@ def refresh_endpoint(data: RefreshRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/logout", status_code=204)
-def logout_endpoint(data: LogoutRequest, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+def logout_endpoint(request: Request, data: LogoutRequest, db: Session = Depends(get_db)):
     """Revoke einen Refresh-Token. Idempotent: unbekannte/bereits revoked Tokens → trotzdem 204."""
     token_hash = hash_refresh_token(data.refresh_token)
     existing = db.query(RefreshToken).filter_by(token_hash=token_hash).first()

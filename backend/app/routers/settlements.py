@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import Household, Settlement, HouseholdMember
-from app.services.household_checks import assert_users_in_household
+from app.models import Household, HouseholdMember, Settlement
+from app.services.household_checks import assert_settlement_parties
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -85,8 +85,8 @@ def create_settlement(
             detail=error_detail(ErrorCode.SELF_SETTLEMENT_NOT_ALLOWED, "from_user_id and to_user_id must be different"),
         )
 
-    # Beide User müssen Household-Mitglieder sein
-    assert_users_in_household(db, household_id, [body.from_user_id, body.to_user_id])
+    # Mitglieder oder Ex-Mitglieder mit Ledger-Einträgen (mind. eine Seite aktuell)
+    assert_settlement_parties(db, household_id, body.from_user_id, body.to_user_id)
 
     # Currency-Check
     household = db.get(Household, household_id)

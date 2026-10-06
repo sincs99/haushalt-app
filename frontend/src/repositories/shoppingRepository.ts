@@ -1,5 +1,5 @@
 import api from '../api/client'
-import type { ShoppingItem, ShoppingList, ShoppingListCreatePayload, ShoppingListUpdatePayload } from '../types'
+import type { ReassignStoreResult, ShoppingItem, ShoppingList, ShoppingListCreatePayload, ShoppingListUpdatePayload } from '../types'
 
 export interface ShoppingRepository {
   // Lists
@@ -11,7 +11,7 @@ export interface ShoppingRepository {
   fetchAll(householdId: string, listId?: string): Promise<ShoppingItem[]>
   create(
     householdId: string,
-    data: { name: string; list_id: string; quantity?: string; category?: string; store?: string; assigned_to_user_id?: string },
+    data: { id?: string; name: string; list_id: string; quantity?: string; category?: string; store?: string; assigned_to_user_id?: string },
   ): Promise<ShoppingItem>
   update(
     householdId: string,
@@ -21,7 +21,7 @@ export interface ShoppingRepository {
   remove(householdId: string, itemId: string): Promise<void>
   // Stores
   fetchStores(householdId: string): Promise<string[]>
-  reassignStore(householdId: string, fromStore: string, toStore: string | null): Promise<{ updated: number }>
+  reassignStore(householdId: string, fromStore: string, toStore: string | null): Promise<ReassignStoreResult>
 }
 
 export function createOnlineShoppingRepository(): ShoppingRepository {
@@ -72,6 +72,8 @@ export function createOnlineShoppingRepository(): ShoppingRepository {
       const { data } = await api.post<ShoppingItem>(
         `/api/households/${householdId}/shopping-items/`,
         {
+          // Client-generierte ID: wiederholter Create liefert dasselbe Item statt Duplikat
+          ...(payload.id ? { id: payload.id } : {}),
           name: payload.name,
           list_id: payload.list_id,
           quantity: payload.quantity ?? null,
@@ -106,7 +108,7 @@ export function createOnlineShoppingRepository(): ShoppingRepository {
     },
 
     async reassignStore(householdId, fromStore, toStore) {
-      const { data } = await api.post<{ updated: number }>(
+      const { data } = await api.post<ReassignStoreResult>(
         `/api/households/${householdId}/shopping-items/reassign-store`,
         { from_store: fromStore, to_store: toStore },
       )

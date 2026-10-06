@@ -5,13 +5,14 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    setupFiles: ['src/test/setup.ts'],
     coverage: {
       provider: 'v8',
       include: ['src/utils/**', 'src/stores/**', 'src/repositories/**'],
-      exclude: ['**/__tests__/**'],
-      reporter: ['text-summary', 'text'],
-      // Knapp unter dem erreichten Stand (65,4 % Stmts / 65,0 % Lines): fällt die Abdeckung, wird die CI rot.
-      thresholds: { statements: 62, lines: 62, functions: 54, branches: 54 },
+      exclude: ['src/**/__tests__/**', 'src/test/**'],
+      reporter: ['text', 'text-summary', 'lcov'],
+      // Knapp unter dem erreichten Stand: fällt die Abdeckung, wird die CI rot.
+      thresholds: { statements: 66, lines: 66, functions: 57, branches: 59 },
     },
   },
 })

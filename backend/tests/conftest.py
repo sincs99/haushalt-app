@@ -30,19 +30,50 @@ def _compile_uuid_sqlite(type_, compiler, **kw):
 # --------------------------------------------------------------------------
 # 3) App- und DB-Imports (NACH Env-Vars und Compiler-Hook)
 # --------------------------------------------------------------------------
-import pytest  # noqa: E402
 from unittest.mock import patch  # noqa: E402
 
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine, event  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-from app.database import Base, get_db  # noqa: E402
-from app.models import Household, User, HouseholdMember, RefreshToken, ShoppingItem, ShoppingList, Todo, TodoReminder, Expense, ExpenseShare, Settlement, Budget, RecurringBill, Chore, ChoreAssignment, Calendar, Event, EventPoll, EventPollOption, EventPollVote, Pet, FeedingLog, Medication, MedicationLog, PetCareTask, Recipe, MealPlanEntry, Note, StoredFile  # noqa: E402
 from app.core.security import create_access_token, hash_password  # noqa: E402
+from app.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
-
-from fastapi.testclient import TestClient  # noqa: E402
+from app.models import (  # noqa: E402
+    Budget,
+    Calendar,
+    Chore,
+    ChoreAssignment,
+    Document,
+    DocumentFile,
+    Event,
+    EventPoll,
+    EventPollOption,
+    EventPollVote,
+    Expense,
+    ExpenseShare,
+    FeedingLog,
+    Household,
+    HouseholdMember,
+    MealPlanEntry,
+    Medication,
+    MedicationLog,
+    Note,
+    Pet,
+    PetCareTask,
+    Recipe,
+    RecurringBill,
+    RefreshToken,
+    Settlement,
+    ShoppingItem,
+    ShoppingList,
+    StoredFile,
+    Todo,
+    TodoReminder,
+    User,
+)
 
 # --------------------------------------------------------------------------
 # 4) SQLite In-Memory Engine + Session
@@ -103,7 +134,8 @@ def _mock_socket_emit():
                                                         with patch("app.routers.notes.emit_to_household_sync", mock_emit):
                                                             with patch("app.routers.calendars.emit_to_household_sync", mock_emit):
                                                                 with patch("app.routers.files.emit_to_household_sync", mock_emit):
-                                                                    yield mock_emit
+                                                                    with patch("app.routers.documents.emit_to_household_sync", mock_emit):
+                                                                        yield mock_emit
 
 
 @pytest.fixture()
@@ -433,10 +465,11 @@ def budget_a(db, household_a) -> Budget:
 
 
 @pytest.fixture()
-def bill_a(db, household_a) -> RecurringBill:
+def bill_a(db, household_a, user_a) -> RecurringBill:
     b = RecurringBill(
         id=uuid.uuid4(),
         household_id=household_a.id,
+        paid_by_user_id=user_a.id,  # Standard-Zahler, ohne ihn ist Buchen nicht möglich
         name="Miete",
         amount_rappen=150000,
         day_of_month=1,
@@ -504,7 +537,8 @@ def calendar_b(db, household_b) -> Calendar:
 
 @pytest.fixture()
 def event_a(db, household_a, user_a, calendar_a) -> Event:
-    from datetime import datetime, timezone as tz
+    from datetime import datetime
+    from datetime import timezone as tz
     e = Event(
         id=uuid.uuid4(),
         household_id=household_a.id,
@@ -523,7 +557,8 @@ def event_a(db, household_a, user_a, calendar_a) -> Event:
 
 @pytest.fixture()
 def event_b(db, household_b, user_b, calendar_b) -> Event:
-    from datetime import datetime, timezone as tz
+    from datetime import datetime
+    from datetime import timezone as tz
     e = Event(
         id=uuid.uuid4(),
         household_id=household_b.id,
@@ -804,7 +839,7 @@ def meal_plan_entry_b(db, household_b, recipe_b) -> MealPlanEntry:
 
 @pytest.fixture()
 def reminder_a(db, household_a, todo_a) -> TodoReminder:
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     reminder = TodoReminder(
         id=uuid.uuid4(),
         household_id=household_a.id,
@@ -819,7 +854,7 @@ def reminder_a(db, household_a, todo_a) -> TodoReminder:
 
 @pytest.fixture()
 def reminder_b(db, household_b, todo_b) -> TodoReminder:
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     reminder = TodoReminder(
         id=uuid.uuid4(),
         household_id=household_b.id,
@@ -830,3 +865,44 @@ def reminder_b(db, household_b, todo_b) -> TodoReminder:
     db.commit()
     db.refresh(reminder)
     return reminder
+
+
+# --- Documents ---
+
+
+def _make_document(db, household, user, title, category, expiry_date=None, pages=1) -> Document:
+    doc = Document(
+        id=uuid.uuid4(),
+        household_id=household.id,
+        title=title,
+        category=category,
+        expiry_date=expiry_date,
+        created_by_user_id=user.id,
+    )
+    for position in range(pages):
+        sf = StoredFile(
+            id=uuid.uuid4(),
+            household_id=household.id,
+            original_name=f"{title}-{position + 1}.pdf",
+            mime_type="application/pdf",
+            size_bytes=2048,
+            storage_path=f"{household.id}/{uuid.uuid4()}.pdf",
+            uploaded_by_user_id=user.id,
+        )
+        db.add(sf)
+        doc.file_links.append(DocumentFile(file=sf, position=position))
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+@pytest.fixture()
+def document_a(db, household_a, user_a) -> Document:
+    from datetime import date
+    return _make_document(db, household_a, user_a, "Mietvertrag", "contract", date(2027, 3, 31), pages=2)
+
+
+@pytest.fixture()
+def document_b(db, household_b, user_b) -> Document:
+    return _make_document(db, household_b, user_b, "Handy-Rechnung", "invoice")

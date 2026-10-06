@@ -120,14 +120,14 @@ export const useFinanceStore = defineStore('finance', () => {
     }
   }
 
-  async function bookBill(billId: string): Promise<Expense | undefined> {
+  async function bookBill(billId: string, paidByUserId?: string): Promise<Expense | undefined> {
     const authStore = useAuthStore()
     const hid = authStore.currentHouseholdId
     if (!hid) return
 
     error.value = null
     try {
-      const expense = await repo.bookBill(hid, billId)
+      const expense = await repo.bookBill(hid, billId, paidByUserId)
       // Refetch summary to update pending_bills status
       await fetchSummary(hid)
       return expense

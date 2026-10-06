@@ -247,7 +247,7 @@ function auditInPage(opts) {
       if (spill) add('v-spill', el, `scrollHeight ${el.scrollHeight} > clientHeight ${el.clientHeight}`)
     }
   }
-  for (const d of document.querySelectorAll('[role=dialog]')) {
+  for (const d of document.querySelectorAll('[role=dialog], .more-sheet, .sheet')) {
     if (!isVisible(d)) continue
     const r = d.getBoundingClientRect()
     const cs = getComputedStyle(d)
@@ -396,6 +396,12 @@ async function main() {
           const res = await page.evaluate(auditInPage, { insets: c.vp.insets, vw: c.vp.width, vh: c.vp.height, scopeOverlay: true })
           for (const f of res) all.push({ route: 'more-sheet', state: 'open', viewport: c.vp.name, theme: c.theme, locale: c.locale, ...f })
           if (c.shots) await page.screenshot({ path: path.join(OUT, `more-sheet__${c.vp.name}_${c.theme}_${c.locale}.png`) })
+          // niedrige Höhe (kleines Gerät / Tastatur)
+          await page.setViewportSize({ width: KEYBOARD.width, height: KEYBOARD.height })
+          await page.waitForTimeout(200)
+          const resKb = await page.evaluate(auditInPage, { insets: KEYBOARD.insets, vw: KEYBOARD.width, vh: KEYBOARD.height, scopeOverlay: true })
+          for (const f of resKb) all.push({ route: 'more-sheet', state: 'open', viewport: KEYBOARD.name, theme: c.theme, locale: c.locale, ...f })
+          await page.setViewportSize({ width: c.vp.width, height: c.vp.height })
         }
       }
       await context.close()

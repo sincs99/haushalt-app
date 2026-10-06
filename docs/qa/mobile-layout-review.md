@@ -108,8 +108,10 @@ DE/EN): nur noch die Punkte 16–19.
   `App.vue`, `ChoresView`, `HouseholdView`, `PetDetailView`,
   `ExpenseFormDialog`, `BalanceSummary`, `ShoppingView`). Folge: Eingabefelder
   im Ausgleichs-Dialog und im Neue-Liste-Dialog haben keinen sichtbaren Rand.
-- Hartkodierte Farbe `#FFF5F5` für überfällige Aufgaben (`TodoList.vue`),
-  im Dark Mode nicht angepasst.
+- **Dringend:** hartkodierte Farbe `#FFF5F5` für überfällige Aufgaben
+  (`TodoList.vue`, `.todo-row--overdue`). Im Dark Mode steht heller Text auf
+  hellem Rosa, die Titel sind praktisch unlesbar
+  (`qa/mobile/final/todos__390x844_dark_de.png`).
 - Kalender: Pill-Tabs und Kalender-Chips sind gegenüber dem Seitentitel um
   16 px eingerückt, Monatsraster ebenso (andere Seiten bündig).
 - Schweregrad-Auswahl im Gesundheitseditor (siehe Befund 17).

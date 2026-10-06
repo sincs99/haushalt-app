@@ -380,6 +380,21 @@ async function main() {
           if (c.shots) {
             await page.screenshot({ path: path.join(OUT, `${base}${state === 'base' ? '' : '--' + slug(state)}.png`), fullPage: !opts.overlay && !opts.viewportOnly })
           }
+          if (opts.overlay) {
+            // Dialog-Inhalt ans Ende scrollen: Elemente unter dem sichtbaren Bereich ebenfalls prüfen
+            const scrolled = await page.evaluate(() => {
+              let n = 0
+              for (const e of document.querySelectorAll('[role=dialog] *, [role=dialog], .dialog-panel, .dialog-content, .more-sheet, .sheet')) {
+                if (/(auto|scroll)/.test(getComputedStyle(e).overflowY) && e.scrollHeight > e.clientHeight + 1) { e.scrollTop = e.scrollHeight; n++ }
+              }
+              return n
+            })
+            if (scrolled) {
+              await page.waitForTimeout(150)
+              const res2 = await page.evaluate(auditInPage, { insets: c.vp.insets, vw: c.vp.width, vh: c.vp.height, scopeOverlay: true })
+              for (const f of res2) all.push({ route: route.name || route.path, state: state + ' (gescrollt)', viewport: c.vp.name, theme: c.theme, locale: c.locale, ...f })
+            }
+          }
         }
         await page.goto(BASE + route.path)
         await settle(page)

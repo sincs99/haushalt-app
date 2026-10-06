@@ -35,6 +35,8 @@ Quelle: [`frontend/src/assets/theme.css`](../../frontend/src/assets/theme.css). 
 | Token | Light | Dark | Bedeutung | Beispiel |
 |---|---|---|---|---|
 | `--color-success` | `--ok` | `--ok` | Erfolg | Erfolgs-Toast |
+| `--color-success-strong` | `#526D56` | `--ok` | Erfolgs-Text auf `--chip`/`--bg` | Badge „gebucht“ |
+| `--color-primary-strong` | `#3A766F` | `#6BADA5` | Teal-Text auf `--chip` | Admin-Badge |
 | `--color-danger` | `#DC2626` | `#E86E6E` | Destruktiv, Fehler, überfällig (Fläche und Text) | `BaseButton danger` |
 | `--color-danger-hover` | `#B91C1C` | `#F08A8A` | Hover Danger-Button | |
 | `--color-danger-soft` | `#FDECEC` | `#3A2424` | Fehlerfläche, Hover destruktiver Icon-Buttons | Auth-Fehler, überfälliges Todo |
@@ -147,6 +149,8 @@ Quicksand (`--font-display`) nur für Seiten-, Dialog-, Karten- und Abschnittsti
 | `--ease-out` | `cubic-bezier(.2,0,0,1)` | Eintritt |
 | `--ease-in` | `cubic-bezier(.4,0,1,1)` | Austritt |
 | `--transition-fast` / `-normal` / `-slow` | Dauer + Easing | `transition: color var(--transition-fast)` |
+| `--duration-pulse` | 1.5 s | Endlos-Puls (Skeleton, Sync-Punkt, Foto lädt) |
+| `--duration-spin` | 0.6 s | Spinner-Umdrehung |
 | `--toast-duration` | 4000 ms | Anzeigedauer Toast |
 
 `prefers-reduced-motion: reduce` setzt global alle Animationen und Transitions auf 0.01 ms (`theme.css`).

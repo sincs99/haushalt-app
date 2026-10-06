@@ -779,7 +779,8 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 │  └── Toast-Container                                │
 │                                                     │
 │  Design-System: theme.css (CSS Custom Properties)   │
-│  - Farbe: Teal #2A9D8F (Primär)                    │
+│  - Tokens: docs/design/design-tokens.md            │
+│  - Akzent #896140, Teal #3D7D75, Dark Mode         │
 │  - Breakpoint: 768px                                │
 │  - Content max-width: 640px (zentriert)             │
 │  - Touch-Targets: ≥44×44px                          │
@@ -888,11 +889,9 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | KI-Assistent ohne echten API-Test | Entwickelt und getestet mit gemocktem Client und einem lokalen Fake des Messages-Endpunkts; es gab keinen Aufruf gegen die echte API (kein Schlüssel in der Entwicklungsumgebung). Token-Zahlen in `docs/ai-assistant.md` sind Schätzungen | Prüfen |
 | KI-Tageslimit nach UTC-Tag | `ai_usage` zählt pro UTC-Tag, nicht nach der Zeitzone des Haushalts (Wechsel um 01:00/02:00 Uhr Schweizer Zeit) | Gering |
 | Lange KI-Anfragen hinter Nginx Proxy Manager | Rezeptvorschläge können über 60 s dauern; `nginx.conf` erlaubt 200 s, NPM muss ggf. angepasst werden | Prüfen |
-| `BaseCard` ohne `#header`-Slot | Die Karte „Was essen wir heute?“ in `FoodView.vue` übergibt ihren Titel per `#header`; `BaseCard` rendert nur den Default-Slot, der Titel wird nicht angezeigt (vorbestehend, nicht in diesem Branch behoben) | Gering |
 | Major-Updates ohne Gerätetest | Pillow 12 und cryptography 50 wurden über Tests und Stichproben geprüft, nicht mit einer echten Web-Push-Zustellung auf einem Gerät und nicht mit einem Upload über den laufenden Browser | Prüfen |
 | `deleteItem()` Rollback-Position | Bei paralleler Socket-Mutation kann die Position abweichen (kosmetisch) | Gering |
-| Auth-Styles dupliziert | Login/Register haben identische Scoped-CSS-Blöcke | Gering |
-| Emoji-/Icon-Größen und Toast-Transitions | Hardcoded statt Design-Tokens | Gering |
+| UI-Audit: offene Punkte | Eigene Dialoge (`ExpenseFormDialog`, `BalanceSummary`) statt `BaseDialog`, nachgebaute Pill-Tabs in `ShoppingView`, Löschen als Text-Link in Pflanzen-/Tierkarten, Sync-Punkt „verbindet neu“ unter 3 : 1 — siehe `docs/design/ui-audit.md` | Gering |
 
 ---
 

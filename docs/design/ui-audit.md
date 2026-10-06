@@ -72,8 +72,8 @@ Inventar vor dem Audit: 13 Palette-Tokens, 14 Aliase, 5 Schriftgrössen, 6 Abst�
 | # | Schwere | Befund | Fix | Status |
 |---|---|---|---|---|
 | I1 | 🟠 | 13 verschiedene Grössen (12, 14, 16, 18, 20, 22, 24, 28, 32, 48, 56 …). 18 px (31×) liegt zwischen den Stufen. | Skala `--icon-size-xs/sm/md/lg/xl/display` = 12/16/20/24/32/48. 14 → 16, 18 → 20 (Icon-Buttons, Kartentitel) bzw. 16 (Top-Bar-Links), 22/28 → 24, 56 → 48 | ✅ |
-| I2 | 🟠 | Emoji als Icon: `👤` vor Personen (Putzplan, Medikamenten-Log), `★` für Favoriten (Essen). Rendering abhängig vom System, nicht einfärbbar. | Phosphor `PhUser` / `PhStar weight="fill"` | ✅ |
-| I3 | 🟡 | Gewichte: `light` (Medikamente leer) und `duotone` (einmalig) weichen ab. Regel: `regular` Standard, `fill` = aktiver Zustand, `bold` nur ≤ 16 px in Buttons und Bestätigungen. | `light` → `regular`; `duotone` in Hero-Icon bleibt (bewusst) | ✅ |
+| I2 | 🟠 | Emoji/Glyphen als Icon: `👤` als Button „neu zuweisen“ (Putzplan) und vor Personen (Medikamenten-Log), `✓` in „gebucht ✓“ (Rechnungen), `★` für Favoriten (Rezept-Auswahl). Rendering abhängig vom System, nicht einfärbbar. | `PhUserSwitch`, `PhUser`, `PhCheck`. `★` steht in einem nativen `<option>` (kein SVG möglich) und bleibt | ◐ |
+| I3 | 🟡 | Gewichte: `light` (Medikamente leer) und `duotone` (einmalig) weichen ab. Regel: `regular` Standard, `fill` = aktiver Zustand, `bold` nur ≤ 16 px in Buttons und Bestätigungen. | `light` → `regular`; `duotone` bleibt (bewusst, Hero-Icon) | ✅ |
 | I4 | 🟡 | Inline-`style="margin-right: 4px"` an Icons. | `var(--space-1)` | ✅ |
 | I5 | 🟡 | Emoji für Ausgaben-Kategorien und Tierarten (`🛒 🏠 🐈 …`, `🐱 🐶 …`). | Bewusst belassen: Inhalt/Persönlichkeit, nicht Bedien-Icon. **Entscheidung Betreiber** | ⏸ |
 
@@ -106,6 +106,13 @@ Geprüft mit eigener Kontrastberechnung (relative Luminanz nach WCAG) für alle 
 | Dark `--sub` auf `--chip` | 4.42 | 4.53 | `--sub` `#93A29E` → `#96A4A0` |
 | Dark weisse Initialen auf `--p1` (Avatar) | 2.80 | 5.83 | `--color-on-member` = `--bg` im Dark Mode |
 | Offline-Banner Text auf `--color-warning` | undefiniert | 4.9 | `--color-on-warning` |
+| Light Admin-Badge `--p1` auf `--chip` | 4.17 🟠 | 4.58 | `--color-primary-strong` |
+| Light „gebucht“ `--ok` auf `--chip` | 4.21 🟠 | 4.98 | `--color-success-strong` |
+| Auth-Fehlertext `--color-danger` auf `--color-danger-soft` | 4.23 🟠 | 5.66 | `--color-danger-strong` |
+
+Nach den Änderungen bestehen alle 26 geprüften Paare je Theme (Primär-/Sekundärtext auf bg/card/chip/nav, Buttons, Links, Toasts, Badges, Avatare, Offline-Banner) AA.
+
+**Offen:** Der Sync-Punkt „verbindet neu“ (`--color-warning` auf `--nav`, ≈ 2.5 : 1) liegt unter 3 : 1 für Grafiken. Der Zustand ist zusätzlich per `aria-label` und Puls-Animation erkennbar; ein dunkleres Amber würde den Text im Offline-Banner (gleicher Token) verschlechtern. Vorschlag: eigener Token `--color-warning-indicator`, falls gewünscht. ⏸
 
 Die Tonwerte bleiben im selben Farbton (nur Helligkeit angepasst). **Sichtbarste Änderung: Akzent-Braun wird etwas dunkler.** → Entscheidung Betreiber, falls die alte Akzentfarbe Markenfarbe ist (dann `--acc` nur für Flächen, zusätzlicher `--acc-text`).
 
@@ -134,7 +141,7 @@ Soll-Anatomie: **[Icon/Avatar/Check] · Titel (16 px, semibold) · Sekundärzeil
 
 | # | Schwere | Befund | Fix | Status |
 |---|---|---|---|---|
-| L1 | 🟠 | Drei Radien für gleichartige Listen-Karten (6 / 8 / 20 px). | `--radius-item` (12 px) für Listen-Karten; grosse Foto-Karten behalten `--radius-card` | ✅ |
+| L1 | 🟠 | Drei Radien für gleichartige Listen-Karten (6 / 8 / 20 px). | `--radius-item` (12 px) für Listen-Karten; grosse Foto-Karten behalten `--radius-card`. Innenabstände (12 px bzw. 12/16 px) unverändert, um Mobile-Layouts nicht zu verschieben | ✅ |
 | L2 | 🟠 | Titelgewicht und -grösse variieren (400/500/600, 16/20 px). | `--text-title-item` (16 px / 600) für Karten-Einträge; abhakbare Zeilen (Einkauf, Aufgaben) bleiben 400 | ✅ |
 | L3 | 🟡 | Pflanzen/Tiere: Löschen als roter Text-Link statt Icon-Button wie überall sonst. | Template-Änderung → offen, dokumentiert | ⏸ |
 | L4 | 🟡 | Badge-Paddings in 7 Varianten. | `--badge-padding` / `--chip-padding` | ✅ |

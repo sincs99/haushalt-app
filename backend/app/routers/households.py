@@ -355,8 +355,7 @@ def get_finance_summary(
         .filter(
             Expense.household_id == household_id,
             Expense.recurring_bill_id.isnot(None),
-            Expense.expense_date >= month,
-            Expense.expense_date < first_of_next_month,
+            Expense.booked_month == month,
         )
         .all()
     )

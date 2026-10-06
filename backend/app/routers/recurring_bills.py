@@ -4,6 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
@@ -48,6 +49,13 @@ class RecurringBillResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+def _already_booked() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=error_detail(ErrorCode.BILL_ALREADY_BOOKED, "This bill has already been booked for the current month"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -198,28 +206,18 @@ def book_recurring_bill(
     today = date.today()
     first_of_month = date(today.year, today.month, 1)
 
-    # Nächsten Monat berechnen
-    if today.month == 12:
-        first_of_next_month = date(today.year + 1, 1, 1)
-    else:
-        first_of_next_month = date(today.year, today.month + 1, 1)
-
-    # 4. Idempotenz: Prüfen ob bereits gebucht
-    existing_expense = (
-        db.query(Expense)
+    # 4. Idempotenz: Prüfen ob bereits gebucht (über booked_month, nicht expense_date —
+    #    sonst erlaubt ein verschobenes Datum eine zweite Buchung)
+    already_booked = (
+        db.query(Expense.id)
         .filter(
             Expense.recurring_bill_id == bill.id,
-            Expense.expense_date >= first_of_month,
-            Expense.expense_date < first_of_next_month,
+            Expense.booked_month == first_of_month,
         )
         .first()
     )
-
-    if existing_expense:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=error_detail(ErrorCode.BILL_ALREADY_BOOKED, "This bill has already been booked for the current month"),
-        )
+    if already_booked:
+        raise _already_booked()
 
     # 5. Expense erstellen
     expense_date = date(today.year, today.month, min(bill.day_of_month, 28))
@@ -245,22 +243,29 @@ def book_recurring_bill(
         category=bill.category,
         split_type=bill.split_type,
         recurring_bill_id=bill.id,
+        booked_month=first_of_month,
         expense_date=expense_date,
         paid_by_user_id=None,  # Recurring bills haben keinen Zahler
     )
-    db.add(expense)
-    db.flush()
+    # Gleichzeitiger zweiter Klick: Unique-Constraint (recurring_bill_id, booked_month)
+    # greift schon beim ersten Flush
+    try:
+        db.add(expense)
+        db.flush()
 
-    for uid, rappen in share_map.items():
-        share = ExpenseShare(
-            expense_id=expense.id,
-            household_id=household_id,
-            user_id=uid,
-            amount_rappen=rappen,
-        )
-        db.add(share)
+        for uid, rappen in share_map.items():
+            share = ExpenseShare(
+                expense_id=expense.id,
+                household_id=household_id,
+                user_id=uid,
+                amount_rappen=rappen,
+            )
+            db.add(share)
 
-    db.commit()
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise _already_booked()
     db.refresh(expense)
 
     # 6. Socket-Events

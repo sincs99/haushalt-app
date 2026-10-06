@@ -39,7 +39,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | #14 | Abhängigkeits-Updates gegen bekannte Schwachstellen (u. a. Pillow 12, cryptography 50, PyJWT 2.15) |
 | #15 | ruff im Backend, Coverage-Berichte, Unit-Tests für Utils und vier Stores |
 
-**Kennzahlen (nach #15):** Backend 562 Tests in 51 Dateien, Coverage 91 %; Frontend 132 Tests in 11 Dateien, Coverage 25,9 % (Statements); 700 i18n-Schlüssel; 34 Alembic-Migrationen (einziger Kopf `w1x2y3z4a5b6`).
+**Kennzahlen (nach #15):** Backend 562 Tests in 51 Dateien, Coverage 91 %; Frontend 132 Tests in 11 Dateien, Coverage 25,9 % (Statements); 700 i18n-Schlüssel; 33 Alembic-Migrationen (einziger Kopf `w1x2y3z4a5b6`).
 
 **Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Essen, Notizen, Kalender und Finanzen.
 
@@ -535,7 +535,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 |---|---|---|
 | FastAPI | 0.141.1 | Web-Framework |
 | SQLAlchemy | (via requirements.txt) | ORM |
-| Alembic | 1.18.5 | DB-Migrationen (34 Versionen) |
+| Alembic | 1.18.5 | DB-Migrationen (33 Versionen) |
 | psycopg2-binary | 2.9.12 | PostgreSQL-Driver |
 | python-socketio | (via requirements.txt) | WebSocket |
 | bcrypt | 4.0.1 | Passwort-Hashing |

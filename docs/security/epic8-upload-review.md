@@ -2,7 +2,7 @@
 
 **Datum:** 2026-08-10  
 **Reviewer:** Security-Review Agent  
-**Status:** ⚠️ Bedingt freigegeben — 1 Hoch, 3 Mittel, beheben vor Go-Live  
+**Status:** ✅ Freigegeben — alle Hoch/Mittel-Findings behoben (Re-Check 2026-10-05, siehe unten)  
 **Scope:** File-Upload/Download/Delete, Pet-Photo-Integration, Frontend-Bildlademuster
 
 ---
@@ -224,13 +224,13 @@ Default `data/uploads` ist relativ zum CWD. In Docker ist dies durch `UPLOAD_DIR
 
 | # | Schweregrad | Finding | Status |
 |---|---|---|---|
-| F-01 | 🔴 Hoch | RAM-Exhaustion: Datei wird komplett gelesen vor Größenprüfung | Offen |
-| F-02 | 🟡 Mittel | Keine Pillow Decompression-Bomb-Protection | Offen |
-| F-03 | 🟡 Mittel | PDF-Inhalt wird nicht validiert (nur Content-Type Header) | Offen |
-| F-04 | 🟡 Mittel | Content-Disposition Header Injection via Dateiname | Offen |
-| F-05 | 🟢 Gering | Path-Traversal Defense-in-Depth fehlt in storage.py | Offen |
-| F-06 | 🟢 Gering | Kein Rate-Limiting auf Upload-Endpoint | Offen |
-| F-07 | ℹ️ Info | Kein Index auf StoredFile.household_id | Offen |
+| F-01 | 🔴 Hoch | RAM-Exhaustion: Datei wird komplett gelesen vor Größenprüfung | ✅ Behoben |
+| F-02 | 🟡 Mittel | Keine Pillow Decompression-Bomb-Protection | ✅ Behoben |
+| F-03 | 🟡 Mittel | PDF-Inhalt wird nicht validiert (nur Content-Type Header) | ✅ Behoben |
+| F-04 | 🟡 Mittel | Content-Disposition Header Injection via Dateiname | ✅ Behoben |
+| F-05 | 🟢 Gering | Path-Traversal Defense-in-Depth fehlt in storage.py | ✅ Behoben |
+| F-06 | 🟢 Gering | Kein Rate-Limiting auf Upload-Endpoint | 🟡 Teilweise (Quota) |
+| F-07 | ℹ️ Info | Kein Index auf StoredFile.household_id | ✅ Behoben (Migration) |
 | F-08 | ℹ️ Info | UPLOAD_DIR Default ist relativer Pfad | Akzeptiert |
 
 ---
@@ -251,3 +251,20 @@ Default `data/uploads` ist relativ zum CWD. In Docker ist dies durch `UPLOAD_DIR
 - F-07: DB-Index ergänzen
 
 **Geschätzter Aufwand für kritische Fixes:** ~2–4 Stunden
+
+---
+
+## Re-Check 2026-10-05
+
+Alle Findings gegen den aktuellen Code geprüft. Regressionstests: `backend/tests/test_upload_security.py`.
+
+| # | Befund beim Re-Check | Maßnahme |
+|---|---|---|
+| F-01 | Chunk-Lesen (64 KB) mit Abbruch war bereits umgesetzt; `client_max_body_size 20m` in `frontend/nginx.conf` gesetzt. | Lese-Logik in `read_upload_limited()` ausgelagert (wiederverwendbar für weitere Upload-Endpoints) und mit Test abgesichert, der beweist, dass ein endloser Upload direkt nach dem Limit abgebrochen wird. Hinweis: Starlette spoolt Multipart-Dateien > 1 MB auf Disk, nicht in den RAM; die harte Obergrenze für den Request-Body bleibt das nginx-Limit. |
+| F-02 | `Image.MAX_IMAGE_PIXELS = 25_000_000` war gesetzt, aber Pillow wirft erst ab **2×** Limit einen Fehler (dazwischen nur Warnung) → bis 50 MP wurden noch dekodiert. | Explizite Prüfung `width * height > MAX_IMAGE_PIXELS` **vor** `img.load()`; zusätzlich `Image.open(..., formats=["JPEG","PNG","WEBP"])`, damit keine anderen Pillow-Decoder erreichbar sind. |
+| F-03 | Magic-Byte-Prüfung `%PDF-` war umgesetzt; `nosniff` und `attachment` fehlten. | Downloads senden jetzt `X-Content-Type-Options: nosniff`; PDFs werden mit `Content-Disposition: attachment` ausgeliefert, nur re-encodierte Bilder `inline`. Das Frontend lädt Dateien als Blob, Vorschau bleibt davon unberührt. |
+| F-04 | `_sanitize_filename()` existierte, nutzte aber Unicode-`\w` → Dateinamen mit Nicht-Latin-1-Zeichen (z.B. `日本.pdf`, Emojis) führten beim Download zu **HTTP 500** (`UnicodeEncodeError`). | Header nach RFC 6266/5987: `filename="<ASCII-Fallback>"; filename*=UTF-8''<percent-encoded>`. Fallback erlaubt nur `[A-Za-z0-9._-]`. |
+| F-05 | `_safe_path()` mit `resolve()` + `is_relative_to()` bereits in `storage.py`. | — |
+| F-06 | Weiterhin kein Rate-Limit / keine Quota. | Speicher-Quota pro Haushalt über alle Uploads (`/files` und `/documents/upload`), konfigurierbar via `HOUSEHOLD_STORAGE_QUOTA_MB` (Default 1024), Fehlercode `STORAGE_QUOTA_EXCEEDED`. Ein Request-Rate-Limit fehlt weiterhin. |
+| F-07 | Migration `q1r2s3t4u5v6` legt `ix_stored_files_household` an. | — |
+

@@ -8,18 +8,22 @@ Max 10 MB. Bilder werden mit Pillow validiert und auf max 1600px verkleinert.
 import io
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from typing import BinaryIO
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from PIL import Image, ImageOps
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import HouseholdMember, Pet, StoredFile
+from app.models import Document, DocumentFile, HouseholdMember, Pet, StoredFile
 from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
 
@@ -32,6 +36,8 @@ Image.MAX_IMAGE_PIXELS = 25_000_000
 
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
 IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+PILLOW_FORMATS = ["JPEG", "PNG", "WEBP"]
+PDF_MAGIC = b"%PDF-"
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 CHUNK_SIZE = 64 * 1024  # 64 KB
 MAX_IMAGE_DIMENSION = 1600
@@ -74,10 +80,48 @@ router = APIRouter(
 
 
 def _sanitize_filename(name: str) -> str:
-    """Entfernt unsichere Zeichen aus Dateinamen für Content-Disposition."""
-    # Nur alphanumerische Zeichen, Punkte, Bindestriche, Unterstriche
-    sanitized = re.sub(r'[^\w.\-]', '_', name)
+    """ASCII-Fallback für Content-Disposition (filename="...")."""
+    # Nur ASCII-Alphanumerik, Punkte, Bindestriche, Unterstriche — keine
+    # Quotes, CR/LF oder Nicht-Latin-1-Zeichen, die den Header brechen
+    sanitized = re.sub(r"[^A-Za-z0-9.\-_]", "_", name)
     return sanitized or "download"
+
+
+def content_disposition(name: str, disposition: str) -> str:
+    """Baut einen sicheren Content-Disposition-Header (RFC 6266 / RFC 5987).
+
+    filename= enthält einen ASCII-Fallback, filename*= den UTF-8-kodierten
+    Originalnamen, damit Umlaute etc. beim Download erhalten bleiben.
+    """
+    fallback = _sanitize_filename(name)
+    encoded = quote(name, safe="")
+    return f"{disposition}; filename=\"{fallback}\"; filename*=UTF-8''{encoded}"
+
+
+def read_upload_limited(file: BinaryIO, max_size: int = MAX_FILE_SIZE) -> bytes:
+    """Liest den Upload in Chunks und bricht ab, sobald max_size überschritten ist.
+
+    Verhindert, dass beliebig große Uploads komplett in den RAM geladen werden.
+    Synchron (auf UploadFile.file), damit Upload-Endpoints als `def` im
+    Threadpool laufen und Bildverarbeitung/DB-Zugriffe den Event-Loop nicht blockieren.
+    """
+    chunks: list[bytes] = []
+    total_size = 0
+    while True:
+        chunk = file.read(CHUNK_SIZE)
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > max_size:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=error_detail(
+                    ErrorCode.FILE_TOO_LARGE,
+                    f"File exceeds maximum size of {max_size // (1024 * 1024)} MB",
+                ),
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _process_image(data: bytes, content_type: str) -> tuple[bytes, str, str]:
@@ -85,7 +129,12 @@ def _process_image(data: bytes, content_type: str) -> tuple[bytes, str, str]:
 
     Returns: (processed_bytes, final_mime_type, file_extension)
     """
-    img = Image.open(io.BytesIO(data))
+    # Nur die erlaubten Decoder zulassen (kleinere Angriffsfläche als alle Pillow-Formate)
+    img = Image.open(io.BytesIO(data), formats=PILLOW_FORMATS)
+    # Pixel-Limit VOR dem Dekomprimieren prüfen — Pillow warnt zwischen 1x und
+    # 2x MAX_IMAGE_PIXELS nur, statt abzubrechen
+    if img.width * img.height > Image.MAX_IMAGE_PIXELS:
+        raise ValueError("Image exceeds pixel limit")
     img.load()  # Validiert den Bildinhalt vollständig
     img = ImageOps.exif_transpose(img)  # EXIF-Rotation anwenden
 
@@ -119,40 +168,14 @@ def _process_image(data: bytes, content_type: str) -> tuple[bytes, str, str]:
         return buf.read(), "image/jpeg", ".jpeg"
 
 
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
+def validate_upload(raw_data: bytes, content_type: str) -> tuple[bytes, str, str]:
+    """Prüft MIME-Typ und Inhalt (Magic Bytes / Pillow), verarbeitet Bilder.
 
+    Der Client-Header allein ist fälschbar, deshalb wird der Inhalt immer
+    gegen den deklarierten Typ validiert.
 
-# POST / — Datei hochladen
-@router.post("/", response_model=StoredFileResponse, status_code=status.HTTP_201_CREATED)
-async def upload_file(
-    household_id: uuid.UUID,
-    file: UploadFile = File(...),
-    membership: HouseholdMember = Depends(verify_household_access),
-    db: Session = Depends(get_db),
-):
-    # Chunk-basiertes Lesen mit frühzeitigem Abbruch (RAM-Exhaustion-Schutz)
-    chunks: list[bytes] = []
-    total_size = 0
-    while True:
-        chunk = await file.read(CHUNK_SIZE)
-        if not chunk:
-            break
-        total_size += len(chunk)
-        if total_size > MAX_FILE_SIZE:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=error_detail(
-                    ErrorCode.FILE_TOO_LARGE,
-                    f"File exceeds maximum size of {MAX_FILE_SIZE // (1024 * 1024)} MB",
-                ),
-            )
-        chunks.append(chunk)
-    raw_data = b"".join(chunks)
-
-    # MIME-Typ-Prüfung
-    content_type = file.content_type or ""
+    Returns: (processed_bytes, final_mime_type, file_extension)
+    """
     if content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -162,22 +185,9 @@ async def upload_file(
             ),
         )
 
-    # PDF Magic-Byte-Validierung
-    if content_type == "application/pdf":
-        if not raw_data[:5] == b"%PDF-":
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=error_detail(
-                    ErrorCode.FILE_TYPE_NOT_ALLOWED, "Invalid PDF file"
-                ),
-            )
-
-    original_name = file.filename or "upload"
-
-    # Bildverarbeitung
     if content_type in IMAGE_MIME_TYPES:
         try:
-            processed_data, final_mime, ext = _process_image(raw_data, content_type)
+            return _process_image(raw_data, content_type)
         except Exception:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -186,13 +196,54 @@ async def upload_file(
                     "File content is not a valid image",
                 ),
             )
-    else:
-        # PDF unverändert speichern
-        processed_data = raw_data
-        final_mime = content_type
-        ext = ".pdf"
 
-    # Speichern
+    # PDF Magic-Byte-Validierung, PDF wird unverändert gespeichert
+    if not raw_data.startswith(PDF_MAGIC):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(ErrorCode.FILE_TYPE_NOT_ALLOWED, "Invalid PDF file"),
+        )
+    return raw_data, content_type, ".pdf"
+
+
+def household_storage_used(db: Session, household_id: uuid.UUID) -> int:
+    """Summe aller gespeicherten Dateigrößen eines Haushalts in Bytes."""
+    return (
+        db.query(func.coalesce(func.sum(StoredFile.size_bytes), 0))
+        .filter(StoredFile.household_id == household_id)
+        .scalar()
+    )
+
+
+def household_storage_quota() -> int:
+    return settings.household_storage_quota_mb * 1024 * 1024
+
+
+def check_storage_quota(db: Session, household_id: uuid.UUID, incoming_bytes: int) -> None:
+    """Wirft STORAGE_QUOTA_EXCEEDED, wenn die neue Datei die Quota sprengen würde."""
+    if household_storage_used(db, household_id) + incoming_bytes > household_storage_quota():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.STORAGE_QUOTA_EXCEEDED,
+                f"Household storage quota of {settings.household_storage_quota_mb} MB exceeded",
+            ),
+        )
+
+
+def store_upload(
+    db: Session, household_id: uuid.UUID, user_id: uuid.UUID, file: UploadFile
+) -> StoredFile:
+    """Liest, validiert und speichert einen Upload; legt den StoredFile-Eintrag an.
+
+    Committet nicht — der Aufrufer entscheidet über die Transaktion.
+    """
+    # Chunk-basiertes Lesen mit frühzeitigem Abbruch (RAM-Exhaustion-Schutz)
+    raw_data = read_upload_limited(file.file)
+    processed_data, final_mime, ext = validate_upload(raw_data, file.content_type or "")
+    check_storage_quota(db, household_id, len(processed_data))
+    original_name = (file.filename or "upload")[:255]
+
     storage_path = _storage.save(
         household_id=str(household_id),
         filename=original_name,
@@ -200,16 +251,117 @@ async def upload_file(
         ext=ext,
     )
 
-    # DB-Eintrag
     stored_file = StoredFile(
         household_id=household_id,
         original_name=original_name,
         mime_type=final_mime,
         size_bytes=len(processed_data),
         storage_path=storage_path,
-        uploaded_by_user_id=membership.user_id,
+        uploaded_by_user_id=user_id,
     )
     db.add(stored_file)
+    db.flush()
+    return stored_file
+
+
+def file_in_use(
+    db: Session, file_ids: list[uuid.UUID], exclude_pet_id: uuid.UUID | None = None
+) -> str | None:
+    """Prüft, ob eine der Dateien von einem Pet-Foto oder einem Dokument referenziert wird.
+
+    Gibt eine Beschreibung der ersten Referenz zurück (für die Fehlermeldung), sonst None.
+    Eine Datei gehört zu höchstens einem Dokument bzw. Pet — sonst würde das Löschen
+    des einen die Datei des anderen mitlöschen.
+    """
+    pet_query = db.query(Pet).filter(Pet.photo_file_id.in_(file_ids))
+    if exclude_pet_id is not None:
+        pet_query = pet_query.filter(Pet.id != exclude_pet_id)
+    pet_ref = pet_query.first()
+    if pet_ref is not None:
+        return f"pet '{pet_ref.name}'"
+
+    doc_ref = (
+        db.query(Document)
+        .join(DocumentFile, DocumentFile.document_id == Document.id)
+        .filter(DocumentFile.file_id.in_(file_ids))
+        .first()
+    )
+    if doc_ref is not None:
+        return f"document '{doc_ref.title}'"
+    return None
+
+
+def file_in_use_error(reference: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=error_detail(ErrorCode.FILE_IN_USE, f"File is referenced by {reference}"),
+    )
+
+
+# Hochgeladene, aber nie einem Pet oder Dokument zugeordnete Dateien (z.B. Tab
+# während eines mehrseitigen Uploads geschlossen) werden nach dieser Frist gelöscht
+ORPHAN_FILE_GRACE = timedelta(hours=24)
+
+
+def delete_orphan_files(db: Session, now: datetime | None = None) -> int:
+    """Löscht verwaiste StoredFiles (DB + Storage), die älter als ORPHAN_FILE_GRACE sind.
+
+    Gibt die Anzahl gelöschter Dateien zurück.
+    """
+    cutoff = (now or datetime.now(timezone.utc)) - ORPHAN_FILE_GRACE
+    orphans = (
+        db.query(StoredFile)
+        .filter(StoredFile.created_at < cutoff)
+        .filter(~db.query(Pet.id).filter(Pet.photo_file_id == StoredFile.id).exists())
+        .filter(~db.query(DocumentFile.file_id).filter(DocumentFile.file_id == StoredFile.id).exists())
+        .all()
+    )
+    paths = [f.storage_path for f in orphans]
+    for f in orphans:
+        db.delete(f)
+    db.commit()
+
+    for path in paths:
+        remove_from_storage(path)
+    return len(paths)
+
+
+def remove_from_storage(storage_path: str) -> None:
+    """Best-effort: Physische Datei nach erfolgreichem Commit entfernen."""
+    try:
+        _storage.delete(storage_path)
+    except Exception:
+        pass  # Datei wird ggf. zum Waisen, aber DB ist konsistent
+
+
+def file_response_headers(stored_file: StoredFile) -> dict[str, str]:
+    """Sicherheits-Header für Datei-Downloads.
+
+    Nur (re-encodierte) Bilder werden inline ausgeliefert; PDFs als attachment.
+    Das Frontend lädt Dateien ohnehin als Blob, die Disposition greift nur bei
+    direktem Aufruf der URL.
+    """
+    disposition = "inline" if stored_file.mime_type in IMAGE_MIME_TYPES else "attachment"
+    return {
+        "Content-Disposition": content_disposition(stored_file.original_name, disposition),
+        "X-Content-Type-Options": "nosniff",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+
+# POST / — Datei hochladen
+@router.post("/", response_model=StoredFileResponse, status_code=status.HTTP_201_CREATED)
+def upload_file(
+    household_id: uuid.UUID,
+    file: UploadFile = File(...),
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    stored_file = store_upload(db, household_id, membership.user_id, file)
     db.commit()
     db.refresh(stored_file)
 
@@ -249,14 +401,10 @@ def download_file(
             ),
         )
 
-    safe_name = _sanitize_filename(stored_file.original_name)
-
     return StreamingResponse(
         file_handle,
         media_type=stored_file.mime_type,
-        headers={
-            "Content-Disposition": f'inline; filename="{safe_name}"'
-        },
+        headers=file_response_headers(stored_file),
     )
 
 
@@ -277,27 +425,17 @@ def delete_file(
             ),
         )
 
-    # Referenzprüfung: Wird die Datei von einem Pet referenziert?
-    pet_ref = db.query(Pet).filter(Pet.photo_file_id == file_id).first()
-    if pet_ref is not None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail(
-                ErrorCode.FILE_IN_USE,
-                f"File is referenced by pet '{pet_ref.name}'",
-            ),
-        )
+    # Referenzprüfung: Pet-Foto oder Dokumentseite? (Löschen dann über /pets bzw. /documents)
+    reference = file_in_use(db, [file_id])
+    if reference is not None:
+        raise file_in_use_error(reference)
 
     # Pfad merken, dann DB-Eintrag zuerst löschen
     storage_path = stored_file.storage_path
     db.delete(stored_file)
     db.commit()
 
-    # Best-effort: Physische Datei nach erfolgreichem Commit entfernen
-    try:
-        _storage.delete(storage_path)
-    except Exception:
-        pass  # Datei wird ggf. zum Waisen, aber DB ist konsistent
+    remove_from_storage(storage_path)
 
     emit_to_household_sync(
         household_id,

@@ -144,6 +144,9 @@ class Household(Base):
     documents: Mapped[list["Document"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
+    tags: Mapped[list["Tag"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
 
 
 class User(Base):
@@ -1150,3 +1153,52 @@ class DocumentFile(Base):
 
     document: Mapped["Document"] = relationship(back_populates="file_links")
     file: Mapped["StoredFile"] = relationship()
+
+
+class Tag(Base):
+    """Physischer Tag (NFC-Chip oder QR-Sticker) mit der URL ``/t/<token>``.
+
+    Der Chip enthält nur die URL; Ziel und Aktion stehen hier. ``target_id``
+    ist polymorph (Tier, Pflegeaufgabe, Ämtli, Einkaufsliste, Todo …) und hat
+    deshalb keinen Fremdschlüssel — die Aktions-Registry
+    (``app/services/tag_actions.py``) prüft bei jedem Aufruf, ob das Ziel im
+    Haushalt noch existiert. ``target_id`` NULL heisst „alle“ bzw. „ohne
+    bestimmtes Ziel“, sofern die Aktion das erlaubt.
+    """
+
+    __tablename__ = "tags"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("households.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # secrets.token_urlsafe(24) → 32 Zeichen, 192 Bit
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    label: Mapped[str] = mapped_column(String(80), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    target_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    action: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    use_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+
+    household: Mapped["Household"] = relationship(back_populates="tags")

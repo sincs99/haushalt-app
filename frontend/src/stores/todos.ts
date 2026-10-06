@@ -4,6 +4,7 @@ import { useAuthStore } from './auth'
 import { createOnlineTodosRepository } from '../repositories/todosRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import type { TodoItem, HouseholdMemberInfo } from '../types'
+import { upsertVersioned } from '../utils/syncVersion'
 
 export const useTodosStore = defineStore('todos', () => {
   // Repositories — einmal im Store-Setup erstellen
@@ -16,7 +17,6 @@ export const useTodosStore = defineStore('todos', () => {
   const loading = ref(false)
 
   // Interner State für Race-Condition-Schutz
-  const pendingTempIds = new Set<string>()
   const pendingToggles = new Set<string>()
 
   // Actions
@@ -52,10 +52,12 @@ export const useTodosStore = defineStore('todos', () => {
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    // 1. Optimistic: Sofort lokalen Temp-Eintrag erzeugen
-    const tempId = crypto.randomUUID()
-    const tempItem: TodoItem = {
-      id: tempId,
+    // 1. Optimistic: Sofort lokalen Eintrag mit endgültiger Client-ID erzeugen.
+    //    Der Server übernimmt die ID → kein Temp-ID-Swap nötig.
+    const todoId = crypto.randomUUID()
+    const now = new Date().toISOString()
+    const optimisticItem: TodoItem = {
+      id: todoId,
       household_id: householdId,
       title,
       description: description ?? null,
@@ -63,41 +65,33 @@ export const useTodosStore = defineStore('todos', () => {
       due_date: dueDate ?? null,
       is_done: false,
       created_by_user_id: authStore.user?.id ?? null,
-      created_at: new Date().toISOString(),
+      created_at: now,
       done_at: null,
       tags: tags ?? [],
+      updated_at: now,
+      version: 0, // noch nicht vom Server bestätigt
       reminders: [],
     }
-    items.value.push(tempItem)
-    pendingTempIds.add(tempId)
+    items.value.push(optimisticItem)
 
     try {
       // 2. Server-Call via Repository
       const serverItem = await repo.create(householdId, {
+        id: todoId,
         title,
         description,
         assigned_to_user_id: assignedToUserId,
         due_date: dueDate,
         tags,
       })
-      pendingTempIds.delete(tempId)
 
-      // 3. Defensive Duplikat-Prüfung: Socket könnte schneller gewesen sein
-      const serverIdx = items.value.findIndex(i => i.id === serverItem.id)
-      const tempIdx = items.value.findIndex(i => i.id === tempId)
-
-      if (serverIdx !== -1 && tempIdx !== -1) {
-        // Socket war schneller → Server-Item existiert bereits → Temp-Item entfernen
-        items.value.splice(tempIdx, 1)
-      } else if (tempIdx !== -1) {
-        // Normaler Fall → Temp-Item durch Server-Item ersetzen
-        items.value[tempIdx] = serverItem
-      }
-      // Falls weder server noch temp gefunden → nichts tun (edge case, harmlos)
+      // 3. Optimistischen Eintrag durch Server-Stand ersetzen. Gleiche ID wie das
+      //    Socket-Event → egal wer zuerst kommt, es entsteht kein Duplikat.
+      //    Kein Insert, falls das Todo inzwischen gelöscht wurde.
+      upsertVersioned(items.value, serverItem, false)
     } catch (error) {
-      pendingTempIds.delete(tempId)
       // 4. Rollback bei Fehler
-      items.value = items.value.filter(i => i.id !== tempId)
+      items.value = items.value.filter(i => i.id !== todoId)
       throw error
     }
   }
@@ -188,33 +182,18 @@ export const useTodosStore = defineStore('todos', () => {
     }
   }
 
-  // Socket-Handler — Idempotente Merges (Server gewinnt immer)
+  // Socket-Handler — Idempotente Merges (neuere Server-Version gewinnt)
   function handleTodoCreated(serverItem: TodoItem) {
-    // Wenn wir gerade selbst ein Todo erstellt haben, könnte das Socket-Event
-    // vor dem REST-Response kommen. In diesem Fall ignorieren — der REST-Response
-    // erledigt den Temp→Server-Swap.
-    if (pendingTempIds.size > 0) {
-      const existingIdx = items.value.findIndex(i => i.id === serverItem.id)
-      if (existingIdx !== -1) {
-        items.value[existingIdx] = serverItem
-      }
-      // KEIN push — REST-Response-Handling macht den Swap
-      return
-    }
-    // Normaler Fall (Event von anderem Haushaltsmitglied)
-    const existingIdx = items.value.findIndex(i => i.id === serverItem.id)
-    if (existingIdx !== -1) {
-      items.value[existingIdx] = serverItem
-    } else {
-      items.value.push(serverItem)
-    }
+    // Idempotenter Merge per ID: eigene Todos tragen bereits die Client-ID,
+    // das Event ersetzt den optimistischen Eintrag statt ein Duplikat anzulegen.
+    // (Früher wurden hier Events anderer User verworfen, solange ein eigener
+    // Create lief.)
+    upsertVersioned(items.value, serverItem, true)
   }
 
   function handleTodoUpdated(serverItem: TodoItem) {
-    const idx = items.value.findIndex(i => i.id === serverItem.id)
-    if (idx !== -1) {
-      items.value[idx] = serverItem // Server gewinnt immer
-    }
+    // Veraltete Events (niedrigere version) werden verworfen
+    upsertVersioned(items.value, serverItem, false)
   }
 
   function handleTodoDeleted(data: { id: string }) {

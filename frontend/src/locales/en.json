@@ -503,7 +503,8 @@
     "DOCUMENT_TOO_MANY_FILES": "Too many pages for one document (max. 30)",
     "DOCUMENT_LAST_FILE": "The last page cannot be removed – delete the document instead",
     "BILL_PAYER_REQUIRED": "Please choose who paid the bill",
-    "BILL_ALREADY_BOOKED": "This bill has already been booked"
+    "BILL_ALREADY_BOOKED": "This bill has already been booked",
+    "ENTITY_ID_CONFLICT": "This ID is already in use"
   },
   "push": {
     "title": "Notifications",

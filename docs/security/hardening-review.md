@@ -47,6 +47,7 @@
 | H-12 | 🟢 Gering | Invite-Codes laufen nie ab / nicht rotierbar | ✅ Behoben |
 | H-13 | ℹ️ Info | Rate-Limits nur per IP, In-Memory-Storage (Reset bei Neustart) | Akzeptiert (1 Worker) |
 | H-14 | ℹ️ Info | Upload-Endpoint ohne Rate-Limit (vgl. Epic 8 F-06) | ✅ Behoben (`30/minute;300/hour`) |
+| H-15 | 🟢 Gering | Socket-Verbindungen bleiben nach Logout und Ablauf des Access-Tokens unbegrenzt offen | ✅ Behoben (Nachtrag unten) |
 
 ---
 
@@ -69,6 +70,20 @@ Eine Neuimplementierung war daher nicht nötig. Ergänzt wurde (H-05/H-06/H-07):
 - Login führt bei unbekannter E-Mail einen Dummy-bcrypt-Vergleich durch → keine Account-Enumeration über die Antwortzeit.
 - `decode_access_token` verlangt `exp` und `sub` (`options={"require": [...]}`); `alg=none` ist durch `algorithms=["HS256"]` ausgeschlossen (Test vorhanden).
 - Alle `/api/auth/*`-Responses tragen `Cache-Control: no-store`.
+
+### Nachtrag H-15 — Token-Ablauf auf Socket-Verbindungen (✅ Behoben)
+
+**Vorher:** `socket_manager.connect` prüfte das Access-Token nur beim Verbindungsaufbau. Danach empfing die Verbindung Haushalts-Events, solange sie offen war, auch nach `/logout`, nach der Reuse-Detection und lange nach Ablauf des Tokens.
+
+**Jetzt:**
+- Der Server speichert `exp` in der Socket-Session und trennt die Verbindung per Timer bei Ablauf (`session_ended` mit Grund `expired`). `join_household` prüft `exp` zusätzlich.
+- Der Client verlängert nach jedem Token-Refresh mit `reauth {token}`; der Server akzeptiert nur ein gültiges Token desselben Users, sonst bleibt der alte Ablauf.
+- `/api/auth/logout` (Grund `logout`) und die Reuse-Detection in `/refresh` (Grund `revoked`) trennen alle Verbindungen des Users über den persönlichen Raum (`disconnect_user_sync`, gleicher Sync/Async-Übergang wie `emit_to_household_sync`).
+- Der Client refresht nach `logout`/`revoked` bewusst nicht (Gefahr: Refresh mit gerade widerrufenem Token → Reuse-Detection → alle Geräte abgemeldet), sondern verbindet nur mit seinem aktuellen Access-Token neu.
+
+**Restrisiko:** Ein gestohlenes Access-Token erlaubt bis zu seinem Ablauf (max. 15 Min.) neue Verbindungen, wie bei der REST-API. Gezieltes Trennen nur des ausloggenden Geräts bräuchte eine Sitzungs-Kennung im Token (siehe `family_id`-Vorschlag unter H-01).
+
+Tests: `backend/tests/test_socket_session.py` (Ablauf, `reauth`, Raumbeitritt nach Ablauf, Logout, Reuse-Detection), `frontend/src/composables/__tests__/useSocket.test.ts`, `frontend/src/stores/__tests__/auth.test.ts` (`refreshForSocket`, Socket-Trennung vor Logout).
 
 ### Nachtrag H-02 — CSP und PDF-Vorschau (Dokument-Ablage)
 

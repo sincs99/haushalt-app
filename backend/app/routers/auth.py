@@ -28,6 +28,7 @@ from app.services.invite_code import (
     is_invite_code_expired,
     new_invite_code_expiry,
 )
+from app.socket_manager import disconnect_user_sync
 
 logger = logging.getLogger(__name__)
 
@@ -389,6 +390,8 @@ def refresh_endpoint(
             RefreshToken.revoked_at.is_(None),
         ).update({"revoked_at": datetime.now(timezone.utc)})
         db.commit()
+        # Alle Sitzungen sind widerrufen → auch offene Socket-Verbindungen beenden
+        disconnect_user_sync(old_token.user_id, "revoked")
         raise _refresh_rejected(
             ErrorCode.REFRESH_TOKEN_REUSED, "Refresh token reuse detected", from_cookie
         )
@@ -436,6 +439,10 @@ def logout_endpoint(
         if existing and existing.revoked_at is None:
             existing.revoked_at = datetime.now(timezone.utc)
             db.commit()
+            # Offene Socket-Verbindungen des Users serverseitig trennen. Der Access-Token
+            # trägt keine Geräte-Kennung, deshalb trifft das alle Verbindungen des Users;
+            # andere Geräte verbinden sich mit ihrem weiterhin gültigen Token selbst neu.
+            disconnect_user_sync(existing.user_id, "logout")
 
     if _uses_cookie_delivery(request) or REFRESH_COOKIE_NAME in request.cookies:
         _clear_refresh_cookie(response)

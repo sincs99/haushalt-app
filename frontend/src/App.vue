@@ -38,7 +38,10 @@ const financeStore = useFinanceStore()
 const dashboardStore = useDashboardStore()
 const pollsStore = usePollsStore()
 const petsStore = usePetsStore()
-const { connect, reconnectWithToken, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect, isConnected } = useSocket()
+const { updateToken, setTokenRefresher, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect, isConnected } = useSocket()
+
+// Trennt der Server den Socket wegen Token-Ablauf, holt sich der Socket hierüber ein frisches Token
+setTokenRefresher(() => authStore.refreshForSocket())
 
 // Push-Subscription dem eingeloggten User + aktueller Sprache zuordnen
 const { locale } = useI18n()
@@ -133,7 +136,8 @@ watch(
       return
     }
 
-    reconnectWithToken(token)
+    // Erstverbindung oder neues Token nach Refresh (Server verlängert die Verbindung per reauth)
+    updateToken(token)
 
     // Alten Room verlassen
     if (oldHouseholdId && oldHouseholdId !== householdId) {
@@ -332,6 +336,7 @@ onUnmounted(() => {
   off('pet_care_task_updated', dashboardStore.invalidate)
   off('pet_care_task_deleted', dashboardStore.invalidate)
  offReconnect(handleReconnect)
+  setTokenRefresher(null)
   disconnect()
 })
 </script>

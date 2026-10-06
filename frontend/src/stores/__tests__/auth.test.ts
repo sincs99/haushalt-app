@@ -1,7 +1,7 @@
 /**
  * Unit-Tests für den Auth-Store: initialize() mit Cookie-Refresh, Migration alter
  * localStorage-Tokens, Single-Flight-Refresh, Offline-Verhalten, Haushalts-Auswahl,
- * Logout und Cross-Tab-Sync über den Sitzungs-Marker.
+ * Logout, Cross-Tab-Sync über den Sitzungs-Marker und Token-Erneuerung für den Socket.
  *
  * axios, API-Client, Router, Toast und i18n sind gemockt. tokenStorage läuft echt
  * gegen einen In-Memory-localStorage, damit Marker und Migration mitgetestet werden.
@@ -11,12 +11,13 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { MeResponse } from '../../types'
 import { createMemoryStorage, deferred } from './helpers'
 
-const { axiosPost, api, router, showToast, disablePush } = vi.hoisted(() => ({
+const { axiosPost, api, router, showToast, disablePush, socketDisconnect } = vi.hoisted(() => ({
   axiosPost: vi.fn(),
   api: { get: vi.fn(), post: vi.fn() },
   router: { push: vi.fn(), replace: vi.fn(), currentRoute: { value: { fullPath: '/' } } },
   showToast: vi.fn(),
   disablePush: vi.fn(),
+  socketDisconnect: vi.fn(),
 }))
 
 vi.mock('axios', () => ({ default: { post: axiosPost } }))
@@ -34,6 +35,7 @@ vi.mock('../../composables/useToast', () => ({ useToast: () => ({ showToast }) }
 vi.mock('../../i18n', () => ({ default: { global: { t: (key: string) => key } } }))
 vi.mock('../../router', () => ({ default: router }))
 vi.mock('../../services/pushService', () => ({ disablePush }))
+vi.mock('../../composables/useSocket', () => ({ useSocket: () => ({ disconnect: socketDisconnect }) }))
 
 import { useAuthStore } from '../auth'
 import { SESSION_MARKER_KEY } from '../../services/tokenStorage'
@@ -421,5 +423,77 @@ describe('Cross-Tab-Sync über den Sitzungs-Marker', () => {
 
     expect(store.isAuthenticated).toBe(true)
     expect(router.push).not.toHaveBeenCalled()
+  })
+})
+
+describe('logout und Socket', () => {
+  test('trennt den Socket, bevor das Backend den Logout erhält', async () => {
+    const store = useAuthStore()
+    store.token = 'access'
+    axiosPost.mockResolvedValue({ data: {} })
+
+    await store.logout({ reason: 'user' })
+
+    expect(socketDisconnect).toHaveBeenCalledTimes(1)
+    expect(socketDisconnect.mock.invocationCallOrder[0]).toBeLessThan(axiosPost.mock.invocationCallOrder[0])
+  })
+})
+
+describe('refreshForSocket', () => {
+  test('liefert nach erfolgreichem Refresh das neue Access-Token', async () => {
+    markSession()
+    axiosPost.mockResolvedValue(tokenResponse)
+    const store = useAuthStore()
+    store.token = 'old-access'
+
+    await expect(store.refreshForSocket()).resolves.toBe('new-access')
+    expect(axiosPost).toHaveBeenCalledWith(REFRESH_URL, {}, cookieRequest)
+  })
+
+  test('ohne Login: kein Refresh, null', async () => {
+    const store = useAuthStore()
+
+    await expect(store.refreshForSocket()).resolves.toBeNull()
+    expect(axiosPost).not.toHaveBeenCalled()
+  })
+
+  test('Refresh abgelehnt (401): null und Logout mit Grund "expired"', async () => {
+    markSession()
+    axiosPost.mockRejectedValueOnce(httpError(401)).mockResolvedValue({ data: {} })
+    router.currentRoute.value.fullPath = '/todos'
+    const store = useAuthStore()
+    store.token = 'old-access'
+
+    await expect(store.refreshForSocket()).resolves.toBeNull()
+    expect(store.isAuthenticated).toBe(false)
+    expect(localStorage.getItem(SESSION_MARKER_KEY)).toBeNull()
+    expect(router.push).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/todos' } })
+  })
+
+  test('Netzwerkfehler: null, bleibt eingeloggt', async () => {
+    markSession()
+    axiosPost.mockRejectedValue(networkError())
+    const store = useAuthStore()
+    store.token = 'old-access'
+
+    await expect(store.refreshForSocket()).resolves.toBeNull()
+    expect(store.isAuthenticated).toBe(true)
+    expect(localStorage.getItem(SESSION_MARKER_KEY)).toBe('1')
+  })
+
+  test('während eines Logouts: kein Refresh (Refresh-Token ist gerade widerrufen)', async () => {
+    const logoutCall = deferred<{ data: object }>()
+    axiosPost.mockReturnValueOnce(logoutCall.promise)
+    const store = useAuthStore()
+    store.token = 'access'
+
+    const loggingOut = store.logout({ reason: 'user' })
+    await vi.waitFor(() => expect(axiosPost).toHaveBeenCalledTimes(1))
+
+    await expect(store.refreshForSocket()).resolves.toBeNull()
+    expect(axiosPost).toHaveBeenCalledTimes(1)
+
+    logoutCall.resolve({ data: {} })
+    await loggingOut
   })
 })

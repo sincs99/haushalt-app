@@ -285,7 +285,10 @@ async function confirmSettlement() {
   box-shadow: var(--shadow-overlay);
   width: 100%;
   max-width: 400px;
-  padding: var(--space-5);
+  /* --space-5 existiert nicht → Padding fiel auf 0 */
+  padding: var(--space-6);
+  max-height: calc(100dvh - var(--space-8));
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);

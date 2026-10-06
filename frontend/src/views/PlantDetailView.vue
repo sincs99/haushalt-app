@@ -709,7 +709,7 @@ async function handleDeleteTask() {
 
 .section-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
   margin: 0 0 var(--space-3) 0;

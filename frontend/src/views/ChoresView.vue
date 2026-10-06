@@ -672,7 +672,7 @@ const weekdayOptions = computed(() =>
 .section__title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }
@@ -1059,8 +1059,8 @@ const weekdayOptions = computed(() =>
 }
 
 .chore-card__title {
-  font-size: var(--text-base);
-  font-weight: var(--font-weight-medium);
+  font-size: var(--text-title-item);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
 }
 

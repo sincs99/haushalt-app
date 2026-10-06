@@ -460,7 +460,7 @@ function navigateToPet(petId: string) {
 /* ── Card Title ── */
 .card-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   margin: 0 0 var(--space-3) 0;
   color: var(--ink);
@@ -577,9 +577,10 @@ function navigateToPet(petId: string) {
 }
 
 .pet-card__name {
-  font-size: var(--text-lg);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
+  font-family: var(--font-display);
 }
 
 .pet-card__details {

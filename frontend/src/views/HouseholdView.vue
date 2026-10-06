@@ -618,7 +618,7 @@ watch(() => authStore.currentHouseholdId, () => {
 .section-title {
   margin: 0 0 var(--space-3);
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }

@@ -139,7 +139,7 @@ async function joinHousehold() {
   gap: var(--space-2);
   margin: 0 0 var(--space-1);
   font-family: var(--font-display);
-  font-size: var(--text-xl);
+  font-size: var(--text-title-page);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }
@@ -165,7 +165,7 @@ async function joinHousehold() {
   gap: var(--space-2);
   margin: 0 0 var(--space-2);
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }

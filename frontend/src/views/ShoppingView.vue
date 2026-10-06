@@ -165,7 +165,7 @@ onMounted(async () => {
   padding: var(--space-1-5) var(--space-4);
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   white-space: nowrap;
   cursor: pointer;
   transition: all 150ms;
@@ -215,7 +215,7 @@ onMounted(async () => {
 .btn-primary {
   padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-md);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm);
   border: none;
   cursor: pointer;
@@ -232,7 +232,7 @@ onMounted(async () => {
 .btn-secondary {
   padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-md);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm);
   border: none;
   cursor: pointer;

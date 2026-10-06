@@ -430,7 +430,7 @@ function formatReminderDate(isoString: string): string {
 
 .greeting__title {
   font-family: var(--font-display);
-  font-size: var(--text-xl);
+  font-size: var(--text-title-page);
   color: var(--ink);
   margin: 0;
   overflow: hidden;
@@ -447,7 +447,7 @@ function formatReminderDate(isoString: string): string {
 /* ── Card Titles ── */
 .card-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   margin: 0 0 var(--space-3) 0;
   color: var(--ink);

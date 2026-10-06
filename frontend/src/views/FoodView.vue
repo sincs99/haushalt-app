@@ -718,7 +718,7 @@ async function doCreateMealPoll() {
 .card-section-title {
   margin: 0 0 var(--space-3);
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }
@@ -804,7 +804,7 @@ async function doCreateMealPoll() {
 .week-row__name--empty {
   color: var(--sub);
   font-style: italic;
-  font-weight: normal;
+  font-weight: var(--font-weight-normal);
 }
 
 .week-row__meta {
@@ -932,7 +932,7 @@ async function doCreateMealPoll() {
   margin: 0;
   padding-left: var(--space-4);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--line-height-normal);
   color: var(--ink);
 }
 
@@ -967,7 +967,7 @@ async function doCreateMealPoll() {
   align-items: center;
   gap: var(--space-2);
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }

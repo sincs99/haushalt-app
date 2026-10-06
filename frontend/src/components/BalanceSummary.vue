@@ -293,9 +293,10 @@ async function confirmSettlement() {
 
 .dialog-title {
   margin: 0;
-  font-size: var(--text-lg);
-  font-weight: var(--font-weight-bold);
+  font-size: var(--text-title-dialog);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
+  font-family: var(--font-display);
 }
 
 .dialog-form {

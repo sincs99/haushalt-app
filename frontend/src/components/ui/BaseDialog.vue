@@ -94,7 +94,7 @@ function onKeydown(e: KeyboardEvent) {
 .dialog-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-title-dialog);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }

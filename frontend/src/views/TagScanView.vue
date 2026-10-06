@@ -334,9 +334,9 @@ onMounted(resolve)
 .scan-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-xl);
+  font-size: var(--text-title-page);
   color: var(--ink);
-  line-height: 1.3;
+  line-height: var(--line-height-snug);
 }
 
 .scan-sub {

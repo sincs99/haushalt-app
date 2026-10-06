@@ -347,7 +347,7 @@ onUnmounted(() => {
 
 .notes-section__header {
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm);
   color: var(--sub);
   text-transform: uppercase;
@@ -395,9 +395,9 @@ onUnmounted(() => {
 
 .note-card__title {
   font-weight: var(--font-weight-semibold);
-  font-size: var(--text-base);
+  font-size: var(--text-title-item);
   color: var(--ink);
-  line-height: 1.3;
+  line-height: var(--line-height-snug);
   min-width: 0;
   word-break: break-word;
 }

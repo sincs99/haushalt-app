@@ -101,7 +101,7 @@ const isTabActive = (to: string) => route.path === to
 }
 
 .bottom-nav__icon {
-  line-height: 1;
+  line-height: var(--line-height-none);
   width: 22px;
   height: 22px;
 }

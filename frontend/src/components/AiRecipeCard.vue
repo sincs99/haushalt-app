@@ -239,7 +239,7 @@ function discard() {
   background: var(--card);
   color: var(--ink);
   font: inherit;
-  font-size: 16px; /* iOS-Zoom vermeiden */
+  font-size: var(--text-base); /* iOS-Zoom vermeiden */
   box-sizing: border-box;
 }
 
@@ -341,7 +341,7 @@ function discard() {
   padding-left: var(--space-4);
   color: var(--ink);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--line-height-normal);
 }
 
 .ai-result__steps li + li {

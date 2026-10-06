@@ -489,7 +489,7 @@ function handleDayClick(day: GridDay) {
   width: 28px;
   height: 28px;
   border-radius: var(--radius-full);
-  line-height: 1;
+  line-height: var(--line-height-none);
 }
 
 .month-grid__num--today {
@@ -514,9 +514,9 @@ function handleDayClick(day: GridDay) {
 }
 
 .month-grid__dot-extra {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--sub);
-  line-height: 1;
+  line-height: var(--line-height-none);
 }
 
 /* ── Expanded Day Detail ── */

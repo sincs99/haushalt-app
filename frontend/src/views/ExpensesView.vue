@@ -699,7 +699,7 @@ onMounted(() => {
 .section-title {
   margin: 0 0 var(--space-3) 0;
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }
@@ -839,7 +839,7 @@ onMounted(() => {
 
 .expense-item__emoji {
   font-size: var(--text-lg);
-  line-height: 1;
+  line-height: var(--line-height-none);
   flex-shrink: 0;
   margin-top: var(--space-0-5);
 }

@@ -97,7 +97,7 @@ const { t } = useI18n()
 .advice__text {
   margin: 0;
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--line-height-normal);
   color: var(--ink);
 }
 

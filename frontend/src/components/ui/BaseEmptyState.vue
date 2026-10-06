@@ -36,9 +36,10 @@ const props = withDefaults(defineProps<{
 
 .base-empty-state__title {
   margin: 0 0 var(--space-1) 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-title-dialog);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
+  font-family: var(--font-display);
 }
 
 .base-empty-state__subtitle {

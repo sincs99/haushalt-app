@@ -130,8 +130,8 @@ watch(() => props.open, (isOpen) => {
 
 .more-sheet__title {
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-title-dialog);
   margin: 0 0 var(--space-3);
   color: var(--ink);
 }

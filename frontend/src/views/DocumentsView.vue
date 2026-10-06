@@ -790,9 +790,9 @@ onUnmounted(() => {
 
 .doc-card__title {
   font-weight: var(--font-weight-semibold);
-  font-size: var(--text-base);
+  font-size: var(--text-title-item);
   color: var(--ink);
-  line-height: 1.3;
+  line-height: var(--line-height-snug);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

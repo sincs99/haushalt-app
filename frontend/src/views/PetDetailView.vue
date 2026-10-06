@@ -1227,7 +1227,7 @@ async function handleDeleteCareTask() {
 /* ── Card Title ── */
 .card-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   margin: 0 0 var(--space-3) 0;
   color: var(--ink);
@@ -1413,7 +1413,7 @@ async function handleDeleteCareTask() {
   justify-content: center;
   flex-shrink: 0;
   margin-top: var(--space-0-5);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--sub);
 }
 
@@ -1426,7 +1426,7 @@ async function handleDeleteCareTask() {
 .med-check--inactive {
   border-color: var(--sub);
   color: var(--sub);
-  font-size: 8px;
+  font-size: var(--text-2xs);
 }
 
 .med-item__info {
@@ -1801,7 +1801,7 @@ async function handleDeleteCareTask() {
 
 .section-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
   margin: 0;

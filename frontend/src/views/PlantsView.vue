@@ -382,7 +382,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
 
 .card-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   margin: 0 0 var(--space-3) 0;
   color: var(--ink);
@@ -423,12 +423,13 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
 }
 
 .plant-card__name {
-  font-size: var(--text-lg);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-display);
 }
 
 .plant-card__details {

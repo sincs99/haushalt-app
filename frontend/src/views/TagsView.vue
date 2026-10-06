@@ -457,6 +457,7 @@ watch(() => authStore.currentHouseholdId, () => {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  font-size: var(--text-title-item);
 }
 
 .tag-row__meta {
@@ -503,7 +504,7 @@ watch(() => authStore.currentHouseholdId, () => {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-btn);
-  font-size: 16px; /* iOS-Zoom verhindern */
+  font-size: var(--text-base); /* iOS-Zoom verhindern */
   font-family: var(--font-family);
   background: var(--card);
   color: var(--ink);
@@ -552,7 +553,7 @@ watch(() => authStore.currentHouseholdId, () => {
 .detail__heading {
   font-family: var(--font-display);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--sub);
   text-transform: uppercase;
   letter-spacing: 0.05em;

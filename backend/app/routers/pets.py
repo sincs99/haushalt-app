@@ -881,6 +881,9 @@ def update_care_task(
     update_data = body.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(task, key, value)
+    # Neue Fälligkeit → zur neuen Fälligkeit wieder erinnern (wie bei Pflanzen)
+    if "next_due_at" in update_data:
+        task.notified_at = None
 
     db.commit()
     db.refresh(task)

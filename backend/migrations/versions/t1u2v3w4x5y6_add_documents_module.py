@@ -1,7 +1,7 @@
 """add documents module
 
 Revision ID: t1u2v3w4x5y6
-Revises: u1v2w3x4y5z6
+Revises: v1w2x3y4z5a6
 Create Date: 2026-10-05 12:00:00.000000
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 # revision identifiers, used by Alembic.
 revision: str = 't1u2v3w4x5y6'
-down_revision: Union[str, Sequence[str], None] = 'u1v2w3x4y5z6'
+down_revision: Union[str, Sequence[str], None] = 'v1w2x3y4z5a6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

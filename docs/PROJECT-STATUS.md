@@ -1,6 +1,6 @@
 # Haushalt-App — Aktueller Projektstand
 
-**Stand:** 2026-10-06 (Kopf, Kennzahlen, Feature-Status, Einschränkungen und Dependencies aktualisiert; Abschnitte 3–5 und 10 am Code und an der Git-Historie abgeglichen — die OpenAPI-Doku des Backends unter `/docs` bleibt für Details maßgeblich)
+**Stand:** 2026-10-06 (Kopf, Kennzahlen, Feature-Status, Einschränkungen und Dependencies aktualisiert, H-01 Refresh-Token-Cookie ergänzt; Abschnitte 3–5 und 10 am Code und an der Git-Historie abgeglichen — die OpenAPI-Doku des Backends unter `/docs` bleibt für Details maßgeblich)
 **Autor:** Tech Lead (automatisch generiert)
 
 ---
@@ -15,7 +15,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzp
 | Datenbank | PostgreSQL (via psycopg2) |
 | Realtime | Socket.IO (python-socketio) |
 | Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4, PWA (`vite-plugin-pwa`) |
-| Auth | JWT-Access-Token (15 Min.) + rotierender Refresh-Token mit Reuse-Erkennung, bcrypt-Hashing |
+| Auth | JWT-Access-Token (15 Min., nur im Speicher) + rotierender Refresh-Token als HttpOnly-Cookie (`SameSite=Strict`, CSRF-Header) mit Reuse-Erkennung, bcrypt-Hashing |
 | i18n | vue-i18n, 700 Keys (DE + EN), Build-gesicherter Key-Sync |
 | Qualität / CI | GitHub Actions: Backend (ruff, pytest mit Coverage), Frontend (Locale-Check, Typecheck, Vitest mit Coverage), Dependency-Audit (pip-audit, npm audit) |
 | Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager), Backup-Skripte für Datenbank und Uploads |
@@ -42,7 +42,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | #17 | Frontend-Stores: Geschäfts-Filter folgt dem Umbenennen, fehlgeschlagenes Löschen eines Ämtlis stellt dessen Zuweisungen wieder her; Unit-Tests für den Auth-Store |
 | #18 | Einkauf: Geschäftsnamen werden ohne Beachtung der Groß-/Kleinschreibung zusammengeführt (Backend und Frontend, keine Migration); bestehende Einträge behalten ihre Schreibweise |
 
-**Kennzahlen (nach #18):** Backend 582 Tests in 51 Dateien, Coverage 91 %; Frontend 156 Tests in 13 Dateien, Coverage 31,8 % (Statements); 705 i18n-Schlüssel; 34 Alembic-Migrationen (einziger Kopf `x2y3z4a5b6c7`).
+**Kennzahlen (nach #21, inkl. Branch `claude/refresh-token-httponly-cookie`):** Backend 617 Tests in 53 Dateien, Coverage 91 %; Frontend 164 Tests in 13 Dateien, Coverage 32,5 % (Statements); 705 i18n-Schlüssel; 34 Alembic-Migrationen (einziger Kopf `x2y3z4a5b6c7`).
 
 **Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Essen, Notizen, Kalender und Finanzen.
 
@@ -806,6 +806,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Web Push (Todo-Erinnerungen, Tierpflege) | ✅ | ✅ | — |
 | Dokument-Ablage (Verträge, Rechnungen, Garantien; mehrseitig, Vorschau, Speicher-Limit) | ✅ | ✅ DocumentsView | ✅ Socket |
 | Auth-Härtung (Rate-Limits, Refresh-Rotation, Security-Header/CSP) | ✅ | — | — |
+| Refresh-Token als HttpOnly-Cookie (H-01: `casa_rt`, CSRF-Header `X-Requested-With: casa`, Migration alter `localStorage`-Tokens) | ✅ | ✅ Auth-Store, API-Client, Cross-Tab über Sitzungs-Marker | — |
 | Offline-Basis M0 (Client-IDs, `version`/`updated_at`) | ✅ Shopping, Todos, Chore-Zuweisungen | ✅ Stores | ✅ veraltete Events werden verworfen |
 | CI (Lint, Tests mit Coverage, Dependency-Audit) | — | — | — |
 | Produktions-Deployment (Docker, Nginx Proxy Manager) | ✅ | ✅ | — |
@@ -815,11 +816,11 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Feature | Aufwand | Prio | Beschreibung |
 |---|---|---|---|
 | Offline-Betrieb ab M1 | Gross | 🔵 Niedrig | IndexedDB, Änderungs-Warteschlange, Synchronisation; Plan und Etappen in `docs/offline-first-phase2.md`. Vorher offen: Entscheidung E8 (nur kürzlich abgehakte Einkäufe synchronisieren oder Funktion „Abgehakte löschen“) |
-| Refresh-Token nicht in `localStorage` | Mittel | 🟡 Mittel | Vorschlag HttpOnly-Cookie in `docs/security/hardening-review.md` (H-01); ändert den Vertrag von Login/Refresh/Logout und braucht CSRF-Schutz |
 | Dokumente verknüpfen | Mittel | 🔵 Niedrig | Verknüpfung mit Ausgaben/Terminen (Datenmodell ist vorbereitet, eigene Link-Tabelle) |
 | Push-Erinnerung zum Ablaufdatum von Dokumenten | Klein | 🔵 Niedrig | Garantieende, Kündigungsfrist |
 | Einladungscode nur für Admins sichtbar? | Klein | 🔵 Niedrig | Offene Produktfrage zu H-12: Der Code ist weiterhin für alle Mitglieder sichtbar (Ablauf und Rotation sind umgesetzt) |
 | Token-Ablauf auf Socket-Verbindungen | Klein | 🔵 Niedrig | Logout/Ablauf beendet bestehende WebSocket-Verbindungen serverseitig noch nicht |
+| „Überall abmelden“ | Klein | 🔵 Niedrig | Es gibt keinen Endpunkt, der alle Refresh-Tokens eines Users revoked; das passiert heute nur über die Reuse-Erkennung. Nützlich zusammen mit Passwort-Ändern |
 | Frontend-Testabdeckung | Mittel | 🟡 Mittel | 31,8 % Statements; Komponenten und weitere Stores (Kalender, Finanzen, Haustiere …) sind ungetestet; Coverage wird nur berichtet, es gibt keine Schwelle |
 | Push-Notifications für Chores | Mittel | 🔵 Niedrig | „Du bist dran“-Benachrichtigung |
 | FR/IT-Sprachen | Klein | 🔵 Niedrig | Locale-Erweiterung |
@@ -838,6 +839,8 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | PDF-Vorschau unter der CSP | Im eingebetteten PDF-Betrachter fehlen die Schaltflächen „Drucken“ und „Mehr“ (nicht durch Styles verursacht, nicht weiter untersucht); die App hat einen eigenen Download-Button. Die CSP wurde nur für `/documents` und `/shopping` im Browser geprüft | Gering |
 | Bestehende wiederkehrende Rechnungen | Haben noch keinen Standard-Zahler; beim ersten Buchen wird im Dialog die aktuelle Person vorgeschlagen | Gering |
 | Rate-Limits nur pro IP, im Speicher | Zähler gehen beim Neustart verloren; passt zu einem Worker (Socket.IO ohne Message-Queue) | Akzeptiert |
+| Start ohne Netz | Der Access-Token wird nicht mehr persistiert; ohne Netz zeigt die App die Shell („offline eingeloggt“), hat aber keinen Token, bis der erste Request nach Rückkehr des Netzes ihn per Cookie-Refresh holt. Ohne Offline-Daten (M1) ist das gleichwertig zum früheren Verhalten | Phase 2 |
+| Native Builds (Capacitor) | Der HttpOnly-Cookie setzt einen Browser voraus; ein nativer Client müsste die Body-Variante von `/refresh` (ohne `X-Requested-With`) mit SecureStorage nutzen — siehe H-01 im Hardening-Review | Später |
 | Major-Updates ohne Gerätetest | Pillow 12 und cryptography 50 wurden über Tests und Stichproben geprüft, nicht mit einer echten Web-Push-Zustellung auf einem Gerät und nicht mit einem Upload über den laufenden Browser | Prüfen |
 | `deleteItem()` Rollback-Position | Bei paralleler Socket-Mutation kann die Position abweichen (kosmetisch) | Gering |
 | Auth-Styles dupliziert | Login/Register haben identische Scoped-CSS-Blöcke | Gering |

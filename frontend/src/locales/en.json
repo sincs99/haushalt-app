@@ -492,7 +492,9 @@
     "FILE_TYPE_NOT_ALLOWED": "File type not allowed or file is corrupt",
     "FILE_IN_USE": "File is still in use",
     "STORAGE_QUOTA_EXCEEDED": "Household storage is full – delete old documents",
-    "DOCUMENT_NOT_FOUND": "Document not found"
+    "DOCUMENT_NOT_FOUND": "Document not found",
+    "DOCUMENT_TOO_MANY_FILES": "Too many pages for one document (max. 30)",
+    "DOCUMENT_LAST_FILE": "The last page cannot be removed – delete the document instead"
   },
   "push": {
     "title": "Notifications",
@@ -708,10 +710,7 @@
     "emptySubtitle": "Upload contracts, invoices or warranties",
     "emptyFilteredSubtitle": "Try another category or search",
     "loadMore": "Load more",
-    "fileLabel": "File",
-    "chooseFile": "Choose file",
-    "changeFile": "Choose another file",
-    "fileHint": "PDF, JPG, PNG or WEBP, max. 10 MB",
+    "fileHint": "PDF, JPG, PNG or WEBP, max. 10 MB per page, up to {max} pages",
     "titleLabel": "Title",
     "titlePlaceholder": "e.g. Apartment lease",
     "categoryLabel": "Category",
@@ -726,7 +725,7 @@
     "expiresToday": "Expires today",
     "expiresInDays": "Expires tomorrow | Expires in {n} days",
     "validUntil": "Valid until {date}",
-    "deleteConfirm": "Really delete \"{title}\" including its file?",
+    "deleteConfirm": "Really delete \"{title}\" including its file? | Really delete \"{title}\" including all {n} pages?",
     "uploadSuccess": "Document uploaded",
     "loadError": "Documents could not be loaded.",
     "deleteError": "Document could not be deleted.",
@@ -738,6 +737,20 @@
       "warranty": "Warranties",
       "insurance": "Insurance",
       "other": "Other"
-    }
+    },
+    "pagesLabel": "Pages",
+    "pageCount": "{n} page | {n} pages",
+    "chooseFiles": "Choose files",
+    "addPages": "Add pages",
+    "takePhoto": "Take photo",
+    "uploadingPage": "Uploading page {current} of {total}…",
+    "tooManyPages": "At most {max} pages per document",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "removePage": "Remove page",
+    "removePageConfirm": "Really remove page \"{name}\"?",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "pageOf": "Page {current} / {total}"
   }
 }

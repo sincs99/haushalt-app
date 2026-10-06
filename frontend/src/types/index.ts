@@ -724,7 +724,8 @@ export interface DocumentItem {
   notes: string | null
   document_date: string | null
   expiry_date: string | null
-  file: StoredFile
+  /** Seiten in Reihenfolge, mindestens eine */
+  files: StoredFile[]
   created_by_user_id: string | null
   created_at: string
   updated_at: string

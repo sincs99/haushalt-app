@@ -2,14 +2,14 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
-import { useDocumentsStore } from '../stores/documents'
+import { MAX_DOCUMENT_FILES, useDocumentsStore } from '../stores/documents'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
 import { translateApiError } from '../utils/apiErrors'
 import { formatDate } from '../utils/dates'
 import { formatBytes, getExpiryStatus, isPreviewable } from '../utils/documents'
-import { DOCUMENT_CATEGORIES, type DocumentCategory, type DocumentItem } from '../types'
+import { DOCUMENT_CATEGORIES, type DocumentCategory, type DocumentItem, type StoredFile } from '../types'
 
 import PageHeader from '../components/ui/PageHeader.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
@@ -21,6 +21,7 @@ import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import {
   PhPlus, PhTrash, PhFolderOpen, PhFilePdf, PhFileImage, PhDownloadSimple, PhEye, PhMagnifyingGlass,
+  PhCamera, PhCaretUp, PhCaretDown, PhCaretLeft, PhCaretRight, PhX,
 } from '@phosphor-icons/vue'
 
 const { t } = useI18n()
@@ -30,7 +31,7 @@ const authStore = useAuthStore()
 const store = useDocumentsStore()
 const filesRepo = createOnlineFilesRepository()
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB, wie Backend
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB pro Seite, wie Backend
 const ACCEPTED_TYPES = 'application/pdf,image/jpeg,image/png,image/webp'
 
 // ── Filter & Suche ──
@@ -82,68 +83,154 @@ function expiryBadge(doc: DocumentItem): { cls: string; label: string } | null {
   }
 }
 
+function isPdf(mime: string) {
+  return mime === 'application/pdf'
+}
+
 // ── Formular-Dialog (Upload + Bearbeiten) ──
 const showFormDialog = ref(false)
-const editingDoc = ref<DocumentItem | null>(null)
-const formFile = ref<File | null>(null)
+// Über die ID referenzieren: Socket-/Server-Updates ersetzen das Item-Objekt im Store
+const editingDocId = ref<string | null>(null)
+const editingDoc = computed(() => store.items.find((i) => i.id === editingDocId.value) ?? null)
+const pendingFiles = ref<File[]>([])
 const formTitle = ref('')
 const formCategory = ref<DocumentCategory>('other')
 const formNotes = ref('')
 const formDocumentDate = ref('')
 const formExpiryDate = ref('')
 const formLoading = ref(false)
+const pagesBusy = ref(false)
+const uploadProgress = ref<{ current: number; total: number } | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const cameraInputRef = ref<HTMLInputElement | null>(null)
 
 const canSave = computed(() =>
-  editingDoc.value ? !!formTitle.value.trim() : !!formFile.value,
+  editingDoc.value ? !!formTitle.value.trim() : pendingFiles.value.length > 0,
+)
+
+const pageCount = computed(() =>
+  editingDoc.value ? editingDoc.value.files.length : pendingFiles.value.length,
+)
+
+const progressLabel = computed(() =>
+  uploadProgress.value
+    ? t('documents.uploadingPage', { current: uploadProgress.value.current, total: uploadProgress.value.total })
+    : '',
 )
 
 function resetForm() {
-  formFile.value = null
+  pendingFiles.value = []
   formTitle.value = ''
   formCategory.value = store.category ?? 'other'
   formNotes.value = ''
   formDocumentDate.value = ''
   formExpiryDate.value = ''
+  uploadProgress.value = null
 }
 
 function openUploadDialog() {
-  editingDoc.value = null
+  editingDocId.value = null
   resetForm()
   showFormDialog.value = true
 }
 
 function openEditDialog(doc: DocumentItem) {
-  editingDoc.value = doc
-  formFile.value = null
+  editingDocId.value = doc.id
+  pendingFiles.value = []
   formTitle.value = doc.title
   formCategory.value = doc.category
   formNotes.value = doc.notes ?? ''
   formDocumentDate.value = doc.document_date ?? ''
   formExpiryDate.value = doc.expiry_date ?? ''
+  uploadProgress.value = null
   showFormDialog.value = true
 }
 
 function closeFormDialog() {
+  if (formLoading.value || pagesBusy.value) return
   showFormDialog.value = false
-  editingDoc.value = null
+  editingDocId.value = null
 }
 
-function handleFileChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0] ?? null
-  if (!file) return
+function onProgress(current: number, total: number) {
+  uploadProgress.value = { current, total }
+}
 
-  // Client-seitige Grössenprüfung, Backend prüft zusätzlich
-  if (file.size > MAX_FILE_SIZE) {
-    input.value = ''
+/** Prüft ausgewählte Dateien clientseitig (Grösse, Seitenlimit); Backend prüft zusätzlich */
+function acceptFiles(selected: File[]): File[] {
+  const tooLarge = selected.filter((f) => f.size > MAX_FILE_SIZE)
+  if (tooLarge.length > 0) {
     showToast(t('files.FILE_TOO_LARGE'), 'error')
+  }
+  const valid = selected.filter((f) => f.size <= MAX_FILE_SIZE)
+  const free = MAX_DOCUMENT_FILES - pageCount.value
+  if (valid.length > free) {
+    showToast(t('documents.tooManyPages', { max: MAX_DOCUMENT_FILES }), 'error')
+  }
+  return valid.slice(0, Math.max(0, free))
+}
+
+async function handleFilesSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const selected = acceptFiles(Array.from(input.files ?? []))
+  // Reset damit dieselbe Datei erneut gewählt werden kann
+  input.value = ''
+  if (selected.length === 0) return
+
+  if (!editingDoc.value) {
+    pendingFiles.value = [...pendingFiles.value, ...selected]
+    // Titel aus erstem Dateinamen vorschlagen, falls noch leer
+    if (!formTitle.value.trim()) {
+      formTitle.value = selected[0].name.replace(/\.[^.]+$/, '').slice(0, 150)
+    }
     return
   }
-  formFile.value = file
-  // Titel aus Dateiname vorschlagen, falls noch leer
-  if (!formTitle.value.trim()) {
-    formTitle.value = file.name.replace(/\.[^.]+$/, '').slice(0, 150)
+
+  // Bestehendes Dokument: Seiten direkt hochladen und anhängen
+  pagesBusy.value = true
+  try {
+    await store.addPages(editingDoc.value.id, selected, onProgress)
+  } catch (error) {
+    showToast(translateApiError(error), 'error')
+  } finally {
+    pagesBusy.value = false
+    uploadProgress.value = null
+  }
+}
+
+function movePendingFile(index: number, direction: -1 | 1) {
+  const files = [...pendingFiles.value]
+  const target = index + direction
+  if (target < 0 || target >= files.length) return
+  ;[files[index], files[target]] = [files[target], files[index]]
+  pendingFiles.value = files
+}
+
+function removePendingFile(index: number) {
+  pendingFiles.value = pendingFiles.value.filter((_, i) => i !== index)
+}
+
+async function moveStoredPage(fileId: string, direction: -1 | 1) {
+  if (!editingDoc.value) return
+  try {
+    await store.movePage(editingDoc.value.id, fileId, direction)
+  } catch (error) {
+    showToast(translateApiError(error), 'error')
+  }
+}
+
+async function removeStoredPage(file: StoredFile) {
+  const doc = editingDoc.value
+  if (!doc || doc.files.length <= 1) return
+  if (!confirm(t('documents.removePageConfirm', { name: file.original_name }))) return
+
+  pagesBusy.value = true
+  try {
+    await store.removePage(doc.id, file.id)
+  } catch (error) {
+    showToast(translateApiError(error), 'error')
+  } finally {
+    pagesBusy.value = false
   }
 }
 
@@ -158,28 +245,30 @@ function formMeta() {
 }
 
 async function handleSave() {
-  if (!canSave.value || formLoading.value) return
+  if (!canSave.value || formLoading.value || pagesBusy.value) return
 
   formLoading.value = true
   try {
     if (editingDoc.value) {
       await store.updateDocument(editingDoc.value.id, formMeta())
-    } else if (formFile.value) {
-      await store.uploadDocument(formFile.value, formMeta())
+    } else {
+      await store.uploadDocument(pendingFiles.value, formMeta(), onProgress)
       showToast(t('documents.uploadSuccess'), 'success')
     }
+    formLoading.value = false
     closeFormDialog()
   } catch (error) {
     showToast(translateApiError(error), 'error')
   } finally {
     formLoading.value = false
+    uploadProgress.value = null
   }
 }
 
 async function handleDelete() {
   const doc = editingDoc.value
   if (!doc) return
-  if (!confirm(t('documents.deleteConfirm', { title: doc.title }))) return
+  if (!confirm(t('documents.deleteConfirm', { title: doc.title, n: doc.files.length }, doc.files.length))) return
 
   closeFormDialog()
   try {
@@ -191,24 +280,27 @@ async function handleDelete() {
 
 // ── Download & Vorschau (Blob mit JWT, siehe useProtectedImage) ──
 const showPreview = ref(false)
-const previewDoc = ref<DocumentItem | null>(null)
+const previewDocId = ref<string | null>(null)
+const previewDoc = computed(() => store.items.find((i) => i.id === previewDocId.value) ?? null)
+const previewIndex = ref(0)
+const previewFile = computed(() => previewDoc.value?.files[previewIndex.value] ?? null)
 const previewUrl = ref<string | null>(null)
 const previewLoading = ref(false)
 
-async function fetchBlob(doc: DocumentItem): Promise<Blob | null> {
+async function fetchBlob(file: StoredFile): Promise<Blob | null> {
   const householdId = authStore.currentHouseholdId
   if (!householdId) return null
-  return filesRepo.fetchFileBlob(householdId, doc.file.id)
+  return filesRepo.fetchFileBlob(householdId, file.id)
 }
 
-async function handleDownload(doc: DocumentItem) {
+async function handleDownload(file: StoredFile) {
   try {
-    const blob = await fetchBlob(doc)
+    const blob = await fetchBlob(file)
     if (!blob) return
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = doc.file.original_name
+    link.download = file.original_name
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -226,30 +318,56 @@ function revokePreview() {
   }
 }
 
-async function openPreview(doc: DocumentItem) {
+async function loadPreview() {
   revokePreview()
-  previewDoc.value = doc
-  showPreview.value = true
+  const file = previewFile.value
+  if (!file) return
+  if (!isPreviewable(file.mime_type)) return
+
   previewLoading.value = true
   try {
-    const blob = await fetchBlob(doc)
-    // Dialog könnte inzwischen geschlossen oder für ein anderes Dokument geöffnet sein
-    if (blob && showPreview.value && previewDoc.value?.id === doc.id) {
+    const blob = await fetchBlob(file)
+    // Dialog könnte inzwischen geschlossen oder auf eine andere Seite gewechselt sein
+    if (blob && showPreview.value && previewFile.value?.id === file.id) {
       previewUrl.value = URL.createObjectURL(blob)
     }
   } catch {
     showToast(t('documents.downloadError'), 'error')
-    closePreview()
   } finally {
     previewLoading.value = false
   }
 }
 
+function openPreview(doc: DocumentItem, index = 0) {
+  previewDocId.value = doc.id
+  previewIndex.value = index
+  showPreview.value = true
+  loadPreview()
+}
+
+function showPreviewPage(index: number) {
+  if (!previewDoc.value || index < 0 || index >= previewDoc.value.files.length) return
+  previewIndex.value = index
+  loadPreview()
+}
+
 function closePreview() {
   showPreview.value = false
-  previewDoc.value = null
+  previewDocId.value = null
   revokePreview()
 }
+
+// Dokument wurde gelöscht oder Seite entfernt, während die Vorschau offen ist
+watch(previewFile, (file, old) => {
+  if (!showPreview.value) return
+  if (!previewDoc.value) {
+    closePreview()
+  } else if (!file) {
+    showPreviewPage(previewDoc.value.files.length - 1)
+  } else if (file.id !== old?.id) {
+    loadPreview()
+  }
+})
 
 // ── Socket Events ──
 function refreshStorage() {
@@ -279,6 +397,7 @@ onMounted(() => {
   socket.on('document_updated', store.handleDocumentUpdated)
   socket.on('document_deleted', store.handleDocumentDeleted)
   socket.on('document_created', refreshStorage)
+  socket.on('document_updated', refreshStorage)
   socket.on('document_deleted', refreshStorage)
   socket.onReconnect(handleReconnect)
 })
@@ -290,6 +409,7 @@ onUnmounted(() => {
   socket.off('document_updated', store.handleDocumentUpdated)
   socket.off('document_deleted', store.handleDocumentDeleted)
   socket.off('document_created', refreshStorage)
+  socket.off('document_updated', refreshStorage)
   socket.off('document_deleted', refreshStorage)
   socket.offReconnect(handleReconnect)
 })
@@ -351,13 +471,16 @@ onUnmounted(() => {
         @keydown.enter="openEditDialog(doc)"
       >
         <span class="doc-card__icon" aria-hidden="true">
-          <PhFilePdf v-if="doc.file.mime_type === 'application/pdf'" :size="24" />
+          <PhFilePdf v-if="isPdf(doc.files[0].mime_type)" :size="24" />
           <PhFileImage v-else :size="24" />
         </span>
         <div class="doc-card__body">
           <span class="doc-card__title">{{ doc.title }}</span>
           <div class="doc-card__meta">
             <span class="category-chip">{{ $t(`documents.categories.${doc.category}`) }}</span>
+            <span v-if="doc.files.length > 1" class="doc-card__date">
+              {{ $t('documents.pageCount', doc.files.length) }}
+            </span>
             <span v-if="doc.document_date" class="doc-card__date">{{ formatDate(doc.document_date) }}</span>
             <span
               v-if="expiryBadge(doc)"
@@ -371,17 +494,19 @@ onUnmounted(() => {
         </div>
         <div class="doc-card__actions">
           <button
-            v-if="isPreviewable(doc.file.mime_type)"
+            v-if="isPreviewable(doc.files[0].mime_type)"
             class="icon-btn"
             :aria-label="$t('documents.preview')"
             @click.stop="openPreview(doc)"
           >
             <PhEye :size="18" />
           </button>
+          <!-- Mehrseitige Dokumente: Download pro Seite im Dialog/Vorschau -->
           <button
+            v-if="doc.files.length === 1"
             class="icon-btn"
             :aria-label="$t('documents.download')"
-            @click.stop="handleDownload(doc)"
+            @click.stop="handleDownload(doc.files[0])"
           >
             <PhDownloadSimple :size="18" />
           </button>
@@ -402,28 +527,85 @@ onUnmounted(() => {
       @close="closeFormDialog"
     >
       <form class="doc-form" @submit.prevent="handleSave">
-        <!-- Datei (nur beim Upload) -->
-        <div v-if="!editingDoc" class="form-field">
-          <span class="form-field__label">{{ $t('documents.fileLabel') }}</span>
-          <input
-            ref="fileInputRef"
-            type="file"
-            class="file-input"
-            :accept="ACCEPTED_TYPES"
-            @change="handleFileChange"
-          />
-          <BaseButton variant="secondary" size="sm" @click="fileInputRef?.click()">
-            {{ formFile ? $t('documents.changeFile') : $t('documents.chooseFile') }}
-          </BaseButton>
-          <span class="form-field__hint">
-            {{ formFile ? `${formFile.name} · ${formatBytes(formFile.size)}` : $t('documents.fileHint') }}
+        <!-- Seiten -->
+        <div class="form-field">
+          <span class="form-field__label">
+            {{ $t('documents.pagesLabel') }}
+            <span v-if="pageCount > 0" class="form-field__count">({{ pageCount }})</span>
           </span>
-        </div>
-        <div v-else class="form-field">
-          <span class="form-field__label">{{ $t('documents.fileLabel') }}</span>
-          <span class="form-field__hint">
-            {{ editingDoc.file.original_name }} · {{ formatBytes(editingDoc.file.size_bytes) }}
-          </span>
+
+          <!-- Neues Dokument: lokal gewählte Dateien -->
+          <ol v-if="!editingDoc && pendingFiles.length > 0" class="page-list">
+            <li v-for="(file, index) in pendingFiles" :key="`${file.name}-${file.lastModified}-${index}`" class="page-row">
+              <span class="page-row__num">{{ index + 1 }}</span>
+              <span class="page-row__name">{{ file.name }}<small>{{ formatBytes(file.size) }}</small></span>
+              <button type="button" class="icon-btn" :disabled="index === 0" :aria-label="$t('documents.moveUp')" @click="movePendingFile(index, -1)">
+                <PhCaretUp :size="16" />
+              </button>
+              <button type="button" class="icon-btn" :disabled="index === pendingFiles.length - 1" :aria-label="$t('documents.moveDown')" @click="movePendingFile(index, 1)">
+                <PhCaretDown :size="16" />
+              </button>
+              <button type="button" class="icon-btn" :aria-label="$t('documents.removePage')" @click="removePendingFile(index)">
+                <PhX :size="16" />
+              </button>
+            </li>
+          </ol>
+
+          <!-- Bestehendes Dokument: gespeicherte Seiten -->
+          <ol v-else-if="editingDoc" class="page-list">
+            <li v-for="(file, index) in editingDoc.files" :key="file.id" class="page-row">
+              <span class="page-row__num">{{ index + 1 }}</span>
+              <button
+                type="button"
+                class="page-row__name page-row__name--link"
+                :disabled="!isPreviewable(file.mime_type)"
+                @click="openPreview(editingDoc, index)"
+              >{{ file.original_name }}<small>{{ formatBytes(file.size_bytes) }}</small></button>
+              <button type="button" class="icon-btn" :aria-label="$t('documents.download')" @click="handleDownload(file)">
+                <PhDownloadSimple :size="16" />
+              </button>
+              <button type="button" class="icon-btn" :disabled="index === 0 || pagesBusy" :aria-label="$t('documents.moveUp')" @click="moveStoredPage(file.id, -1)">
+                <PhCaretUp :size="16" />
+              </button>
+              <button type="button" class="icon-btn" :disabled="index === editingDoc.files.length - 1 || pagesBusy" :aria-label="$t('documents.moveDown')" @click="moveStoredPage(file.id, 1)">
+                <PhCaretDown :size="16" />
+              </button>
+              <button
+                type="button"
+                class="icon-btn"
+                :disabled="editingDoc.files.length <= 1 || pagesBusy"
+                :aria-label="$t('documents.removePage')"
+                @click="removeStoredPage(file)"
+              >
+                <PhX :size="16" />
+              </button>
+            </li>
+          </ol>
+
+          <input ref="fileInputRef" type="file" class="file-input" :accept="ACCEPTED_TYPES" multiple @change="handleFilesSelected" />
+          <!-- Kamera: auf dem Handy Seite für Seite abfotografieren -->
+          <input ref="cameraInputRef" type="file" class="file-input" accept="image/*" capture="environment" @change="handleFilesSelected" />
+          <div class="page-actions">
+            <BaseButton
+              variant="secondary"
+              size="sm"
+              :disabled="pagesBusy || formLoading || pageCount >= MAX_DOCUMENT_FILES"
+              @click="fileInputRef?.click()"
+            >
+              <PhPlus :size="14" weight="bold" />
+              {{ pageCount > 0 ? $t('documents.addPages') : $t('documents.chooseFiles') }}
+            </BaseButton>
+            <BaseButton
+              variant="secondary"
+              size="sm"
+              :disabled="pagesBusy || formLoading || pageCount >= MAX_DOCUMENT_FILES"
+              @click="cameraInputRef?.click()"
+            >
+              <PhCamera :size="14" />
+              {{ $t('documents.takePhoto') }}
+            </BaseButton>
+          </div>
+          <span class="form-field__hint">{{ progressLabel || $t('documents.fileHint', { max: MAX_DOCUMENT_FILES }) }}</span>
         </div>
 
         <BaseInput
@@ -466,32 +648,16 @@ onUnmounted(() => {
             rows="3"
           />
         </div>
-
-        <div v-if="editingDoc" class="file-actions">
-          <BaseButton
-            v-if="isPreviewable(editingDoc.file.mime_type)"
-            variant="ghost"
-            size="sm"
-            @click="openPreview(editingDoc)"
-          >
-            <PhEye :size="16" />
-            {{ $t('documents.preview') }}
-          </BaseButton>
-          <BaseButton variant="ghost" size="sm" @click="handleDownload(editingDoc)">
-            <PhDownloadSimple :size="16" />
-            {{ $t('documents.download') }}
-          </BaseButton>
-        </div>
       </form>
 
       <template #footer>
         <div class="dialog-actions">
-          <BaseButton v-if="editingDoc" variant="danger" @click="handleDelete">
+          <BaseButton v-if="editingDoc" variant="danger" :disabled="pagesBusy" @click="handleDelete">
             <PhTrash :size="16" />
             {{ $t('common.delete') }}
           </BaseButton>
           <span v-else />
-          <BaseButton :disabled="!canSave" :loading="formLoading" @click="handleSave">
+          <BaseButton :disabled="!canSave || pagesBusy" :loading="formLoading" @click="handleSave">
             {{ editingDoc ? $t('common.save') : $t('documents.upload') }}
           </BaseButton>
         </div>
@@ -506,26 +672,40 @@ onUnmounted(() => {
     >
       <div class="preview">
         <BaseSpinner v-if="previewLoading" />
-        <template v-else-if="previewUrl && previewDoc">
+        <template v-else-if="previewUrl && previewFile">
           <img
-            v-if="previewDoc.file.mime_type.startsWith('image/')"
+            v-if="previewFile.mime_type.startsWith('image/')"
             :src="previewUrl"
-            :alt="previewDoc.title"
+            :alt="previewFile.original_name"
             class="preview__image"
           />
           <iframe
             v-else
             :src="previewUrl"
-            :title="previewDoc.title"
+            :title="previewFile.original_name"
             class="preview__pdf"
           />
         </template>
       </div>
       <template #footer>
-        <BaseButton v-if="previewDoc" variant="secondary" @click="handleDownload(previewDoc)">
-          <PhDownloadSimple :size="16" />
-          {{ $t('documents.download') }}
-        </BaseButton>
+        <div class="preview-footer">
+          <div v-if="previewDoc && previewDoc.files.length > 1" class="preview-nav">
+            <button class="icon-btn" :disabled="previewIndex === 0" :aria-label="$t('documents.previousPage')" @click="showPreviewPage(previewIndex - 1)">
+              <PhCaretLeft :size="18" />
+            </button>
+            <span class="preview-nav__label">
+              {{ $t('documents.pageOf', { current: previewIndex + 1, total: previewDoc.files.length }) }}
+            </span>
+            <button class="icon-btn" :disabled="previewIndex >= previewDoc.files.length - 1" :aria-label="$t('documents.nextPage')" @click="showPreviewPage(previewIndex + 1)">
+              <PhCaretRight :size="18" />
+            </button>
+          </div>
+          <span v-else />
+          <BaseButton v-if="previewFile" variant="secondary" @click="handleDownload(previewFile)">
+            <PhDownloadSimple :size="16" />
+            {{ $t('documents.download') }}
+          </BaseButton>
+        </div>
       </template>
     </BaseDialog>
   </div>
@@ -751,12 +931,6 @@ onUnmounted(() => {
   line-height: var(--line-height-normal);
 }
 
-.file-actions {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
 .dialog-actions {
   display: flex;
   justify-content: space-between;
@@ -784,6 +958,106 @@ onUnmounted(() => {
   height: 65vh;
   border: none;
   border-radius: var(--radius-sm);
+}
+
+/* ── Seiten ── */
+
+.form-field__count {
+  font-weight: var(--font-weight-normal);
+  color: var(--sub);
+}
+
+.page-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.page-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--chip);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+}
+
+.page-row__num {
+  flex-shrink: 0;
+  width: 20px;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--sub);
+}
+
+.page-row__name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: var(--text-sm);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.page-row__name small {
+  font-size: var(--text-xs);
+  color: var(--sub);
+}
+
+.page-row__name--link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.page-row__name--link:disabled {
+  cursor: default;
+}
+
+.page-row .icon-btn {
+  padding: var(--space-1);
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: none;
+  color: var(--sub);
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.preview-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: var(--space-2);
+}
+
+.preview-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.preview-nav__label {
+  font-size: var(--text-sm);
+  color: var(--sub);
+  white-space: nowrap;
 }
 
 @media (max-width: 380px) {

@@ -2,13 +2,20 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlineDocumentsRepository } from '../repositories/documentsRepository'
+import { createOnlineFilesRepository } from '../repositories/filesRepository'
 import type { DocumentCategory, DocumentItem, DocumentMeta, StorageUsage } from '../types'
 
 const PAGE_SIZE = 30
+/** Max. Seiten pro Dokument, wie Backend (MAX_FILES_PER_DOCUMENT) */
+export const MAX_DOCUMENT_FILES = 30
+
+/** Fortschritt beim Hochladen mehrerer Seiten (1-basiert) */
+export type UploadProgress = (current: number, total: number) => void
 
 export const useDocumentsStore = defineStore('documents', () => {
   // Repository — einmal im Store-Setup erstellen
   const repo = createOnlineDocumentsRepository()
+  const filesRepo = createOnlineFilesRepository()
 
   // State
   const items = ref<DocumentItem[]>([])
@@ -92,15 +99,94 @@ export const useDocumentsStore = defineStore('documents', () => {
     await fetchDocuments()
   }
 
-  async function uploadDocument(file: File, meta: Partial<DocumentMeta>) {
+  /**
+   * Lädt Seiten einzeln über /files hoch (je Request max. 10 MB) und gibt die
+   * File-IDs zurück. Schlägt eine Seite fehl, werden die bereits hochgeladenen
+   * wieder gelöscht (best-effort), damit keine verwaisten Dateien entstehen.
+   */
+  async function uploadFiles(householdId: string, files: File[], onProgress?: UploadProgress) {
+    const ids: string[] = []
+    try {
+      for (const [index, file] of files.entries()) {
+        onProgress?.(index + 1, files.length)
+        ids.push((await filesRepo.uploadFile(householdId, file)).id)
+      }
+      return ids
+    } catch (error) {
+      await discardFiles(householdId, ids)
+      throw error
+    }
+  }
+
+  async function discardFiles(householdId: string, fileIds: string[]) {
+    await Promise.all(
+      fileIds.map((id) => filesRepo.deleteFile(householdId, id).catch(() => {})),
+    )
+  }
+
+  async function uploadDocument(files: File[], meta: DocumentMeta, onProgress?: UploadProgress) {
     const householdId = useAuthStore().currentHouseholdId
-    if (!householdId) return
+    if (!householdId || files.length === 0) return
 
     // Kein Optimistic Update: Upload kann am Server scheitern (Typ, Grösse, Quota)
-    const serverItem = await repo.upload(householdId, file, meta)
+    const fileIds = await uploadFiles(householdId, files, onProgress)
+    let serverItem: DocumentItem
+    try {
+      serverItem = await repo.create(householdId, meta, fileIds)
+    } catch (error) {
+      await discardFiles(householdId, fileIds)
+      throw error
+    }
     handleDocumentCreated(serverItem)
     fetchStorage().catch(() => {})
     return serverItem
+  }
+
+  async function addPages(documentId: string, files: File[], onProgress?: UploadProgress) {
+    const householdId = useAuthStore().currentHouseholdId
+    if (!householdId || files.length === 0) return
+
+    const fileIds = await uploadFiles(householdId, files, onProgress)
+    try {
+      handleDocumentUpdated(await repo.addFiles(householdId, documentId, fileIds))
+    } catch (error) {
+      await discardFiles(householdId, fileIds)
+      throw error
+    }
+    fetchStorage().catch(() => {})
+  }
+
+  async function movePage(documentId: string, fileId: string, direction: -1 | 1) {
+    const householdId = useAuthStore().currentHouseholdId
+    const item = items.value.find((i) => i.id === documentId)
+    if (!householdId || !item) return
+
+    const idx = item.files.findIndex((f) => f.id === fileId)
+    const target = idx + direction
+    if (idx === -1 || target < 0 || target >= item.files.length) return
+
+    // Optimistic: Seiten sofort tauschen, Rollback bei Fehler
+    const snapshot = item.files
+    const reordered = [...item.files]
+    ;[reordered[idx], reordered[target]] = [reordered[target], reordered[idx]]
+    item.files = reordered
+
+    try {
+      handleDocumentUpdated(
+        await repo.reorderFiles(householdId, documentId, reordered.map((f) => f.id)),
+      )
+    } catch (error) {
+      item.files = snapshot
+      throw error
+    }
+  }
+
+  async function removePage(documentId: string, fileId: string) {
+    const householdId = useAuthStore().currentHouseholdId
+    if (!householdId) return
+
+    handleDocumentUpdated(await repo.removeFile(householdId, documentId, fileId))
+    fetchStorage().catch(() => {})
   }
 
   async function updateDocument(documentId: string, data: Partial<DocumentMeta>) {
@@ -209,6 +295,9 @@ export const useDocumentsStore = defineStore('documents', () => {
     setCategory,
     setQuery,
     uploadDocument,
+    addPages,
+    movePage,
+    removePage,
     updateDocument,
     deleteDocument,
     reset,

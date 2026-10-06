@@ -817,7 +817,6 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Refresh-Token nicht in `localStorage` | Mittel | 🟡 Mittel | Vorschlag HttpOnly-Cookie in `docs/security/hardening-review.md` (H-01); ändert den Vertrag von Login/Refresh/Logout und braucht CSRF-Schutz |
 | Dokumente verknüpfen | Mittel | 🔵 Niedrig | Verknüpfung mit Ausgaben/Terminen (Datenmodell ist vorbereitet, eigene Link-Tabelle) |
 | Push-Erinnerung zum Ablaufdatum von Dokumenten | Klein | 🔵 Niedrig | Garantieende, Kündigungsfrist |
-| Rate-Limit für Uploads | Klein | 🟡 Mittel | Upload-Endpunkte haben kein eigenes Limit (H-14, Epic-8-Review F-06); das Speicher-Limit pro Haushalt existiert |
 | Einladungscode läuft nie ab | Klein | 🔵 Niedrig | H-12; Rotation ist seit #11 möglich. Offen ist außerdem, ob der Code nur für Admins sichtbar sein soll |
 | Token-Ablauf auf Socket-Verbindungen | Klein | 🔵 Niedrig | Logout/Ablauf beendet bestehende WebSocket-Verbindungen serverseitig noch nicht |
 | Frontend-Testabdeckung | Mittel | 🟡 Mittel | 31,8 % Statements; Komponenten und weitere Stores (Kalender, Finanzen, Haustiere …) sind ungetestet; Coverage wird nur berichtet, es gibt keine Schwelle |

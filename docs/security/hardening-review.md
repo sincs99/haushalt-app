@@ -46,7 +46,7 @@
 | H-11 | 🟢 Gering | nginx überschreibt `X-Forwarded-Proto` mit `$scheme` (= `http` hinter NPM) | ✅ Behoben mit #8 |
 | H-12 | 🟢 Gering | Invite-Codes laufen nie ab / nicht rotierbar | 📝 Offen |
 | H-13 | ℹ️ Info | Rate-Limits nur per IP, In-Memory-Storage (Reset bei Neustart) | Akzeptiert (1 Worker) |
-| H-14 | ℹ️ Info | Upload-Endpoint weiterhin ohne Rate-Limit (vgl. Epic 8 F-06) | 📝 Offen |
+| H-14 | ℹ️ Info | Upload-Endpoint ohne Rate-Limit (vgl. Epic 8 F-06) | ✅ Behoben (`30/minute;300/hour`) |
 
 ---
 
@@ -183,7 +183,7 @@ Die Limits von `refresh` sind so gewählt, dass mehrere Geräte hinter einem NAT
 
 **H-12 (Offen):** Invite-Codes sind permanent. Empfehlung: Admin-Endpoint „Code neu generieren" (+ Rate-Limit), optional Ablaufdatum.
 
-**H-14 (Offen):** Upload (`POST /files/`) hat weiterhin kein Rate-Limit/Quota (Epic 8, F-06).
+**H-14 (✅ Behoben):** `POST /files/` und `POST /documents/upload` (die einzigen Endpunkte, die Dateien entgegennehmen) tragen jetzt `@limiter.limit(UPLOAD_RATE_LIMIT)` mit `30/minute;300/hour` pro Client-IP (Konstante in `files.py`). Das reicht für mehrere Fotos/Seiten nacheinander, bremst aber Massen-Uploads; zusammen mit der Speicher-Quota pro Haushalt (`HOUSEHOLD_STORAGE_QUOTA_MB`) begrenzt es Rate und Volumen. Tierfotos laufen über `/files` (Pets referenzieren nur `photo_file_id`) und sind damit abgedeckt. Beide Routen zählen getrennt. Tests: `test_upload_rate_limit.py`.
 
 ### H-08 — Pillow-Formate (✅ Behoben)
 
@@ -237,5 +237,5 @@ Die Auth-Architektur (kurzlebige JWTs, gehashte opake Refresh-Tokens, Rotation m
 1. ✅ **Umgesetzt mit #14:** Pillow 12.3.0, PyJWT 2.15.0, urllib3 2.8.0, Werkzeug 3.1.9, multidict 6.9.1, cryptography 50.0.0 sowie `npm audit fix` (axios 1.20.0 u. a.). Offen: `dependency-audit` als Required Check einstellen.
 2. **H-01:** HttpOnly-Refresh-Cookie gemäss Vorschlag oben (2 Releases).
 3. ✅ **H-11** durch #8 behoben. Offen: HSTS in NPM aktivieren.
-4. **H-12/H-14:** Invite-Code-Rotation, Upload-Rate-Limit/Quota.
+4. **H-12:** Invite-Code-Rotation (H-14, Upload-Rate-Limit, ist erledigt).
 5. CSP-Monitoring: optional `report-to`-Endpoint, um Violations aus dem Feld zu sehen.

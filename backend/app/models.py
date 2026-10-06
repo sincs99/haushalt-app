@@ -71,6 +71,10 @@ class Household(Base):
     currency: Mapped[str] = mapped_column(
         String(3), nullable=False, server_default="CHF"
     )
+    # Opt-in für den KI-Assistenten (nur Admins schalten um, siehe routers/ai.py)
+    ai_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     members: Mapped[list["HouseholdMember"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
@@ -142,6 +146,9 @@ class Household(Base):
         back_populates="household", cascade="all, delete-orphan"
     )
     documents: Mapped[list["Document"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
+    ai_usage: Mapped[list["AiUsage"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
 
@@ -972,6 +979,8 @@ class Recipe(Base):
     cost_rappen: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ingredients: Mapped[list] = mapped_column(JSON, nullable=False, server_default="[]")
+    steps: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
+    tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -1150,3 +1159,29 @@ class DocumentFile(Base):
 
     document: Mapped["Document"] = relationship(back_populates="file_links")
     file: Mapped["StoredFile"] = relationship()
+
+
+class AiUsage(Base):
+    """Tageszähler der KI-Aufrufe pro Haushalt (Kostenschutz + Token-Statistik).
+
+    Ein Eintrag pro Haushalt und Tag (UTC). ``calls`` wird vor dem API-Aufruf
+    reserviert, die Token-Zahlen kommen danach aus ``response.usage``.
+    """
+
+    __tablename__ = "ai_usage"
+    __table_args__ = (
+        UniqueConstraint("household_id", "day", name="uq_ai_usage_household_day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+    household: Mapped["Household"] = relationship(back_populates="ai_usage")

@@ -23,13 +23,38 @@ from app.socket_manager import emit_to_household_sync
 # ---------------------------------------------------------------------------
 
 
+MAX_STEP_LENGTH = 1000
+MAX_TAG_LENGTH = 30
+
+
+def _validate_text_list(v: list[str], label: str, max_len: int) -> list[str]:
+    for i, item in enumerate(v):
+        if len(item) > max_len:
+            raise ValueError(f"{label} at index {i} exceeds {max_len} characters")
+        if not item.strip():
+            raise ValueError(f"{label} at index {i} must not be blank")
+    return v
+
+
 class RecipeCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=150)
     servings: int = Field(default=2, ge=1)
     cost_rappen: int | None = Field(None, ge=0)
     duration_min: int | None = Field(None, ge=1)
     ingredients: list[str] = Field(default_factory=list, max_length=100)
+    steps: list[str] = Field(default_factory=list, max_length=30)
+    tags: list[str] = Field(default_factory=list, max_length=10)
     is_favorite: bool = False
+
+    @field_validator("steps")
+    @classmethod
+    def validate_steps(cls, v: list[str]) -> list[str]:
+        return _validate_text_list(v, "Step", MAX_STEP_LENGTH)
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v: list[str]) -> list[str]:
+        return _validate_text_list(v, "Tag", MAX_TAG_LENGTH)
 
     @field_validator("ingredients")
     @classmethod
@@ -48,7 +73,20 @@ class RecipeUpdate(BaseModel):
     cost_rappen: int | None = Field(None, ge=0)
     duration_min: int | None = Field(None, ge=1)
     ingredients: list[str] | None = Field(None, max_length=100)
+    steps: list[str] | None = Field(None, max_length=30)
+    tags: list[str] | None = Field(None, max_length=10)
     is_favorite: bool | None = None
+
+    @field_validator("steps")
+    @classmethod
+    def validate_steps(cls, v: list[str] | None) -> list[str]:
+        # null → leere Liste (Spalte ist NOT NULL)
+        return _validate_text_list(v or [], "Step", MAX_STEP_LENGTH)
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v: list[str] | None) -> list[str]:
+        return _validate_text_list(v or [], "Tag", MAX_TAG_LENGTH)
 
     @field_validator("ingredients")
     @classmethod
@@ -71,6 +109,8 @@ class RecipeResponse(BaseModel):
     cost_rappen: int | None
     duration_min: int | None
     ingredients: list[str]
+    steps: list[str] = []
+    tags: list[str] = []
     is_favorite: bool
     created_at: datetime
 
@@ -209,6 +249,8 @@ def create_recipe(
         cost_rappen=body.cost_rappen,
         duration_min=body.duration_min,
         ingredients=body.ingredients,
+        steps=body.steps,
+        tags=body.tags,
         is_favorite=body.is_favorite,
     )
     db.add(recipe)

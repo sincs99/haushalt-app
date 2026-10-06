@@ -69,6 +69,7 @@ class HouseholdOut(BaseModel):
     name: str
     role: str
     currency: str
+    ai_enabled: bool = False
 
 
 class MeResponse(BaseModel):
@@ -305,7 +306,13 @@ def get_me(
         .all()
     )
     households = [
-        HouseholdOut(id=m.household.id, name=m.household.name, role=m.role, currency=m.household.currency)
+        HouseholdOut(
+            id=m.household.id,
+            name=m.household.name,
+            role=m.role,
+            currency=m.household.currency,
+            ai_enabled=m.household.ai_enabled,
+        )
         for m in memberships
     ]
 

@@ -60,7 +60,7 @@ const ROUTES = [
   { path: '/no-household', user: NOHH },
 ]
 
-const OPEN_RE = /(hinzufügen|neue[rs]?\b|neu\b|erstellen|anlegen|bearbeiten|verwalten|ausgleich|begleichen|einstellungen|^add|\badd\b|new\b|create|edit|manage|settle|^\+$)/i
+const OPEN_RE = /(hinzufügen|bezahlt markieren|mark as paid|neue[rs]?\b|neu\b|erstellen|anlegen|bearbeiten|verwalten|ausgleich|begleichen|einstellungen|^add|\badd\b|new\b|create|edit|manage|settle|^\+$)/i
 const DANGER_RE = /(lösch|delete|entfern|remove|abmeld|logout|log out|verlass|leave|rotate|erneuern|regenerate)/i
 
 // ---------------------------------------------------------------- Audit (im Browser)
@@ -98,7 +98,7 @@ function auditInPage(opts) {
     !['SCRIPT', 'STYLE', 'TEMPLATE', 'BR', 'OPTION'].includes(el.tagName) && isVisible(el))
 
   // Root für die Prüfung: offener Dialog/Sheet, sonst die ganze Seite
-  const overlay = [...document.querySelectorAll('[role=dialog], .sheet-overlay, .dialog-overlay, .sheet, .more-sheet')]
+  const overlay = [...document.querySelectorAll('[role=dialog], .sheet-overlay, .dialog-overlay, .dialog-backdrop, .sheet, .more-sheet')]
     .filter(isVisible).pop()
   const scope = opts.scopeOverlay && overlay ? overlay : document.body
   const inScope = el => scope.contains(el)
@@ -247,7 +247,7 @@ function auditInPage(opts) {
       if (spill) add('v-spill', el, `scrollHeight ${el.scrollHeight} > clientHeight ${el.clientHeight}`)
     }
   }
-  for (const d of document.querySelectorAll('[role=dialog], .more-sheet, .sheet')) {
+  for (const d of document.querySelectorAll('[role=dialog], .more-sheet, .sheet, .dialog-panel, .dialog-content')) {
     if (!isVisible(d)) continue
     const r = d.getBoundingClientRect()
     const cs = getComputedStyle(d)
@@ -371,7 +371,7 @@ async function main() {
             if (!(await loc.isVisible().catch(() => false))) continue
             await loc.click({ timeout: 2000 }).catch(() => {})
             await page.waitForTimeout(400)
-            const opened = await page.locator('[role=dialog], .sheet, .more-sheet, .dialog-overlay, .sheet-overlay').first().isVisible().catch(() => false)
+            const opened = await page.locator('[role=dialog], .sheet, .more-sheet, .dialog-overlay, .sheet-overlay, .dialog-backdrop').first().isVisible().catch(() => false)
             if (opened) {
               await record('dialog-' + (cnd.name || cnd.cls), { overlay: true })
               // Bildschirmtastatur: reduzierte Höhe

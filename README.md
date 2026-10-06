@@ -100,6 +100,7 @@ Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` sel
 - [`docs/deployment.md`](docs/deployment.md): Docker-Deployment hinter Nginx Proxy Manager, Updates, Rollback, Web Push
 - [`docs/DEPLOYMENT-WINDOWS-SERVER.md`](docs/DEPLOYMENT-WINDOWS-SERVER.md): Einrichtung auf einem Windows-Server
 - [`docs/security/`](docs/security/): Sicherheits-Reviews (zuletzt `ai-assistant-review.md`)
+- [`docs/qa/logic-review.md`](docs/qa/logic-review.md): Logik-Review der Geschäftsregeln (Szenarien pro Modul, behobene Fehler, offene Produktentscheidungen)
 - [`docs/ai-assistant.md`](docs/ai-assistant.md): KI-Assistent (Architektur, Datenschutz, Kosten, Erweiterung)
 - [`docs/offline-first-phase2.md`](docs/offline-first-phase2.md): Konzept für Offline-Betrieb (Meilenstein M0 ist umgesetzt)
 

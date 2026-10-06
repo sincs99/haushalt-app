@@ -16,7 +16,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzp
 | Realtime | Socket.IO (python-socketio) |
 | Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4, PWA (`vite-plugin-pwa`) |
 | Auth | JWT-Access-Token (15 Min.) + rotierender Refresh-Token mit Reuse-Erkennung, bcrypt-Hashing |
-| i18n | vue-i18n, 700 Keys (DE + EN), Build-gesicherter Key-Sync |
+| i18n | vue-i18n, 821 Keys (DE + EN), Build-gesicherter Key-Sync |
 | Qualität / CI | GitHub Actions: Backend (ruff, pytest mit Coverage), Frontend (Locale-Check, Typecheck, Vitest mit Coverage), Dependency-Audit (pip-audit, npm audit) |
 | Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager), Backup-Skripte für Datenbank und Uploads |
 | Icons | Phosphor Icons (`@phosphor-icons/vue`) — regular/fill/bold |
@@ -41,8 +41,9 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | #16 | Doku: README neu geschrieben, dieser Projektstand aktualisiert, Hardening-Review nachgeführt |
 | #17 | Frontend-Stores: Geschäfts-Filter folgt dem Umbenennen, fehlgeschlagenes Löschen eines Ämtlis stellt dessen Zuweisungen wieder her; Unit-Tests für den Auth-Store |
 | #18 | Einkauf: Geschäftsnamen werden ohne Beachtung der Groß-/Kleinschreibung zusammengeführt (Backend und Frontend, keine Migration); bestehende Einträge behalten ihre Schreibweise |
+| Branch `claude/nfc-qr-tags` | Tags (NFC-Chips/QR-Sticker) mit Ein-Tipp-Aktionen: Füttern, Pflegeaufgabe, Ämtli, Todo abhaken, Einkaufsliste öffnen; Verwaltung mit QR-Code und Web NFC; Review `docs/security/tags-review.md` (Epic 20) |
 
-**Kennzahlen (nach #18):** Backend 576 Tests in 51 Dateien, Coverage 91 %; Frontend 156 Tests in 13 Dateien, Coverage 31,8 % (Statements); 700 i18n-Schlüssel; 33 Alembic-Migrationen (einziger Kopf `w1x2y3z4a5b6`).
+**Kennzahlen (nach Tags, Branch `claude/nfc-qr-tags`):** Backend 628 Tests in 52 Dateien, Coverage 92 %; Frontend 198 Tests in 15 Dateien, Coverage 34,5 % (Statements); 821 i18n-Schlüssel; 34 Alembic-Migrationen (einziger Kopf `x1y2z3a4b5c6`).
 
 **Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Essen, Notizen, Kalender und Finanzen.
 
@@ -236,6 +237,15 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | POST | `/api/households/{id}/chores/assignments/{aid}/complete` | ✅ | Assignment abhaken (idempotent) |
 | POST | `/api/households/{id}/chores/assignments/{aid}/uncomplete` | ✅ | Abhaken rückgängig (idempotent) |
 | PATCH | `/api/households/{id}/chores/assignments/{aid}` | ✅ | Reassign (User muss Mitglied sein) |
+| **Tags (NFC/QR)** | | | |
+| GET | `/api/households/{id}/tags/` | ✅ | Tags des Haushalts (inkl. Token, Zielname) |
+| GET | `/api/households/{id}/tags/targets` | ✅ | Zieltypen mit Aktionen und Zielen (Formular) |
+| POST | `/api/households/{id}/tags/` | ✅ Admin | Tag anlegen (Token erzeugt der Server) |
+| PATCH | `/api/households/{id}/tags/{tag_id}` | ✅ Admin | Bezeichnung, aktiv/deaktiviert, Ziel/Aktion neu zuordnen |
+| POST | `/api/households/{id}/tags/{tag_id}/regenerate-token` | ✅ Admin | Neuer Token, alter Chip/QR-Code wird wirkungslos |
+| DELETE | `/api/households/{id}/tags/{tag_id}` | ✅ Admin | Tag löschen |
+| POST | `/api/tags/resolve/{token}` | ✅ Mitglied | Was der Tag tut (keine Mutation; 30/min/IP) |
+| POST | `/api/tags/{token}/execute` | ✅ Mitglied | Aktion ausführen (30/min/IP) |
 | **Health** | | | |
 | GET | `/api/health` | ❌ | Health-Check |
 
@@ -272,6 +282,10 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | `household_member_joined` | Server → Room | `{ household_id, user_id, display_name, role }` |
 | `household_member_left` | Server → Room | `{ household_id, user_id }` |
 | `household_member_removed` | Server → Room | `{ household_id, user_id }` |
+| **Tags** | | |
+| `tag_created` | Server → Room | `TagResponse` |
+| `tag_updated` | Server → Room | `TagResponse` (auch nach jeder Nutzung: `use_count`, `last_used_at`) |
+| `tag_deleted` | Server → Room | `{ id, household_id }` |
 
 ---
 
@@ -353,7 +367,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 - Registrierung mit `household_name` → Ersteller wird `admin`
 - Registrierung mit `invite_code` → Beitritt als `member`
 - `POST /api/households/` → Ersteller wird `admin`
-- Admin-geschützte Endpoints: PATCH Haushalt (rename), DELETE Member
+- Admin-geschützte Endpoints: PATCH Haushalt (rename), DELETE Member, Tags anlegen/ändern/löschen/Token neu erzeugen (Ausführen per Scan dürfen alle Mitglieder)
 - Keine feingranularen Berechtigungen (bewusst: nur admin/member)
 
 ### Haushalt verlassen
@@ -463,7 +477,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Expenses-Modul (CRUD + Split + Saldo) | ✅ | ✅ ExpensesView, ExpenseList, BalanceSummary, ExpenseFormDialog | ✅ Socket |
 | Settlements-Modul | ✅ | ✅ | ✅ Socket |
 | Chores-Modul (Putzplan + Rotation) | ✅ | ✅ | ✅ Socket |
-| i18n (DE + EN, 700 Keys, Locale-Check) | ✅ | ✅ | — |
+| i18n (DE + EN, 821 Keys, Locale-Check) | ✅ | ✅ | — |
 | Error-Code-System (maschinenlesbar) | ✅ | ✅ i18n-Mapping | — |
 | Offline-Banner | — | ✅ | — |
 | Toast-System | — | ✅ | — |
@@ -476,7 +490,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Haushalt verlassen / Mitglied entfernen | ✅ POST /leave, DELETE /members/{uid} | ✅ HouseholdView | ✅ Socket |
 | Rollen-System (admin/member) | ✅ verify_household_admin | ✅ UI-Anzeige | — |
 | Währung pro Haushalt | ✅ Household.currency | ✅ /me Response | — |
-| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 51 Testdateien, 576 Tests (Coverage 91 %) | — | — |
+| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 52 Testdateien, 628 Tests (Coverage 92 %) | — | — |
 | Dashboard | ✅ | ✅ DashboardView | — |
 | Einkauf 2.0 (Multi-Listen, Stores) | ✅ | ✅ ShoppingView | ✅ Socket |
 | Aufgaben 2.0 (Unified Tasks) | ✅ | ✅ TodosView | ✅ Socket |
@@ -493,6 +507,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Auth-Härtung (Rate-Limits, Refresh-Rotation, Security-Header/CSP) | ✅ | — | — |
 | Offline-Basis M0 (Client-IDs, `version`/`updated_at`) | ✅ Shopping, Todos, Chore-Zuweisungen | ✅ Stores | ✅ veraltete Events werden verworfen |
 | CI (Lint, Tests mit Coverage, Dependency-Audit) | — | — | — |
+| Tags (NFC-Chips/QR-Sticker, Ein-Tipp-Aktionen) | ✅ Registry, CRUD, resolve/execute | ✅ TagsView, Scan-Seite `/t/:token`, QR, Web NFC | ✅ Socket |
 | Produktions-Deployment (Docker, Nginx Proxy Manager) | ✅ | ✅ | — |
 
 ### ❌ Offen (nächste Schritte)
@@ -506,7 +521,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | Rate-Limit für Uploads | Klein | 🟡 Mittel | Upload-Endpunkte haben kein eigenes Limit (H-14, Epic-8-Review F-06); das Speicher-Limit pro Haushalt existiert |
 | Einladungscode läuft nie ab | Klein | 🔵 Niedrig | H-12; Rotation ist seit #11 möglich. Offen ist außerdem, ob der Code nur für Admins sichtbar sein soll |
 | Token-Ablauf auf Socket-Verbindungen | Klein | 🔵 Niedrig | Logout/Ablauf beendet bestehende WebSocket-Verbindungen serverseitig noch nicht |
-| Frontend-Testabdeckung | Mittel | 🟡 Mittel | 31,8 % Statements; Komponenten und weitere Stores (Kalender, Finanzen, Haustiere …) sind ungetestet; Coverage wird nur berichtet, es gibt keine Schwelle |
+| Frontend-Testabdeckung | Mittel | 🟡 Mittel | 34,5 % Statements; Komponenten und weitere Stores (Kalender, Finanzen, Haustiere …) sind ungetestet; Coverage wird nur berichtet, es gibt keine Schwelle |
 | Push-Notifications für Chores | Mittel | 🔵 Niedrig | „Du bist dran“-Benachrichtigung |
 | FR/IT-Sprachen | Klein | 🔵 Niedrig | Locale-Erweiterung |
 | Chores-Statistiken | Klein | 🔵 Niedrig | „Wer hat wie oft geputzt“ |
@@ -538,7 +553,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 |---|---|---|
 | FastAPI | 0.141.1 | Web-Framework |
 | SQLAlchemy | (via requirements.txt) | ORM |
-| Alembic | 1.18.5 | DB-Migrationen (33 Versionen) |
+| Alembic | 1.18.5 | DB-Migrationen (34 Versionen) |
 | psycopg2-binary | 2.9.12 | PostgreSQL-Driver |
 | python-socketio | (via requirements.txt) | WebSocket |
 | bcrypt | 4.0.1 | Passwort-Hashing |
@@ -557,6 +572,7 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
 | vue-i18n | (via package.json) | Internationalisierung |
 | Axios | 1.20.0 | HTTP-Client |
 | socket.io-client | 4.8.3 | WebSocket-Client |
+| qrcode-generator | 2.0.4 | QR-Codes für Tags, clientseitig, ohne Abhängigkeiten |
 | TypeScript | 5.8.3 | Typisierung |
 | Vite | 8.2.0 | Build-Tool |
 
@@ -788,3 +804,20 @@ Household.currency: Default "CHF", eine Währung pro Haushalt
   - Vergleich läuft Python-seitig (`str.lower`) statt per SQL `lower()`, damit SQLite (Tests) und PostgreSQL (Prod) identisch arbeiten (SQLite kennt `lower()` nur für ASCII); keine Migration, keine neue Tabelle
   - Frontend: `utils/storeName.ts` (`normalizeStoreName`, `storesEqual`, `findCanonicalStore`) — Chip-Filter, Gruppierung, Edit-Sheet-Chips und Merge-Warnung vergleichen case-insensitive; `reassignStore` übernimmt `to_store` aus der Response
   - Tests: +14 Backend-Tests in `test_shopping_stores.py` (Normalisierung Create/Update, case-insensitive distinct, Reassign mit abweichender Schreibweise, Merge, Cross-Tenant), +6 Vitest-Tests in `utils/__tests__/storeName.test.ts`
+
+### Epic 20: Tags (NFC-Chips / QR-Sticker) ✅
+- **Abgeschlossen:** 2026-10-06 (Branch `claude/nfc-qr-tags`)
+- **Umfang:** Physische Tags, die beim Scannen eine Ein-Tipp-Aktion auslösen. Auf Chip bzw. QR-Code steht nur `https://<host>/t/<token>`; das Betriebssystem öffnet die URL in der installierten PWA (iOS kann Web NFC nicht, liest NFC-URLs aber nativ). Ziel und Aktion liegen in der Datenbank.
+- **Aktionen (Registry `app/services/tag_actions.py`):** `pet.feed` (ein Tier oder alle; Slot nach Tageszeit, ab 14 Uhr Abend, auf der Bestätigungsseite umschaltbar), `pet.care_task.done`, `chore.assignment.done` (jüngste offene Zuweisung bis heute, sonst die nächste innerhalb von 6 Tagen; ältere offene bleiben), `shopping_list.open` (nur Navigation), `todo.done` (idempotent). Mutationen rufen die bestehenden Endpoint-Funktionen der Module auf (gleiche Validierung und Socket-Events). Keine Lösch-Aktionen. Ein neuer Zieltyp (z. B. `plant.water`) braucht nur einen Registry-Eintrag plus i18n-Keys; Anleitung im Modulkopf.
+- **Geschäftsregeln:**
+  - Anlegen, Ändern, Deaktivieren, Token neu erzeugen und Löschen nur für Admins; Liste und Ausführen für alle Mitglieder
+  - Scan ohne Login → Login mit `redirect` zurück auf `/t/<token>`; die Aktion läuft erst nach Tipp auf der Bestätigungsseite (`*.open` navigiert direkt)
+  - Unbekannter Token → 404, fremder Haushalt → 403 (auch bei deaktiviertem Tag), deaktiviert → 410 `TAG_DISABLED`, Ziel gelöscht → 404 `TAG_TARGET_NOT_FOUND`
+  - Höchstens 200 Tags pro Haushalt; `use_count`/`last_used_at` zählen ausgeführte Aktionen und Aufrufe von Navigations-Tags
+- **Backend:** `Tag`-Model, `app/routers/tags.py` (Verwaltung + Scan), `app/services/tag_actions.py`, `app/core/log_redaction.py` (Tokens in uvicorn-/slowapi-Logs geschwärzt)
+- **Migration:** `x1y2z3a4b5c6` (add_tags)
+- **Frontend:** `TagsView.vue` (`/tags`, Link unter Haushalt), `TagScanView.vue` (`/t/:token`), `stores/tags.ts`, `repositories/tagsRepository.ts`, `utils/tagScan.ts`, `utils/qr.ts` (`qrcode-generator`, SVG als `data:`-URL), `composables/useNfcWriter.ts` (Web NFC, `NDEFReader.write` mit URL-Record); Einkauf übernimmt `?list=<id>`
+- **PWA/nginx:** Manifest-`shortcuts` (Einkauf, Aufgaben, Haustiere) und `launch_handler: navigate-existing`; `/t/*` bekommt die vorgecachte App-Shell (kein eigener Cache-Eintrag); nginx schwärzt Tokens in Pfad und Referer des Access-Logs
+- **Tests:** `test_tags.py` (52 Tests: CRUD/Rollen, resolve/execute je Aktion, 403/404/410, Rate-Limit, Log-Schwärzung); Vitest `stores/__tests__/tags.test.ts`, `utils/__tests__/tagScan.test.ts` (+42); E2E mit headless Chromium gegen Produktions-Build und echte nginx-Konfiguration: 0 CSP-Verstösse
+- **Security-Review:** `docs/security/tags-review.md`
+- **i18n:** `tags.*` und `errors.TAG_*` (+121 Keys) → 821 Keys

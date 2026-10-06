@@ -909,9 +909,12 @@ onMounted(() => {
 }
 
 .settlement-item {
-  display: flex;
+  /* Raster statt Flex-Zeile: lange Namen + Betrag + Meta passen sonst nicht auf 360 px */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
   align-items: center;
-  gap: var(--space-3);
   padding: var(--space-3);
   border-radius: var(--radius-sm);
   background: var(--chip);
@@ -923,19 +926,24 @@ onMounted(() => {
 }
 
 .settlement-item__main {
-  flex: 1;
+  grid-column: 1;
+  min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
 }
 
 .settlement-item__flow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
+  min-width: 0;
   font-size: var(--text-sm);
   color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .settlement-item__amount {
@@ -946,10 +954,18 @@ onMounted(() => {
 }
 
 .settlement-item__meta {
+  grid-column: 1;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
+  min-width: 0;
   font-size: var(--text-xs);
   color: var(--sub);
+}
+
+.settlement-item > .action-btn {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .settlement-item__note {

@@ -1,13 +1,12 @@
 """Tests für Haushalt verlassen und Mitglied entfernen."""
 import uuid
-from datetime import datetime, timezone, timedelta
-from unittest.mock import patch
+from datetime import datetime, timedelta, timezone
 
 import pytest
-from app.models import Household, HouseholdMember, User, Expense, ExpenseShare
-from app.core.security import create_access_token, hash_password
-from app.core.error_codes import ErrorCode
 
+from app.core.error_codes import ErrorCode
+from app.core.security import create_access_token, hash_password
+from app.models import Expense, ExpenseShare, Household, HouseholdMember, User
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -178,6 +177,7 @@ def test_leave_emits_event(client, db, shared_household, _mock_socket_emit):
         sh["household"].id,
         "household_member_left",
         {"household_id": str(sh["household"].id), "user_id": str(sh["member2"].id)},
+        evict_user_id=sh["member2"].id,
     )
 
 

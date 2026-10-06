@@ -72,3 +72,6 @@ backups/
 .env.prod
 !.env.example
 !.env.prod.example
+
+# Frontend coverage
+frontend/coverage/

@@ -2,13 +2,56 @@ import uuid
 from datetime import date, datetime, timezone
 
 from sqlalchemy import (
-    Boolean, String, DateTime, ForeignKey, Enum, UniqueConstraint,
-    Integer, CheckConstraint, Index, Date, text, JSON,
+    JSON,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    event,
+    func,
+    text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, object_session, relationship
 
 from app.database import Base
+
+
+class SyncVersionMixin:
+    """Änderungs-Metadaten für Offline-Sync (docs/offline-first-phase2.md, B2).
+
+    - ``updated_at``: Zeitpunkt der letzten Änderung (auch bei Core-UPDATEs via onupdate)
+    - ``version``: startet bei 1, wird bei jeder ORM-Änderung atomar in SQL erhöht
+      (``version = version + 1``). Clients verwerfen damit veraltete Socket-Events.
+      Core-``update()``-Statements müssen ``version`` selbst erhöhen.
+    """
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+
+
+@event.listens_for(SyncVersionMixin, "before_update", propagate=True)
+def _bump_sync_version(mapper, connection, target):
+    session = object_session(target)
+    # before_update feuert auch für "dirty" Objekte ohne Netto-Änderung
+    if session is None or not session.is_modified(target, include_collections=False):
+        return
+    # SQL-Ausdruck statt Python-Inkrement: atomar bei parallelen Updates
+    target.version = type(target).version + 1
 
 
 class Household(Base):
@@ -98,6 +141,9 @@ class Household(Base):
     stored_files: Mapped[list["StoredFile"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
+    documents: Mapped[list["Document"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
 
 
 class User(Base):
@@ -148,7 +194,7 @@ class RefreshToken(Base):
         DateTime(timezone=True), nullable=True
     )
     replaced_by_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("refresh_tokens.id"), nullable=True
+        ForeignKey("refresh_tokens.id", ondelete="SET NULL"), nullable=True
     )
 
     user: Mapped["User"] = relationship()
@@ -192,7 +238,7 @@ class HouseholdMember(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("households.id"), nullable=False
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False
@@ -208,7 +254,7 @@ class HouseholdMember(Base):
     user: Mapped["User"] = relationship(back_populates="memberships")
 
 
-class ShoppingList(Base):
+class ShoppingList(SyncVersionMixin, Base):
     __tablename__ = "shopping_lists"
     __table_args__ = (
         Index("ix_shopping_lists_household", "household_id"),
@@ -233,7 +279,7 @@ class ShoppingList(Base):
     )
 
 
-class ShoppingItem(Base):
+class ShoppingItem(SyncVersionMixin, Base):
     __tablename__ = "shopping_items"
     __table_args__ = (
         Index("ix_shopping_items_list", "list_id"),
@@ -243,7 +289,7 @@ class ShoppingItem(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     quantity: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -270,14 +316,14 @@ class ShoppingItem(Base):
     shopping_list: Mapped["ShoppingList"] = relationship(back_populates="items")
 
 
-class Todo(Base):
+class Todo(SyncVersionMixin, Base):
     __tablename__ = "todos"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
@@ -344,6 +390,8 @@ class Expense(Base):
     __table_args__ = (
         CheckConstraint("amount_rappen > 0", name="ck_expense_amount_positive"),
         Index("ix_expenses_household_date", "household_id", "expense_date"),
+        # Eine Buchung pro wiederkehrender Rechnung und Monat — auch bei gleichzeitigem Klick
+        UniqueConstraint("recurring_bill_id", "booked_month", name="uq_expense_bill_booked_month"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -369,6 +417,9 @@ class Expense(Base):
     recurring_bill_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("recurring_bills.id", ondelete="SET NULL"), nullable=True
     )
+    # Monat (1. des Monats), für den eine wiederkehrende Rechnung gebucht wurde.
+    # Unabhängig von expense_date, damit ein verschobenes Datum keine Neubuchung erlaubt.
+    booked_month: Mapped[date | None] = mapped_column(Date, nullable=True)
     expense_date: Mapped[datetime] = mapped_column(
         Date, nullable=False, server_default=text("CURRENT_DATE")
     )
@@ -492,7 +543,7 @@ class RecurringBill(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     amount_rappen: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -504,6 +555,10 @@ class RecurringBill(Base):
         server_default="even",
     )
     active: Mapped[bool] = mapped_column(nullable=False, server_default="true")
+    # Standard-Zahler beim Buchen (änderbar pro Buchung); ohne Zahler kein Buchen
+    paid_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -524,7 +579,7 @@ class Chore(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -553,7 +608,7 @@ class Chore(Base):
     )
 
 
-class ChoreAssignment(Base):
+class ChoreAssignment(SyncVersionMixin, Base):
     __tablename__ = "chore_assignments"
     __table_args__ = (
         UniqueConstraint("chore_id", "due_date", name="uq_chore_assignment_per_date"),
@@ -659,7 +714,7 @@ class EventPoll(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("households.id"), nullable=False
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
     )
     question: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[str] = mapped_column(
@@ -671,8 +726,9 @@ class EventPoll(Base):
     created_by_user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False
     )
+    # SET NULL: der entstandene Termin darf gelöscht werden, die Abstimmung bleibt
     decided_event_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("events.id"), nullable=True
+        ForeignKey("events.id", ondelete="SET NULL"), nullable=True
     )
     decided_meal_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -696,7 +752,7 @@ class EventPollOption(Base):
         ForeignKey("event_polls.id", ondelete="CASCADE"), nullable=False
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("households.id"), nullable=False
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
     )
     label: Mapped[str] = mapped_column(String(100), nullable=False)
     starts_at: Mapped[datetime | None] = mapped_column(
@@ -717,10 +773,15 @@ class EventPollVote(Base):
     __tablename__ = "event_poll_votes"
     __table_args__ = (
         UniqueConstraint("option_id", "user_id", name="uq_poll_vote_option_user"),
+        # Eine Stimme pro Person und Abstimmung — auch bei gleichzeitigen Requests
+        UniqueConstraint("poll_id", "user_id", name="uq_poll_vote_poll_user"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    poll_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("event_polls.id", ondelete="CASCADE"), nullable=False
     )
     option_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("event_poll_options.id", ondelete="CASCADE"), nullable=False
@@ -729,7 +790,7 @@ class EventPollVote(Base):
         ForeignKey("users.id"), nullable=False
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("households.id"), nullable=False
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -746,7 +807,7 @@ class Pet(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     species: Mapped[str] = mapped_column(String(30), nullable=False, default="cat")
@@ -793,7 +854,7 @@ class FeedingLog(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
     )
     pet_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("pets.id", ondelete="CASCADE"), nullable=False
@@ -818,7 +879,7 @@ class Medication(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
     )
     pet_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("pets.id", ondelete="CASCADE"), nullable=False
@@ -845,7 +906,7 @@ class MedicationLog(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
     )
     medication_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("medications.id", ondelete="CASCADE"), nullable=False
@@ -982,6 +1043,7 @@ class Note(Base):
 
 class StoredFile(Base):
     __tablename__ = "stored_files"
+    __table_args__ = (Index("ix_stored_files_household", "household_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -1001,3 +1063,90 @@ class StoredFile(Base):
     )
 
     household: Mapped["Household"] = relationship(back_populates="stored_files")
+
+
+DOCUMENT_CATEGORIES = ("contract", "invoice", "warranty", "insurance", "other")
+
+
+class Document(Base):
+    """Abgelegtes Dokument (Vertrag, Rechnung, Garantie, …) mit einer oder mehreren
+    Dateien (Seiten), siehe DocumentFile.
+
+    Verknüpfungen zu anderen Entitäten (Ausgaben, Termine, …) sind bewusst
+    nicht Teil dieser Tabelle — sie kommen später als eigene Link-Tabelle
+    (document_id, entity_type, entity_id), damit ein Dokument mit mehreren
+    Entitäten verknüpft werden kann, ohne dieses Schema zu ändern.
+    """
+
+    __tablename__ = "documents"
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('contract', 'invoice', 'warranty', 'insurance', 'other')",
+            name="ck_document_category",
+        ),
+        Index("ix_documents_household_category", "household_id", "category"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("households.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(150), nullable=False)
+    category: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="other"
+    )
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    # Datum des Dokuments (Rechnungsdatum, Vertragsbeginn, Kaufdatum)
+    document_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Ablauf-/Erinnerungsdatum (Garantieende, Kündigungsfrist)
+    expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    household: Mapped["Household"] = relationship(back_populates="documents")
+    file_links: Mapped[list["DocumentFile"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="DocumentFile.position",
+    )
+
+    @property
+    def files(self) -> list["StoredFile"]:
+        """Dateien in Seitenreihenfolge."""
+        return [link.file for link in self.file_links]
+
+
+class DocumentFile(Base):
+    """Seite eines Dokuments. Eine Datei gehört zu höchstens einem Dokument."""
+
+    __tablename__ = "document_files"
+
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    file_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("stored_files.id", ondelete="CASCADE"),
+        primary_key=True,
+        unique=True,
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    document: Mapped["Document"] = relationship(back_populates="file_links")
+    file: Mapped["StoredFile"] = relationship()

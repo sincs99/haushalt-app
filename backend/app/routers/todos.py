@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import update
 from sqlalchemy.orm import Session, selectinload
@@ -10,6 +10,7 @@ from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import HouseholdMember, Todo, TodoReminder
+from app.services.client_ids import commit_or_get_existing, get_existing_by_client_id
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -44,6 +45,8 @@ class ReminderCreate(BaseModel):
 
 
 class TodoCreate(BaseModel):
+    # Optional client-generierte ID → idempotenter Create (Offline-Sync)
+    id: uuid.UUID | None = None
     title: str = Field(..., min_length=1, max_length=200)
     description: str | None = Field(None, max_length=1000)
     assigned_to_user_id: uuid.UUID | None = None
@@ -120,6 +123,8 @@ class TodoResponse(BaseModel):
     created_at: datetime
     done_at: datetime | None
     tags: list[str]
+    updated_at: datetime
+    version: int
     reminders: list[TodoReminderResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
@@ -178,9 +183,16 @@ def list_todos(
 def create_todo(
     household_id: uuid.UUID,
     body: TodoCreate,
+    response: Response,
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
+    # Wiederholter Create mit gleicher Client-ID → bestehendes Todo, kein neues Event
+    existing = get_existing_by_client_id(db, Todo, body.id, household_id)
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK
+        return existing
+
     todo = Todo(
         household_id=household_id,
         title=body.title,
@@ -190,8 +202,13 @@ def create_todo(
         tags=body.tags,
         created_by_user_id=membership.user_id,
     )
+    if body.id is not None:
+        todo.id = body.id
     db.add(todo)
-    db.commit()
+    existing = commit_or_get_existing(db, Todo, body.id, household_id)
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK
+        return existing
     db.refresh(todo)
     db.refresh(todo, attribute_names=["reminders"])
 
@@ -299,7 +316,8 @@ def claim_todo(
     result = db.execute(
         update(Todo)
         .where(Todo.id == todo_id, Todo.assigned_to_user_id.is_(None))
-        .values(assigned_to_user_id=membership.user_id)
+        # Core-UPDATE umgeht den ORM-Hook → version selbst erhöhen
+        .values(assigned_to_user_id=membership.user_id, version=Todo.version + 1)
     )
 
     if result.rowcount == 0:

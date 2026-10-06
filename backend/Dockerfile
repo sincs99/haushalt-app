@@ -19,6 +19,11 @@ RUN useradd -r -s /bin/false app \
 USER app
 
 # --workers 1: python-socketio ohne Message-Queue kann nicht multi-worker laufen
-# --proxy-headers: X-Forwarded-For wird zu request.client.host (für Rate-Limiting)
-# --forwarded-allow-ips='*': Akzeptabel, da Port 8000 nie ausserhalb des Docker-Netzwerks exponiert ist
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips='*'"]
+# --proxy-headers: X-Forwarded-For wird zu request.client.host (für Rate-Limiting).
+#   Das Frontend-nginx setzt X-Forwarded-For auf genau die echte Client-IP.
+# --forwarded-allow-ips: nur dem Docker-Netz (Frontend-nginx) vertrauen, nicht '*' —
+#   sonst könnte jeder, der Port 8000 direkt erreicht, seine IP per Header fälschen.
+#   Bei anderen Docker-Adress-Pools FORWARDED_ALLOW_IPS setzen.
+# exec: uvicorn ersetzt die Shell und erhält SIGTERM direkt (sauberer Shutdown)
+ENV FORWARDED_ALLOW_IPS=172.16.0.0/12
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=\"$FORWARDED_ALLOW_IPS\""]

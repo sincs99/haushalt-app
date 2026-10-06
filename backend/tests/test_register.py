@@ -1,8 +1,6 @@
 """Tests für Register mit invite_code / household_name."""
-import pytest
-from app.models import Household, HouseholdMember, User
-from app.core.security import hash_password
 from app.core.error_codes import ErrorCode
+from app.models import HouseholdMember, User
 
 
 class TestRegisterWithHouseholdName:

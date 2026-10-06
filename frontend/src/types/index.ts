@@ -7,10 +7,14 @@ export interface ShoppingList {
   icon: string | null
   position: number
   created_at: string
+  updated_at: string
+  version: number
   open_count: number
 }
 
 export interface ShoppingListCreatePayload {
+  /** Client-generierte ID → idempotenter Create */
+  id?: string
   name: string
   icon?: string
 }
@@ -34,6 +38,9 @@ export interface ShoppingItem {
   checked_at: string | null
   store: string | null
   assigned_to_user_id: string | null
+  updated_at: string
+  /** Server-Änderungszähler; 0 = optimistischer, noch nicht bestätigter Eintrag */
+  version: number
 }
 
 export interface ReassignStoreResult {
@@ -62,6 +69,9 @@ export interface TodoItem {
   created_at: string
   done_at: string | null
   tags: string[]
+  updated_at: string
+  /** Server-Änderungszähler; 0 = optimistischer, noch nicht bestätigter Eintrag */
+  version: number
   reminders: TodoReminder[]
 }
 
@@ -163,6 +173,8 @@ export interface RecurringBill {
   category: string | null
   split_type: SplitType
   active: boolean
+  /** Standard-Zahler beim Buchen */
+  paid_by_user_id: string | null
   created_at: string
 }
 
@@ -173,6 +185,7 @@ export interface RecurringBillCreatePayload {
   category?: string
   split_type?: SplitType
   active?: boolean
+  paid_by_user_id?: string | null
 }
 
 export interface RecurringBillUpdatePayload {
@@ -182,6 +195,7 @@ export interface RecurringBillUpdatePayload {
   category?: string | null
   split_type?: SplitType
   active?: boolean
+  paid_by_user_id?: string | null
 }
 
 // ── Finance Summary ──
@@ -198,6 +212,7 @@ export interface PendingBillInfo {
   day_of_month: number
   category: string | null
   is_booked_this_month: boolean
+  paid_by_user_id: string | null
 }
 
 export interface FinanceSummary {
@@ -332,6 +347,8 @@ export interface ChoreAssignmentInfo {
   completed_at: string | null
   completed_by_user_id: string | null
   created_at: string
+  updated_at: string
+  version: number
 }
 
 // ── Dashboard ──
@@ -715,4 +732,42 @@ export interface StoredFile {
   mime_type: string
   size_bytes: number
   created_at: string
+}
+
+// ── Documents (Ablage) ──
+
+export const DOCUMENT_CATEGORIES = ['contract', 'invoice', 'warranty', 'insurance', 'other'] as const
+export type DocumentCategory = (typeof DOCUMENT_CATEGORIES)[number]
+
+export interface DocumentItem {
+  id: string
+  household_id: string
+  title: string
+  category: DocumentCategory
+  notes: string | null
+  document_date: string | null
+  expiry_date: string | null
+  /** Seiten in Reihenfolge, mindestens eine */
+  files: StoredFile[]
+  created_by_user_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface DocumentMeta {
+  title: string
+  category: DocumentCategory
+  notes: string | null
+  document_date: string | null
+  expiry_date: string | null
+}
+
+export interface DocumentList {
+  items: DocumentItem[]
+  total: number
+}
+
+export interface StorageUsage {
+  used_bytes: number
+  quota_bytes: number
 }

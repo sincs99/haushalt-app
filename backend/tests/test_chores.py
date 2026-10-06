@@ -9,18 +9,17 @@ damit alle Datumsberechnungen deterministisch sind.
 """
 
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.models import Chore, ChoreAssignment, Household, HouseholdMember, User
 from app.core.security import hash_password
+from app.models import Chore, Household, HouseholdMember, User
 from app.services.chore_scheduler import (
-    next_due_dates,
     _resolve_next_assignee,
     materialize_due_assignments,
+    next_due_dates,
 )
-
 
 # ---------------------------------------------------------------------------
 # Konstanten
@@ -713,6 +712,82 @@ class TestPatchRecurrence:
             if a["completed_at"] is None and a["due_date"] == "2026-08-10"
         ]
         assert len(uncompleted_future) == 0
+
+
+class TestPatchKeepsRotation:
+    """PATCH ohne echte Zeitplan-Änderung darf die Rotation nicht verschieben.
+
+    Das UI sendet beim Speichern immer recurrence/weekday/day_of_month mit.
+    """
+
+    MONDAY = date(2026, 8, 3)
+
+    def _get(self, client, household_a, token_a, today=None):
+        today = today or self.MONDAY
+        with patch(_PATCH_ROUTER, return_value=today), patch(_PATCH_SERVICE, return_value=today):
+            return client.get(_assignments_url(household_a.id), headers=_auth(token_a)).json()
+
+    def _patch(self, client, household_a, token_a, chore_id, body, today=None):
+        today = today or self.MONDAY
+        with patch(_PATCH_ROUTER, return_value=today), patch(_PATCH_SERVICE, return_value=today):
+            return client.patch(f"{_chores_url(household_a.id)}{chore_id}", headers=_auth(token_a), json=body)
+
+    def _setup(self, client, household_a, token_a, user_a, user_a2, **overrides):
+        body = _create_chore_body(user_a, user_a2, **overrides)
+        chore = _create_chore_via_api(client, household_a.id, token_a, body, mock_date=self.MONDAY).json()
+        before = {a["due_date"]: a for a in self._get(client, household_a, token_a)}
+        return chore, before
+
+    def test_rename_with_full_payload_keeps_assignments(
+        self, client, household_a, token_a, user_a, user_a2
+    ):
+        chore, before = self._setup(client, household_a, token_a, user_a, user_a2)
+        assert before["2026-08-03"]["assigned_user_id"] == str(user_a.id)
+        assert before["2026-08-10"]["assigned_user_id"] == str(user_a2.id)
+
+        # Mehrfach umbenennen mit vollem Payload wie das UI
+        for title in ("Saugen", "Staubsaugen", "Boden saugen"):
+            resp = self._patch(client, household_a, token_a, chore["id"], {
+                "title": title, "recurrence": "weekly", "weekday": 0, "day_of_month": None,
+                "rotation_order": chore["rotation_order"], "active": True,
+            })
+            assert resp.status_code == 200
+
+        after = {a["due_date"]: a for a in self._get(client, household_a, token_a)}
+        assert after["2026-08-10"]["id"] == before["2026-08-10"]["id"]
+        assert after["2026-08-10"]["assigned_user_id"] == str(user_a2.id)
+        assert resp.json()["anchor_date"] == chore["anchor_date"]
+
+    def test_biweekly_rename_keeps_week_parity(
+        self, client, household_a, token_a, user_a, user_a2
+    ):
+        chore, before = self._setup(client, household_a, token_a, user_a, user_a2, recurrence="biweekly")
+        resp = self._patch(client, household_a, token_a, chore["id"], {
+            "title": "Neu", "recurrence": "biweekly", "weekday": 0, "day_of_month": None,
+        }, today=date(2026, 8, 10))
+        assert resp.status_code == 200
+        assert resp.json()["anchor_date"] == chore["anchor_date"]
+
+    def test_real_schedule_change_continues_rotation(
+        self, client, household_a, token_a, user_a, user_a2
+    ):
+        """Echte Änderung: gelöschte künftige Termine geben ihren Rotationsplatz zurück."""
+        chore, before = self._setup(client, household_a, token_a, user_a, user_a2)
+        # Nächster offener Termin (08-10) gehörte user_a2
+        resp = self._patch(client, household_a, token_a, chore["id"], {"weekday": 2})
+        assert resp.status_code == 200
+
+        after = sorted(
+            (a for a in self._get(client, household_a, token_a) if a["due_date"] > "2026-08-03"),
+            key=lambda a: a["due_date"],
+        )
+        assert after[0]["due_date"] == "2026-08-05"  # nächster Mittwoch
+        assert after[0]["assigned_user_id"] == str(user_a2.id)
+
+    def test_patch_invalid_recurrence_is_422(self, client, household_a, token_a, user_a, user_a2):
+        chore, _ = self._setup(client, household_a, token_a, user_a, user_a2)
+        for body in ({"recurrence": "daily"}, {"rotation_order": []}, {"description": "x" * 501}):
+            assert self._patch(client, household_a, token_a, chore["id"], body).status_code == 422
 
 
 # ---------------------------------------------------------------------------

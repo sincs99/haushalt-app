@@ -16,12 +16,10 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from unittest.mock import patch
 
-import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import TimeoutError as SATimeoutError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
-
 
 # ---------------------------------------------------------------------------
 # Hilfsfunktionen
@@ -224,7 +222,6 @@ class TestSocketHelperFunctions:
     def test_load_user_id_returns_none_for_unknown(self, db):
         """_load_user_id gibt None zurück für eine unbekannte UUID."""
         from app.socket_manager import _load_user_id
-        from app.database import SessionLocal as _OrigSessionLocal
 
         # SessionLocal in socket_manager mit der Test-Session-Factory patchen
         def _test_session_factory():

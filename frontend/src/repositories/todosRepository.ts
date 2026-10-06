@@ -9,6 +9,7 @@ export interface TodosRepository {
   create(
     householdId: string,
     data: {
+      id?: string
       title: string
       description?: string
       assigned_to_user_id?: string
@@ -45,6 +46,8 @@ export function createOnlineTodosRepository(): TodosRepository {
       const { data } = await api.post<TodoItem>(
         `/api/households/${householdId}/todos/`,
         {
+          // Client-generierte ID: wiederholter Create liefert dasselbe Todo statt Duplikat
+          ...(payload.id ? { id: payload.id } : {}),
           title: payload.title,
           description: payload.description ?? null,
           assigned_to_user_id: payload.assigned_to_user_id ?? null,

@@ -21,7 +21,15 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database import SessionLocal
-from app.models import Household, HouseholdMember, Pet, PetCareTask, PushSubscription, Todo, TodoReminder
+from app.models import (
+    Household,
+    HouseholdMember,
+    Pet,
+    PetCareTask,
+    PushSubscription,
+    Todo,
+    TodoReminder,
+)
 
 logger = logging.getLogger("uvicorn.error")
 

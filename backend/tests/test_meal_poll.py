@@ -7,7 +7,6 @@ import pytest
 
 from app.models import EventPoll, EventPollOption, MealPlanEntry, Recipe
 
-
 # ---------------------------------------------------------------------------
 # Lokale Fixtures
 # ---------------------------------------------------------------------------

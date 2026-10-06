@@ -11,7 +11,7 @@ export interface ShoppingRepository {
   fetchAll(householdId: string, listId?: string): Promise<ShoppingItem[]>
   create(
     householdId: string,
-    data: { name: string; list_id: string; quantity?: string; category?: string; store?: string; assigned_to_user_id?: string },
+    data: { id?: string; name: string; list_id: string; quantity?: string; category?: string; store?: string; assigned_to_user_id?: string },
   ): Promise<ShoppingItem>
   update(
     householdId: string,
@@ -72,6 +72,8 @@ export function createOnlineShoppingRepository(): ShoppingRepository {
       const { data } = await api.post<ShoppingItem>(
         `/api/households/${householdId}/shopping-items/`,
         {
+          // Client-generierte ID: wiederholter Create liefert dasselbe Item statt Duplikat
+          ...(payload.id ? { id: payload.id } : {}),
           name: payload.name,
           list_id: payload.list_id,
           quantity: payload.quantity ?? null,

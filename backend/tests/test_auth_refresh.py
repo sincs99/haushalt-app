@@ -4,7 +4,6 @@ Epic 12 — Token Persistence & Auth Lifecycle.
 Epic 12b — Auth Hardening: Grace Window, Rate Limiting, JWT Check, Cleanup.
 """
 import asyncio
-import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -13,9 +12,8 @@ import pytest
 
 from app.core.config import settings
 from app.core.error_codes import ErrorCode
-from app.core.security import ALGORITHM, hash_refresh_token
+from app.core.security import ALGORITHM
 from app.models import RefreshToken
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -284,7 +282,8 @@ def test_rate_limit_login(client, user_a):
 
 def test_jwt_secret_placeholder_raises():
     """Startup-Check: JWT_SECRET_KEY = Placeholder → RuntimeError."""
-    from app.main import lifespan, app as real_app
+    from app.main import app as real_app
+    from app.main import lifespan
 
     with patch.object(settings, "jwt_secret_key", "please-change-this-secret-in-production-min-32-chars"):
         with pytest.raises(RuntimeError, match="JWT_SECRET_KEY is insecure"):
@@ -297,7 +296,8 @@ def test_jwt_secret_placeholder_raises():
 
 def test_jwt_secret_too_short_raises():
     """Startup-Check: JWT_SECRET_KEY < 32 Zeichen → RuntimeError."""
-    from app.main import lifespan, app as real_app
+    from app.main import app as real_app
+    from app.main import lifespan
 
     with patch.object(settings, "jwt_secret_key", "short"):
         with pytest.raises(RuntimeError, match="JWT_SECRET_KEY is insecure"):

@@ -6,7 +6,6 @@ zugreifen können. Cross-Household-Zugriffe müssen mit 403 abgelehnt werden.
 Validierungen (LAST_CALENDAR, CALENDAR_NOT_EMPTY) werden ebenfalls geprüft.
 """
 
-import uuid
 
 
 # ---------------------------------------------------------------------------

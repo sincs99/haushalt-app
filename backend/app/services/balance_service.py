@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 
 from app.models import Expense, ExpenseShare, HouseholdMember, Settlement
 
-
 # ---------------------------------------------------------------------------
 # Interne Hilfsfunktionen
 # ---------------------------------------------------------------------------

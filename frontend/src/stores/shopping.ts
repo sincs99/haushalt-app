@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlineShoppingRepository } from '../repositories/shoppingRepository'
 import type { ShoppingItem, ShoppingList, ShoppingListUpdatePayload } from '../types'
+import { upsertVersioned } from '../utils/syncVersion'
 import { findCanonicalStore, storesEqual } from '../utils/storeName'
 
 // ── localStorage-Persistenz für aktive Liste ──
@@ -42,7 +43,6 @@ export const useShoppingStore = defineStore('shopping', () => {
   const activeStoreFilter = ref<string | null>(null) // null = "Alle"
 
   // Interner State für Race-Condition-Schutz
-  const pendingTempIds = new Set<string>()
   const pendingToggles = new Set<string>()
 
   // ── Computed ──
@@ -83,8 +83,10 @@ export const useShoppingStore = defineStore('shopping', () => {
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    const newList = await repo.createList(householdId, { name, icon })
-    lists.value.push(newList)
+    // Client-ID: ein Retry erzeugt keine doppelte Liste
+    const newList = await repo.createList(householdId, { id: crypto.randomUUID(), name, icon })
+    // Socket-Event kann schneller gewesen sein → Upsert statt push
+    upsertVersioned(lists.value, newList, true)
     lists.value.sort((a, b) => a.position - b.position)
   }
 
@@ -94,10 +96,7 @@ export const useShoppingStore = defineStore('shopping', () => {
     if (!householdId) return
 
     const updated = await repo.updateList(householdId, listId, data)
-    const idx = lists.value.findIndex(l => l.id === listId)
-    if (idx !== -1) {
-      lists.value[idx] = updated
-    }
+    upsertVersioned(lists.value, updated, false)
   }
 
   async function deleteList(listId: string, force = false) {
@@ -193,10 +192,7 @@ export const useShoppingStore = defineStore('shopping', () => {
     if (!householdId) return
 
     const updated = await repo.update(householdId, itemId, data)
-    const idx = items.value.findIndex(i => i.id === itemId)
-    if (idx !== -1) {
-      items.value[idx] = updated
-    }
+    upsertVersioned(items.value, updated, false)
 
     // Stores-Liste neu laden falls sich Store geändert hat
     if ('store' in data) {
@@ -210,10 +206,12 @@ export const useShoppingStore = defineStore('shopping', () => {
     if (!householdId) return
     if (!activeListId.value) return
 
-    // 1. Optimistic: Sofort lokalen Temp-Eintrag erzeugen
-    const tempId = crypto.randomUUID()
-    const tempItem: ShoppingItem = {
-      id: tempId,
+    // 1. Optimistic: Sofort lokalen Eintrag mit endgültiger Client-ID erzeugen.
+    //    Der Server übernimmt die ID → kein Temp-ID-Swap nötig.
+    const itemId = crypto.randomUUID()
+    const now = new Date().toISOString()
+    const optimisticItem: ShoppingItem = {
+      id: itemId,
       household_id: householdId,
       list_id: activeListId.value,
       name,
@@ -221,41 +219,33 @@ export const useShoppingStore = defineStore('shopping', () => {
       category: category ?? null,
       is_checked: false,
       added_by_user_id: authStore.user?.id ?? null,
-      created_at: new Date().toISOString(),
+      created_at: now,
       checked_at: null,
       store: store ?? null,
       assigned_to_user_id: null,
+      updated_at: now,
+      version: 0, // noch nicht vom Server bestätigt
     }
-    items.value.push(tempItem)
-    pendingTempIds.add(tempId)
+    items.value.push(optimisticItem)
 
     try {
       // 2. Server-Call via Repository
       const serverItem = await repo.create(householdId, {
+        id: itemId,
         name,
         list_id: activeListId.value,
         quantity,
         category,
         store,
       })
-      pendingTempIds.delete(tempId)
 
-      // 3. Defensive Duplikat-Prüfung: Socket könnte schneller gewesen sein
-      const serverIdx = items.value.findIndex(i => i.id === serverItem.id)
-      const tempIdx = items.value.findIndex(i => i.id === tempId)
-
-      if (serverIdx !== -1 && tempIdx !== -1) {
-        // Socket war schneller → Server-Item existiert bereits → Temp-Item entfernen
-        items.value.splice(tempIdx, 1)
-      } else if (tempIdx !== -1) {
-        // Normaler Fall → Temp-Item durch Server-Item ersetzen
-        items.value[tempIdx] = serverItem
-      }
-      // Falls weder server noch temp gefunden → nichts tun (edge case, harmlos)
+      // 3. Optimistischen Eintrag durch Server-Stand ersetzen. Gleiche ID wie das
+      //    Socket-Event → egal wer zuerst kommt, es entsteht kein Duplikat.
+      //    Kein Insert, falls das Item inzwischen gelöscht wurde.
+      upsertVersioned(items.value, serverItem, false)
     } catch (error) {
-      pendingTempIds.delete(tempId)
       // 4. Rollback bei Fehler
-      items.value = items.value.filter(i => i.id !== tempId)
+      items.value = items.value.filter(i => i.id !== itemId)
       throw error
     }
   }
@@ -350,20 +340,13 @@ export const useShoppingStore = defineStore('shopping', () => {
   // ── Socket-Handler: Listen ──
 
   function handleListCreated(serverList: ShoppingList) {
-    const idx = lists.value.findIndex(l => l.id === serverList.id)
-    if (idx !== -1) {
-      lists.value[idx] = serverList
-    } else {
-      lists.value.push(serverList)
+    if (upsertVersioned(lists.value, serverList, true)) {
       lists.value.sort((a, b) => a.position - b.position)
     }
   }
 
   function handleListUpdated(serverList: ShoppingList) {
-    const idx = lists.value.findIndex(l => l.id === serverList.id)
-    if (idx !== -1) {
-      lists.value[idx] = serverList
-    }
+    upsertVersioned(lists.value, serverList, false)
   }
 
   function handleListDeleted(data: { id: string }) {
@@ -376,27 +359,17 @@ export const useShoppingStore = defineStore('shopping', () => {
     }
   }
 
-  // ── Socket-Handler: Items — Idempotente Merges (Server gewinnt immer) ──
+  // ── Socket-Handler: Items — Idempotente Merges (neuere Server-Version gewinnt) ──
 
   function handleItemCreated(serverItem: ShoppingItem) {
-    // Idempotenter Merge: Duplikat-Check statt pendingTempIds-Guard.
-    // So werden auch Items von anderen Usern korrekt gepusht,
-    // selbst wenn wir gerade ein eigenes Item erstellen.
-    const existingIdx = items.value.findIndex(i => i.id === serverItem.id)
-    if (existingIdx !== -1) {
-      items.value[existingIdx] = serverItem
-    } else {
-      items.value.push(serverItem)
-    }
-    // Der REST-Response-Handler in addItem() erkennt via serverIdx !== -1
-    // dass das Socket-Event schon gepusht hat und entfernt nur das Temp-Item.
+    // Idempotenter Merge per ID: eigene Items tragen bereits die Client-ID,
+    // das Event ersetzt den optimistischen Eintrag statt ein Duplikat anzulegen.
+    upsertVersioned(items.value, serverItem, true)
   }
 
   function handleItemUpdated(serverItem: ShoppingItem) {
-    const idx = items.value.findIndex(i => i.id === serverItem.id)
-    if (idx !== -1) {
-      items.value[idx] = serverItem // Server gewinnt immer
-    }
+    // Veraltete Events (niedrigere version) werden verworfen
+    upsertVersioned(items.value, serverItem, false)
   }
 
   function handleItemDeleted(data: { id: string }) {

@@ -10,7 +10,6 @@ import uuid
 
 from app.models import MealPlanEntry, ShoppingItem, ShoppingList
 
-
 # ===========================================================================
 # Positiv-Tests
 # ===========================================================================

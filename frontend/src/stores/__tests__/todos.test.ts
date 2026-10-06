@@ -150,6 +150,72 @@ describe('todos store', () => {
     })
   })
 
+  describe('setDone', () => {
+    it('sets the state explicitly — a second call does not reopen the todo', async () => {
+      const s = useTodosStore()
+      s.items = [todo()]
+      repo.update.mockResolvedValue(todo({ is_done: true, version: 2 }))
+      await s.setDone('t1', true)
+      await s.setDone('t1', true)
+      expect(repo.update).toHaveBeenNthCalledWith(2, 'h1', 't1', { is_done: true })
+      expect(s.items[0].is_done).toBe(true)
+    })
+
+    it('calls the server even if the todo is not loaded locally', async () => {
+      const s = useTodosStore()
+      repo.update.mockResolvedValue(todo({ is_done: true }))
+      await s.setDone('t1', true)
+      expect(repo.update).toHaveBeenCalledWith('h1', 't1', { is_done: true })
+      expect(s.items).toHaveLength(0)
+    })
+
+    it('rolls back on failure', async () => {
+      const s = useTodosStore()
+      s.items = [todo()]
+      repo.update.mockRejectedValue(new Error('fail'))
+      await expect(s.setDone('t1', true)).rejects.toThrow('fail')
+      expect(s.items[0].is_done).toBe(false)
+    })
+  })
+
+  it('addTodo returns the id of the new todo', async () => {
+    const s = useTodosStore()
+    repo.create.mockImplementation(async (_h: string, p: { id: string }) => todo({ id: p.id }))
+    const id = await s.addTodo('Neu')
+    expect(id).toBeTruthy()
+    expect(s.items[0].id).toBe(id)
+  })
+
+  describe('restoreTodo', () => {
+    it('restores tags, done state and future reminders under a new id', async () => {
+      const s = useTodosStore()
+      repo.create.mockImplementation(async (_h: string, p: { id: string; title: string; tags?: string[] }) =>
+        todo({ id: p.id, title: p.title, tags: p.tags ?? [] }))
+      repo.update.mockImplementation(async (_h: string, id: string) => todo({ id, is_done: true, version: 2 }))
+      repo.addReminder.mockImplementation(async (_h: string, id: string, at: string) => ({ ...reminder('r-new', at), todo_id: id }))
+      const snapshot = todo({
+        title: 'Alt',
+        tags: ['x'],
+        is_done: true,
+        reminders: [reminder('r1', '2000-01-01T00:00:00Z'), reminder('r2', '2999-01-01T00:00:00Z')],
+      })
+      const id = await s.restoreTodo(snapshot)
+      expect(id).not.toBe('t1')
+      expect(repo.create.mock.calls[0][1]).toMatchObject({ title: 'Alt', tags: ['x'] })
+      expect(repo.update).toHaveBeenCalledWith('h1', id, { is_done: true })
+      // Nur die zukünftige Erinnerung wird wieder angelegt
+      expect(repo.addReminder).toHaveBeenCalledTimes(1)
+      expect(repo.addReminder).toHaveBeenCalledWith('h1', id, '2999-01-01T00:00:00Z')
+    })
+
+    it('rethrows when the todo cannot be created', async () => {
+      const s = useTodosStore()
+      repo.create.mockRejectedValue(new Error('fail'))
+      await expect(s.restoreTodo(todo())).rejects.toThrow('fail')
+      expect(s.items).toHaveLength(0)
+    })
+  })
+
   describe('updateTodo', () => {
     it('applies changes optimistically', async () => {
       const s = useTodosStore()

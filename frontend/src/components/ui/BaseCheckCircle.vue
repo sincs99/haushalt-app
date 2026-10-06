@@ -3,6 +3,8 @@ import { PhCheck } from '@phosphor-icons/vue'
 
 defineProps<{
   checked: boolean
+  /** Zugänglicher Name, z. B. der Titel des Eintrags */
+  label?: string
 }>()
 
 defineEmits<{
@@ -17,6 +19,7 @@ defineEmits<{
     :class="{ 'check-circle--checked': checked }"
     @click.stop="$emit('toggle')"
     :aria-checked="checked"
+    :aria-label="label"
     role="checkbox"
   >
     <PhCheck v-if="checked" :size="12" weight="bold" class="check-circle__icon" />

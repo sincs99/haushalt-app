@@ -107,7 +107,13 @@
     "remindersTitle": "Upcoming reminders",
     "remindersEmpty": "No upcoming reminders",
     "reminderFor": "for \"{title}\"",
-    "plantsWaterTitle": "Plants need water"
+    "plantsWaterTitle": "Plants need water",
+    "taskDone": "Done",
+    "completeError": "Couldn't mark as done.",
+    "addTask": "Add task",
+    "quickShoppingAction": "Add item",
+    "quickTaskAction": "Add task",
+    "quickExpenseAction": "Add expense"
   },
   "calendar": {
     "title": "Calendar",
@@ -233,7 +239,14 @@
     "itemStore": "Store",
     "itemCategory": "Category",
     "newStore": "New store…",
-    "mergeStoreConfirm": "\"{to}\" already exists with {count} items. Do you want to merge the stores?"
+    "mergeStoreConfirm": "\"{to}\" already exists with {count} items. Do you want to merge the stores?",
+    "clearDoneItems": "Remove checked items",
+    "doneRemoved": "Checked items removed",
+    "clearDonePartial": "{n} items couldn't be removed.",
+    "listDeleted": "List deleted",
+    "listName": "List name",
+    "storeActions": "Actions for {store}",
+    "mergeStores": "Merge"
   },
   "todos": {
     "title": "Tasks",
@@ -261,7 +274,11 @@
     "maxReminders": "Maximum 5 reminders",
     "reminderError": "Could not save reminder.",
     "deleteReminderError": "Could not delete reminder.",
-    "nextReminder": "Next reminder"
+    "nextReminder": "Next reminder",
+    "done": "Task done",
+    "createdHidden": "Task added. It's hidden because only {name}'s tasks are shown.",
+    "titleRequired": "Enter a title.",
+    "removeReminder": "Remove reminder"
   },
   "tasks": {
     "title": "Tasks",
@@ -433,7 +450,12 @@
     "filterAll": "All",
     "filterMine": "Only mine",
     "dayOfMonthPlaceholder": "1–31",
-    "dayOfMonthError": "Enter a day between 1 and 31"
+    "dayOfMonthError": "Enter a day between 1 and 31",
+    "assignmentDone": "Chore done",
+    "noAssignmentsWeek": "No chores this week",
+    "addChoreLabel": "Create chore",
+    "moveUpLabel": "Move up",
+    "moveDownLabel": "Move down"
   },
   "household": {
     "title": "Household",

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { eventTime } from '../utils/dates'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
@@ -8,15 +8,16 @@ import { useDashboardStore } from '../stores/dashboard'
 import { usePollsStore } from '../stores/polls'
 import { useTodosStore } from '../stores/todos'
 import { useChoresStore } from '../stores/chores'
-import { useTasksStore } from '../stores/tasks'
 import { usePetsStore } from '../stores/pets'
 import { useCalendarStore } from '../stores/calendar'
+import { useAsyncAction } from '../composables/useAsyncAction'
 import { formatRappen } from '../utils/money'
 import { PhShoppingBagOpen, PhListChecks, PhBroom, PhWallet, PhCalendarDots, PhCat, PhForkKnife, PhCaretRight, PhPawPrint, PhBell, PhPlant } from '@phosphor-icons/vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseCheckCircle from '../components/ui/BaseCheckCircle.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
+import BaseErrorState from '../components/ui/BaseErrorState.vue'
 import { dueText } from '../utils/plantCare'
 import type { DashboardTodoItem, DashboardEventItem, DashboardPetCareItem, DashboardPlantItem, DashboardReminderItem } from '../types'
 
@@ -26,10 +27,10 @@ const authStore = useAuthStore()
 const dashboardStore = useDashboardStore()
 const todosStore = useTodosStore()
 const choresStore = useChoresStore()
-const tasksStore = useTasksStore()
 const pollsStore = usePollsStore()
 const petsStore = usePetsStore()
 const calendarStore = useCalendarStore()
+const { run } = useAsyncAction()
 
 // Kalender laden für Farbzuordnung
 calendarStore.fetchCalendars()
@@ -140,14 +141,52 @@ function formatEventTime(item: DashboardEventItem): string {
 }
 
 // ── Handlers ──
+// Lokal als erledigt markierte Einträge: sofort abgehakt anzeigen, bis das
+// Dashboard neu geladen ist (dann verschwinden sie aus der Liste)
+const completingIds = ref<Set<string>>(new Set())
+
+function setCompleting(id: string, on: boolean) {
+  const next = new Set(completingIds.value)
+  if (on) next.add(id)
+  else next.delete(id)
+  completingIds.value = next
+}
+
 async function handleToggleTask(item: DashboardTodoItem) {
-  if (item.type === 'todo') {
-    await todosStore.toggleDone(item.id)
-  } else {
-    await choresStore.completeAssignment(item.id)
+  // Explizit erledigen statt kippen: ein Doppeltipp öffnet nichts wieder
+  if (completingIds.value.has(item.id)) return
+  setCompleting(item.id, true)
+  const ok = await run(
+    () => item.type === 'todo'
+      ? todosStore.setDone(item.id, true)
+      : choresStore.completeAssignment(item.id),
+    {
+      key: item.id,
+      success: t('dashboard.taskDone'),
+      undo: async () => {
+        if (item.type === 'todo') {
+          await todosStore.setDone(item.id, false)
+        } else {
+          await choresStore.uncompleteAssignment(item.id)
+        }
+        setCompleting(item.id, false)
+        dashboardStore.invalidate()
+      },
+      error: t('dashboard.completeError'),
+    },
+  )
+  if (!ok) {
+    setCompleting(item.id, false)
+    return
   }
   dashboardStore.invalidate()
-  tasksStore.invalidate()
+}
+
+/** Tastatur-Bedienung für klickbare Karten/Zeilen (Enter/Leertaste) */
+function onKeyActivate(e: KeyboardEvent, action: () => void) {
+  if (e.target !== e.currentTarget) return
+  e.preventDefault()
+  action()
 }
 
 // ── Pet Care Due ──
@@ -215,9 +254,22 @@ function formatReminderDate(isoString: string): string {
       </BaseCard>
     </template>
 
+    <!-- Fehlerzustand: Laden gescheitert, noch keine Daten -->
+    <BaseErrorState
+      v-else-if="dashboardStore.loadError && !dashboardStore.data"
+      :retrying="dashboardStore.loading"
+      @retry="dashboardStore.fetchDashboard()"
+    />
+
     <template v-else-if="dashboardStore.data">
       <!-- Karte: Heute (Events) -->
-      <BaseCard class="clickable-card" @click="router.push('/calendar')">
+      <BaseCard
+        class="clickable-card"
+        role="link"
+        tabindex="0"
+        @click="router.push('/calendar')"
+        @keydown.enter.space="onKeyActivate($event, () => router.push('/calendar'))"
+      >
         <h2 class="card-title">
           <PhCalendarDots :size="18" style="vertical-align: -2px; margin-right: 4px" />
           {{ t('calendar.today') }}
@@ -236,7 +288,14 @@ function formatReminderDate(isoString: string): string {
       </BaseCard>
 
       <!-- Karte: Abstimmungen -->
-      <BaseCard v-if="openPollCount > 0" class="clickable-card" @click="router.push('/calendar')">
+      <BaseCard
+        v-if="openPollCount > 0"
+        class="clickable-card"
+        role="link"
+        tabindex="0"
+        @click="router.push('/calendar')"
+        @keydown.enter.space="onKeyActivate($event, () => router.push('/calendar'))"
+      >
         <h2 class="card-title">{{ t('polls.title') }}</h2>
         <p class="card-stat">{{ t('polls.open') }}: {{ openPollCount }}</p>
       </BaseCard>
@@ -250,10 +309,15 @@ function formatReminderDate(isoString: string): string {
             v-for="item in combinedTasks"
             :key="item.id"
             class="task-item"
+            :class="{ 'task-item--done': completingIds.has(item.id) }"
+            role="link"
+            tabindex="0"
             @click="router.push(item.type === 'chore' ? '/chores' : '/todos')"
+            @keydown.enter.space="onKeyActivate($event, () => router.push(item.type === 'chore' ? '/chores' : '/todos'))"
           >
             <BaseCheckCircle
-              :checked="false"
+              :checked="completingIds.has(item.id)"
+              :label="item.title"
               @toggle="handleToggleTask(item)"
               @click.stop
             />
@@ -270,11 +334,20 @@ function formatReminderDate(isoString: string): string {
             </span>
           </li>
         </ul>
-        <p v-if="combinedTasks.length === 0" class="card-empty">{{ t('dashboard.noTasks') }}</p>
+        <template v-if="combinedTasks.length === 0">
+          <p class="card-empty">{{ t('dashboard.noTasks') }}</p>
+          <router-link to="/todos?new=1" class="card-cta">{{ t('dashboard.addTask') }}</router-link>
+        </template>
       </BaseCard>
 
       <!-- Karte: Einkauf -->
-      <BaseCard class="clickable-card" @click="router.push('/shopping')">
+      <BaseCard
+        class="clickable-card"
+        role="link"
+        tabindex="0"
+        @click="router.push('/shopping')"
+        @keydown.enter.space="onKeyActivate($event, () => router.push('/shopping'))"
+      >
         <h2 class="card-title">{{ t('dashboard.shopping') }}</h2>
         <p class="card-stat">{{ t('dashboard.shoppingOpen', { n: data!.shopping.open_count }) }}</p>
         <p class="card-items" v-if="data!.shopping.top_items.length">
@@ -283,7 +356,14 @@ function formatReminderDate(isoString: string): string {
       </BaseCard>
 
       <!-- Karte: Katzen-Fütterung -->
-      <BaseCard v-if="petsStore.feedingStatus.length > 0" class="clickable-card" @click="router.push('/pets')">
+      <BaseCard
+        v-if="petsStore.feedingStatus.length > 0"
+        class="clickable-card"
+        role="link"
+        tabindex="0"
+        @click="router.push('/pets')"
+        @keydown.enter.space="onKeyActivate($event, () => router.push('/pets'))"
+      >
         <h2 class="card-title">
           <PhCat :size="18" style="vertical-align: -2px; margin-right: 4px" />
           {{ t('pets.title') }}
@@ -303,7 +383,10 @@ function formatReminderDate(isoString: string): string {
             :key="item.id"
             class="pet-care-item"
             :class="{ 'pet-care-item--overdue': item.is_overdue }"
+            role="link"
+            tabindex="0"
             @click="router.push('/pets/' + item.pet_id)"
+            @keydown.enter.space="onKeyActivate($event, () => router.push('/pets/' + item.pet_id))"
           >
             <div class="pet-care-item__info">
               <span class="pet-care-item__name">{{ item.name }}</span>
@@ -323,7 +406,14 @@ function formatReminderDate(isoString: string): string {
       </BaseCard>
 
       <!-- Karte: Pflanzen brauchen Wasser -->
-      <BaseCard v-if="plantsWater.due_count > 0" class="clickable-card" @click="router.push('/plants')">
+      <BaseCard
+        v-if="plantsWater.due_count > 0"
+        class="clickable-card"
+        role="link"
+        tabindex="0"
+        @click="router.push('/plants')"
+        @keydown.enter.space="onKeyActivate($event, () => router.push('/plants'))"
+      >
         <h2 class="card-title">
           <PhPlant :size="18" style="vertical-align: -2px; margin-right: 4px" />
           {{ t('dashboard.plantsWaterTitle') }} ({{ plantsWater.due_count }})
@@ -334,7 +424,10 @@ function formatReminderDate(isoString: string): string {
             :key="item.id"
             class="pet-care-item"
             :class="{ 'pet-care-item--overdue': item.is_overdue }"
+            role="link"
+            tabindex="0"
             @click.stop="router.push('/plants/' + item.plant_id)"
+            @keydown.enter.space.stop="onKeyActivate($event, () => router.push('/plants/' + item.plant_id))"
           >
             <div class="pet-care-item__info">
               <span class="pet-care-item__name">{{ item.plant_name }}</span>
@@ -363,7 +456,10 @@ function formatReminderDate(isoString: string): string {
             v-for="reminder in data.upcoming_reminders"
             :key="reminder.id"
             class="reminder-item"
+            role="link"
+            tabindex="0"
             @click="router.push('/todos')"
+            @keydown.enter.space="onKeyActivate($event, () => router.push('/todos'))"
           >
             <div class="reminder-item__content">
               <span class="reminder-item__time">{{ formatReminderDate(reminder.remind_at) }}</span>
@@ -375,7 +471,14 @@ function formatReminderDate(isoString: string): string {
       </BaseCard>
 
       <!-- Karte: Essen-Abstimmung (nur wenn offene Meal-Polls existieren) -->
-      <BaseCard v-if="openMealPollCount > 0" class="clickable-card" @click="router.push('/food')">
+      <BaseCard
+        v-if="openMealPollCount > 0"
+        class="clickable-card"
+        role="link"
+        tabindex="0"
+        @click="router.push('/food')"
+        @keydown.enter.space="onKeyActivate($event, () => router.push('/food'))"
+      >
         <div class="dash-card__row">
           <PhForkKnife :size="20" class="dash-card__icon" />
           <div class="dash-card__text">
@@ -387,7 +490,13 @@ function formatReminderDate(isoString: string): string {
       </BaseCard>
 
       <!-- Karte: Finanzen -->
-      <BaseCard class="clickable-card" @click="router.push('/expenses')">
+      <BaseCard
+        class="clickable-card"
+        role="link"
+        tabindex="0"
+        @click="router.push('/expenses')"
+        @keydown.enter.space="onKeyActivate($event, () => router.push('/expenses'))"
+      >
         <h2 class="card-title">{{ t('dashboard.finance') }}</h2>
         <p class="finance-amount" :class="financeClass">
           {{ financeText }}
@@ -397,13 +506,13 @@ function formatReminderDate(isoString: string): string {
       <!-- Quick Actions -->
       <div class="quick-actions">
         <router-link to="/shopping?new=1" class="quick-chip">
-          <PhShoppingBagOpen :size="16" /> {{ t('dashboard.quickShopping') }}
+          <PhShoppingBagOpen :size="16" /> {{ t('dashboard.quickShoppingAction') }}
         </router-link>
         <router-link to="/todos?new=1" class="quick-chip">
-          <PhListChecks :size="16" /> {{ t('dashboard.quickTask') }}
+          <PhListChecks :size="16" /> {{ t('dashboard.quickTaskAction') }}
         </router-link>
         <router-link to="/expenses?new=1" class="quick-chip">
-          <PhWallet :size="16" /> {{ t('dashboard.quickExpense') }}
+          <PhWallet :size="16" /> {{ t('dashboard.quickExpenseAction') }}
         </router-link>
       </div>
     </template>
@@ -486,6 +595,12 @@ function formatReminderDate(isoString: string): string {
   color: var(--color-danger);
 }
 
+/* Lokal abgehakt, bis das Dashboard neu geladen ist */
+.task-item--done .task-item__title {
+  text-decoration: line-through;
+  color: var(--sub);
+}
+
 /* ── Overdue Badge ── */
 .overdue-badge {
   font-size: var(--text-xs);
@@ -498,6 +613,15 @@ function formatReminderDate(isoString: string): string {
   font-size: var(--text-sm);
   color: var(--sub);
   margin: 0;
+}
+
+.card-cta {
+  display: inline-block;
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--acc);
+  text-decoration: none;
 }
 
 /* ── Clickable Card ── */

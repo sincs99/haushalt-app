@@ -19,17 +19,28 @@ export const useChoresStore = defineStore('chores', () => {
   // Mutex für Toggle-Operationen (wie pendingToggles in todos.ts)
   const pendingToggles = new Set<string>()
 
+  // Ämtli und Einträge laden parallel → `loading` erst false, wenn beide fertig sind
+  let loadsInFlight = 0
+  function startLoad() {
+    loadsInFlight++
+    loading.value = true
+  }
+  function endLoad() {
+    loadsInFlight = Math.max(0, loadsInFlight - 1)
+    loading.value = loadsInFlight > 0
+  }
+
   // Actions
   async function fetchChores() {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    loading.value = true
+    startLoad()
     try {
       chores.value = await repo.fetchChores(householdId)
     } finally {
-      loading.value = false
+      endLoad()
     }
   }
 
@@ -38,11 +49,11 @@ export const useChoresStore = defineStore('chores', () => {
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    loading.value = true
+    startLoad()
     try {
       assignments.value = await repo.fetchAssignments(householdId, params)
     } finally {
-      loading.value = false
+      endLoad()
     }
   }
 
@@ -125,26 +136,23 @@ export const useChoresStore = defineStore('chores', () => {
       return
     }
 
+    // Optimistic (nur falls lokal geladen — im Dashboard ist das oft nicht der Fall)
     const item = assignments.value.find(a => a.id === assignmentId)
-    if (!item) {
-      pendingToggles.delete(assignmentId)
-      return
+    const prevCompletedAt = item?.completed_at ?? null
+    const prevCompletedBy = item?.completed_by_user_id ?? null
+    if (item) {
+      item.completed_at = new Date().toISOString()
+      item.completed_by_user_id = authStore.user?.id ?? null
     }
-
-    // Optimistic
-    const prevCompletedAt = item.completed_at
-    const prevCompletedBy = item.completed_by_user_id
-    item.completed_at = new Date().toISOString()
-    item.completed_by_user_id = authStore.user?.id ?? null
 
     try {
       const updated = await repo.completeAssignment(householdId, assignmentId)
       // Server gewinnt, ausser ein Socket-Event hat schon einen neueren Stand geliefert
-      upsertVersioned(assignments.value, updated, false)
+      if (updated) upsertVersioned(assignments.value, updated, false)
     } catch (error) {
       // Rollback
       const currentItem = assignments.value.find(a => a.id === assignmentId)
-      if (currentItem) {
+      if (currentItem && item) {
         currentItem.completed_at = prevCompletedAt
         currentItem.completed_by_user_id = prevCompletedBy
       }
@@ -165,24 +173,21 @@ export const useChoresStore = defineStore('chores', () => {
       return
     }
 
+    // Optimistic (nur falls lokal geladen)
     const item = assignments.value.find(a => a.id === assignmentId)
-    if (!item) {
-      pendingToggles.delete(assignmentId)
-      return
+    const prevCompletedAt = item?.completed_at ?? null
+    const prevCompletedBy = item?.completed_by_user_id ?? null
+    if (item) {
+      item.completed_at = null
+      item.completed_by_user_id = null
     }
-
-    // Optimistic
-    const prevCompletedAt = item.completed_at
-    const prevCompletedBy = item.completed_by_user_id
-    item.completed_at = null
-    item.completed_by_user_id = null
 
     try {
       const updated = await repo.uncompleteAssignment(householdId, assignmentId)
-      upsertVersioned(assignments.value, updated, false)
+      if (updated) upsertVersioned(assignments.value, updated, false)
     } catch (error) {
       const currentItem = assignments.value.find(a => a.id === assignmentId)
-      if (currentItem) {
+      if (currentItem && item) {
         currentItem.completed_at = prevCompletedAt
         currentItem.completed_by_user_id = prevCompletedBy
       }

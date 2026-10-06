@@ -107,7 +107,13 @@
     "remindersTitle": "Nächste Erinnerungen",
     "remindersEmpty": "Keine anstehenden Erinnerungen",
     "reminderFor": "für \"{title}\"",
-    "plantsWaterTitle": "Pflanzen brauchen Wasser"
+    "plantsWaterTitle": "Pflanzen brauchen Wasser",
+    "taskDone": "Erledigt",
+    "completeError": "Konnte nicht als erledigt markiert werden.",
+    "addTask": "Aufgabe erfassen",
+    "quickShoppingAction": "Artikel erfassen",
+    "quickTaskAction": "Aufgabe erfassen",
+    "quickExpenseAction": "Ausgabe erfassen"
   },
   "calendar": {
     "title": "Kalender",
@@ -233,7 +239,14 @@
     "itemStore": "Geschäft",
     "itemCategory": "Abteilung",
     "newStore": "Neues Geschäft…",
-    "mergeStoreConfirm": "\"{to}\" existiert bereits mit {count} Artikeln. Möchtest du die Geschäfte zusammenführen?"
+    "mergeStoreConfirm": "\"{to}\" existiert bereits mit {count} Artikeln. Möchtest du die Geschäfte zusammenführen?",
+    "clearDoneItems": "Erledigte entfernen",
+    "doneRemoved": "Erledigte entfernt",
+    "clearDonePartial": "{n} Artikel konnten nicht entfernt werden.",
+    "listDeleted": "Liste gelöscht",
+    "listName": "Listenname",
+    "storeActions": "Aktionen für {store}",
+    "mergeStores": "Zusammenführen"
   },
   "todos": {
     "title": "Aufgaben",
@@ -261,7 +274,11 @@
     "maxReminders": "Maximal 5 Erinnerungen",
     "reminderError": "Erinnerung konnte nicht gespeichert werden.",
     "deleteReminderError": "Erinnerung konnte nicht gelöscht werden.",
-    "nextReminder": "Nächste Erinnerung"
+    "nextReminder": "Nächste Erinnerung",
+    "done": "Aufgabe erledigt",
+    "createdHidden": "Aufgabe erfasst. Sie ist ausgeblendet, weil nur Aufgaben von {name} angezeigt werden.",
+    "titleRequired": "Gib einen Titel ein.",
+    "removeReminder": "Erinnerung entfernen"
   },
   "tasks": {
     "title": "Aufgaben",
@@ -433,7 +450,12 @@
     "filterAll": "Alle",
     "filterMine": "Nur meine",
     "dayOfMonthPlaceholder": "1–31",
-    "dayOfMonthError": "Gib einen Tag zwischen 1 und 31 ein"
+    "dayOfMonthError": "Gib einen Tag zwischen 1 und 31 ein",
+    "assignmentDone": "Ämtli erledigt",
+    "noAssignmentsWeek": "Keine Ämtli diese Woche",
+    "addChoreLabel": "Ämtli erstellen",
+    "moveUpLabel": "Nach oben verschieben",
+    "moveDownLabel": "Nach unten verschieben"
   },
   "household": {
     "title": "Haushalt",

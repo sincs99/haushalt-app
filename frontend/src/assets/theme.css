@@ -31,6 +31,7 @@
   --color-primary-hover: var(--p1);
   --color-primary-dark: var(--p1);
   --color-primary-light: var(--chip);
+  --color-primary-strong: #3A766F;  /* Teal-Text auf --chip (Badges) */
   --color-bg: var(--bg);
   --color-surface: var(--card);
   --color-surface-subtle: var(--chip);
@@ -41,6 +42,7 @@
   --color-border-strong: var(--line-strong);
 
   --color-success: var(--ok);
+  --color-success-strong: #526D56;  /* Erfolgs-Text auf --chip/--bg */
   --color-danger: #DC2626;
   --color-danger-hover: #B91C1C;
   --color-danger-soft: #FDECEC;     /* Fehler-Flächen, Hover destruktiver Aktionen */
@@ -196,6 +198,8 @@ html[data-theme="dark"] {
   --member-3: #B49AAC;
   --member-4: #ABA390;
 
+  --color-primary-strong: #6BADA5;
+  --color-success-strong: var(--ok);
   --color-danger: #E86E6E;
   --color-danger-hover: #F08A8A;
   --color-danger-soft: #3A2424;

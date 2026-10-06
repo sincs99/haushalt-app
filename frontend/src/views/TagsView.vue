@@ -423,7 +423,7 @@ watch(() => authStore.currentHouseholdId, () => {
   padding: var(--space-3);
   background: var(--card);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-item);
   box-shadow: var(--shadow-card);
   text-align: left;
   color: var(--ink);
@@ -473,9 +473,9 @@ watch(() => authStore.currentHouseholdId, () => {
 }
 
 .badge {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-semibold);
-  padding: 1px var(--space-2);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   background: var(--chip);
   color: var(--sub);

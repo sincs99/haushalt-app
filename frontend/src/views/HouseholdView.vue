@@ -707,10 +707,10 @@ watch(() => authStore.currentHouseholdId, () => {
 .admin-badge {
   display: inline-flex;
   align-items: center;
-  padding: var(--space-0-5) var(--space-2);
+  padding: var(--badge-padding);
   background: var(--color-primary-light);
-  color: var(--color-primary);
-  font-size: var(--text-xs);
+  color: var(--color-primary-strong);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-bold);
   border-radius: var(--radius-full);
   white-space: nowrap;

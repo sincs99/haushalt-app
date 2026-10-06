@@ -205,7 +205,7 @@ function handleSubmit() {
 .store-pick-chip {
   display: flex;
   align-items: center;
-  padding: var(--space-1-5) 14px;
+  padding: var(--chip-padding);
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);

@@ -1445,12 +1445,12 @@ async function handleDeleteCareTask() {
 }
 
 .med-item__badge {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-normal);
   color: var(--sub);
   background: var(--chip);
-  padding: 1px var(--space-1-5);
-  border-radius: var(--radius-sm);
+  padding: var(--badge-padding);
+  border-radius: var(--radius-full);
   margin-left: var(--space-1);
 }
 
@@ -1888,8 +1888,8 @@ async function handleDeleteCareTask() {
   background: var(--color-danger);
   color: var(--color-on-danger);
   border-radius: var(--radius-full);
-  padding: var(--space-0-5) var(--space-2);
-  font-size: var(--text-xs);
+  padding: var(--badge-padding);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-medium);
 }
 

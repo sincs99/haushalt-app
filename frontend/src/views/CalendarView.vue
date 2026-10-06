@@ -1249,7 +1249,7 @@ watch(
 .filter-chip {
   display: inline-flex;
   align-items: center;
-  padding: var(--space-1) 14px;
+  padding: var(--chip-padding-sm);
   border: 2px solid;
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
@@ -1440,10 +1440,10 @@ watch(
 }
 
 .event-card__date-badge {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   color: var(--sub);
   background: var(--chip);
-  padding: 1px var(--space-1-5);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
 }
 
@@ -1477,10 +1477,10 @@ watch(
 }
 
 .event-card__everyone-chip {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   color: var(--sub);
   background: var(--chip);
-  padding: var(--space-0-5) var(--space-2);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   white-space: nowrap;
 }
@@ -1651,7 +1651,7 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-1) var(--space-3);
+  padding: var(--chip-padding-sm);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-full);
   background: var(--card);
@@ -1806,10 +1806,10 @@ watch(
 
 /* ── Span Badge ── */
 .event-card__span-badge {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   color: var(--acc);
   background: var(--acc-soft);
-  padding: 1px var(--space-1-5);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;

@@ -784,10 +784,10 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  font-size: var(--text-xs);
+  padding: var(--badge-padding);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-semibold);
-  color: var(--ok);
+  color: var(--color-success-strong);
   background: var(--chip);
   border-radius: var(--radius-full);
   white-space: nowrap;
@@ -891,8 +891,8 @@ onMounted(() => {
 .expense-item__split-badge {
   display: inline-flex;
   align-items: center;
-  padding: 1px var(--space-2);
-  font-size: var(--text-xs);
+  padding: var(--badge-padding);
+  font-size: var(--text-badge);
   background: var(--chip);
   border-radius: var(--radius-full);
   color: var(--sub);

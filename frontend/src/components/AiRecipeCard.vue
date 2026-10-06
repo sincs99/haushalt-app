@@ -361,10 +361,10 @@ function discard() {
 }
 
 .ai-tag {
-  padding: var(--space-0-5) var(--space-2);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   background: var(--chip);
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   color: var(--ink);
 }
 

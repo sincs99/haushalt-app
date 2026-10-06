@@ -1031,7 +1031,7 @@ const weekdayOptions = computed(() =>
 
 .chore-card {
   background: var(--color-surface);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-item);
   box-shadow: var(--shadow-card);
   padding: var(--space-3) var(--space-4);
   display: flex;
@@ -1065,8 +1065,8 @@ const weekdayOptions = computed(() =>
 }
 
 .inactive-badge {
-  font-size: var(--text-xs);
-  padding: var(--space-0-5) var(--space-2);
+  font-size: var(--text-badge);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   background: var(--line);
   color: var(--color-text-muted);

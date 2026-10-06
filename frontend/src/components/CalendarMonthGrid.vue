@@ -610,10 +610,10 @@ function handleDayClick(day: GridDay) {
 }
 
 .month-event-card__span-badge {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   color: var(--acc);
   background: var(--acc-soft);
-  padding: 1px var(--space-1-5);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;
@@ -653,10 +653,10 @@ function handleDayClick(day: GridDay) {
 }
 
 .month-event-card__everyone-chip {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   color: var(--sub);
   background: var(--chip);
-  padding: var(--space-0-5) var(--space-2);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   white-space: nowrap;
 }

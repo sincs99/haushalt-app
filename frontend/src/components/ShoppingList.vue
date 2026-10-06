@@ -582,7 +582,7 @@ async function confirmDissolve() {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-1-5) 14px;
+  padding: var(--chip-padding);
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
@@ -602,10 +602,10 @@ async function confirmDissolve() {
 }
 
 .store-chip__badge {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   background: var(--line);
   border-radius: var(--radius-full);
-  padding: 1px var(--space-1-5);
+  padding: var(--badge-padding);
   min-width: 20px;
   text-align: center;
 }

@@ -363,7 +363,7 @@ onUnmounted(() => {
 
 .note-card {
   background: var(--card);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-item);
   padding: var(--space-3);
   box-shadow: var(--shadow-card);
   cursor: pointer;
@@ -428,8 +428,8 @@ onUnmounted(() => {
   display: inline-block;
   background: var(--chip);
   border-radius: var(--radius-full);
-  padding: var(--space-0-5) 10px;
-  font-size: var(--text-xs);
+  padding: var(--badge-padding);
+  font-size: var(--text-badge);
   color: var(--sub);
   align-self: flex-start;
   margin-top: var(--space-1);

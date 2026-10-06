@@ -774,9 +774,9 @@ async function handleDeleteTask() {
 
 .due-badge {
   margin-left: var(--space-1);
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-semibold);
-  padding: var(--space-0-5) var(--space-2);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   color: var(--color-on-danger);
 }

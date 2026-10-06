@@ -273,6 +273,7 @@ class PendingBillInfo(BaseModel):
     day_of_month: int
     category: str | None
     is_booked_this_month: bool
+    paid_by_user_id: uuid.UUID | None = None
 
 
 class FinanceSummaryResponse(BaseModel):
@@ -380,8 +381,7 @@ def get_finance_summary(
         .filter(
             Expense.household_id == household_id,
             Expense.recurring_bill_id.isnot(None),
-            Expense.expense_date >= month,
-            Expense.expense_date < first_of_next_month,
+            Expense.booked_month == month,
         )
         .all()
     )
@@ -397,6 +397,7 @@ def get_finance_summary(
                 day_of_month=bill.day_of_month,
                 category=bill.category,
                 is_booked_this_month=bill.id in booked_bill_ids,
+                paid_by_user_id=bill.paid_by_user_id,
             )
         )
 

@@ -87,3 +87,19 @@ export function formatDateShort(dateStr: string): string {
     month: '2-digit',
   })
 }
+
+/**
+ * Uhrzeit "HH:MM" eines Termins in Haushaltszeit.
+ *
+ * Die API liefert Termine mit dem Offset des Haushalts (z.B. 2026-10-07T09:00:00+02:00).
+ * Datum und Uhrzeit werden direkt aus dem String gelesen — nicht über `new Date()`,
+ * sonst würde in die Zeitzone des Geräts umgerechnet.
+ */
+export function eventTime(iso: string): string {
+  return iso.substring(11, 16)
+}
+
+/** Datum "YYYY-MM-DD" eines Termins in Haushaltszeit (siehe eventTime) */
+export function eventDate(iso: string): string {
+  return iso.substring(0, 10)
+}

@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: haushalt
       POSTGRES_USER: haushalt
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt in .env.prod}
     volumes:
       - pgdata:/var/lib/postgresql/data
     # Kein ports: — DB nur intern erreichbar
@@ -26,7 +26,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://haushalt:${POSTGRES_PASSWORD}@postgres:5432/haushalt
+      DATABASE_URL: postgresql://haushalt:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt in .env.prod}@postgres:5432/haushalt
       UPLOAD_DIR: /app/data/uploads
     volumes:
       - uploaddata:/app/data/uploads

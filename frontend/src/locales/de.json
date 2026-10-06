@@ -333,7 +333,10 @@
     "billDay": "Tag im Monat (1–28)",
     "billSaved": "Rechnung gespeichert",
     "billDeleted": "Rechnung gelöscht",
-    "overspent": "Überschritten"
+    "overspent": "Überschritten",
+    "bookBillTitle": "«{name}» buchen",
+    "paidBy": "Bezahlt von",
+    "bookBillHint": "{amount} werden gleichmässig auf alle Mitglieder verteilt."
   },
   "settlements": {
     "title": "Ausgleichszahlungen",
@@ -489,7 +492,9 @@
     "CANNOT_REMOVE_ADMIN": "Admins können nicht entfernt werden",
     "CANNOT_REMOVE_SELF": "Du kannst dich nicht selbst entfernen – nutze Haushalt verlassen",
     "TOO_MANY_REMINDERS": "Maximal 5 Erinnerungen pro Aufgabe",
-    "REMINDER_NOT_FOUND": "Erinnerung nicht gefunden"
+    "REMINDER_NOT_FOUND": "Erinnerung nicht gefunden",
+    "BILL_PAYER_REQUIRED": "Bitte wähle aus, wer die Rechnung bezahlt hat",
+    "BILL_ALREADY_BOOKED": "Rechnung wurde bereits gebucht"
   },
   "push": {
     "title": "Benachrichtigungen",

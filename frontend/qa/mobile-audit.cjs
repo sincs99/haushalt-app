@@ -170,6 +170,7 @@ function auditInPage(opts) {
   // 4. Tap-Ziele < 44×44
   const interactive = els.filter(el => inScope(el) && el.matches(
     'a[href], button, select, textarea, input:not([type=hidden]), [role=button], [role=tab], [role=checkbox], [role=switch]'))
+  const hitboxes = []
   for (const el of interactive) {
     const cs = getComputedStyle(el)
     if (el.tagName === 'A' && cs.display === 'inline') continue // Fliesstext-Link
@@ -201,6 +202,17 @@ function auditInPage(opts) {
       if (pcs.position === 'fixed') break
     }
     if (w < 43.5 || h < 43.5) add('tap-target', el, `${Math.round(w)}×${Math.round(h)}`)
+    if (isFinite(w) && isFinite(h)) hitboxes.push({ el, r, hb: { left: r.left + r.width / 2 - w / 2, right: r.left + r.width / 2 + w / 2, top: r.top + r.height / 2 - h / 2, bottom: r.top + r.height / 2 + h / 2 }, grown: w > r.width + 1 || h > r.height + 1 })
+  }
+  // vergrösserte Tap-Fläche liegt über einem sichtbaren Nachbar-Bedienelement
+  for (const a of hitboxes) {
+    if (!a.grown) continue
+    for (const b of hitboxes) {
+      if (a === b || a.el.contains(b.el) || b.el.contains(a.el)) continue
+      const ox = Math.min(a.hb.right, b.r.right) - Math.max(a.hb.left, b.r.left)
+      const oy = Math.min(a.hb.bottom, b.r.bottom) - Math.max(a.hb.top, b.r.top)
+      if (ox > 1 && oy > 1) add('hitbox-overlap', a.el, `Tap-Fläche überdeckt ${sig(b.el)} „${txt(b.el)}“ (${Math.round(ox)}×${Math.round(oy)})`)
+    }
   }
 
   // 5. unter Bottom-Nav / Safe-Area

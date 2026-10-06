@@ -814,7 +814,22 @@
     "pollDecided": "Decided! 🎉",
     "openPollCount": "{n} open vote | {n} open votes",
     "voteCount": "{n} vote | {n} votes",
-    "steps": "Preparation"
+    "steps": "Preparation",
+    "prevWeek": "Previous week",
+    "nextWeek": "Next week",
+    "removeOption": "Remove option",
+    "assignError": "Couldn't assign the meal.",
+    "removeError": "Couldn't remove the meal.",
+    "mealRemoved": "Meal removed",
+    "addToShoppingError": "Couldn't add the ingredients to the shopping list.",
+    "goToShopping": "Go to shopping list",
+    "favoriteError": "Couldn't save the favourite.",
+    "createPollError": "Couldn't start the poll.",
+    "decideTitle": "Decide poll",
+    "decideWinner": "“{option}” is in the lead ({n} vote) and goes into the meal plan. | “{option}” is in the lead ({n} votes) and goes into the meal plan.",
+    "decideTie": "It's a tie – pick which meal it will be.",
+    "decideHint": "This ends the poll for the whole household.",
+    "pollDecidedToast": "Decided: “{option}”"
   },
   "notes": {
     "title": "Notes",
@@ -834,7 +849,16 @@
     "deleteConfirm": "Really delete this note?",
     "addError": "Could not create note.",
     "saveError": "Could not save changes.",
-    "deleteError": "Could not delete note."
+    "deleteError": "Could not delete note.",
+    "addLabel": "New note",
+    "emptyAction": "Write a note",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "deleted": "Note deleted",
+    "discardTitle": "Discard changes?",
+    "discardText": "Your changes to this note haven't been saved yet.",
+    "keepEditing": "Keep editing",
+    "discardConfirm": "Discard"
   },
   "files": {
     "FILE_TOO_LARGE": "File is too large (max 10 MB)",
@@ -943,7 +967,8 @@
       "saved": "Recipe saved",
       "discard": "Discard",
       "newSuggestion": "New suggestion",
-      "defaultListName": "Shopping list"
+      "defaultListName": "Shopping list",
+      "saveError": "Couldn't save the recipe."
     },
     "plant": {
       "title": "Plant care",

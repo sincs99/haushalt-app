@@ -59,9 +59,8 @@ export const useNotesStore = defineStore('notes', () => {
     if (!householdId) return
 
     // 1. Optimistic: Sofort lokalen Temp-Eintrag erzeugen
-    const tempId = crypto.randomUUID()
     const tempItem: NoteItem = {
-      id: tempId,
+      id: crypto.randomUUID(),
       household_id: householdId,
       title,
       body: body ?? '',
@@ -71,16 +70,38 @@ export const useNotesStore = defineStore('notes', () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
+    return createOptimistic(householdId, tempItem, { title, body, tag })
+  }
+
+  /**
+   * Rückgängig nach dem Löschen: Notiz mit Titel, Text, Tag und Pin-Status neu
+   * anlegen. Der Temp-Eintrag behält das alte Datum, damit er an derselben Stelle erscheint.
+   */
+  async function restoreNote(note: NoteItem) {
+    const householdId = useAuthStore().currentHouseholdId
+    if (!householdId) return
+
+    const tempItem: NoteItem = { ...note, id: crypto.randomUUID() }
+    return createOptimistic(householdId, tempItem, {
+      title: note.title,
+      body: note.body || undefined,
+      tag: note.tag ?? undefined,
+      pinned: note.pinned || undefined,
+    })
+  }
+
+  async function createOptimistic(
+    householdId: string,
+    tempItem: NoteItem,
+    payload: { title: string; body?: string; tag?: string; pinned?: boolean },
+  ): Promise<NoteItem> {
+    const tempId = tempItem.id
     items.value.push(tempItem)
     pendingTempIds.add(tempId)
 
     try {
       // 2. Server-Call via Repository
-      const serverItem = await repo.create(householdId, {
-        title,
-        body,
-        tag,
-      })
+      const serverItem = await repo.create(householdId, payload)
       pendingTempIds.delete(tempId)
 
       // 3. Defensive Duplikat-Prüfung: Socket könnte schneller gewesen sein
@@ -94,6 +115,7 @@ export const useNotesStore = defineStore('notes', () => {
         // Normaler Fall → Temp-Item durch Server-Item ersetzen
         items.value[tempIdx] = serverItem
       }
+      return serverItem
     } catch (error) {
       pendingTempIds.delete(tempId)
       // 4. Rollback bei Fehler
@@ -210,6 +232,7 @@ export const useNotesStore = defineStore('notes', () => {
     fetchNotes,
     fetchMembers,
     addNote,
+    restoreNote,
     updateNote,
     togglePin,
     deleteNote,

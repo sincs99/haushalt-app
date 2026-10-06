@@ -814,7 +814,22 @@
     "pollDecided": "Entschieden! 🎉",
     "openPollCount": "{n} offene Abstimmung | {n} offene Abstimmungen",
     "voteCount": "{n} Stimme | {n} Stimmen",
-    "steps": "Zubereitung"
+    "steps": "Zubereitung",
+    "prevWeek": "Vorherige Woche",
+    "nextWeek": "Nächste Woche",
+    "removeOption": "Option entfernen",
+    "assignError": "Gericht konnte nicht zugewiesen werden.",
+    "removeError": "Gericht konnte nicht entfernt werden.",
+    "mealRemoved": "Gericht entfernt",
+    "addToShoppingError": "Zutaten konnten nicht auf die Einkaufsliste gesetzt werden.",
+    "goToShopping": "Zur Einkaufsliste",
+    "favoriteError": "Favorit konnte nicht gespeichert werden.",
+    "createPollError": "Abstimmung konnte nicht gestartet werden.",
+    "decideTitle": "Abstimmung entscheiden",
+    "decideWinner": "«{option}» liegt vorne ({n} Stimme) und kommt in den Wochenplan. | «{option}» liegt vorne ({n} Stimmen) und kommt in den Wochenplan.",
+    "decideTie": "Gleichstand – wähle, welches Gericht es gibt.",
+    "decideHint": "Die Abstimmung wird damit für den ganzen Haushalt beendet.",
+    "pollDecidedToast": "Entschieden: «{option}»"
   },
   "notes": {
     "title": "Notizen",
@@ -834,7 +849,16 @@
     "deleteConfirm": "Notiz wirklich löschen?",
     "addError": "Notiz konnte nicht erstellt werden.",
     "saveError": "Änderung konnte nicht gespeichert werden.",
-    "deleteError": "Notiz konnte nicht gelöscht werden."
+    "deleteError": "Notiz konnte nicht gelöscht werden.",
+    "addLabel": "Neue Notiz",
+    "emptyAction": "Notiz schreiben",
+    "pin": "Anpinnen",
+    "unpin": "Lösen",
+    "deleted": "Notiz gelöscht",
+    "discardTitle": "Änderungen verwerfen?",
+    "discardText": "Deine Änderungen an dieser Notiz sind noch nicht gespeichert.",
+    "keepEditing": "Weiter bearbeiten",
+    "discardConfirm": "Verwerfen"
   },
   "files": {
     "FILE_TOO_LARGE": "Datei ist zu gross (max. 10 MB)",
@@ -943,7 +967,8 @@
       "saved": "Rezept gespeichert",
       "discard": "Verwerfen",
       "newSuggestion": "Neuer Vorschlag",
-      "defaultListName": "Einkaufsliste"
+      "defaultListName": "Einkaufsliste",
+      "saveError": "Rezept konnte nicht gespeichert werden."
     },
     "plant": {
       "title": "Pflanzenpflege",

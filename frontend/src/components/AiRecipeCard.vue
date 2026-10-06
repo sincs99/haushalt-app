@@ -3,8 +3,8 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { PhSparkle, PhShoppingBagOpen } from '@phosphor-icons/vue'
 import { useAiStore } from '../stores/ai'
+import { useRouter } from 'vue-router'
 import { useToast } from '../composables/useToast'
-import { translateApiError } from '../utils/apiErrors'
 import type { AiRecipePreference } from '../types'
 import BaseCard from './ui/BaseCard.vue'
 import BaseButton from './ui/BaseButton.vue'
@@ -15,8 +15,9 @@ import BaseInput from './ui/BaseInput.vue'
  * Gespeichert wird erst auf Knopfdruck über den normalen Rezept-Endpunkt.
  */
 const aiStore = useAiStore()
-const { t } = useI18n()
-const { showToast } = useToast()
+const { t, te } = useI18n()
+const router = useRouter()
+const { showToast, notifyError, notifyInfo } = useToast()
 
 const PREFERENCES: AiRecipePreference[] = ['vegetarian', 'quick', 'kids', 'leftovers']
 
@@ -34,6 +35,17 @@ const ingredients = computed(() =>
 )
 
 const suggestion = computed(() => aiStore.recipeSuggestion)
+
+/** Fehlercode → Text; unbekannte Codes nicht als rohen Schlüssel zeigen. */
+const recipeErrorText = computed(() => {
+  const code = aiStore.recipeError
+  if (!code) return ''
+  return te(`errors.${code}`) ? t(`errors.${code}`) : t('errors.unknown')
+})
+
+function isOffline() {
+  return typeof navigator !== 'undefined' && navigator.onLine === false
+}
 
 function togglePreference(p: AiRecipePreference) {
   preferences.value = preferences.value.includes(p)
@@ -55,13 +67,17 @@ async function generate() {
 
 async function save() {
   if (saving.value) return
+  if (isOffline()) {
+    notifyInfo(t('offline.actionBlocked'))
+    return
+  }
   saving.value = true
   try {
     await aiStore.saveSuggestedRecipe()
     saved.value = true
     showToast(t('ai.recipe.saved'), 'success')
   } catch (error) {
-    showToast(translateApiError(error), 'error')
+    notifyError(t('ai.recipe.saveError'), error)
   } finally {
     saving.value = false
   }
@@ -69,11 +85,21 @@ async function save() {
 
 async function addMissing() {
   if (!suggestion.value || addingMissing.value) return
+  if (isOffline()) {
+    notifyInfo(t('offline.actionBlocked'))
+    return
+  }
   addingMissing.value = true
   try {
-    missingAdded.value = await aiStore.addMissingToShopping(suggestion.value.missing_ingredients)
+    const added = await aiStore.addMissingToShopping(suggestion.value.missing_ingredients)
+    missingAdded.value = added
+    // Ergebnis liegt auf einer anderen Seite → Toast mit Link dorthin
+    showToast(t('ai.recipe.addedMissing', { n: added }, added), 'success', undefined, {
+      label: t('food.goToShopping'),
+      onAction: () => { router.push('/shopping') },
+    })
   } catch (error) {
-    showToast(translateApiError(error), 'error')
+    notifyError(t('food.addToShoppingError'), error)
   } finally {
     addingMissing.value = false
   }
@@ -135,7 +161,7 @@ function discard() {
       <BaseInput v-model="note" :label="t('ai.recipe.noteLabel')" maxlength="200" />
 
       <p v-if="aiStore.recipeError" class="ai-error" role="alert">
-        {{ t(`errors.${aiStore.recipeError}`) }}
+        {{ recipeErrorText }}
       </p>
 
       <BaseButton

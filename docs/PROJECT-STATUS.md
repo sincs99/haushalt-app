@@ -42,7 +42,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | #17 | Frontend-Stores: Geschäfts-Filter folgt dem Umbenennen, fehlgeschlagenes Löschen eines Ämtlis stellt dessen Zuweisungen wieder her; Unit-Tests für den Auth-Store |
 | #18 | Einkauf: Geschäftsnamen werden ohne Beachtung der Groß-/Kleinschreibung zusammengeführt (Backend und Frontend, keine Migration); bestehende Einträge behalten ihre Schreibweise |
 
-**Kennzahlen (nach #23, inkl. Branch `claude/socket-token-expiry`):** Backend 631 Tests in 54 Dateien, Coverage 92 %; Frontend 178 Tests in 14 Dateien, Coverage 32,9 % (Statements); 705 i18n-Schlüssel; 34 Alembic-Migrationen (einziger Kopf `x2y3z4a5b6c7`).
+**Kennzahlen (nach #24, inkl. Branch `claude/frontend-store-tests`):** Backend 631 Tests in 54 Dateien, Coverage 92 %; Frontend 269 Tests in 21 Dateien, Coverage 70,3 % (Statements; zuvor 32,9 %), Schwelle 66 %; 705 i18n-Schlüssel; 34 Alembic-Migrationen (einziger Kopf `x2y3z4a5b6c7`).
 
 **Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Essen, Notizen, Kalender und Finanzen.
 
@@ -838,7 +838,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Push-Erinnerung zum Ablaufdatum von Dokumenten | Klein | 🔵 Niedrig | Garantieende, Kündigungsfrist |
 | Einladungscode nur für Admins sichtbar? | Klein | 🔵 Niedrig | Offene Produktfrage zu H-12: Der Code ist weiterhin für alle Mitglieder sichtbar (Ablauf und Rotation sind umgesetzt) |
 | „Überall abmelden“ | Klein | 🔵 Niedrig | Es gibt keinen Endpunkt, der alle Refresh-Tokens eines Users revoked; das passiert heute nur über die Reuse-Erkennung. Nützlich zusammen mit Passwort-Ändern |
-| Frontend-Testabdeckung | Mittel | 🟡 Mittel | 31,8 % Statements; Komponenten und weitere Stores (Kalender, Finanzen, Haustiere …) sind ungetestet; Coverage wird nur berichtet, es gibt keine Schwelle |
+| Frontend-Testabdeckung | Mittel | 🟡 Mittel | 70,3 % Statements (Schwelle 66 % in `vitest.config.ts`, CI bricht darunter ab); Komponenten, Stores `polls`/`dashboard` und die Repositories sind ungetestet; Schwelle bei Verbesserung nachziehen |
 | Push-Notifications für Chores | Mittel | 🔵 Niedrig | „Du bist dran“-Benachrichtigung |
 | FR/IT-Sprachen | Klein | 🔵 Niedrig | Locale-Erweiterung |
 | Chores-Statistiken | Klein | 🔵 Niedrig | „Wer hat wie oft geputzt“ |

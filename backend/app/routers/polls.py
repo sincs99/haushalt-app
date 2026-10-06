@@ -22,6 +22,7 @@ from app.models import (
     Recipe,
 )
 from app.services.event_times import household_tz, to_utc
+from app.services.household_time import household_today
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -481,7 +482,7 @@ def meal_decide_poll(
     _claim_poll(db, poll_id)
 
     # MealPlanEntry erzeugen (Upsert: wenn Datum schon belegt, updaten)
-    meal_date = poll.decided_meal_date or date.today()
+    meal_date = poll.decided_meal_date or household_today(db, household_id)
 
     existing = (
         db.query(MealPlanEntry)

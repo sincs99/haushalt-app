@@ -16,6 +16,7 @@ from app.models import (
     ShoppingItem,
     ShoppingList,
 )
+from app.services.household_time import household_today
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -348,7 +349,7 @@ def get_week_plan(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    ref = week if week is not None else date.today()
+    ref = week if week is not None else household_today(db, household_id)
     monday, sunday = _week_bounds(ref)
 
     entries = (

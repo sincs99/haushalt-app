@@ -13,6 +13,7 @@ from app.database import get_db
 from app.models import Expense, ExpenseShare, Household, HouseholdMember, RecurringBill
 from app.routers.expenses import ExpenseResponse, split_evenly
 from app.services.household_checks import assert_users_in_household
+from app.services.household_time import household_today
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -230,7 +231,7 @@ def book_recurring_bill(
     assert_users_in_household(db, household_id, [payer_id])
 
     # 3b. Aktuellen Monat ermitteln
-    today = date.today()
+    today = household_today(db, household_id)
     first_of_month = date(today.year, today.month, 1)
 
     # 4. Idempotenz: Prüfen ob bereits gebucht (über booked_month, nicht expense_date —

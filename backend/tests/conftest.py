@@ -71,6 +71,7 @@ from app.models import (  # noqa: E402
     ShoppingItem,
     ShoppingList,
     StoredFile,
+    Tag,
     Todo,
     TodoReminder,
     User,
@@ -138,7 +139,8 @@ def _mock_socket_emit():
                                                             with patch("app.routers.calendars.emit_to_household_sync", mock_emit):
                                                                 with patch("app.routers.files.emit_to_household_sync", mock_emit):
                                                                     with patch("app.routers.documents.emit_to_household_sync", mock_emit):
-                                                                        yield mock_emit
+                                                                        with patch("app.routers.tags.emit_to_household_sync", mock_emit):
+                                                                            yield mock_emit
 
 
 @pytest.fixture()

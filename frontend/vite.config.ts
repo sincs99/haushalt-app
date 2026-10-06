@@ -27,11 +27,24 @@ export default defineConfig({
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
           { src: 'maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
+        // Langes Drücken auf das App-Icon (Android/Chrome, Desktop)
+        shortcuts: [
+          { name: 'Einkaufsliste', short_name: 'Einkauf', url: '/shopping' },
+          { name: 'Aufgaben', short_name: 'Aufgaben', url: '/todos' },
+          { name: 'Haustiere', short_name: 'Tiere', url: '/pets' },
+        ],
+        // Tag-Scans (/t/<token>, NFC/QR) in einem bereits offenen App-Fenster
+        // öffnen statt jedes Mal ein neues zu starten (Chromium)
+        launch_handler: { client_mode: ['navigate-existing', 'auto'] },
       },
       workbox: {
         // Nur die App-Shell precachen. API-Daten werden bewusst NICHT gecacht
         // (Offline-Sync kommt separat, siehe docs/offline-ready-architecture.md)
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // Navigationen (auch /t/<token> von NFC/QR-Tags) bekommen die vorgecachte
+        // App-Shell; die Antwort hängt nicht vom Pfad ab, der Token landet in
+        // keinem Cache. Ohne runtimeCaching werden auch die POST-Aufrufe an
+        // /api/tags/* nie gecacht.
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//],
         cleanupOutdatedCaches: true,

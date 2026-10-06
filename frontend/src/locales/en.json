@@ -513,6 +513,14 @@
     "BILL_PAYER_REQUIRED": "Please choose who paid the bill",
     "BILL_ALREADY_BOOKED": "This bill has already been booked",
     "ENTITY_ID_CONFLICT": "This ID is already in use",
+    "TAG_NOT_FOUND": "Tag not found",
+    "TAG_DISABLED": "This tag is disabled",
+    "TAG_ACTION_INVALID": "Action does not match the target type",
+    "TAG_TARGET_INVALID": "Please choose a valid target from this household",
+    "TAG_TARGET_NOT_FOUND": "The target of this tag was deleted",
+    "TAG_NOT_EXECUTABLE": "This tag only opens a page",
+    "TAG_NOTHING_TO_DO": "There is nothing to do right now",
+    "TOO_MANY_TAGS": "Maximum number of tags for this household reached",
     "PLANT_NOT_FOUND": "Plant not found",
     "PLANT_CARE_TASK_NOT_FOUND": "Care task not found"
   },
@@ -836,5 +844,154 @@
     "previousPage": "Previous page",
     "nextPage": "Next page",
     "pageOf": "Page {current} / {total}"
+  },
+  "tags": {
+    "title": "Tags (NFC/QR)",
+    "subtitle": "One scan, one tap: chips and stickers for recurring chores",
+    "householdHint": "NFC chips and QR stickers that trigger an action when scanned — feed a pet, tick off a chore, open the shopping list.",
+    "manage": "Manage tags",
+    "add": "Add tag",
+    "emptyTitle": "No tags yet",
+    "emptySubtitle": "Create a tag and stick the QR code or NFC chip where the action happens.",
+    "adminOnly": "Only household admins can create and change tags. All members can scan them.",
+    "labelLabel": "Label",
+    "labelPlaceholder": "e.g. Kitchen food bowl",
+    "targetTypeLabel": "Target type",
+    "targetLabel": "Target",
+    "targetChoose": "Please choose",
+    "targetNoneDefault": "No specific target",
+    "noTargets": "There are no entries of this type in the household yet.",
+    "actionLabel": "Action",
+    "createSuccess": "Tag created",
+    "createError": "Could not create tag",
+    "saveError": "Could not save change",
+    "deleteConfirm": "Delete tag “{label}”? The chip or QR code will stop working.",
+    "deleteError": "Could not delete tag",
+    "deleted": "Tag deleted",
+    "disabledBadge": "Disabled",
+    "enable": "Enable",
+    "disable": "Disable",
+    "targetMissing": "Target deleted",
+    "useCount": "used {count}×",
+    "lastUsed": "last {date}",
+    "neverUsed": "Never used",
+    "url": "Address on the chip",
+    "copyUrl": "Copy address",
+    "urlCopied": "Address copied",
+    "copyFailed": "Copy failed",
+    "qrTitle": "QR code",
+    "qrHint": "Print it and stick it on. The phone's camera app opens the address directly.",
+    "qrAlt": "QR code for {label}",
+    "downloadQr": "Download QR code",
+    "nfcTitle": "NFC chip",
+    "nfcWrite": "Write to NFC chip",
+    "nfcHold": "Hold the chip to the back of your phone now …",
+    "nfcCancel": "Cancel",
+    "nfcSuccess": "Chip written",
+    "nfcError": "Writing failed. Is the chip writable (not locked) and large enough?",
+    "nfcPermission": "NFC access was denied",
+    "nfcUnsupported": "This browser cannot write NFC chips (Chrome on Android only). Write the chip with an NFC app (e.g. “NFC Tools”) using a single URL record with the address above.",
+    "regenerate": "Regenerate token",
+    "regenerateConfirm": "Generate a new token? The current chip or QR code will stop working and must be rewritten or reprinted.",
+    "regenerateSuccess": "New token generated — rewrite the chip",
+    "targetTypes": {
+      "pet": "Pet",
+      "pet_care_task": "Pet care",
+      "chore": "Chore",
+      "shopping_list": "Shopping list",
+      "todo": "Task"
+    },
+    "targetNone": {
+      "pet": "All pets",
+      "shopping_list": "Shopping (last opened list)"
+    },
+    "actions": {
+      "pet": {
+        "feed": {
+          "label": "Feed",
+          "confirm": "Feed {name}?",
+          "confirmAll": "Feed all pets?",
+          "button": "Feed",
+          "done": "Feeding logged"
+        },
+        "care_task": {
+          "done": {
+            "label": "Complete care task",
+            "confirm": "“{name}” done?",
+            "button": "Done",
+            "done": "Care task completed"
+          }
+        }
+      },
+      "chore": {
+        "assignment": {
+          "done": {
+            "label": "Tick off current chore",
+            "confirm": "“{name}” done?",
+            "button": "Done",
+            "done": "Chore ticked off"
+          }
+        }
+      },
+      "shopping_list": {
+        "open": {
+          "label": "Open shopping list",
+          "confirm": "Open shopping list",
+          "button": "Open",
+          "done": "Opened"
+        }
+      },
+      "todo": {
+        "done": {
+          "label": "Tick off task",
+          "confirm": "“{name}” done?",
+          "button": "Done",
+          "done": "Task ticked off"
+        }
+      }
+    },
+    "scan": {
+      "loading": "Loading tag …",
+      "household": "Household: {name}",
+      "cancel": "Cancel",
+      "slot": "Meal",
+      "slotMorning": "Morning",
+      "slotEvening": "Evening",
+      "lastFed": "Last fed: {when}",
+      "lastFedBy": "Last fed: {when} by {name}",
+      "neverFed": "No feeding logged yet",
+      "fedToday": "Today: morning {morning} · evening {evening}",
+      "pet": "Pet: {name}",
+      "dueDate": "Due: {date}",
+      "assignedTo": "Assigned to: {name}",
+      "lastDone": "Last done: {date}",
+      "lastDoneBy": "Last done: {date} by {name}",
+      "nextDue": "Next due: {date}",
+      "success": "Done!",
+      "successNoChange": "Already done — nothing changed.",
+      "toDashboard": "Go to home",
+      "openModule": "View",
+      "retry": "Try again",
+      "errors": {
+        "not_found": "This tag does not exist (anymore). It may have been deleted or its token regenerated.",
+        "target_missing": "The target of this tag was deleted. An admin can reassign the tag.",
+        "forbidden": "This tag belongs to a household you are not a member of.",
+        "disabled": "This tag is disabled. An admin can re-enable it under “Manage tags”.",
+        "unsupported": "This action is not supported by the app.",
+        "already_done": "Already done — a feeding is already logged for this meal.",
+        "nothing_to_do": "There is nothing to do for this right now.",
+        "rate_limited": "Too many scans in a short time. Please wait a minute.",
+        "offline": "No connection to the server.",
+        "unknown": "Something went wrong."
+      },
+      "reasons": {
+        "ALREADY_FED": "Already fed for this meal.",
+        "ALREADY_DONE": "Already done.",
+        "NOTHING_DUE": "Nothing is due right now.",
+        "CHORE_INACTIVE": "This chore is paused.",
+        "NO_PETS": "There are no pets in this household.",
+        "UNKNOWN": "Not possible right now."
+      }
+    }
   }
 }

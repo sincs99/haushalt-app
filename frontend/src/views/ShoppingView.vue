@@ -60,7 +60,12 @@ const totalOpenCount = computed(() =>
 onMounted(async () => {
   await shoppingStore.fetchLists()
   shoppingStore.fetchItems()
-  if (route.query.new === '1') {
+  // ?list=<id> kommt von einem Einkaufslisten-Tag (NFC/QR)
+  const listId = typeof route.query.list === 'string' ? route.query.list : null
+  if (listId && shoppingStore.lists.some(l => l.id === listId)) {
+    shoppingStore.setActiveList(listId)
+  }
+  if (route.query.new === '1' || listId) {
     router.replace({ query: {} })
   }
 })

@@ -12,6 +12,7 @@ from starlette.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.log_redaction import install_tag_token_redaction
 from app.core.rate_limit import limiter
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import SessionLocal
@@ -35,6 +36,7 @@ from app.routers import (
     recurring_bills,
     settlements,
     shopping,
+    tags,
     tasks,
     todos,
 )
@@ -43,6 +45,9 @@ from app.services.push_service import scheduler_loop
 from app.socket_manager import set_event_loop, socket_app
 
 logger = logging.getLogger("uvicorn.error")
+
+# Tag-Tokens (NFC/QR) stehen im URL-Pfad → in Access-Logs schwärzen
+install_tag_token_redaction()
 
 _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 
@@ -181,6 +186,8 @@ app.include_router(notes.router)
 app.include_router(files.router)
 app.include_router(documents.router)
 app.include_router(push.router)
+app.include_router(tags.router)
+app.include_router(tags.scan_router)
 
 # Socket.IO unter /socket.io mounten
 app.mount("/socket.io", socket_app)

@@ -16,7 +16,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
-import { PhUserMinus, PhSignOut, PhPlus, PhShareNetwork } from '@phosphor-icons/vue'
+import { PhUserMinus, PhSignOut, PhPlus, PhShareNetwork, PhQrCode } from '@phosphor-icons/vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 import PushSettings from '../components/PushSettings.vue'
 
@@ -483,6 +483,16 @@ watch(() => authStore.currentHouseholdId, () => {
           {{ $t('household.createNewTitle') }}
         </BaseButton>
       </div>
+    </BaseCard>
+
+    <!-- ══ Sektion: Tags (NFC/QR) ══ -->
+    <BaseCard>
+      <h2 class="section-title">{{ $t('tags.title') }}</h2>
+      <p class="section-hint">{{ $t('tags.householdHint') }}</p>
+      <BaseButton variant="secondary" size="sm" @click="router.push('/tags')">
+        <PhQrCode :size="16" />
+        {{ $t('tags.manage') }}
+      </BaseButton>
     </BaseCard>
 
     <!-- ══ Sektion: App ══ -->

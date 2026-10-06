@@ -2,7 +2,7 @@
 
 **Datum:** 2026-10-05
 **Reviewer:** Security-Review Agent
-**Status:** ✅ Umgesetzt (Header, CORS, Rate-Limits, Upload-Formate, CI-Audit) — ⚠️ offen: Token-Storage (Vorschlag). Dependency-Updates (H-10) sind seit #14 eingespielt, H-11 seit #8 behoben (Stand 2026-10-06)
+**Status:** ✅ Umgesetzt (Header, CORS, Rate-Limits, Upload-Formate, CI-Audit). Dependency-Updates (H-10) sind seit #14 eingespielt, H-11 seit #8 behoben, H-01 (Refresh-Token als HttpOnly-Cookie) mit Branch `claude/refresh-token-httponly-cookie` (Stand 2026-10-06)
 **Branch:** `claude/security-hardening`
 **Scope:** Auth-Token-Lifecycle, HTTP-Security-Header + CORS, Rate-Limiting, Dependency-Audit
 
@@ -22,7 +22,7 @@
 | `backend/app/socket_manager.py` | Socket.IO-Auth, Engine.IO-CORS |
 | `backend/Dockerfile` | uvicorn `--proxy-headers`, Worker-Anzahl |
 | `frontend/nginx.conf` | Statische Auslieferung, Reverse-Proxy |
-| `frontend/src/services/tokenStorage.ts` | Token-Persistenz (localStorage) |
+| `frontend/src/services/tokenStorage.ts` | Token-Persistenz (localStorage; seit H-01 nur Sitzungs-Marker + Migration) |
 | `frontend/src/stores/auth.ts`, `frontend/src/api/client.ts` | Refresh-Flow, Interceptors |
 | `frontend/vite.config.ts`, `frontend/public/push-sw.js` | PWA / Service Worker |
 | `.github/workflows/ci.yml` | CI |
@@ -33,9 +33,9 @@
 
 | # | Schweregrad | Finding | Status |
 |---|---|---|---|
-| H-01 | 🟡 Mittel | Refresh-Token (30 Tage) liegt in `localStorage` → per XSS exfiltrierbar | 📝 Vorschlag (siehe unten) |
+| H-01 | 🟡 Mittel | Refresh-Token (30 Tage) liegt in `localStorage` → per XSS exfiltrierbar | ✅ Behoben (HttpOnly-Cookie + CSRF-Header, siehe unten) |
 | H-02 | 🟡 Mittel | Keine HTTP-Security-Header (CSP, nosniff, Frame-Schutz, Referrer-Policy) — weder nginx noch API | ✅ Behoben |
-| H-03 | 🟢 Gering | CORS: `allow_credentials=True` + `allow_methods/headers=["*"]`, obwohl keine Cookies verwendet werden | ✅ Behoben |
+| H-03 | 🟢 Gering | CORS: `allow_credentials=True` + `allow_methods/headers=["*"]`, obwohl keine Cookies verwendet werden | ✅ Behoben; mit H-01 wieder `allow_credentials=True`, aber nur für explizite Origins (Startup-Check gegen `*`) |
 | H-04 | 🟡 Mittel | `POST /api/households/join` ohne Rate-Limit → Invite-Code-Brute-Force | ✅ Behoben |
 | H-05 | 🟢 Gering | `/api/auth/refresh` und `/api/auth/logout` ohne Rate-Limit | ✅ Behoben |
 | H-06 | 🟢 Gering | Login: Timing verrät, ob eine E-Mail registriert ist (bcrypt nur bei existierendem User) | ✅ Behoben |
@@ -61,6 +61,7 @@ Die geforderten **kurzlebigen Access-Tokens mit Refresh-Token-Rotation existiere
 - **Rotation** bei jedem `/refresh`, `replaced_by_id`-Kette, **Reuse-Detection** (Wiederverwendung eines rotierten Tokens revoked alle Tokens des Users) mit 30-s-Grace-Window für parallele Tabs.
 - Logout revoked serverseitig; Lazy-Cleanup abgelaufener Tokens.
 - Frontend: Single-Flight-Refresh, Cross-Tab-Sync über `storage`-Event.
+- Seit H-01: Refresh-Token im Web-Build als HttpOnly-Cookie (siehe unten), Access-Token nur im Speicher.
 
 Eine Neuimplementierung war daher nicht nötig. Ergänzt wurde (H-05/H-06/H-07):
 
@@ -78,31 +79,52 @@ Beim Zusammenführen mit der Dokument-Ablage (`DocumentsView.vue`) zeigte sich i
 - Bekannte Einschränkung: In der Werkzeugleiste des eingebetteten Betrachters fehlen unter der CSP die Schaltflächen „Drucken" und „Mehr". Die Ursache liegt nicht an Styles (auch mit `style-src 'unsafe-inline'` fehlen sie). Die App bietet einen eigenen Download-Button. Nicht weiter untersucht.
 - Geprüft wurden nur `/documents` (inkl. Vorschau) und `/shopping`; weitere Seiten wurden nicht gegen die CSP getestet.
 
-### H-01 — Refresh-Token in `localStorage` (🟡 Mittel, Vorschlag)
+### H-01 — Refresh-Token in `localStorage` (🟡 Mittel, ✅ Behoben)
 
-**Risiko:** Jedes XSS kann `localStorage.haushalt_tokens` lesen und erhält damit einen **30 Tage gültigen** Refresh-Token, der auch nach Schliessen des Tabs weiter rotiert werden kann. Die Reuse-Detection greift erst, wenn der legitime Client den gestohlenen (bereits rotierten) Token erneut benutzt — der Angreifer kann also bis zur nächsten Rotation durch den Nutzer weiterarbeiten.
+**Risiko (vorher):** Jedes XSS konnte `localStorage.haushalt_tokens` lesen und erhielt damit einen **30 Tage gültigen** Refresh-Token, der auch nach Schliessen des Tabs weiter rotiert werden konnte. Die Reuse-Detection griff erst, wenn der legitime Client den gestohlenen (bereits rotierten) Token erneut benutzte.
 
-**Mitigation durch diesen Branch:** Die neue strikte CSP (`script-src 'self'`, kein `unsafe-inline`/`unsafe-eval`) macht XSS deutlich schwerer ausnutzbar — sie ist die wichtigste Verteidigung, solange Tokens in JS-zugänglichem Storage liegen.
+**Umsetzung (Branch `claude/refresh-token-httponly-cookie`, Web-PWA):**
 
-**Warum nicht in diesem Branch umgesetzt:** Ein HttpOnly-Cookie ändert den Vertrag von `/login`, `/register`, `/refresh` und `/logout`, erfordert CSRF-Schutz, berührt Auth-Store, API-Client, Cross-Tab-Sync, alle Auth-Tests (Backend + Frontend) und kollidiert mit dem geplanten Capacitor-Build (`tokenStorage.ts`-TODO: SecureStorage, dort gibt es keine Cookies im gleichen Sinn). Ein halber Umbau wäre schlechter als der jetzige, konsistente Zustand.
+*Backend (`backend/app/routers/auth.py`)*
 
-**Konkreter Vorschlag (Web-Build), abwärtskompatibel in zwei Releases:**
+- Der Web-Client weist sich bei allen Auth-Requests mit dem Header **`X-Requested-With: casa`** aus. Nur dann liefert das Backend den Refresh-Token als Cookie **`casa_rt`** mit `HttpOnly; SameSite=Strict; Path=/api/auth; Max-Age=<REFRESH_TOKEN_EXPIRE_DAYS>` und `Secure` in Produktion (`ENVIRONMENT=production`, überschreibbar per `AUTH_COOKIE_SECURE`). Der Body enthält dann `refresh_token: null`; der **Access-Token bleibt im Body** und wird weiter als `Authorization: Bearer` gesendet (auch für Socket.IO `auth.token`).
+- `/refresh` und `/logout` lesen den Token **aus dem Body (Vorrang) oder dem Cookie**. `RefreshRequest.refresh_token`/`LogoutRequest.refresh_token` sind optional, ein leerer Body genügt. Rotation, `replaced_by_id`-Kette, Grace-Window und Reuse-Detection sind unverändert; sie laufen auf demselben Hash wie vorher.
+- Jede 401-Antwort auf einen Cookie-Refresh (ungültig, abgelaufen, Reuse) und jeder Logout löschen den Cookie (`Max-Age=0`), damit der Browser keinen toten Token mehr mitschickt.
+- Clients **ohne** den Header (Swagger-UI `/docs` → „Authorize“, künftige native Builds) bekommen den Token wie bisher im Body und setzen keinen Cookie. Der Body-Pfad dient ausserdem der **einmaligen Migration** alter `localStorage`-Tokens (Body-Token + Header → Antwort als Cookie).
+- Keine Alembic-Migration nötig; `refresh_tokens` ist unverändert.
 
-1. **Backend (Release 1, additiv):**
-   - `_create_token_pair` setzt zusätzlich `Set-Cookie: casa_rt=<refresh>; HttpOnly; Secure; SameSite=Strict; Path=/api/auth; Max-Age=2592000`.
-   - `/refresh` und `/logout` akzeptieren den Token **aus dem Body ODER dem Cookie** (Body hat Vorrang → native Clients unverändert). `RefreshRequest.refresh_token` wird optional.
-   - CSRF: `SameSite=Strict` + Pfad `/api/auth` + Pflicht-Header `X-Requested-With: casa` (nicht CORS-safelisted → erzwingt Preflight, den fremde Origins nicht bestehen) für Cookie-basierte Requests. Für Cross-Origin-Dev (`VITE_API_URL`) müsste `allow_credentials=True` wieder aktiviert werden — Empfehlung: Dev über den Vite-Proxy (same-origin) laufen lassen.
-   - `/logout` löscht den Cookie (`Max-Age=0`).
-   - Tests: Cookie gesetzt (Flags!), Refresh nur per Cookie, Body-Refresh weiterhin möglich, Refresh ohne Pflicht-Header → 403, Logout löscht Cookie.
-2. **Frontend (Release 2):**
-   - `TokenStorage`-Interface behalten; neue Web-Implementierung `MemoryAccessTokenStorage`: Access-Token nur im Speicher, `refreshToken` = Platzhalter, kein `localStorage` mehr.
-   - Boot: `initialize()` ruft immer `/refresh` (Cookie) statt Tokens aus `localStorage` zu lesen.
-   - Cross-Tab: `storage`-Event durch `BroadcastChannel('casa-auth')` (logout/refreshed) ersetzen.
-   - Einmalige Migration: vorhandenen `haushalt_tokens`-Eintrag beim ersten Start per Body-Refresh gegen Cookie tauschen, dann löschen.
-   - Capacitor: bestehende Body-Variante + SecureStorage-Implementierung des Interfaces.
-3. **Release 3:** Body-Variante für Web-Origin deaktivieren (optional, nur wenn kein nativer Client mehr Body nutzt).
+*CSRF-Schutz — Wahl: Pflicht-Header statt Double-Submit-Token*
 
-**Aufwand:** ca. 1–1.5 Tage inkl. Tests. Keine Alembic-Migration nötig (Tabelle `refresh_tokens` bleibt unverändert).
+- Für `/refresh` und `/logout` ist der Header `X-Requested-With: casa` **Pflicht, sobald der Token aus dem Cookie gelesen würde** (sonst 403 `CSRF_HEADER_MISSING`, der Token wird nicht angefasst). Wird der Token im Body mitgegeben, braucht es keinen Header — wer den Token kennt, ist kein CSRF-Angreifer.
+- Begründung: Der Header ist nicht CORS-safelisted. HTML-Formulare können ihn nicht setzen, und `fetch`/XHR von einem fremden Origin löst einen Preflight aus, den nur die in `CORS_ORIGINS` konfigurierten Origins bestehen (Test `test_foreign_origin_preflight_with_csrf_header_rejected`). Ein Double-Submit-Token hätte entweder einen zweiten, für JS lesbaren Cookie oder eine Token-Auslieferung im Body gebraucht, also zusätzlichen Zustand ohne Sicherheitsgewinn gegenüber dem Header, denn beide Verfahren setzen voraus, dass der Angreifer keinen Code auf unserem Origin ausführt. Dazu kommen `SameSite=Strict` (Browser schickt den Cookie bei cross-site Requests gar nicht) und `Path=/api/auth` (Cookie geht nie an andere Endpunkte mit).
+- Login und Register verlangen den Header **nicht**: Sie konsumieren keinen Cookie, und Swagger-UI postet das Login-Formular ohne eigene Header. Ein „Login-CSRF“ (Angreifer meldet das Opfer im eigenen Konto an) ist damit theoretisch möglich, scheitert aber am Preflight für die Cookie-Auslieferung (ohne Header kein Cookie) — akzeptiert.
+
+*CORS (`backend/app/main.py`, Rückblick auf H-03)*
+
+- `allow_credentials=True` ist wieder nötig, damit der Browser den Cookie im Cross-Origin-Dev-Setup (`VITE_API_URL`) annimmt und mitschickt. Erlaubt sind weiterhin nur die expliziten Origins aus `CORS_ORIGINS`; `X-Requested-With` steht in `allow_headers`. Ein `*` in `CORS_ORIGINS` würde Starlette mit Credentials jeden Origin spiegeln lassen und bricht deshalb den Start ab (`test_wildcard_cors_origin_prevents_startup`).
+- In Produktion ist alles same-origin (nginx-Proxy), `SameSite=Strict` greift ohne Ausnahme. Empfehlung für die Entwicklung bleibt der Vite-Proxy (same-origin). `localhost:5173 → localhost:8000` ist ohnehin *same-site* (Ports zählen nicht), der Cookie funktioniert dort auch ohne Proxy.
+
+*Frontend (`frontend/src/stores/auth.ts`, `api/client.ts`, `services/tokenStorage.ts`)*
+
+- Der Access-Token lebt nur im Pinia-Store. Login, Register, Refresh und Logout nutzen `authRequestConfig()` (`withCredentials: true` + CSRF-Header). Der 401-Interceptor und der Socket.IO-Aufbau sind unverändert, sie arbeiten weiter mit dem Access-Token aus dem Store.
+- `initialize()` holt den Access-Token beim Start per Cookie-Refresh. Ein **Sitzungs-Marker** `haushalt_session=1` in `localStorage` (kein Geheimnis) entscheidet, ob sich der Versuch lohnt, und ersetzt das frühere `storage`-Event auf `haushalt_tokens` für den **Cross-Tab-Sync**: Logout in einem Tab löscht den Marker, die anderen Tabs verwerfen ihren Access-Token und gehen zu `/login`; Login in einem Tab setzt den Marker, ausgeloggte Tabs übernehmen die Sitzung per Cookie-Refresh. Einen Abgleich des Refresh-Tokens zwischen Tabs braucht es nicht mehr, alle Tabs teilen sich den Cookie (das Grace-Window fängt gleichzeitige Refreshes ab).
+- **Migration:** Ein vorhandener `haushalt_tokens`-Eintrag wird beim ersten Start gelesen, gelöscht und sein Refresh-Token einmalig per Body gegen den Cookie getauscht. Bestehende Sitzungen bleiben also erhalten; danach steht kein Token mehr in `localStorage`.
+- **Offline-Start:** Schlägt der Start-Refresh mit einem Netzwerkfehler fehl, zeigt die App die Shell weiter („offline eingeloggt“, wie bisher), hat aber keinen Access-Token; der erste 401 nach Rückkehr des Netzes holt ihn nach.
+
+*nginx (`frontend/nginx.conf`)*
+
+- `proxy_pass` reicht `Set-Cookie` unverändert durch; es gibt kein `proxy_hide_header`, `proxy_cookie_path` oder `proxy_ignore_headers`. Der Pfad `/api/auth` bleibt erhalten. Dokumentiert als Kommentar in der Location `/api/`.
+
+**Restrisiko / Bewertung:** XSS kann weiterhin den Access-Token (15 Min.) aus dem Speicher nehmen und, solange die Seite offen ist, selbst `/refresh` aufrufen — den Refresh-Token sieht es aber nie, die Session endet also mit dem Tab bzw. nach 15 Minuten statt nach 30 Tagen. Die strikte CSP (H-02) bleibt die erste Verteidigungslinie.
+
+**Was ein nativer Build (Capacitor) später bräuchte:** Kein Browser-Cookie-Jar im selben Sinn, daher die vom Backend weiterhin unterstützte Body-Variante (Requests ohne `X-Requested-With: casa`) plus eine SecureStorage-Implementierung im Client, die den Refresh-Token hält und beim Start per Body-Refresh einlöst. Die Web-Variante bleibt davon unberührt.
+
+**Vom Betreiber zu prüfen (Deployment hinter Nginx Proxy Manager):**
+
+- `ENVIRONMENT=production` in `.env.prod` (setzt `Secure`). Nur ohne TLS testen mit `AUTH_COOKIE_SECURE=false`.
+- NPM reicht `Set-Cookie` standardmässig durch; eine „Advanced“-Konfiguration darf `Set-Cookie` nicht filtern oder umschreiben (`proxy_cookie_path`/`proxy_cookie_domain`).
+- HSTS in NPM aktivieren („HSTS enabled“), damit der `Secure`-Cookie nie über HTTP angefordert wird.
+- Nach dem Deploy: Login im Browser → DevTools → Application → Cookies: `casa_rt` mit HttpOnly, Secure, SameSite=Strict, Path `/api/auth`; `localStorage` enthält kein `haushalt_tokens` mehr (nur `haushalt_session`, `haushalt_household_id` und UI-Präferenzen).
 
 **Weitere Empfehlungen Token-Lifecycle:**
 - Absolute Session-Obergrenze: derzeit verlängert jede Rotation die Laufzeit um 30 Tage (Sliding Window). Ein `session_started_at`/`family_id` auf `refresh_tokens` (Alembic-Migration) würde eine Höchstdauer (z. B. 90 Tage) und gezieltes Revoken einer Session-Familie statt *aller* Sessions erlauben.
@@ -154,12 +176,12 @@ Der CSP-Test fand genau einen Verstoss: `GET /api/households/{id}/recurring-bill
 
 `nginx.conf` setzt `X-Forwarded-Proto $scheme`; hinter NPM ist das `http`. uvicorn (`--proxy-headers`) hält die Requests daher für HTTP und erzeugt `http://`-Redirect-URLs (Ursache von H-09). Empfehlung: in `location /api/` und `/socket.io/` den Header von NPM durchreichen (`map $http_x_forwarded_proto $fwd_proto { default $http_x_forwarded_proto; "" $scheme; }`) — nicht in diesem Branch geändert, weil es das Deployment-Setup betrifft und lokal nicht verifizierbar ist.
 
-### H-03 — CORS (✅ Behoben)
+### H-03 — CORS (✅ Behoben, mit H-01 angepasst)
 
-- `allow_credentials=False`: Auth läuft ausschliesslich über den `Authorization`-Header, es gibt keine Cookies. (Beim Cookie-Vorschlag aus H-01 wieder zu prüfen.)
-- `allow_methods` explizit (`GET, POST, PUT, PATCH, DELETE, OPTIONS`), `allow_headers` explizit (`Authorization, Content-Type, Accept, Accept-Language`).
+- Ursprünglich `allow_credentials=False`, weil Auth ausschliesslich über den `Authorization`-Header lief. **Seit H-01** ist `allow_credentials=True` wieder nötig (Refresh-Cookie mit `withCredentials`), aber nur für die explizit konfigurierten Origins; ein `*` in `CORS_ORIGINS` bricht den Start ab.
+- `allow_methods` explizit (`GET, POST, PUT, PATCH, DELETE, OPTIONS`), `allow_headers` explizit (`Authorization, Content-Type, Accept, Accept-Language, X-Requested-With`).
 - Produktion ist same-origin (nginx-Proxy), CORS greift nur im Dev-Setup. Socket.IO: Engine.IO-CORS ist deaktiviert und läuft über dieselbe Middleware — unverändert korrekt.
-- Tests: erlaubter Origin, fremder Origin, unbekannter Header, kein `Access-Control-Allow-Credentials`.
+- Tests: erlaubter Origin (mit `Allow-Credentials: true`), CSRF-Header im Preflight erlaubt, fremder Origin (auch mit CSRF-Header) ohne `Allow-Origin`, unbekannter Header abgelehnt.
 
 ---
 
@@ -219,9 +241,20 @@ Neuer CI-Job `dependency-audit` in `.github/workflows/ci.yml`: eigener Job ohne 
 
 ## Neue/geänderte Tests
 
-`backend/tests/test_security_hardening.py` (25 Tests):
+`backend/tests/test_auth_cookie.py` (H-01, 26 Tests):
+- Login/Register setzen `casa_rt` mit HttpOnly, SameSite=Strict, Path, Max-Age; `Secure` nur in production bzw. per `AUTH_COOKIE_SECURE`; Body ohne Refresh-Token; ohne Header weiterhin Body-Token und kein Cookie
+- Refresh per Cookie rotiert und setzt den neuen Cookie; leerer Body; Cookie ohne CSRF-Header → 403 und Token unberührt; falscher Header-Wert → 403; kein Token → 401; ungültiger Cookie → 401 + Cookie gelöscht; Body-Refresh ohne Cookie; Migration Body-Token + Header → Cookie; Body hat Vorrang vor Cookie
+- Grace-Window für zweiten Tab und Reuse-Detection (alle Sessions weg, Cookie gelöscht) über Cookies
+- Logout per Cookie (revoked + löscht), ohne Body, ohne Header → 403, idempotent ohne Cookie, Body-Logout ohne Header
+- Access-Token aus dem Cookie-Flow authentifiziert `/me`; `Cache-Control: no-store` auf allen Cookie-Responses
+
+`backend/tests/test_startup_config.py`: Wildcard in `CORS_ORIGINS` erkannt und verhindert den Start.
+
+`frontend/src/stores/__tests__/auth.test.ts` (22 Tests): Start ohne/mit Sitzungs-Marker, Migration alter `localStorage`-Tokens (auch unlesbar), Refresh 401 → ausgeloggt, Netzwerkfehler → offline eingeloggt, Single-Flight, Login/Register mit `withCredentials` + CSRF-Header, Logout (Backend-Call per Cookie, Fehlerfall, Single-Flight), Cross-Tab-Logout/-Login über den Marker.
+
+`backend/tests/test_security_hardening.py` (27 Tests):
 - Security-Header auf 200/401/429, keine API-CSP auf `/docs`, `no-store` auf Auth-Responses
-- CORS: erlaubter/fremder Origin, unbekannter Header, keine Credentials
+- CORS: erlaubter/fremder Origin (auch mit CSRF-Header), unbekannter Header, Credentials nur für erlaubte Origins
 - Rate-Limit registriert auf login/register/refresh/logout/join; Verhalten (429 + `RATE_LIMITED`) für join, refresh, logout
 - JWT ohne `exp`, ohne `sub`, `alg=none` → 401
 - Login mit unbekannter E-Mail führt Passwort-Vergleich aus
@@ -231,11 +264,11 @@ Neuer CI-Job `dependency-audit` in `.github/workflows/ci.yml`: eigener Job ohne 
 
 ## Gesamtbewertung
 
-Die Auth-Architektur (kurzlebige JWTs, gehashte opake Refresh-Tokens, Rotation mit Reuse-Detection) ist solide und war bereits umgesetzt. Die grössten Lücken lagen in fehlenden HTTP-Security-Headern und einem ungeschützten Join-Endpoint — beides ist behoben, und die strikte CSP verringert das Hauptrisiko des localStorage-Token-Storage erheblich.
+Die Auth-Architektur (kurzlebige JWTs, gehashte opake Refresh-Tokens, Rotation mit Reuse-Detection) ist solide und war bereits umgesetzt. Die grössten Lücken lagen in fehlenden HTTP-Security-Headern und einem ungeschützten Join-Endpoint — beides ist behoben. Mit H-01 liegt der langlebige Refresh-Token nun in einem HttpOnly-Cookie, XSS kommt nur noch an den 15-Minuten-Access-Token; die strikte CSP bleibt die erste Verteidigungslinie.
 
 **Als Nächstes empfohlen (Reihenfolge):**
 1. ✅ **Umgesetzt mit #14:** Pillow 12.3.0, PyJWT 2.15.0, urllib3 2.8.0, Werkzeug 3.1.9, multidict 6.9.1, cryptography 50.0.0 sowie `npm audit fix` (axios 1.20.0 u. a.). Offen: `dependency-audit` als Required Check einstellen.
-2. **H-01:** HttpOnly-Refresh-Cookie gemäss Vorschlag oben (2 Releases).
+2. ✅ **H-01** umgesetzt (HttpOnly-Refresh-Cookie, CSRF-Header, Migration in einem Release). Offen: Betreiber-Checks oben (HSTS, `ENVIRONMENT=production`).
 3. ✅ **H-11** durch #8 behoben. Offen: HSTS in NPM aktivieren.
 4. **H-12/H-14:** Invite-Code-Rotation, Upload-Rate-Limit/Quota.
 5. CSP-Monitoring: optional `report-to`-Endpoint, um Violations aus dem Feld zu sehen.

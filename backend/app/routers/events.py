@@ -1,14 +1,16 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import Calendar, Event, HouseholdMember
+from app.models import Calendar, Event, Household, HouseholdMember
+from app.services.event_times import household_tz, range_bounds, to_household_time, to_utc
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -80,6 +82,19 @@ class EventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+def _tz(db: Session, household_id: uuid.UUID):
+    household = db.get(Household, household_id)
+    return household_tz(household.timezone if household else None)
+
+
+def _event_response(event: Event, tz) -> EventResponse:
+    """Response mit Zeiten in Haushaltszeit (Offset des Haushalts statt UTC)."""
+    response = EventResponse.model_validate(event)
+    response.starts_at = to_household_time(event.starts_at, tz)
+    response.ends_at = to_household_time(event.ends_at, tz)
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
@@ -96,21 +111,26 @@ router = APIRouter(
 @router.get("/", response_model=list[EventResponse])
 def list_events(
     household_id: uuid.UUID,
-    from_date: datetime = Query(...),
-    to_date: datetime = Query(...),
+    # Reines Datum = ganzer Tag in Haushaltszeit (to_date inklusive)
+    from_date: date | datetime = Query(...),
+    to_date: date | datetime = Query(...),
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    return (
+    tz = _tz(db, household_id)
+    range_start, range_end = range_bounds(from_date, to_date, tz)
+    events = (
         db.query(Event)
         .filter(
             Event.household_id == household_id,
-            Event.starts_at >= from_date,
-            Event.starts_at <= to_date,
+            Event.starts_at < range_end,
+            # Mehrtägige Termine, die vor dem Bereich beginnen, aber hineinreichen
+            func.coalesce(Event.ends_at, Event.starts_at) >= range_start,
         )
         .order_by(Event.starts_at.asc())
         .all()
     )
+    return [_event_response(e, tz) for e in events]
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +143,10 @@ def create_event(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    if body.ends_at is not None and body.ends_at < body.starts_at:
+    tz = _tz(db, household_id)
+    starts_at = to_utc(body.starts_at, tz)
+    ends_at = to_utc(body.ends_at, tz) if body.ends_at is not None else None
+    if ends_at is not None and ends_at < starts_at:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=error_detail(ErrorCode.EVENT_END_BEFORE_START, "ends_at must not be before starts_at"),
@@ -141,8 +164,8 @@ def create_event(
         household_id=household_id,
         calendar_id=body.calendar_id,
         title=body.title,
-        starts_at=body.starts_at,
-        ends_at=body.ends_at,
+        starts_at=starts_at,
+        ends_at=ends_at,
         all_day=body.all_day,
         participant_ids=[str(pid) for pid in body.participant_ids],
         note=body.note,
@@ -152,12 +175,13 @@ def create_event(
     db.commit()
     db.refresh(event)
 
+    response = _event_response(event, tz)
     emit_to_household_sync(
         str(household_id),
         "event_created",
-        EventResponse.model_validate(event).model_dump(mode="json"),
+        response.model_dump(mode="json"),
     )
-    return event
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +200,7 @@ def get_event(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=error_detail(ErrorCode.EVENT_NOT_FOUND, "Event not found in this household"),
         )
-    return item
+    return _event_response(item, _tz(db, household_id))
 
 
 # ---------------------------------------------------------------------------
@@ -198,10 +222,14 @@ def update_event(
         )
 
     update_data = body.model_dump(exclude_unset=True)
+    tz = _tz(db, household_id)
+    for key in ("starts_at", "ends_at"):
+        if update_data.get(key) is not None:
+            update_data[key] = to_utc(update_data[key], tz)
 
-    # Bestimme die effektiven Werte (gesendet oder bestehend)
-    effective_starts = update_data.get("starts_at", item.starts_at)
-    effective_ends = update_data.get("ends_at", item.ends_at)
+    # Bestimme die effektiven Werte (gesendet oder bestehend), alles in UTC
+    effective_starts = update_data.get("starts_at") or to_household_time(item.starts_at, tz)
+    effective_ends = update_data["ends_at"] if "ends_at" in update_data else to_household_time(item.ends_at, tz)
 
     # Validierung nur wenn ends_at gesetzt ist (nicht None)
     if effective_ends is not None and effective_ends < effective_starts:
@@ -229,12 +257,13 @@ def update_event(
     db.commit()
     db.refresh(item)
 
+    response = _event_response(item, tz)
     emit_to_household_sync(
         str(household_id),
         "event_updated",
-        EventResponse.model_validate(item).model_dump(mode="json"),
+        response.model_dump(mode="json"),
     )
-    return item
+    return response
 
 
 # ---------------------------------------------------------------------------

@@ -8,11 +8,14 @@ import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatRappen, parseAmountToRappen } from '../utils/money'
 import { formatDate } from '../utils/dates'
+import { translateApiError } from '../utils/apiErrors'
+import { useAuthStore } from '../stores/auth'
 import { PhX } from '@phosphor-icons/vue'
-import type { Expense } from '../types'
+import type { Expense, PendingBillInfo } from '../types'
 import BalanceSummary from '../components/BalanceSummary.vue'
 import ExpenseFormDialog from '../components/ExpenseFormDialog.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
+import BaseDialog from '../components/ui/BaseDialog.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
@@ -137,20 +140,31 @@ const nextBillId = computed(() => {
 
 const bookingBillId = ref<string | null>(null)
 
-async function handleBookBill(billId: string) {
-  bookingBillId.value = billId
+// Buchen-Dialog: Zahler bestätigen oder ändern (Standard-Zahler der Rechnung vorausgewählt)
+const authStore = useAuthStore()
+const bookDialogBill = ref<PendingBillInfo | null>(null)
+const bookPayerId = ref('')
+
+function openBookDialog(bill: PendingBillInfo) {
+  const isMember = (id: string | null) => !!id && expensesStore.members.some(m => m.id === id)
+  bookPayerId.value = isMember(bill.paid_by_user_id)
+    ? bill.paid_by_user_id!
+    : authStore.user?.id ?? expensesStore.members[0]?.id ?? ''
+  bookDialogBill.value = bill
+}
+
+async function confirmBookBill() {
+  const bill = bookDialogBill.value
+  if (!bill || !bookPayerId.value) return
+  bookingBillId.value = bill.id
   try {
-    await financeStore.bookBill(billId)
+    await financeStore.bookBill(bill.id, bookPayerId.value)
+    bookDialogBill.value = null
     showToast(t('finance.billBooked'), 'success')
     // Refresh expenses too
     expensesStore.fetchExpenses()
   } catch (e: any) {
-    const msg = e.response?.data?.detail
-    if (typeof msg === 'string' && msg.includes('already booked')) {
-      showToast(t('finance.billAlreadyBooked'), 'error')
-    } else {
-      showToast(t('common.error'), 'error')
-    }
+    showToast(translateApiError(e), 'error')
   } finally {
     bookingBillId.value = null
   }
@@ -369,7 +383,7 @@ onMounted(() => {
               variant="primary"
               size="sm"
               :loading="bookingBillId === bill.id"
-              @click="handleBookBill(bill.id)"
+              @click="openBookDialog(bill)"
             >
               {{ $t('finance.book') }}
             </BaseButton>
@@ -505,6 +519,35 @@ onMounted(() => {
       v-model="showDialog"
       :expense="editingExpense"
     />
+  
+    <!-- Rechnung buchen: Zahler bestätigen -->
+    <BaseDialog
+      :open="!!bookDialogBill"
+      :title="$t('finance.bookBillTitle', { name: bookDialogBill?.name ?? '' })"
+      @close="bookDialogBill = null"
+    >
+      <div class="form-field">
+        <label class="form-label" for="book-payer">{{ $t('finance.paidBy') }}</label>
+        <select id="book-payer" v-model="bookPayerId" class="book-select">
+          <option v-for="m in expensesStore.members" :key="m.id" :value="m.id">
+            {{ m.display_name }}
+          </option>
+        </select>
+        <p class="section-sub">
+          {{ $t('finance.bookBillHint', { amount: bookDialogBill ? formatRappen(bookDialogBill.amount_rappen) : '' }) }}
+        </p>
+      </div>
+      <template #footer>
+        <BaseButton variant="secondary" @click="bookDialogBill = null">{{ $t('common.cancel') }}</BaseButton>
+        <BaseButton
+          :disabled="!bookPayerId"
+          :loading="!!bookDialogBill && bookingBillId === bookDialogBill.id"
+          @click="confirmBookBill"
+        >
+          {{ $t('finance.book') }}
+        </BaseButton>
+      </template>
+    </BaseDialog>
   </div>
 </template>
 
@@ -668,6 +711,26 @@ onMounted(() => {
 }
 
 /* ── Bills ── */
+.form-label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--ink);
+}
+
+.book-select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-family: inherit;
+  font-size: var(--text-base);
+  color: var(--ink);
+  background: var(--card);
+  margin: var(--space-1) 0 var(--space-2);
+}
+
 .bills-list {
   list-style: none;
   margin: 0;

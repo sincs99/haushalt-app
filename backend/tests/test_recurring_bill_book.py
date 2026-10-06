@@ -125,3 +125,22 @@ def test_bill_create_and_update_validate_payer(client, household_a, token_a, use
     assert updated.json()["paid_by_user_id"] == str(user_a2.id)
     summary = client.get(f"/api/households/{household_a.id}/finance-summary", headers=auth).json()
     assert {b["id"]: b["paid_by_user_id"] for b in summary["pending_bills"]}[bill_id] == str(user_a2.id)
+
+
+def test_booked_expense_of_custom_bill_is_even_and_editable(client, db, household_a, token_a, user_a, bill_a):
+    """Logik-Review L-02: Die Buchung verteilt immer gleichmässig auf alle Mitglieder.
+    Die Ausgabe muss das auch sagen, sonst lässt sich ihr Betrag später nicht mehr ändern."""
+    bill_a.split_type = "custom"
+    db.commit()
+    headers = {"Authorization": f"Bearer {token_a}"}
+    booked = client.post(f"/api/households/{household_a.id}/recurring-bills/{bill_a.id}/book", headers=headers)
+    assert booked.status_code == 201
+    assert booked.json()["split_type"] == "even"
+
+    edited = client.patch(
+        f"/api/households/{household_a.id}/expenses/{booked.json()['id']}",
+        headers=headers,
+        json={"amount_rappen": 160000},
+    )
+    assert edited.status_code == 200, edited.text
+    assert sum(s["amount_rappen"] for s in edited.json()["shares"]) == 160000

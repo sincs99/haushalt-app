@@ -269,7 +269,11 @@ def book_recurring_bill(
         amount_rappen=bill.amount_rappen,
         currency=household.currency,
         category=bill.category,
-        split_type=bill.split_type,
+        # Gebucht wird immer gleichmässig auf alle Mitglieder (siehe share_map oben);
+        # die Ausgabe muss das auch sagen, sonst lässt sich ihr Betrag später nicht
+        # ändern (custom verlangt Anteile im PATCH). RecurringBill.split_type hat
+        # keine Wirkung — Produktentscheidung E-5 in docs/qa/logic-review.md.
+        split_type="even",
         recurring_bill_id=bill.id,
         booked_month=first_of_month,
         expense_date=expense_date,

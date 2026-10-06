@@ -7,7 +7,6 @@ F-03: Inhaltsvalidierung (PDF Magic Bytes, nur erlaubte Bild-Decoder) + nosniff
 F-04: Content-Disposition ohne Header-Injection, Unicode via RFC 5987
 """
 
-import asyncio
 import io
 import uuid
 from unittest.mock import patch
@@ -72,7 +71,7 @@ class _EndlessUpload:
     def __init__(self):
         self.bytes_read = 0
 
-    async def read(self, size: int = -1) -> bytes:
+    def read(self, size: int = -1) -> bytes:
         self.bytes_read += size
         return b"x" * size
 
@@ -83,22 +82,14 @@ def test_read_upload_limited_aborts_early():
 
     upload = _EndlessUpload()
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(read_upload_limited(upload, max_size=MAX_FILE_SIZE))
+        read_upload_limited(upload, max_size=MAX_FILE_SIZE)
     assert exc.value.detail["code"] == "FILE_TOO_LARGE"
     assert upload.bytes_read <= MAX_FILE_SIZE + CHUNK_SIZE
 
 
-class _AsyncBytes:
-    def __init__(self, data: bytes):
-        self._buf = io.BytesIO(data)
-
-    async def read(self, size: int = -1) -> bytes:
-        return self._buf.read(size)
-
-
 def test_read_upload_limited_accepts_exact_limit():
     data = b"y" * (3 * CHUNK_SIZE)
-    result = asyncio.run(read_upload_limited(_AsyncBytes(data), max_size=len(data)))
+    result = read_upload_limited(io.BytesIO(data), max_size=len(data))
     assert result == data
 
 

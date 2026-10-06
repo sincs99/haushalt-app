@@ -11,7 +11,7 @@ from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import FeedingLog, Household, HouseholdMember, Medication, MedicationLog, Pet, PetCareTask, StoredFile
-from app.services.storage import LocalStorageService
+from app.routers.files import file_in_use, file_in_use_error, remove_from_storage
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -469,6 +469,11 @@ def update_pet(
                     "File not found, does not belong to this household, or is not an image",
                 ),
             )
+        # Datei darf nicht schon einem Dokument oder anderen Pet gehören,
+        # sonst löscht delete_pet später deren Datei mit
+        reference = file_in_use(db, [file_id], exclude_pet_id=pet_id)
+        if reference is not None:
+            raise file_in_use_error(reference)
 
     for key, value in update_data.items():
         setattr(pet, key, value)
@@ -494,11 +499,12 @@ def delete_pet(
 ):
     pet = _get_pet_or_404(db, pet_id, household_id)
 
-    # StoredFile-Referenz merken für späteres physisches Löschen
+    # StoredFile-Referenz merken für späteres physisches Löschen — nur wenn die
+    # Datei von nichts anderem (Dokument, anderes Pet) referenziert wird
     storage_path_to_delete = None
     if pet.photo_file_id:
-        stored_file = db.query(StoredFile).filter(StoredFile.id == pet.photo_file_id).first()
-        if stored_file:
+        stored_file = db.get(StoredFile, pet.photo_file_id)
+        if stored_file and file_in_use(db, [stored_file.id], exclude_pet_id=pet.id) is None:
             storage_path_to_delete = stored_file.storage_path
             db.delete(stored_file)
 
@@ -507,11 +513,7 @@ def delete_pet(
 
     # Best-effort: Physische Datei nach erfolgreichem Commit entfernen
     if storage_path_to_delete:
-        try:
-            _pet_storage = LocalStorageService()
-            _pet_storage.delete(storage_path_to_delete)
-        except Exception:
-            pass  # Best-effort cleanup
+        remove_from_storage(storage_path_to_delete)
 
     emit_to_household_sync(
         household_id,

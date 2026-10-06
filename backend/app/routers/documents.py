@@ -15,14 +15,16 @@ from typing import Literal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
-from app.models import Document, DocumentFile, HouseholdMember, Pet, StoredFile
+from app.models import Document, DocumentFile, HouseholdMember, StoredFile
 from app.routers.files import (
     StoredFileResponse,
+    file_in_use,
+    file_in_use_error,
     household_storage_quota,
     household_storage_used,
     remove_from_storage,
@@ -206,15 +208,9 @@ def _claim_files(db: Session, household_id: uuid.UUID, file_ids: list[uuid.UUID]
             ),
         )
 
-    in_use = (
-        db.query(DocumentFile.file_id).filter(DocumentFile.file_id.in_(file_ids)).first()
-        or db.query(Pet.id).filter(Pet.photo_file_id.in_(file_ids)).first()
-    )
-    if in_use is not None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail(ErrorCode.FILE_IN_USE, "File is already in use"),
-        )
+    reference = file_in_use(db, file_ids)
+    if reference is not None:
+        raise file_in_use_error(reference)
     return [by_id[fid] for fid in file_ids]
 
 
@@ -251,7 +247,9 @@ def list_documents(
 
     total = query.count()
     items = (
-        query.order_by(Document.created_at.desc(), Document.id)
+        # Seiten + Dateien in zwei Zusatz-Queries statt pro Dokument nachladen (N+1)
+        query.options(selectinload(Document.file_links).selectinload(DocumentFile.file))
+        .order_by(Document.created_at.desc(), Document.id)
         .offset(offset)
         .limit(limit)
         .all()
@@ -317,9 +315,13 @@ def create_document(
 
 # ---------------------------------------------------------------------------
 # POST /upload  — Dateien + Metadaten in einem Multipart-Request
+#
+# Für API-Clients mit wenigen Seiten. Der Request-Body ist durch nginx begrenzt
+# (client_max_body_size); große mehrseitige Dokumente seitenweise über /files
+# hochladen und per POST / mit file_ids anlegen (so macht es das Frontend).
 # ---------------------------------------------------------------------------
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
-async def upload_document(
+def upload_document(
     household_id: uuid.UUID,
     files: list[UploadFile] = File(...),
     title: str | None = Form(None),
@@ -356,7 +358,7 @@ async def upload_document(
     stored: list[StoredFile] = []
     try:
         for upload in files:
-            stored.append(await store_upload(db, household_id, membership.user_id, upload))
+            stored.append(store_upload(db, household_id, membership.user_id, upload))
         _append_files(doc, stored)
         db.add(doc)
         db.commit()

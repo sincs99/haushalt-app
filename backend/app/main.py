@@ -15,6 +15,7 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import SessionLocal
 from app.routers import auth, shopping, todos, households, expenses, settlements, chores, dashboard, tasks, budgets, recurring_bills, events, calendars, polls, pets, food, notes, files, push, documents
+from app.services.file_cleanup import cleanup_loop
 from app.services.push_service import scheduler_loop
 from app.socket_manager import socket_app, set_event_loop
 
@@ -70,8 +71,11 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Push notifications disabled (VAPID keys not configured)")
 
+    cleanup_task = asyncio.create_task(cleanup_loop())
+
     yield
 
+    cleanup_task.cancel()
     if push_task:
         push_task.cancel()
 

@@ -8,7 +8,8 @@ Max 10 MB. Bilder werden mit Pillow validiert und auf max 1600px verkleinert.
 import io
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from typing import BinaryIO
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -97,15 +98,17 @@ def content_disposition(name: str, disposition: str) -> str:
     return f"{disposition}; filename=\"{fallback}\"; filename*=UTF-8''{encoded}"
 
 
-async def read_upload_limited(file, max_size: int = MAX_FILE_SIZE) -> bytes:
+def read_upload_limited(file: BinaryIO, max_size: int = MAX_FILE_SIZE) -> bytes:
     """Liest den Upload in Chunks und bricht ab, sobald max_size überschritten ist.
 
     Verhindert, dass beliebig große Uploads komplett in den RAM geladen werden.
+    Synchron (auf UploadFile.file), damit Upload-Endpoints als `def` im
+    Threadpool laufen und Bildverarbeitung/DB-Zugriffe den Event-Loop nicht blockieren.
     """
     chunks: list[bytes] = []
     total_size = 0
     while True:
-        chunk = await file.read(CHUNK_SIZE)
+        chunk = file.read(CHUNK_SIZE)
         if not chunk:
             break
         total_size += len(chunk)
@@ -228,7 +231,7 @@ def check_storage_quota(db: Session, household_id: uuid.UUID, incoming_bytes: in
         )
 
 
-async def store_upload(
+def store_upload(
     db: Session, household_id: uuid.UUID, user_id: uuid.UUID, file: UploadFile
 ) -> StoredFile:
     """Liest, validiert und speichert einen Upload; legt den StoredFile-Eintrag an.
@@ -236,7 +239,7 @@ async def store_upload(
     Committet nicht — der Aufrufer entscheidet über die Transaktion.
     """
     # Chunk-basiertes Lesen mit frühzeitigem Abbruch (RAM-Exhaustion-Schutz)
-    raw_data = await read_upload_limited(file)
+    raw_data = read_upload_limited(file.file)
     processed_data, final_mime, ext = validate_upload(raw_data, file.content_type or "")
     check_storage_quota(db, household_id, len(processed_data))
     original_name = (file.filename or "upload")[:255]
@@ -259,6 +262,68 @@ async def store_upload(
     db.add(stored_file)
     db.flush()
     return stored_file
+
+
+def file_in_use(
+    db: Session, file_ids: list[uuid.UUID], exclude_pet_id: uuid.UUID | None = None
+) -> str | None:
+    """Prüft, ob eine der Dateien von einem Pet-Foto oder einem Dokument referenziert wird.
+
+    Gibt eine Beschreibung der ersten Referenz zurück (für die Fehlermeldung), sonst None.
+    Eine Datei gehört zu höchstens einem Dokument bzw. Pet — sonst würde das Löschen
+    des einen die Datei des anderen mitlöschen.
+    """
+    pet_query = db.query(Pet).filter(Pet.photo_file_id.in_(file_ids))
+    if exclude_pet_id is not None:
+        pet_query = pet_query.filter(Pet.id != exclude_pet_id)
+    pet_ref = pet_query.first()
+    if pet_ref is not None:
+        return f"pet '{pet_ref.name}'"
+
+    doc_ref = (
+        db.query(Document)
+        .join(DocumentFile, DocumentFile.document_id == Document.id)
+        .filter(DocumentFile.file_id.in_(file_ids))
+        .first()
+    )
+    if doc_ref is not None:
+        return f"document '{doc_ref.title}'"
+    return None
+
+
+def file_in_use_error(reference: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=error_detail(ErrorCode.FILE_IN_USE, f"File is referenced by {reference}"),
+    )
+
+
+# Hochgeladene, aber nie einem Pet oder Dokument zugeordnete Dateien (z.B. Tab
+# während eines mehrseitigen Uploads geschlossen) werden nach dieser Frist gelöscht
+ORPHAN_FILE_GRACE = timedelta(hours=24)
+
+
+def delete_orphan_files(db: Session, now: datetime | None = None) -> int:
+    """Löscht verwaiste StoredFiles (DB + Storage), die älter als ORPHAN_FILE_GRACE sind.
+
+    Gibt die Anzahl gelöschter Dateien zurück.
+    """
+    cutoff = (now or datetime.now(timezone.utc)) - ORPHAN_FILE_GRACE
+    orphans = (
+        db.query(StoredFile)
+        .filter(StoredFile.created_at < cutoff)
+        .filter(~db.query(Pet.id).filter(Pet.photo_file_id == StoredFile.id).exists())
+        .filter(~db.query(DocumentFile.file_id).filter(DocumentFile.file_id == StoredFile.id).exists())
+        .all()
+    )
+    paths = [f.storage_path for f in orphans]
+    for f in orphans:
+        db.delete(f)
+    db.commit()
+
+    for path in paths:
+        remove_from_storage(path)
+    return len(paths)
 
 
 def remove_from_storage(storage_path: str) -> None:
@@ -290,13 +355,13 @@ def file_response_headers(stored_file: StoredFile) -> dict[str, str]:
 
 # POST / — Datei hochladen
 @router.post("/", response_model=StoredFileResponse, status_code=status.HTTP_201_CREATED)
-async def upload_file(
+def upload_file(
     household_id: uuid.UUID,
     file: UploadFile = File(...),
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    stored_file = await store_upload(db, household_id, membership.user_id, file)
+    stored_file = store_upload(db, household_id, membership.user_id, file)
     db.commit()
     db.refresh(stored_file)
 
@@ -360,32 +425,10 @@ def delete_file(
             ),
         )
 
-    # Referenzprüfung: Wird die Datei von einem Pet referenziert?
-    pet_ref = db.query(Pet).filter(Pet.photo_file_id == file_id).first()
-    if pet_ref is not None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail(
-                ErrorCode.FILE_IN_USE,
-                f"File is referenced by pet '{pet_ref.name}'",
-            ),
-        )
-
-    # Referenzprüfung: Gehört die Datei zu einem Dokument? (Löschen über /documents)
-    doc_ref = (
-        db.query(Document)
-        .join(DocumentFile, DocumentFile.document_id == Document.id)
-        .filter(DocumentFile.file_id == file_id)
-        .first()
-    )
-    if doc_ref is not None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail(
-                ErrorCode.FILE_IN_USE,
-                f"File is referenced by document '{doc_ref.title}'",
-            ),
-        )
+    # Referenzprüfung: Pet-Foto oder Dokumentseite? (Löschen dann über /pets bzw. /documents)
+    reference = file_in_use(db, [file_id])
+    if reference is not None:
+        raise file_in_use_error(reference)
 
     # Pfad merken, dann DB-Eintrag zuerst löschen
     storage_path = stored_file.storage_path

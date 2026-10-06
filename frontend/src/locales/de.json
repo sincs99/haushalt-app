@@ -409,6 +409,10 @@
   "household": {
     "title": "Haushalt",
     "inviteCode": "Einladungscode",
+    "inviteValidUntil": "Gültig bis {date}",
+    "inviteExpired": "Dieser Einladungscode ist abgelaufen.",
+    "inviteExpiredAction": "Neuen Code erzeugen",
+    "inviteExpiredAskAdmin": "Bitte einen Admin, einen neuen Code zu erzeugen.",
     "inviteHint": "Teile diesen Code, damit andere deinem Haushalt beitreten können:",
     "copyCode": "Kopieren",
     "codeCopied": "Invite-Code kopiert!",
@@ -474,6 +478,7 @@
     "INVALID_CREDENTIALS": "Ungültige Anmeldedaten",
     "EMAIL_ALREADY_REGISTERED": "Diese E-Mail ist bereits registriert",
     "NOT_HOUSEHOLD_MEMBER": "Du bist kein Mitglied dieses Haushalts",
+    "INVITE_CODE_EXPIRED": "Einladungscode abgelaufen – bitte einen neuen Code anfordern",
     "INVITE_CODE_NOT_FOUND": "Einladungscode nicht gefunden",
     "ALREADY_MEMBER": "Du bist bereits Mitglied dieses Haushalts",
     "EXPENSE_NOT_FOUND": "Ausgabe nicht gefunden",

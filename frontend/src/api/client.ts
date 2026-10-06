@@ -1,10 +1,30 @@
-import axios from 'axios'
+import axios, { type AxiosRequestConfig } from 'axios'
 
 export const API_BASE = import.meta.env.VITE_API_URL || ''
 
 const api = axios.create({
   baseURL: API_BASE,
 })
+
+/**
+ * Kennzeichnet Auth-Requests als Aufruf des Web-Clients. Das Backend liefert den
+ * Refresh-Token dann als HttpOnly-Cookie statt im Body und verlangt den Header als
+ * CSRF-Schutz für /refresh und /logout (siehe backend/app/routers/auth.py).
+ */
+export const CSRF_HEADER_NAME = 'X-Requested-With'
+export const CSRF_HEADER_VALUE = 'casa'
+
+/**
+ * Request-Optionen für die Cookie-basierten Auth-Endpunkte (login, register, refresh,
+ * logout): Cookie mitsenden/annehmen (withCredentials — relevant, wenn die API im
+ * Dev-Setup auf einem anderen Origin läuft) plus CSRF-Header.
+ */
+export function authRequestConfig(extraHeaders: Record<string, string> = {}): AxiosRequestConfig {
+  return {
+    withCredentials: true,
+    headers: { [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE, ...extraHeaders },
+  }
+}
 
 // URLs die NICHT refresht werden sollen (kein Retry bei 401)
 const AUTH_URLS = ['/api/auth/login', '/api/auth/refresh', '/api/auth/logout']

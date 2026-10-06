@@ -409,6 +409,10 @@
   "household": {
     "title": "Household",
     "inviteCode": "Invite code",
+    "inviteValidUntil": "Valid until {date}",
+    "inviteExpired": "This invite code has expired.",
+    "inviteExpiredAction": "Generate new code",
+    "inviteExpiredAskAdmin": "Ask an admin to generate a new code.",
     "inviteHint": "Share this code so others can join your household:",
     "copyCode": "Copy",
     "codeCopied": "Invite code copied!",
@@ -474,6 +478,7 @@
     "INVALID_CREDENTIALS": "Invalid credentials",
     "EMAIL_ALREADY_REGISTERED": "This email is already registered",
     "NOT_HOUSEHOLD_MEMBER": "You are not a member of this household",
+    "INVITE_CODE_EXPIRED": "Invite code expired – please request a new one",
     "INVITE_CODE_NOT_FOUND": "Invite code not found",
     "ALREADY_MEMBER": "You are already a member of this household",
     "EXPENSE_NOT_FOUND": "Expense not found",

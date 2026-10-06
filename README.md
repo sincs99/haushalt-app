@@ -13,7 +13,7 @@ Detaillierter Stand und Architektur: [`docs/PROJECT-STATUS.md`](docs/PROJECT-STA
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2, Alembic, Socket.IO (`python-socketio`) |
 | Datenbank | PostgreSQL 16 |
 | Frontend | Vue 3, TypeScript, Vite, Pinia, vue-i18n, PWA (`vite-plugin-pwa`) |
-| Auth | JWT-Access-Token (15 Min.) + rotierender Refresh-Token, bcrypt |
+| Auth | JWT-Access-Token (15 Min.) + rotierender Refresh-Token als HttpOnly-Cookie, bcrypt |
 | Tests | Backend: pytest (SQLite in-memory, kein Postgres nötig); Frontend: Vitest |
 | Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager) |
 

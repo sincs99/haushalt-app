@@ -1,6 +1,6 @@
 import calendar
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,7 +12,12 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Budget, Calendar, Expense, Household, HouseholdMember, RecurringBill, User
-from app.services.invite_code import generate_unique_invite_code
+from app.services.invite_code import (
+    generate_unique_invite_code,
+    is_invite_code_expired,
+    new_invite_code_expiry,
+    rotate_household_invite_code,
+)
 from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
 
@@ -41,6 +46,16 @@ class JoinResponse(BaseModel):
 
 class InviteCodeResponse(BaseModel):
     invite_code: str
+    expires_at: datetime | None = None
+    expired: bool = False
+
+
+def _invite_code_response(household: Household) -> InviteCodeResponse:
+    return InviteCodeResponse(
+        invite_code=household.invite_code,
+        expires_at=household.invite_code_expires_at,
+        expired=is_invite_code_expired(household),
+    )
 
 
 class HouseholdCreateRequest(BaseModel):
@@ -104,7 +119,7 @@ def get_invite_code(
     household = db.get(Household, household_id)
     if household is None:
         raise HTTPException(status_code=404, detail=error_detail(ErrorCode.HOUSEHOLD_NOT_FOUND, "Household not found"))
-    return InviteCodeResponse(invite_code=household.invite_code)
+    return _invite_code_response(household)
 
 
 @router.post("/invite-code/rotate", response_model=InviteCodeResponse)
@@ -117,9 +132,9 @@ def rotate_invite_code(
     household = db.get(Household, household_id)
     if household is None:
         raise HTTPException(status_code=404, detail=error_detail(ErrorCode.HOUSEHOLD_NOT_FOUND, "Household not found"))
-    household.invite_code = generate_unique_invite_code(db)
+    rotate_household_invite_code(db, household)
     db.commit()
-    return InviteCodeResponse(invite_code=household.invite_code)
+    return _invite_code_response(household)
 
 
 @router.patch("", response_model=HouseholdUpdateResponse)
@@ -246,7 +261,7 @@ def remove_member(
 
     db.delete(target)
     household = db.get(Household, household_id)
-    household.invite_code = generate_unique_invite_code(db)
+    rotate_household_invite_code(db, household)
     db.commit()
 
     emit_to_household_sync(
@@ -431,7 +446,11 @@ def create_household(
     db: Session = Depends(get_db),
 ):
     invite_code = generate_unique_invite_code(db)
-    household = Household(name=body.name.strip(), invite_code=invite_code)
+    household = Household(
+        name=body.name.strip(),
+        invite_code=invite_code,
+        invite_code_expires_at=new_invite_code_expiry(),
+    )
     db.add(household)
     db.flush()
 
@@ -481,6 +500,11 @@ def join_household(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=error_detail(ErrorCode.INVITE_CODE_NOT_FOUND, "Invite code not found"),
+        )
+    if is_invite_code_expired(household):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail=error_detail(ErrorCode.INVITE_CODE_EXPIRED, "Invite code has expired"),
         )
 
     # Prüfen ob User bereits Mitglied ist

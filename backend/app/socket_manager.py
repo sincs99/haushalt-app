@@ -1,12 +1,13 @@
 import asyncio
 import logging
+import time
 import uuid
 
 import socketio
 from jwt import PyJWTError as JWTError
 from starlette.concurrency import run_in_threadpool
 
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token_with_expiry
 from app.database import SessionLocal
 from app.models import HouseholdMember, User
 
@@ -58,6 +59,60 @@ def _household_room(household_id) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Sitzungs-Ablauf
+#
+# Eine Socket-Verbindung lebt so lange wie das Access-Token, mit dem sie
+# authentifiziert wurde. Der Ablauf (`exp`) steht in der Socket-Session; ein Timer
+# pro Verbindung beendet sie zu diesem Zeitpunkt. Der Client verlängert die
+# Verbindung nach jedem Token-Refresh mit dem Event `reauth`. Vor dem Trennen
+# bekommt der Client `session_ended` mit dem Grund ("expired", "logout",
+# "revoked"), damit er entscheiden kann, ob er mit frischem Token neu verbindet.
+# ---------------------------------------------------------------------------
+
+SESSION_ENDED_EVENT = "session_ended"
+
+_expiry_timers: dict[str, asyncio.TimerHandle] = {}
+# Referenzen auf laufende Trenn-Tasks, damit sie nicht vorzeitig vom GC entsorgt werden
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _schedule_expiry(sid: str, exp: float) -> None:
+    _cancel_expiry(sid)
+    delay = max(0.0, exp - time.time())
+    _expiry_timers[sid] = asyncio.get_running_loop().call_later(delay, _on_expiry, sid)
+
+
+def _cancel_expiry(sid: str) -> None:
+    handle = _expiry_timers.pop(sid, None)
+    if handle is not None:
+        handle.cancel()
+
+
+def _on_expiry(sid: str) -> None:
+    _expiry_timers.pop(sid, None)
+    task = asyncio.ensure_future(end_session(sid, "expired"))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+def _session_expired(session: dict) -> bool:
+    exp = session.get("exp")
+    return exp is None or exp <= time.time()
+
+
+async def end_session(sid: str, reason: str) -> None:
+    """Teilt dem Client den Grund mit und trennt die Verbindung serverseitig."""
+    _cancel_expiry(sid)
+    try:
+        await sio.emit(SESSION_ENDED_EVENT, {"reason": reason}, to=sid)
+        await sio.disconnect(sid)
+    except Exception:
+        logger.warning("Socket end_session failed (sid=%s, reason=%s)", sid, reason, exc_info=True)
+        return
+    logger.info("Socket session ended (sid=%s, reason=%s)", sid, reason)
+
+
+# ---------------------------------------------------------------------------
 # Socket.IO Events
 # ---------------------------------------------------------------------------
 
@@ -74,7 +129,7 @@ async def connect(sid, environ, auth):
 
     # --- Token dekodieren (kein DB-Zugriff nötig) ---
     try:
-        user_id_str = decode_access_token(auth["token"])
+        user_id_str, exp = decode_access_token_with_expiry(auth["token"])
         uid = uuid.UUID(user_id_str)
     except (JWTError, KeyError, ValueError) as exc:
         logger.warning("Socket connect rejected – token error (sid=%s): %s", sid, exc)
@@ -91,11 +146,41 @@ async def connect(sid, environ, auth):
         logger.warning("Socket connect rejected – user not found (sid=%s)", sid)
         return False
 
-    await sio.save_session(sid, {"user_id": user_id})
+    await sio.save_session(sid, {"user_id": user_id, "exp": exp})
     # Persönlicher Raum: erlaubt, alle Verbindungen eines Users serverseitig zu
-    # erreichen (z.B. um sie bei Entfernung aus einem Haushalt aus dessen Raum zu werfen)
+    # erreichen (z.B. um sie bei Entfernung aus einem Haushalt aus dessen Raum zu
+    # werfen oder sie beim Logout zu trennen)
     await sio.enter_room(sid, _user_room(user_id))
+    _schedule_expiry(sid, exp)
     logger.info("Socket connected (sid=%s, user=%s)", sid, user_id)
+
+
+@sio.event
+async def reauth(sid, data):
+    """Verlängert die Verbindung mit einem frischen Access-Token.
+
+    data: {"token": "<jwt>"} — muss zum selben User gehören wie beim connect.
+    Antwort (Ack): {"ok": bool}. Bei Fehlschlag bleibt der bisherige Ablauf bestehen.
+    """
+    token = (data or {}).get("token") if isinstance(data, dict) else None
+    if not token:
+        return {"ok": False}
+    try:
+        user_id_str, exp = decode_access_token_with_expiry(token)
+        uid = uuid.UUID(user_id_str)
+    except (JWTError, ValueError) as exc:
+        logger.warning("Socket reauth rejected – token error (sid=%s): %s", sid, exc)
+        return {"ok": False}
+
+    session = await sio.get_session(sid)
+    if session.get("user_id") != str(uid):
+        logger.warning("Socket reauth rejected – user mismatch (sid=%s)", sid)
+        return {"ok": False}
+
+    session["exp"] = exp
+    await sio.save_session(sid, session)
+    _schedule_expiry(sid, exp)
+    return {"ok": True}
 
 
 @sio.event
@@ -109,6 +194,10 @@ async def join_household(sid, data):
     user_id_str = session.get("user_id")
     if not user_id_str:
         await sio.emit("error", {"message": "Not authenticated"}, to=sid)
+        return
+    # Zusätzlich zum Timer: kein Raumbeitritt mit abgelaufenem Token
+    if _session_expired(session):
+        await end_session(sid, "expired")
         return
 
     household_id_str = (data or {}).get("household_id")
@@ -169,6 +258,7 @@ async def leave_household(sid, data):
 
 @sio.event
 async def disconnect(sid):
+    _cancel_expiry(sid)
     logger.info("Socket disconnected (sid=%s)", sid)
 
 
@@ -212,4 +302,21 @@ def emit_to_household_sync(
             "emit_to_household_sync: Event-Loop not available, event '%s' for household %s dropped",
             event_name,
             household_id,
+        )
+
+
+async def disconnect_user(user_id: uuid.UUID, reason: str):
+    """Trennt alle Socket-Verbindungen eines Users (z.B. nach Logout)."""
+    for sid, _ in list(sio.manager.get_participants("/", _user_room(user_id))):
+        await end_session(sid, reason)
+
+
+def disconnect_user_sync(user_id: uuid.UUID, reason: str):
+    """Synchroner Wrapper für disconnect_user — aufgerufen aus sync FastAPI-Endpoints."""
+    if _event_loop is not None and _event_loop.is_running():
+        asyncio.run_coroutine_threadsafe(disconnect_user(user_id, reason), _event_loop)
+    else:
+        logger.warning(
+            "disconnect_user_sync: Event-Loop not available, sockets of user %s not disconnected",
+            user_id,
         )

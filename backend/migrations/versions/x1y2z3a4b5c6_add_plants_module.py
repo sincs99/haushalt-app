@@ -3,7 +3,7 @@
 Tabellen plants, plant_care_tasks, plant_care_logs (Epic 20: Pflanzen).
 
 Revision ID: x1y2z3a4b5c6
-Revises: w1x2y3z4a5b6
+Revises: x2y3z4a5b6c7
 Create Date: 2026-10-06 18:00:00.000000
 
 """
@@ -16,7 +16,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'x1y2z3a4b5c6'
-down_revision: Union[str, Sequence[str], None] = 'w1x2y3z4a5b6'
+down_revision: Union[str, Sequence[str], None] = 'x2y3z4a5b6c7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -62,6 +62,9 @@ class Household(Base):
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     invite_code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    invite_code_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

@@ -1,10 +1,26 @@
 import api from '../api/client'
 import type { HouseholdInfo, HouseholdMemberInfo } from '../types'
 
+export interface InviteCodeInfo {
+  inviteCode: string
+  expiresAt: string | null
+  expired: boolean
+}
+
+interface InviteCodeDto {
+  invite_code: string
+  expires_at: string | null
+  expired: boolean
+}
+
+function toInviteCodeInfo(dto: InviteCodeDto): InviteCodeInfo {
+  return { inviteCode: dto.invite_code, expiresAt: dto.expires_at, expired: dto.expired }
+}
+
 export interface HouseholdsRepository {
   join(inviteCode: string): Promise<HouseholdInfo>
-  fetchInviteCode(householdId: string): Promise<string>
-  rotateInviteCode(householdId: string): Promise<string>
+  fetchInviteCode(householdId: string): Promise<InviteCodeInfo>
+  rotateInviteCode(householdId: string): Promise<InviteCodeInfo>
   fetchMembers(householdId: string): Promise<HouseholdMemberInfo[]>
   create(name: string): Promise<HouseholdInfo>
   rename(householdId: string, name: string): Promise<void>
@@ -23,17 +39,17 @@ export function createOnlineHouseholdsRepository(): HouseholdsRepository {
     },
 
     async fetchInviteCode(householdId) {
-      const { data } = await api.get<{ invite_code: string }>(
+      const { data } = await api.get<InviteCodeDto>(
         `/api/households/${householdId}/invite-code`,
       )
-      return data.invite_code
+      return toInviteCodeInfo(data)
     },
 
     async rotateInviteCode(householdId) {
-      const { data } = await api.post<{ invite_code: string }>(
+      const { data } = await api.post<InviteCodeDto>(
         `/api/households/${householdId}/invite-code/rotate`,
       )
-      return data.invite_code
+      return toInviteCodeInfo(data)
     },
 
     async fetchMembers(householdId) {

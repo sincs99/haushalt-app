@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import axios from 'axios'
-import api, { API_BASE } from '../api/client'
+import api, { API_BASE, authRequestConfig } from '../api/client'
 import type { UserInfo, HouseholdInfo, MeResponse } from '../types'
-import { tokenStorage, TOKEN_STORAGE_KEY } from '../services/tokenStorage'
+import { sessionMarker, SESSION_MARKER_KEY, takeLegacyRefreshToken } from '../services/tokenStorage'
 import { useToast } from '../composables/useToast'
 import i18n from '../i18n'
 
@@ -14,10 +14,21 @@ function isAuthRejection(err: any): boolean {
   return err?.response?.status === 401
 }
 
+interface TokenPayload {
+  access_token: string
+  expires_in: number
+}
+
 export const useAuthStore = defineStore('auth', () => {
   // State
+  // Access-Token nur im Speicher. Der Refresh-Token ist ein HttpOnly-Cookie (casa_rt),
+  // den nur das Backend liest — siehe services/tokenStorage.ts.
   const token = ref<string | null>(null)
-  const refreshToken = ref<string | null>(null)
+  /**
+   * Beim Start konnte der Refresh wegen eines Netzwerkfehlers nicht laufen, obwohl eine
+   * Sitzung existiert (Marker gesetzt): Shell anzeigen, der nächste 401 holt den Token nach.
+   */
+  const hasOfflineSession = ref(false)
   const user = ref<UserInfo | null>(null)
   const currentHouseholdId = ref<string | null>(null)
   const households = ref<HouseholdInfo[]>([])
@@ -30,7 +41,7 @@ export const useAuthStore = defineStore('auth', () => {
   })
 
   // Getters
-  const isAuthenticated = computed(() => !!token.value)
+  const isAuthenticated = computed(() => !!token.value || hasOfflineSession.value)
 
   const currentHousehold = computed<HouseholdInfo | null>(() => {
     if (!currentHouseholdId.value || households.value.length === 0) return null
@@ -42,41 +53,31 @@ export const useAuthStore = defineStore('auth', () => {
   async function initialize() {
     if (isInitialized.value) return
 
-    const saved = await tokenStorage.get()
-    if (!saved) {
-      isInitialized.value = true
-      _authReadyResolve()
-      return
-    }
-
-    // Tokens aus Storage wiederherstellen
-    token.value = saved.accessToken
-    refreshToken.value = saved.refreshToken
-
     // HouseholdId aus localStorage wiederherstellen
     const savedHouseholdId = localStorage.getItem(HOUSEHOLD_KEY)
     if (savedHouseholdId) {
       currentHouseholdId.value = savedHouseholdId
     }
 
-    try {
-      await fetchMe()
-    } catch (err: any) {
-      if (isAuthRejection(err)) {
-        // Access-Token abgelaufen → Refresh versuchen
-        try {
-          await refresh()
-          await fetchMe()
-        } catch (refreshErr: any) {
-          if (isAuthRejection(refreshErr)) {
-            // Auth definitiv abgelehnt → ausloggen
-            await _clearState()
-          }
-          // Netzwerkfehler bei Refresh → Tokens behalten, User "offline-eingeloggt"
+    // Alte localStorage-Tokens (vor H-01) einmalig gegen den Cookie tauschen
+    const legacyRefreshToken = takeLegacyRefreshToken()
+
+    if (legacyRefreshToken || sessionMarker.isSet()) {
+      try {
+        // Access-Token wird nie persistiert → immer über den Cookie neu holen
+        await _refreshWith(legacyRefreshToken)
+        await fetchMe()
+      } catch (err: any) {
+        if (isAuthRejection(err)) {
+          // Cookie fehlt/abgelaufen/revoked (Backend hat ihn gelöscht) → ausgeloggt
+          await _clearState()
+        } else if (!token.value) {
+          // Netzwerkfehler beim Refresh → Sitzung vermutlich noch gültig, "offline eingeloggt"
+          hasOfflineSession.value = true
         }
+        // Netzwerkfehler bei fetchMe nach erfolgreichem Refresh: Token behalten,
+        // user/households bleiben null, isAuthenticated bleibt true
       }
-      // Netzwerkfehler bei fetchMe → Tokens behalten!
-      // user/households bleiben null, aber isAuthenticated bleibt true
     }
 
     // Cross-Tab storage event Listener registrieren
@@ -91,10 +92,14 @@ export const useAuthStore = defineStore('auth', () => {
   let _refreshPromise: Promise<void> | null = null
 
   async function refresh(): Promise<void> {
+    return _refreshWith(null)
+  }
+
+  async function _refreshWith(legacyRefreshToken: string | null): Promise<void> {
     // Single-flight: concurrent callers teilen sich dasselbe Promise
     if (_refreshPromise) return _refreshPromise
 
-    _refreshPromise = _doRefresh()
+    _refreshPromise = _doRefresh(legacyRefreshToken)
     try {
       await _refreshPromise
     } finally {
@@ -102,27 +107,20 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function _doRefresh(): Promise<void> {
-    // Immer den AKTUELLSTEN Token aus Storage lesen (anderer Tab könnte rotiert haben)
-    const current = await tokenStorage.get()
-    const rtToUse = current?.refreshToken ?? refreshToken.value
-    if (!rtToUse) throw new Error('No refresh token')
+  async function _doRefresh(legacyRefreshToken: string | null): Promise<void> {
+    // Direkter axios call OHNE Interceptor (um Endlos-Loop zu vermeiden).
+    // Der Refresh-Token kommt aus dem HttpOnly-Cookie (withCredentials); nur bei der
+    // einmaligen Migration steht der alte localStorage-Token im Body.
+    const body = legacyRefreshToken ? { refresh_token: legacyRefreshToken } : {}
+    const response = await axios.post(`${API_BASE}/api/auth/refresh`, body, authRequestConfig())
+    _applyTokens(response.data)
+  }
 
-    // Direkter axios call OHNE Interceptor (um Endlos-Loop zu vermeiden)
-    const response = await axios.post(
-      `${API_BASE}/api/auth/refresh`,
-      { refresh_token: rtToUse },
-    )
-
-    const data = response.data
+  /** Übernimmt den Access-Token einer Login-/Register-/Refresh-Antwort (Cookie setzt der Browser). */
+  function _applyTokens(data: TokenPayload) {
     token.value = data.access_token
-    refreshToken.value = data.refresh_token
-
-    await tokenStorage.set({
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      accessExpiresAt: Date.now() + data.expires_in * 1000,
-    })
+    hasOfflineSession.value = false
+    sessionMarker.set()
   }
 
   /**
@@ -147,17 +145,9 @@ export const useAuthStore = defineStore('auth', () => {
     const response = await api.post(
       '/api/auth/login',
       new URLSearchParams({ username: email, password }),
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+      authRequestConfig({ 'Content-Type': 'application/x-www-form-urlencoded' }),
     )
-    const data = response.data
-    token.value = data.access_token
-    refreshToken.value = data.refresh_token
-
-    await tokenStorage.set({
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      accessExpiresAt: Date.now() + data.expires_in * 1000,
-    })
+    _applyTokens(response.data)
 
     await fetchMe()
   }
@@ -180,16 +170,8 @@ export const useAuthStore = defineStore('auth', () => {
     } else {
       payload.invite_code = options.inviteCode
     }
-    const response = await api.post('/api/auth/register', payload)
-    const data = response.data
-    token.value = data.access_token
-    refreshToken.value = data.refresh_token
-
-    await tokenStorage.set({
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      accessExpiresAt: Date.now() + data.expires_in * 1000,
-    })
+    const response = await api.post('/api/auth/register', payload, authRequestConfig())
+    _applyTokens(response.data)
 
     await fetchMe()
   }
@@ -260,16 +242,12 @@ export const useAuthStore = defineStore('auth', () => {
       // Best-effort
     }
 
-    // Best-effort: Backend benachrichtigen
-    if (refreshToken.value) {
-      try {
-        await axios.post(
-          `${API_BASE}/api/auth/logout`,
-          { refresh_token: refreshToken.value },
-        )
-      } catch {
-        // Ignore — Logout ist best-effort
-      }
+    // Best-effort: Backend revoked den Refresh-Token aus dem Cookie und löscht den Cookie.
+    // Ob ein Cookie existiert, sieht JS nicht (HttpOnly) — der Endpunkt ist idempotent.
+    try {
+      await axios.post(`${API_BASE}/api/auth/logout`, {}, authRequestConfig())
+    } catch {
+      // Ignore — Logout ist best-effort
     }
 
     await _clearState()
@@ -292,43 +270,40 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function _clearState() {
     token.value = null
-    refreshToken.value = null
+    hasOfflineSession.value = false
     user.value = null
     currentHouseholdId.value = null
     households.value = []
-    await tokenStorage.clear()
+    // Löscht den Marker → storage-Event in anderen Tabs (Cross-Tab-Logout)
+    sessionMarker.clear()
     localStorage.removeItem(HOUSEHOLD_KEY)
   }
 
   // ── Cross-Tab Storage Listener ──
+  //
+  // Der Refresh-Token selbst muss nicht mehr zwischen Tabs abgeglichen werden: Alle Tabs
+  // teilen sich den Cookie, jeder Tab holt sich seinen Access-Token selbst (Grace-Window
+  // im Backend fängt gleichzeitige Refreshes ab). Synchronisiert werden nur Logout und Login.
 
   function _registerStorageListener() {
     window.addEventListener('storage', (event) => {
-      if (event.key !== TOKEN_STORAGE_KEY) return
+      if (event.key !== SESSION_MARKER_KEY) return
 
       if (event.newValue === null) {
-        // Anderer Tab hat Tokens gelöscht (Logout)
-        token.value = null
-        refreshToken.value = null
-        user.value = null
-        currentHouseholdId.value = null
-        households.value = []
-        localStorage.removeItem(HOUSEHOLD_KEY)
+        // Anderer Tab hat sich abgemeldet (Cookie ist weg) → lokalen Zustand verwerfen
+        if (!isAuthenticated.value) return
+        _clearState()
         // Navigiere zu /login OHNE redirect und OHNE Backend-Logout-Call
         import('../router').then(({ default: router }) => {
           router.push('/login')
         })
-      } else {
-        // Anderer Tab hat Tokens aktualisiert (Refresh)
-        try {
-          const parsed = JSON.parse(event.newValue)
-          if (parsed.accessToken && parsed.refreshToken) {
-            token.value = parsed.accessToken
-            refreshToken.value = parsed.refreshToken
-          }
-        } catch {
-          // Ignore parse errors
-        }
+      } else if (!token.value) {
+        // Anderer Tab hat sich angemeldet → Sitzung über den gemeinsamen Cookie übernehmen
+        refresh()
+          .then(() => fetchMe())
+          .catch(() => {
+            // Best-effort — der nächste geschützte Request versucht es erneut
+          })
       }
     })
   }
@@ -383,7 +358,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     // State
     token,
-    refreshToken,
+    hasOfflineSession,
     user,
     currentHouseholdId,
     households,

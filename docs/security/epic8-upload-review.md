@@ -229,7 +229,7 @@ Default `data/uploads` ist relativ zum CWD. In Docker ist dies durch `UPLOAD_DIR
 | F-03 | 🟡 Mittel | PDF-Inhalt wird nicht validiert (nur Content-Type Header) | ✅ Behoben |
 | F-04 | 🟡 Mittel | Content-Disposition Header Injection via Dateiname | ✅ Behoben |
 | F-05 | 🟢 Gering | Path-Traversal Defense-in-Depth fehlt in storage.py | ✅ Behoben |
-| F-06 | 🟢 Gering | Kein Rate-Limiting auf Upload-Endpoint | 🟡 Teilweise (Quota) |
+| F-06 | 🟢 Gering | Kein Rate-Limiting auf Upload-Endpoint | ✅ Behoben (Quota + Rate-Limit) |
 | F-07 | ℹ️ Info | Kein Index auf StoredFile.household_id | ✅ Behoben (Migration) |
 | F-08 | ℹ️ Info | UPLOAD_DIR Default ist relativer Pfad | Akzeptiert |
 
@@ -265,6 +265,6 @@ Alle Findings gegen den aktuellen Code geprüft. Regressionstests: `backend/test
 | F-03 | Magic-Byte-Prüfung `%PDF-` war umgesetzt; `nosniff` und `attachment` fehlten. | Downloads senden jetzt `X-Content-Type-Options: nosniff`; PDFs werden mit `Content-Disposition: attachment` ausgeliefert, nur re-encodierte Bilder `inline`. Das Frontend lädt Dateien als Blob, Vorschau bleibt davon unberührt. |
 | F-04 | `_sanitize_filename()` existierte, nutzte aber Unicode-`\w` → Dateinamen mit Nicht-Latin-1-Zeichen (z.B. `日本.pdf`, Emojis) führten beim Download zu **HTTP 500** (`UnicodeEncodeError`). | Header nach RFC 6266/5987: `filename="<ASCII-Fallback>"; filename*=UTF-8''<percent-encoded>`. Fallback erlaubt nur `[A-Za-z0-9._-]`. |
 | F-05 | `_safe_path()` mit `resolve()` + `is_relative_to()` bereits in `storage.py`. | — |
-| F-06 | Weiterhin kein Rate-Limit / keine Quota. | Speicher-Quota pro Haushalt über alle Uploads (`/files` und `/documents/upload`), konfigurierbar via `HOUSEHOLD_STORAGE_QUOTA_MB` (Default 1024), Fehlercode `STORAGE_QUOTA_EXCEEDED`. Ein Request-Rate-Limit fehlt weiterhin. |
+| F-06 | Weiterhin kein Rate-Limit / keine Quota. | Speicher-Quota pro Haushalt über alle Uploads (`/files` und `/documents/upload`), konfigurierbar via `HOUSEHOLD_STORAGE_QUOTA_MB` (Default 1024), Fehlercode `STORAGE_QUOTA_EXCEEDED`. Zusätzlich Rate-Limit `30/minute;300/hour` pro IP auf `POST /files/` und `POST /documents/upload` (H-14). |
 | F-07 | Migration `q1r2s3t4u5v6` legt `ix_stored_files_household` an. | — |
 

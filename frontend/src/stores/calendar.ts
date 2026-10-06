@@ -52,9 +52,6 @@ export const useCalendarStore = defineStore('calendar', () => {
   // State — Calendars
   const calendars = ref<CalendarInfo[]>([])
 
-  // Interner State für Race-Condition-Schutz
-  const pendingTempIds = new Set<string>()
-
   // ── Calendar Helpers ──
 
   function getCalendarColor(calendarId: string): string {
@@ -220,12 +217,10 @@ export const useCalendarStore = defineStore('calendar', () => {
       created_at: new Date().toISOString(),
     }
     events.value.push(tempEvent)
-    pendingTempIds.add(tempId)
 
     try {
       // 2. Server-Call via Repository
       const serverEvent = await repo.create(householdId, payload)
-      pendingTempIds.delete(tempId)
 
       // 3. Defensive Duplikat-Prüfung: Socket könnte schneller gewesen sein
       const serverIdx = events.value.findIndex(e => e.id === serverEvent.id)
@@ -239,7 +234,6 @@ export const useCalendarStore = defineStore('calendar', () => {
         events.value[tempIdx] = serverEvent
       }
     } catch (error) {
-      pendingTempIds.delete(tempId)
       // 4. Rollback bei Fehler
       events.value = events.value.filter(e => e.id !== tempId)
       throw error
@@ -301,15 +295,9 @@ export const useCalendarStore = defineStore('calendar', () => {
   // ── Event Socket-Handler — Idempotente Merges (Server gewinnt immer) ──
 
   function handleEventCreated(serverEvent: CalendarEvent) {
-    if (pendingTempIds.size > 0) {
-      const existingIdx = events.value.findIndex(e => e.id === serverEvent.id)
-      if (existingIdx !== -1) {
-        events.value[existingIdx] = serverEvent
-      }
-      // KEIN push — REST-Response-Handling macht den Swap
-      return
-    }
-    // Normaler Fall (Event von anderem Haushaltsmitglied)
+    // Idempotenter Merge: Duplikat-Check statt pendingTempIds-Guard, damit
+    // Events anderer Mitglieder auch während eines eigenen Creates ankommen.
+    // addEvent() entfernt das Temp-Event, falls dieses Event schneller war.
     const existingIdx = events.value.findIndex(e => e.id === serverEvent.id)
     if (existingIdx !== -1) {
       events.value[existingIdx] = serverEvent

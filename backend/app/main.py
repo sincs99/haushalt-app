@@ -16,6 +16,7 @@ from app.core.rate_limit import limiter
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import SessionLocal
 from app.routers import (
+    ai,
     auth,
     budgets,
     calendars,
@@ -159,6 +160,8 @@ app.include_router(notes.router)
 app.include_router(files.router)
 app.include_router(documents.router)
 app.include_router(push.router)
+app.include_router(ai.status_router)
+app.include_router(ai.router)
 
 # Socket.IO unter /socket.io mounten
 app.mount("/socket.io", socket_app)

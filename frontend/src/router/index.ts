@@ -134,6 +134,11 @@ const router = createRouter({
       path: '/',
       redirect: '/dashboard',
     },
+    // Unbekannte Adressen (alte Links, Tippfehler) → Start statt leerer Seite
+    {
+      path: '/:pathMatch(.*)*',
+      redirect: '/dashboard',
+    },
   ],
 })
 
@@ -143,6 +148,18 @@ router.beforeEach(() => waitForOverlayBack())
 
 // Navigation Guard: authReady abwarten, dann prüfen
 router.beforeEach(async (to) => {
+  // Bereits angemeldet: Login-/Registrierungsformular nicht erneut zeigen
+  // (Registrierung mit Einladungscode bleibt erreichbar)
+  if (to.name === 'login' || (to.name === 'Register' && !to.query.code)) {
+    const { useAuthStore } = await import('../stores/auth')
+    const authStore = useAuthStore()
+    await authStore.authReady
+    if (authStore.isAuthenticated) {
+      const redirect = typeof to.query.redirect === 'string' && to.query.redirect.startsWith('/') ? to.query.redirect : '/dashboard'
+      return { path: redirect }
+    }
+  }
+
   if (to.meta.requiresAuth) {
     const { useAuthStore } = await import('../stores/auth')
     const authStore = useAuthStore()

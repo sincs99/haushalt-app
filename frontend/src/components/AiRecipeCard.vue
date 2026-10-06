@@ -123,7 +123,7 @@ function discard() {
           v-for="p in PREFERENCES"
           :key="p"
           type="button"
-          class="ai-chip"
+          class="ai-chip tap-target"
           :class="{ 'ai-chip--active': preferences.includes(p) }"
           :aria-pressed="preferences.includes(p)"
           @click="togglePreference(p)"

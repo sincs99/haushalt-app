@@ -919,7 +919,7 @@ onUnmounted(() => {
   font-size: var(--text-base);
   color: var(--ink);
   background: var(--card);
-  min-height: 40px;
+  min-height: var(--tap-min);
 }
 
 .form-control:focus {

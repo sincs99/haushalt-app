@@ -720,7 +720,7 @@ onMounted(() => {
 
 .book-select {
   width: 100%;
-  min-height: 40px;
+  min-height: var(--tap-min);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-3);

@@ -650,6 +650,10 @@ class ChoreAssignment(SyncVersionMixin, Base):
     completed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # Web Push "Du bist dran" am Fälligkeitstag verschickt
+    notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -1223,6 +1227,14 @@ class Document(Base):
     document_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Ablauf-/Erinnerungsdatum (Garantieende, Kündigungsfrist)
     expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Web Push zum Ablaufdatum: Vorwarnung und Hinweis am Tag selbst.
+    # Werden zurückgesetzt, wenn sich expiry_date ändert.
+    expiry_soon_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    expiry_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

@@ -42,12 +42,19 @@ class ChoreCreate(BaseModel):
 
 class ChoreUpdate(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=100)
-    description: str | None = None
+    description: str | None = Field(None, max_length=500)
     recurrence: str | None = None
     weekday: int | None = None
     day_of_month: int | None = None
-    rotation_order: list[str] | None = None
+    rotation_order: list[str] | None = Field(None, min_length=1)
     active: bool | None = None
+
+    @field_validator("recurrence")
+    @classmethod
+    def validate_recurrence(cls, v):
+        if v is not None and v not in ("weekly", "biweekly", "monthly"):
+            raise ValueError("Must be weekly, biweekly, or monthly")
+        return v
 
 
 class ChoreResponse(BaseModel):
@@ -264,12 +271,12 @@ def update_chore(
     if "rotation_order" in update_data and update_data["rotation_order"] is not None:
         _validate_rotation_order(db, household_id, update_data["rotation_order"])
 
-    # Recurrence/Weekday/DayOfMonth-Änderungen → Validierung + anchor_date neu
-    recurrence_changed = "recurrence" in update_data
-    schedule_changed = (
-        recurrence_changed
-        or "weekday" in update_data
-        or "day_of_month" in update_data
+    # Recurrence/Weekday/DayOfMonth-Änderungen → Validierung + anchor_date neu.
+    # Nur echte Wertänderungen zählen: das UI sendet beim Speichern immer alle Felder
+    # mit, sonst würde jedes Umbenennen den Zeitplan neu aufsetzen.
+    schedule_changed = any(
+        key in update_data and update_data[key] != getattr(chore, key)
+        for key in ("recurrence", "weekday", "day_of_month")
     )
 
     if schedule_changed:
@@ -287,12 +294,15 @@ def update_chore(
             new_recurrence, new_weekday, new_day_of_month, today
         )
 
-        # Zukünftige, unerledigte Assignments löschen
-        db.query(ChoreAssignment).filter(
+        # Zukünftige, unerledigte Assignments löschen und ihre Rotations-Plätze
+        # zurückgeben — sonst überspringt die Neuplanung so viele Personen,
+        # wie Assignments gelöscht wurden
+        deleted = db.query(ChoreAssignment).filter(
             ChoreAssignment.chore_id == chore.id,
             ChoreAssignment.due_date > today,
             ChoreAssignment.completed_at == None,  # noqa: E711
         ).delete()
+        chore.next_rotation_index = max(0, chore.next_rotation_index - deleted)
 
     # Felder setzen
     for key, value in update_data.items():

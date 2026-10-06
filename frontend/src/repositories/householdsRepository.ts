@@ -4,6 +4,7 @@ import type { HouseholdInfo, HouseholdMemberInfo } from '../types'
 export interface HouseholdsRepository {
   join(inviteCode: string): Promise<HouseholdInfo>
   fetchInviteCode(householdId: string): Promise<string>
+  rotateInviteCode(householdId: string): Promise<string>
   fetchMembers(householdId: string): Promise<HouseholdMemberInfo[]>
   create(name: string): Promise<HouseholdInfo>
   rename(householdId: string, name: string): Promise<void>
@@ -24,6 +25,13 @@ export function createOnlineHouseholdsRepository(): HouseholdsRepository {
     async fetchInviteCode(householdId) {
       const { data } = await api.get<{ invite_code: string }>(
         `/api/households/${householdId}/invite-code`,
+      )
+      return data.invite_code
+    },
+
+    async rotateInviteCode(householdId) {
+      const { data } = await api.post<{ invite_code: string }>(
+        `/api/households/${householdId}/invite-code/rotate`,
       )
       return data.invite_code
     },

@@ -3,8 +3,8 @@
 updated_at + version für Offline-Sync (docs/offline-first-phase2.md, B2/B3)
 auf shopping_lists, shopping_items, todos, chore_assignments.
 
-Revision ID: t1u2v3w4x5y6
-Revises: s1t2u3v4w5x6
+Revision ID: w1x2y3z4a5b6
+Revises: t1u2v3w4x5y6
 Create Date: 2026-10-06 12:00:00.000000
 
 """
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 't1u2v3w4x5y6'
-down_revision: Union[str, Sequence[str], None] = 's1t2u3v4w5x6'
+revision: str = 'w1x2y3z4a5b6'
+down_revision: Union[str, Sequence[str], None] = 't1u2v3w4x5y6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

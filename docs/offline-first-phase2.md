@@ -661,7 +661,7 @@ Schätzung in Personentagen (PT) inkl. Tests, für eine Person, die die Codebasi
   Netto-Änderung**: ein PATCH ohne effektive Änderung und ein wiederholtes `complete` lassen die
   Version unverändert. Core-`update()`-Statements (aktuell nur Todo-Claim) erhöhen `version`
   selbst.
-- Migration `t1u2v3w4x5y6_add_sync_version_fields` (befüllt `updated_at` aus `created_at`),
+- Migration `w1x2y3z4a5b6_add_sync_version_fields` (befüllt `updated_at` aus `created_at`),
   Up/Down/Up gegen PostgreSQL 16 geprüft.
 - Optionales `id` in `ShoppingItemCreate`, `ShoppingListCreate`, `TodoCreate`
   (`backend/app/services/client_ids.py`): Wiederholung → `200` mit dem **bestehenden** Objekt

@@ -1,8 +1,15 @@
 # Deployment-Anleitung: Haushalt-App auf Windows Server
 
-> **Ziel:** Die Haushalt-App mit Docker Compose auf einem Windows Server produktiv betreiben.
+> **Ziel:** Die Haushalt-App mit Docker Compose auf einem Windows Server betreiben.
 >
 > **Stand:** August 2026 · **Getestet mit:** Windows Server 2022, Docker Desktop 4.x
+
+> ⚠️ **Für Produktion bitte [deployment.md](./deployment.md) verwenden.** Dort läuft die App mit
+> `docker-compose.prod.yml` hinter Nginx Proxy Manager mit HTTPS, ohne veröffentlichte
+> Datenbank-/Backend-Ports, mit Backups (Datenbank + Uploads). Diese Anleitung nutzt die
+> Entwicklungs-Konfiguration `docker-compose.yml` über unverschlüsseltes HTTP und eignet sich
+> nur für Tests im eigenen Netz. Die Abschnitte zu Docker-Installation und Firewall gelten
+> für beide Varianten.
 
 ---
 
@@ -109,12 +116,13 @@ notepad .env
 
 ### Pflicht-Konfiguration
 
-Die `.env`-Datei enthält drei Werte, die **alle angepasst werden müssen**:
+Diese Werte **müssen** gesetzt werden — ohne `POSTGRES_PASSWORD` und `JWT_SECRET_KEY` startet `docker compose` nicht, und Platzhalter-Secrets lehnt das Backend beim Start ab:
 
 ```env
-POSTGRES_PASSWORD=EinSicheresPasswort123!
-JWT_SECRET_KEY=mindestens-32-zeichen-langer-zufallsstring-hier-einfuegen
+POSTGRES_PASSWORD=<zufälliger Wert, siehe Generator unten>
+JWT_SECRET_KEY=<zufälliger Wert, siehe Generator unten>
 CORS_ORIGINS=http://deine-server-ip
+FRONTEND_PORT=80
 ```
 
 | Variable | Beschreibung | Beispielwert |
@@ -122,14 +130,18 @@ CORS_ORIGINS=http://deine-server-ip
 | `POSTGRES_PASSWORD` | Passwort für die PostgreSQL-Datenbank | `M3in$icher3sP@ssw0rt!` |
 | `JWT_SECRET_KEY` | Geheimschlüssel für Auth-Tokens (min. 32 Zeichen) | *(siehe Generator unten)* |
 | `CORS_ORIGINS` | URL, über die die App im Browser aufgerufen wird | `http://203.0.113.50` |
+| `FRONTEND_PORT` | Port, auf dem die App erreichbar ist (Default `8080`) | `80` |
 
-### JWT_SECRET_KEY generieren (PowerShell)
+### Secrets generieren (PowerShell)
 
 ```powershell
-[Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }) -as [byte[]])
+# Kryptografisch sicherer Zufallswert (Get-Random ist dafür NICHT geeignet)
+$bytes = New-Object byte[] 48
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+[Convert]::ToBase64String($bytes)
 ```
 
-Den ausgegebenen String in die `.env`-Datei als `JWT_SECRET_KEY` einfügen.
+Den Befehl zweimal ausführen und die Werte als `POSTGRES_PASSWORD` und `JWT_SECRET_KEY` in die `.env`-Datei einfügen.
 
 > ⚠️ **Sicherheitshinweis:** Die `.env`-Datei enthält Secrets und darf **niemals** ins Git-Repository committed werden. Sie ist bereits in `.gitignore` eingetragen.
 
@@ -151,7 +163,7 @@ Die [`docker-compose.yml`](../docker-compose.yml) definiert drei Services:
 | 2 | **backend** | Python 3.12 Container baut sich → wartet auf PostgreSQL → führt Alembic-Migrationen aus → startet Uvicorn auf Port 8000 |
 | 3 | **frontend** | Node 22 baut das Vue-Frontend → Nginx serviert die statischen Dateien auf Port 80 |
 
-Die Datenbank-Daten werden im Docker-Volume `pgdata` persistiert und überleben Container-Neustarts.
+Die Datenbank-Daten werden im Docker-Volume `pgdata`, hochgeladene Dateien (Ablage, Tierfotos) im Volume `uploaddata` persistiert. Beide überleben Container-Neustarts. Datenbank und Backend sind nur auf dem Server selbst (`127.0.0.1`) erreichbar, von aussen nur das Frontend.
 
 ---
 
@@ -172,8 +184,8 @@ docker compose logs frontend --tail 10
 
 ```
 NAME                    STATUS              PORTS
-haushalt-app-postgres   Up (healthy)        0.0.0.0:5432->5432/tcp
-haushalt-app-backend    Up                  0.0.0.0:8000->8000/tcp
+haushalt-app-postgres   Up (healthy)        127.0.0.1:5432->5432/tcp
+haushalt-app-backend    Up                  127.0.0.1:8000->8000/tcp
 haushalt-app-frontend   Up                  0.0.0.0:80->80/tcp
 ```
 

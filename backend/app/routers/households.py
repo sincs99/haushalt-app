@@ -12,7 +12,10 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import Budget, Calendar, Expense, Household, HouseholdMember, RecurringBill, User
 from app.services.invite_code import generate_unique_invite_code
+from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
+
+_storage = LocalStorageService()
 
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
@@ -103,6 +106,21 @@ def get_invite_code(
     return InviteCodeResponse(invite_code=household.invite_code)
 
 
+@router.post("/invite-code/rotate", response_model=InviteCodeResponse)
+def rotate_invite_code(
+    household_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_admin),
+    db: Session = Depends(get_db),
+):
+    """Neuen Einladungscode erzeugen (nur Admin). Der alte Code wird ungültig."""
+    household = db.get(Household, household_id)
+    if household is None:
+        raise HTTPException(status_code=404, detail=error_detail(ErrorCode.HOUSEHOLD_NOT_FOUND, "Household not found"))
+    household.invite_code = generate_unique_invite_code(db)
+    db.commit()
+    return InviteCodeResponse(invite_code=household.invite_code)
+
+
 @router.patch("", response_model=HouseholdUpdateResponse)
 def rename_household(
     household_id: uuid.UUID,
@@ -151,6 +169,12 @@ def leave_household(
         if household:
             db.delete(household)  # CASCADE löscht members, expenses, etc.
         db.commit()
+        # Hochgeladene Dateien (Dokumente, Fotos) mitlöschen — die DB-Einträge
+        # verschwinden per CASCADE, die Dateien auf der Platte sonst nie
+        try:
+            _storage.delete_household(str(household_id))
+        except Exception:
+            pass  # Best-effort, DB ist konsistent
         return  # Kein Event nötig bei Löschung
 
     # Prüfe ob Admin-Promotion nötig
@@ -169,14 +193,13 @@ def leave_household(
     db.delete(membership)
     db.commit()
 
-    # Socket-Event NACH Commit
-    # Hinweis: Die Room-Mitgliedschaft des Verlassenden besteht bis zu dessen Disconnect.
-    # REST ist ab sofort durch verify_household_access dicht.
-    # Das Frontend des Betroffenen reagiert auf das Event mit Socket-Reconnect.
+    # Socket-Event NACH Commit; danach verlassen alle Verbindungen des Users
+    # serverseitig den Room (REST ist bereits durch verify_household_access dicht)
     emit_to_household_sync(
         household_id,
         "household_member_left",
         {"household_id": str(household_id), "user_id": str(user_id)},
+        evict_user_id=user_id,
     )
 
 
@@ -191,10 +214,9 @@ def remove_member(
 
     Sich selbst entfernt man über POST /leave, nicht über diesen Endpoint.
 
-    Hinweis: Die Socket-Room-Mitgliedschaft des Entfernten besteht bis zu dessen
-    Disconnect weiter; REST ist ab sofort durch verify_household_access dicht.
-    Das Frontend des Betroffenen reagiert auf household_member_removed mit
-    Socket-Reconnect — damit ist auch der Room bereinigt.
+    Der Einladungscode wird dabei erneuert, sonst könnte das entfernte Mitglied
+    mit dem bekannten Code sofort wieder beitreten. Seine Socket-Verbindungen
+    verlassen serverseitig den Room des Haushalts.
     """
     # Sich selbst entfernen → 422 (Verlassen-Endpoint nutzen)
     if user_id == membership.user_id:
@@ -222,12 +244,15 @@ def remove_member(
         )
 
     db.delete(target)
+    household = db.get(Household, household_id)
+    household.invite_code = generate_unique_invite_code(db)
     db.commit()
 
     emit_to_household_sync(
         household_id,
         "household_member_removed",
         {"household_id": str(household_id), "user_id": str(user_id)},
+        evict_user_id=user_id,
     )
 
 

@@ -97,7 +97,7 @@ async function sendTest() {
 .push-settings {
   margin-top: var(--space-4);
   padding-top: var(--space-4);
-  border-top: 1px solid var(--color-neutral-200);
+  border-top: 1px solid var(--line);
 }
 
 .settings-row {

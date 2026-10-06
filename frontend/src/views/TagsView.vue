@@ -448,7 +448,7 @@ watch(() => authStore.currentHouseholdId, () => {
 .tag-row__body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -563,7 +563,7 @@ watch(() => authStore.currentHouseholdId, () => {
   align-self: center;
   width: 220px;
   height: 220px;
-  background: #fff;
+  background: #fff; /* bewusst: QR-Codes brauchen weissen Grund, auch im Dark Mode */
   border-radius: var(--radius-sm);
   image-rendering: pixelated;
 }

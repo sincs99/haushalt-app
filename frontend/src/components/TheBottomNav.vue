@@ -64,7 +64,7 @@ const isTabActive = (to: string) => route.path === to
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 100;
+  z-index: var(--z-nav);
   display: flex;
   background: var(--nav);
   border-top: 1px solid var(--line);
@@ -83,7 +83,7 @@ const isTabActive = (to: string) => route.path === to
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: var(--space-0-5);
   padding: var(--space-2) 0;
   min-height: 56px;
   text-decoration: none;

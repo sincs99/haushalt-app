@@ -953,7 +953,7 @@ async function doCreateMealPoll() {
 .detail-shopping__added {
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
-  color: var(--green, #22c55e);
+  color: var(--ok);
 }
 
 .detail-shopping__skipped {
@@ -1011,12 +1011,12 @@ async function doCreateMealPoll() {
 
 .meal-poll__option:hover {
   border-color: var(--acc);
-  background: var(--acc-soft, rgba(99, 102, 241, 0.06));
+  background: var(--acc-soft);
 }
 
 .meal-poll__option--voted {
   border-color: var(--acc);
-  background: var(--acc-soft, rgba(99, 102, 241, 0.1));
+  background: var(--acc-soft);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -1044,7 +1044,7 @@ async function doCreateMealPoll() {
 
 .meal-poll__option--voted .meal-poll__option-count {
   background: var(--acc);
-  color: #fff;
+  color: var(--color-on-accent);
 }
 
 .meal-poll__decide {

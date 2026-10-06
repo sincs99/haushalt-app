@@ -455,7 +455,7 @@ function handleDayClick(day: GridDay) {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 2px;
+  gap: var(--space-0-5);
   padding: var(--space-1) 0;
   min-height: 40px;
   border: none;
@@ -501,7 +501,7 @@ function handleDayClick(day: GridDay) {
 /* ── Dots ── */
 .month-grid__dots {
   display: flex;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-height: 6px;
   align-items: center;
 }
@@ -613,7 +613,7 @@ function handleDayClick(day: GridDay) {
   font-size: var(--text-xs);
   color: var(--acc);
   background: var(--acc-soft);
-  padding: 1px 6px;
+  padding: 1px var(--space-1-5);
   border-radius: var(--radius-full);
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;
@@ -656,7 +656,7 @@ function handleDayClick(day: GridDay) {
   font-size: var(--text-xs);
   color: var(--sub);
   background: var(--chip);
-  padding: 2px 8px;
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-full);
   white-space: nowrap;
 }

@@ -63,12 +63,12 @@ function onKeydown(e: KeyboardEvent) {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-dialog);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--color-scrim);
   backdrop-filter: blur(2px);
 }
 

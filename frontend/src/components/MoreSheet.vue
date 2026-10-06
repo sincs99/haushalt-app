@@ -106,8 +106,8 @@ watch(() => props.open, (isOpen) => {
 .more-sheet-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 200;
-  background: rgba(0, 0, 0, 0.4);
+  z-index: var(--z-sheet);
+  background: var(--color-scrim);
   display: flex;
   align-items: flex-end;
 }
@@ -187,7 +187,7 @@ watch(() => props.open, (isOpen) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 

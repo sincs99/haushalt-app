@@ -162,7 +162,7 @@ onMounted(async () => {
 }
 
 .pill-tab {
-  padding: 6px 16px;
+  padding: var(--space-1-5) var(--space-4);
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
   font-weight: 600;
@@ -184,9 +184,9 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 12px;
+  padding: var(--space-1-5) var(--space-3);
   background: var(--chip);
-  color: var(--ink-secondary);
+  color: var(--sub);
 }
 
 .pill-tab--add:active {
@@ -196,8 +196,8 @@ onMounted(async () => {
 
 .dialog-input {
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
+  padding: 10px var(--space-3);
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
   font-size: var(--text-base);
   font-family: var(--font-family);
@@ -213,7 +213,7 @@ onMounted(async () => {
 }
 
 .btn-primary {
-  padding: 8px 20px;
+  padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-md);
   font-weight: 600;
   font-size: var(--text-sm);
@@ -230,7 +230,7 @@ onMounted(async () => {
 }
 
 .btn-secondary {
-  padding: 8px 20px;
+  padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-md);
   font-weight: 600;
   font-size: var(--text-sm);
@@ -238,6 +238,6 @@ onMounted(async () => {
   cursor: pointer;
   font-family: var(--font-family);
   background: transparent;
-  color: var(--ink-secondary);
+  color: var(--sub);
 }
 </style>

@@ -758,7 +758,7 @@ onMounted(() => {
 .bill-row__info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -841,13 +841,13 @@ onMounted(() => {
   font-size: var(--text-lg);
   line-height: 1;
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: var(--space-0-5);
 }
 
 .expense-item__body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   flex: 1;
   min-width: 0;
 }
@@ -884,7 +884,7 @@ onMounted(() => {
   gap: var(--space-1);
   font-size: var(--text-sm);
   color: var(--sub);
-  margin-top: 2px;
+  margin-top: var(--space-0-5);
 }
 
 .expense-item__split-badge {

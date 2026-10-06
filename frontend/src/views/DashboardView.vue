@@ -632,7 +632,7 @@ function formatReminderDate(isoString: string): string {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .dash-card__label {
@@ -745,7 +745,7 @@ function formatReminderDate(isoString: string): string {
 .reminder-item__content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 

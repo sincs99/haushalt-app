@@ -5,8 +5,8 @@
 const MEMBER_COLORS = [
   'var(--p1)',       // Teal
   'var(--p2)',       // Rosa
-  '#94798C',         // Mauve
-  '#8A8272',         // Olive
+  'var(--member-3)', // Mauve
+  'var(--member-4)', // Olive
 ] as const
 
 export function getMemberColor(userId: string): string {

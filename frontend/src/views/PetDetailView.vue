@@ -1305,7 +1305,7 @@ async function handleDeleteCareTask() {
 .feeding-detail__info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   flex: 1;
   min-width: 0;
 }
@@ -1347,7 +1347,7 @@ async function handleDeleteCareTask() {
 
 .feed-toggle--fed {
   background: var(--ok);
-  color: #fff;
+  color: var(--color-on-success);
 }
 
 /* ── Medications ── */
@@ -1412,7 +1412,7 @@ async function handleDeleteCareTask() {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: var(--space-0-5);
   font-size: 10px;
   color: var(--sub);
 }
@@ -1420,7 +1420,7 @@ async function handleDeleteCareTask() {
 .med-check--given {
   background: var(--ok);
   border-color: var(--ok);
-  color: #fff;
+  color: var(--color-on-success);
 }
 
 .med-check--inactive {
@@ -1433,7 +1433,7 @@ async function handleDeleteCareTask() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -1448,7 +1448,7 @@ async function handleDeleteCareTask() {
   font-weight: var(--font-weight-normal);
   color: var(--sub);
   background: var(--chip);
-  padding: 1px 6px;
+  padding: 1px var(--space-1-5);
   border-radius: var(--radius-sm);
   margin-left: var(--space-1);
 }
@@ -1468,7 +1468,7 @@ async function handleDeleteCareTask() {
 }
 
 .med-item__status--pending {
-  color: var(--warn, var(--sub));
+  color: var(--color-warning-strong);
 }
 
 .med-item__actions {
@@ -1522,7 +1522,7 @@ async function handleDeleteCareTask() {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .med-log__entry {
@@ -1616,13 +1616,13 @@ async function handleDeleteCareTask() {
 }
 
 .health-dot--green { background: var(--ok); }
-.health-dot--yellow { background: var(--color-warning, #f59e0b); }
-.health-dot--red { background: var(--color-danger, #ef4444); }
+.health-dot--yellow { background: var(--color-warning); }
+.health-dot--red { background: var(--color-danger); }
 
 .health-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .health-entry-title {
@@ -1661,8 +1661,8 @@ async function handleDeleteCareTask() {
 .health-editor__severity {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding-top: 4px;
+  gap: var(--space-1);
+  padding-top: var(--space-1);
 }
 
 .severity-btn {
@@ -1685,14 +1685,14 @@ async function handleDeleteCareTask() {
 }
 
 .severity-btn--green { background: var(--ok); }
-.severity-btn--yellow { background: var(--color-warning, #f59e0b); }
-.severity-btn--red { background: var(--color-danger, #ef4444); }
+.severity-btn--yellow { background: var(--color-warning); }
+.severity-btn--red { background: var(--color-danger); }
 
 .health-editor__fields {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .health-editor__input {
@@ -1702,7 +1702,7 @@ async function handleDeleteCareTask() {
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   color: var(--ink);
-  background: var(--surface);
+  background: var(--card);
 }
 
 .health-editor__input::placeholder {
@@ -1721,7 +1721,7 @@ async function handleDeleteCareTask() {
 }
 
 .health-editor__delete:hover {
-  color: var(--color-danger, #ef4444);
+  color: var(--color-danger);
   background: var(--chip);
 }
 
@@ -1824,7 +1824,7 @@ async function handleDeleteCareTask() {
 }
 
 .icon-btn--danger:hover {
-  color: var(--color-danger, #ef4444);
+  color: var(--color-danger);
 }
 
 .empty-hint {
@@ -1851,7 +1851,7 @@ async function handleDeleteCareTask() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -1876,16 +1876,16 @@ async function handleDeleteCareTask() {
 }
 
 .care-task-card__due--overdue {
-  color: #C75B39;
+  color: var(--color-danger);
   font-weight: var(--font-weight-semibold);
 }
 
 .overdue-badge {
-  background: #C75B39;
-  color: white;
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 0.75rem;
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+  border-radius: var(--radius-full);
+  padding: var(--space-0-5) var(--space-2);
+  font-size: var(--text-xs);
   font-weight: var(--font-weight-medium);
 }
 
@@ -1939,9 +1939,9 @@ async function handleDeleteCareTask() {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--color-primary, var(--acc));
-  color: #fff;
-  border: 2px solid var(--surface, #fff);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border: 2px solid var(--card);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -297,7 +297,7 @@ async function saveEdit(todoId: string) {
     <div v-if="todosStore.loading && todosStore.items.length === 0" class="skeleton-list">
       <div class="skeleton-row" v-for="n in 3" :key="n">
         <BaseSkeleton width="20px" height="20px" rounded />
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-1);">
           <BaseSkeleton :width="['75%', '60%', '85%'][n - 1]" height="16px" />
           <BaseSkeleton width="40%" height="12px" />
         </div>
@@ -454,7 +454,7 @@ async function saveEdit(todoId: string) {
   align-items: center;
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: var(--z-sticky);
   background: var(--bg);
   padding-bottom: var(--space-2);
 }
@@ -595,7 +595,7 @@ async function saveEdit(todoId: string) {
 }
 
 .todo-row--overdue {
-  background: #FFF5F5;
+  background: var(--color-danger-soft);
 }
 
 .todo-row__main {
@@ -612,7 +612,7 @@ async function saveEdit(todoId: string) {
 .todo-row__content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   flex: 1;
   min-width: 0;
 }
@@ -642,7 +642,7 @@ async function saveEdit(todoId: string) {
   gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--sub);
-  margin-top: 2px;
+  margin-top: var(--space-0-5);
 }
 
 .todo-row__desc {

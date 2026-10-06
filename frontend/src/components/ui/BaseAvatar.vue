@@ -28,7 +28,7 @@ const sizeClass = computed(() => `base-avatar--${props.size}`)
     :class="sizeClass"
     :style="{
       backgroundColor: getMemberColor(props.userId),
-      color: '#fff',
+      color: 'var(--color-on-member)',
     }"
     aria-hidden="true"
     :title="name"

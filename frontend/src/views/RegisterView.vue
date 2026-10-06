@@ -147,7 +147,7 @@ async function handleRegister() {
   display: flex;
   gap: var(--space-1);
   margin-bottom: var(--space-4);
-  background: var(--color-neutral-100);
+  background: var(--chip);
   border-radius: var(--radius-md);
   padding: var(--space-1);
 }
@@ -182,7 +182,7 @@ async function handleRegister() {
   margin: 0;
   padding: var(--space-3);
   background: var(--color-danger-light);
-  border: 1px solid #FECACA;
+  border: 1px solid var(--color-danger-border);
   border-radius: var(--radius-sm);
   color: var(--color-danger);
   font-size: var(--text-sm);

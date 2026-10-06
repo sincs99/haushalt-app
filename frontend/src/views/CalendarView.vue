@@ -1249,7 +1249,7 @@ watch(
 .filter-chip {
   display: inline-flex;
   align-items: center;
-  padding: 4px 14px;
+  padding: var(--space-1) 14px;
   border: 2px solid;
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
@@ -1312,7 +1312,7 @@ watch(
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-0-5);
   padding: var(--space-2) 0;
   border: none;
   background: none;
@@ -1360,7 +1360,7 @@ watch(
 
 .week-strip__dots {
   display: flex;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-height: 6px;
   align-items: center;
 }
@@ -1443,7 +1443,7 @@ watch(
   font-size: var(--text-xs);
   color: var(--sub);
   background: var(--chip);
-  padding: 1px 6px;
+  padding: 1px var(--space-1-5);
   border-radius: var(--radius-full);
 }
 
@@ -1480,7 +1480,7 @@ watch(
   font-size: var(--text-xs);
   color: var(--sub);
   background: var(--chip);
-  padding: 2px 8px;
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-full);
   white-space: nowrap;
 }
@@ -1507,7 +1507,7 @@ watch(
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow-overlay);
-  z-index: 100;
+  z-index: var(--z-nav);
   transition: transform var(--transition-fast), filter var(--transition-fast);
 }
 
@@ -1651,7 +1651,7 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 4px 12px;
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-full);
   background: var(--card);
@@ -1686,7 +1686,7 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 4px 12px 4px 4px;
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-full);
   background: var(--card);
@@ -1774,7 +1774,7 @@ watch(
 .poll-option__votes {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .poll-option__votes > *:not(:first-child) {
@@ -1799,7 +1799,7 @@ watch(
 }
 
 .form-error {
-  margin: 2px 0 0;
+  margin: var(--space-0-5) 0 0;
   font-size: var(--text-sm);
   color: var(--color-danger);
 }
@@ -1809,7 +1809,7 @@ watch(
   font-size: var(--text-xs);
   color: var(--acc);
   background: var(--acc-soft);
-  padding: 1px 6px;
+  padding: 1px var(--space-1-5);
   border-radius: var(--radius-full);
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;
@@ -1841,7 +1841,7 @@ watch(
 }
 
 .color-picker::-webkit-color-swatch-wrapper {
-  padding: 2px;
+  padding: var(--space-0-5);
 }
 
 .color-picker::-webkit-color-swatch {

@@ -476,18 +476,18 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
   flex-shrink: 0;
   font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-full);
 }
 
 .due-badge--overdue {
   background: var(--color-danger);
-  color: #fff;
+  color: var(--color-on-danger);
 }
 
 .due-badge--today {
   background: var(--color-warning);
-  color: #fff;
+  color: var(--color-on-danger);
 }
 
 /* ── FAB ── */
@@ -499,14 +499,14 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
   height: 56px;
   border-radius: var(--radius-full);
   background: var(--acc);
-  color: #fff;
+  color: var(--color-on-accent);
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow-overlay);
   cursor: pointer;
-  z-index: 50;
+  z-index: var(--z-fab);
   transition: transform var(--transition-fast);
 }
 

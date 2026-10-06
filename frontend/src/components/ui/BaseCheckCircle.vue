@@ -45,6 +45,6 @@ defineEmits<{
 }
 
 .check-circle__icon {
-  color: #fff;
+  color: var(--color-on-success);
 }
 </style>

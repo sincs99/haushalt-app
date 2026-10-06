@@ -383,7 +383,7 @@ onMounted(resolve)
   border: none;
   border-radius: var(--radius-card);
   background: var(--acc);
-  color: #fff;
+  color: var(--color-on-accent);
   font-family: var(--font-display);
   font-size: var(--text-xl);
   font-weight: var(--font-weight-bold);

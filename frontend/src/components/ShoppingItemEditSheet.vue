@@ -178,7 +178,7 @@ function handleSubmit() {
 
 .edit-field__input {
   width: 100%;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
   font-size: var(--text-base);
@@ -205,7 +205,7 @@ function handleSubmit() {
 .store-pick-chip {
   display: flex;
   align-items: center;
-  padding: 6px 14px;
+  padding: var(--space-1-5) 14px;
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
@@ -227,7 +227,7 @@ function handleSubmit() {
 .store-pick-input {
   flex: 1;
   min-width: 120px;
-  padding: 6px 12px;
+  padding: var(--space-1-5) var(--space-3);
   border: 1px dashed var(--line-strong);
   border-radius: var(--radius-full);
   font-size: var(--text-sm);

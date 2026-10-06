@@ -513,7 +513,7 @@ async function confirmDissolve() {
   align-items: center;
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: var(--z-sticky);
   background: var(--bg);
   padding-bottom: var(--space-2);
 }
@@ -582,7 +582,7 @@ async function confirmDissolve() {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 6px 14px;
+  padding: var(--space-1-5) 14px;
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
@@ -592,7 +592,7 @@ async function confirmDissolve() {
   font-family: var(--font-family);
   background: var(--chip);
   color: var(--ink);
-  transition: all 150ms;
+  transition: all var(--transition-fast);
   min-height: 44px;
 }
 
@@ -603,15 +603,15 @@ async function confirmDissolve() {
 
 .store-chip__badge {
   font-size: var(--text-xs);
-  background: rgba(0,0,0,0.1);
+  background: var(--line);
   border-radius: var(--radius-full);
-  padding: 1px 6px;
+  padding: 1px var(--space-1-5);
   min-width: 20px;
   text-align: center;
 }
 
 .store-chip--active .store-chip__badge {
-  background: rgba(255,255,255,0.2);
+  background: color-mix(in srgb, var(--card) 20%, transparent);
 }
 
 /* Skeleton Loading */
@@ -672,7 +672,7 @@ async function confirmDissolve() {
   position: absolute;
   right: 0;
   top: 100%;
-  z-index: 20;
+  z-index: var(--z-dropdown);
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius-btn);
@@ -844,7 +844,7 @@ async function confirmDissolve() {
 /* Dialog-Styles */
 .dialog-input {
   width: 100%;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
   font-size: var(--text-base);

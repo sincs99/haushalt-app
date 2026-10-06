@@ -33,7 +33,7 @@ defineEmits<{
 }
 
 .pill-tab {
-  padding: 6px 16px;
+  padding: var(--space-1-5) var(--space-4);
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);

@@ -724,7 +724,7 @@ onUnmounted(() => {
   transform: translateY(-50%);
   color: var(--sub);
   pointer-events: none;
-  z-index: 1;
+  z-index: var(--z-raised);
 }
 
 .search :deep(.base-input__field) {
@@ -818,14 +818,14 @@ onUnmounted(() => {
 .category-chip {
   background: var(--chip);
   border-radius: var(--radius-full);
-  padding: 2px 10px;
+  padding: var(--space-0-5) 10px;
   font-size: var(--text-xs);
   color: var(--sub);
 }
 
 .expiry-badge {
   border-radius: var(--radius-full);
-  padding: 2px 10px;
+  padding: var(--space-0-5) 10px;
   font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
   color: var(--card);

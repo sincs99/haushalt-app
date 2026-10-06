@@ -598,9 +598,9 @@ async function handleDeleteTask() {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--color-primary, var(--acc));
-  color: #fff;
-  border: 2px solid var(--surface, #fff);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border: 2px solid var(--card);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -697,7 +697,7 @@ async function handleDeleteTask() {
 
 /* ── Sections ── */
 .section {
-  margin-bottom: var(--space-5, var(--space-4));
+  margin-bottom: var(--space-5);
 }
 
 .section-header {
@@ -741,7 +741,7 @@ async function handleDeleteTask() {
 .care-task-card__info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -776,9 +776,9 @@ async function handleDeleteTask() {
   margin-left: var(--space-1);
   font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-full);
-  color: #fff;
+  color: var(--color-on-danger);
 }
 
 .due-badge--overdue {
@@ -819,7 +819,7 @@ async function handleDeleteTask() {
 .log-row {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--line);
 }
@@ -882,6 +882,6 @@ async function handleDeleteTask() {
 
 .type-chip--active {
   background: var(--acc);
-  color: #fff;
+  color: var(--color-on-accent);
 }
 </style>

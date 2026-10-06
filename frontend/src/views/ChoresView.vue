@@ -704,8 +704,8 @@ const weekdayOptions = computed(() =>
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  background: var(--color-neutral-50);
-  border-bottom: 1px solid var(--color-neutral-200);
+  background: var(--color-surface-subtle);
+  border-bottom: 1px solid var(--line);
 }
 
 .day-group__label {
@@ -740,7 +740,7 @@ const weekdayOptions = computed(() =>
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-neutral-200);
+  border-bottom: 1px solid var(--line);
   position: relative;
 }
 
@@ -783,7 +783,7 @@ const weekdayOptions = computed(() =>
 .assignment-row__content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -813,7 +813,7 @@ const weekdayOptions = computed(() =>
 .reassign-dropdown {
   width: 100%;
   background: var(--color-surface);
-  border: 1px solid var(--color-neutral-200);
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
   padding: var(--space-2);
   margin-top: var(--space-1);
@@ -828,7 +828,7 @@ const weekdayOptions = computed(() =>
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-secondary);
-  border-bottom: 1px solid var(--color-neutral-200);
+  border-bottom: 1px solid var(--line);
   margin-bottom: var(--space-1);
 }
 
@@ -849,7 +849,7 @@ const weekdayOptions = computed(() =>
 }
 
 .reassign-dropdown__option:hover {
-  background: var(--color-neutral-100);
+  background: var(--chip);
 }
 
 .reassign-dropdown__option--active {
@@ -877,7 +877,7 @@ const weekdayOptions = computed(() =>
 }
 
 .action-btn:hover {
-  background: var(--color-neutral-100);
+  background: var(--chip);
   color: var(--color-text);
 }
 
@@ -887,7 +887,7 @@ const weekdayOptions = computed(() =>
 }
 
 .action-btn--danger:hover {
-  background: #FFF5F5;
+  background: var(--color-danger-soft);
   color: var(--color-danger);
 }
 
@@ -948,7 +948,7 @@ const weekdayOptions = computed(() =>
 .form-input {
   width: 100%;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   font-size: var(--text-base);
   font-family: var(--font-family);
@@ -966,7 +966,7 @@ const weekdayOptions = computed(() =>
 .form-textarea {
   width: 100%;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   font-family: var(--font-family);
@@ -1004,7 +1004,7 @@ const weekdayOptions = computed(() =>
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2);
-  background: var(--color-neutral-50);
+  background: var(--color-surface-subtle);
   border-radius: var(--radius-sm);
 }
 
@@ -1049,7 +1049,7 @@ const weekdayOptions = computed(() =>
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .chore-card__title-line {
@@ -1066,16 +1066,16 @@ const weekdayOptions = computed(() =>
 
 .inactive-badge {
   font-size: var(--text-xs);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-full);
-  background: var(--color-neutral-200);
+  background: var(--line);
   color: var(--color-text-muted);
 }
 
 .chore-card__meta {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
@@ -1101,7 +1101,7 @@ const weekdayOptions = computed(() =>
   width: 100%;
   padding: var(--space-3);
   margin-top: var(--space-2);
-  background: #FFF5F5;
+  background: var(--color-danger-soft);
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-danger);
 }
@@ -1120,7 +1120,7 @@ const weekdayOptions = computed(() =>
 .filter-toggle {
   display: flex;
   gap: var(--space-1);
-  background: var(--color-neutral-100);
+  background: var(--chip);
   border-radius: var(--radius-md);
   padding: var(--space-1);
   margin-bottom: var(--space-3);
@@ -1152,7 +1152,7 @@ const weekdayOptions = computed(() =>
   background: var(--chip);
   border-radius: var(--radius-btn);
   padding: 3px;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .segment-control a {

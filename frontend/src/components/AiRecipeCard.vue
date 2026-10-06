@@ -235,7 +235,7 @@ function discard() {
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
-  border-radius: var(--radius-btn, 12px);
+  border-radius: var(--radius-btn);
   background: var(--card);
   color: var(--ink);
   font: inherit;
@@ -253,7 +253,7 @@ function discard() {
 
 .ai-form__hint {
   margin: calc(-1 * var(--space-2)) 0 0;
-  font-size: var(--text-xs, 12px);
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
 
@@ -289,13 +289,13 @@ function discard() {
 
 .ai-error {
   margin: 0;
-  color: var(--color-danger, #c0392b);
+  color: var(--color-danger);
   font-size: var(--text-sm);
 }
 
 .ai-success {
   margin: 0;
-  color: var(--ok, var(--color-primary));
+  color: var(--ok);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
 }
@@ -309,7 +309,7 @@ function discard() {
 .ai-result__review {
   margin: 0;
   padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-btn, 12px);
+  border-radius: var(--radius-btn);
   background: var(--chip);
   font-size: var(--text-sm);
   color: var(--ink);
@@ -361,10 +361,10 @@ function discard() {
 }
 
 .ai-tag {
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-full);
   background: var(--chip);
-  font-size: var(--text-xs, 12px);
+  font-size: var(--text-xs);
   color: var(--ink);
 }
 
@@ -377,7 +377,7 @@ function discard() {
 
 .ai-disclaimer {
   margin: var(--space-2) 0 0;
-  font-size: var(--text-xs, 12px);
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
 

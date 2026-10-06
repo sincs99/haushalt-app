@@ -485,14 +485,14 @@ onUnmounted(() => {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 9999;
+  z-index: var(--z-banner);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   background-color: var(--color-warning);
-  color: var(--color-neutral-900);
+  color: var(--color-on-warning);
   text-align: center;
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm);
@@ -504,10 +504,10 @@ onUnmounted(() => {
 .top-bar {
   display: none;
   background: var(--color-surface);
-  border-bottom: 1px solid var(--color-neutral-200);
+  border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: var(--z-nav);
 }
 
 @media (min-width: 768px) {
@@ -553,7 +553,7 @@ onUnmounted(() => {
 }
 
 .top-bar__link:hover {
-  background: var(--color-neutral-100);
+  background: var(--chip);
   color: var(--color-text);
 }
 
@@ -573,7 +573,7 @@ onUnmounted(() => {
 .top-bar__logout {
   padding: var(--space-1) var(--space-3);
   background: none;
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--text-sm);
@@ -582,13 +582,13 @@ onUnmounted(() => {
 }
 
 .top-bar__logout:hover {
-  background: var(--color-neutral-100);
+  background: var(--chip);
 }
 
 .household-select {
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   background: var(--color-surface);
   font-size: var(--text-sm);
   cursor: pointer;
@@ -632,7 +632,7 @@ onUnmounted(() => {
 }
 
 .sync-dot--offline {
-  background-color: var(--color-neutral-400);
+  background-color: var(--sub);
 }
 
 @keyframes sync-pulse {
@@ -646,7 +646,7 @@ onUnmounted(() => {
   bottom: calc(64px + env(safe-area-inset-bottom, 0) + var(--space-3));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 10000;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);

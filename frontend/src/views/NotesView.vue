@@ -428,7 +428,7 @@ onUnmounted(() => {
   display: inline-block;
   background: var(--chip);
   border-radius: var(--radius-full);
-  padding: 2px 10px;
+  padding: var(--space-0-5) 10px;
   font-size: var(--text-xs);
   color: var(--sub);
   align-self: flex-start;

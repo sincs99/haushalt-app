@@ -6,6 +6,7 @@ import { usePlantsStore } from '../stores/plants'
 import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
+import { MAX_UPLOAD_BYTES, imageUploadErrorReason, prepareImageForUpload } from '../utils/imageUpload'
 import { useProtectedImage } from '../composables/useProtectedImage'
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
 import { formatDate } from '../utils/dates'
@@ -51,8 +52,6 @@ const householdId = computed(() => authStore.currentHouseholdId)
 const photoFileId = computed(() => plant.value?.photo_file_id ?? null)
 const { objectUrl: photoObjectUrl } = useProtectedImage(householdId, photoFileId)
 
-const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 MB
-
 async function handlePhotoUpload(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -61,18 +60,19 @@ async function handlePhotoUpload(event: Event) {
   // Reset input damit dasselbe Bild erneut gewählt werden kann
   input.value = ''
 
-  if (file.size > MAX_PHOTO_SIZE) {
-    showToast(t('files.FILE_TOO_LARGE'), 'error')
-    return
-  }
 
   photoUploading.value = true
   const oldFileId = plant.value?.photo_file_id ?? null
   let uploadedFile: StoredFile | null = null
 
   try {
-    // 1. Upload
-    uploadedFile = await filesRepo.uploadFile(householdId.value, file)
+    // 1. Verkleinern (Handy-Fotos, HEIC) und hochladen
+    const prepared = await prepareImageForUpload(file)
+    if (prepared.size > MAX_UPLOAD_BYTES) {
+      showToast(t('plants.photoUploadErrorReason', { reason: t('errors.FILE_TOO_LARGE') }), 'error')
+      return
+    }
+    uploadedFile = await filesRepo.uploadFile(householdId.value, prepared)
 
     // 2. Pflanze aktualisieren
     await plantsStore.updatePlant(plantId.value, { photo_file_id: uploadedFile.id })
@@ -87,14 +87,14 @@ async function handlePhotoUpload(event: Event) {
     }
 
     showToast(t('plants.photoUploadSuccess'), 'success')
-  } catch {
+  } catch (error) {
     // PATCH fehlgeschlagen → hochgeladene Datei aufräumen (best-effort)
     if (uploadedFile) {
       try {
         await filesRepo.deleteFile(householdId.value, uploadedFile.id)
       } catch { /* best effort */ }
     }
-    showToast(t('plants.photoUploadError'), 'error')
+    showToast(t('plants.photoUploadErrorReason', { reason: imageUploadErrorReason(error) }), 'error')
   } finally {
     photoUploading.value = false
   }
@@ -364,7 +364,7 @@ async function handleDeleteTask() {
       <input
         ref="fileInputRef"
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/*"
         class="plant-photo__input"
         @change="handlePhotoUpload"
       />

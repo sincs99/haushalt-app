@@ -533,7 +533,11 @@
     "TAG_NOTHING_TO_DO": "Gerade gibt es nichts zu tun",
     "TOO_MANY_TAGS": "Maximale Anzahl Tags für diesen Haushalt erreicht",
     "PLANT_NOT_FOUND": "Pflanze nicht gefunden",
-    "PLANT_CARE_TASK_NOT_FOUND": "Pflegeaufgabe nicht gefunden"
+    "PLANT_CARE_TASK_NOT_FOUND": "Pflegeaufgabe nicht gefunden",
+    "IMAGE_TOO_MANY_PIXELS": "Bild hat zu viele Pixel (max. 25 Megapixel)",
+    "FILE_MISMATCH": "Datei passt nicht (falscher Haushalt oder kein Bild)",
+    "FILE_NOT_FOUND": "Datei nicht gefunden",
+    "imageUnreadable": "Bild konnte nicht gelesen werden – unterstützt sind JPEG, PNG, WebP und iPhone-Fotos (HEIC)"
   },
   "push": {
     "title": "Benachrichtigungen",
@@ -649,7 +653,8 @@
     "photoUploadSuccess": "Foto aktualisiert",
     "photoUploadError": "Foto konnte nicht hochgeladen werden",
     "photoDeleteError": "Altes Foto konnte nicht entfernt werden",
-    "invalidWeight": "Bitte ein gültiges Gewicht eingeben"
+    "invalidWeight": "Bitte ein gültiges Gewicht eingeben",
+    "photoUploadErrorReason": "Foto konnte nicht hochgeladen werden: {reason}"
   },
   "petCare": {
     "title": "Pflege & Termine",
@@ -729,7 +734,8 @@
     "invalidInterval": "Bitte ein Intervall zwischen 1 und 3650 Tagen eingeben",
     "photoUploading": "Foto wird hochgeladen…",
     "photoUploadSuccess": "Foto aktualisiert",
-    "photoUploadError": "Foto konnte nicht hochgeladen werden"
+    "photoUploadError": "Foto konnte nicht hochgeladen werden",
+    "photoUploadErrorReason": "Foto konnte nicht hochgeladen werden: {reason}"
   },
   "food": {
     "title": "Essen",
@@ -796,7 +802,8 @@
     "FILE_TYPE_NOT_ALLOWED": "Dateityp nicht erlaubt",
     "FILE_NOT_FOUND": "Datei nicht gefunden",
     "FILE_IN_USE": "Datei wird noch verwendet",
-    "FILE_MISMATCH": "Datei passt nicht (falscher Haushalt oder kein Bild)"
+    "FILE_MISMATCH": "Datei passt nicht (falscher Haushalt oder kein Bild)",
+    "IMAGE_TOO_MANY_PIXELS": "Bild hat zu viele Pixel (max. 25 Megapixel)"
   },
   "sync": {
     "connected": "Verbunden",

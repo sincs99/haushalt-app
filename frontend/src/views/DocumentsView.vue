@@ -6,7 +6,7 @@ import { MAX_DOCUMENT_FILES, useDocumentsStore } from '../stores/documents'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
-import { translateApiError } from '../utils/apiErrors'
+import { imageUploadErrorReason } from '../utils/imageUpload'
 import { formatDate } from '../utils/dates'
 import { formatBytes, getExpiryStatus, isPreviewable } from '../utils/documents'
 import { DOCUMENT_CATEGORIES, type DocumentCategory, type DocumentItem, type StoredFile } from '../types'
@@ -158,11 +158,13 @@ function onProgress(current: number, total: number) {
 
 /** Prüft ausgewählte Dateien clientseitig (Grösse, Seitenlimit); Backend prüft zusätzlich */
 function acceptFiles(selected: File[]): File[] {
-  const tooLarge = selected.filter((f) => f.size > MAX_FILE_SIZE)
+  // Fotos werden vor dem Upload verkleinert (utils/imageUpload) — nur PDFs hier begrenzen
+  const isTooLarge = (f: File) => !f.type.startsWith('image/') && f.size > MAX_FILE_SIZE
+  const tooLarge = selected.filter(isTooLarge)
   if (tooLarge.length > 0) {
     showToast(t('files.FILE_TOO_LARGE'), 'error')
   }
-  const valid = selected.filter((f) => f.size <= MAX_FILE_SIZE)
+  const valid = selected.filter((f) => !isTooLarge(f))
   const free = MAX_DOCUMENT_FILES - pageCount.value
   if (valid.length > free) {
     showToast(t('documents.tooManyPages', { max: MAX_DOCUMENT_FILES }), 'error')
@@ -191,7 +193,7 @@ async function handleFilesSelected(event: Event) {
   try {
     await store.addPages(editingDoc.value.id, selected, onProgress)
   } catch (error) {
-    showToast(translateApiError(error), 'error')
+    showToast(imageUploadErrorReason(error), 'error')
   } finally {
     pagesBusy.value = false
     uploadProgress.value = null
@@ -215,7 +217,7 @@ async function moveStoredPage(fileId: string, direction: -1 | 1) {
   try {
     await store.movePage(editingDoc.value.id, fileId, direction)
   } catch (error) {
-    showToast(translateApiError(error), 'error')
+    showToast(imageUploadErrorReason(error), 'error')
   }
 }
 
@@ -228,7 +230,7 @@ async function removeStoredPage(file: StoredFile) {
   try {
     await store.removePage(doc.id, file.id)
   } catch (error) {
-    showToast(translateApiError(error), 'error')
+    showToast(imageUploadErrorReason(error), 'error')
   } finally {
     pagesBusy.value = false
   }
@@ -258,7 +260,7 @@ async function handleSave() {
     formLoading.value = false
     closeFormDialog()
   } catch (error) {
-    showToast(translateApiError(error), 'error')
+    showToast(imageUploadErrorReason(error), 'error')
   } finally {
     formLoading.value = false
     uploadProgress.value = null

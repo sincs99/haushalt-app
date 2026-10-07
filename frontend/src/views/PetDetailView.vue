@@ -6,6 +6,7 @@ import { usePetsStore } from '../stores/pets'
 import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
+import { MAX_UPLOAD_BYTES, imageUploadErrorReason, prepareImageForUpload } from '../utils/imageUpload'
 import { parseWeightKgToGrams } from '../utils/money'
 import { useProtectedImage } from '../composables/useProtectedImage'
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
@@ -53,8 +54,6 @@ const householdId = computed(() => authStore.currentHouseholdId)
 const photoFileId = computed(() => pet.value?.photo_file_id ?? null)
 const { objectUrl: photoObjectUrl } = useProtectedImage(householdId, photoFileId)
 
-const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 MB
-
 async function handlePhotoUpload(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -63,19 +62,19 @@ async function handlePhotoUpload(event: Event) {
   // Reset input damit dasselbe Bild erneut gewählt werden kann
   input.value = ''
 
-  // Client-seitige Dateigrössen-Prüfung
-  if (file.size > MAX_PHOTO_SIZE) {
-    showToast(t('files.FILE_TOO_LARGE'), 'error')
-    return
-  }
 
   photoUploading.value = true
   const oldFileId = pet.value?.photo_file_id ?? null
   let uploadedFile: StoredFile | null = null
 
   try {
-    // 1. Upload
-    uploadedFile = await filesRepo.uploadFile(householdId.value, file)
+    // 1. Verkleinern (Handy-Fotos, HEIC) und hochladen
+    const prepared = await prepareImageForUpload(file)
+    if (prepared.size > MAX_UPLOAD_BYTES) {
+      showToast(t('pets.photoUploadErrorReason', { reason: t('errors.FILE_TOO_LARGE') }), 'error')
+      return
+    }
+    uploadedFile = await filesRepo.uploadFile(householdId.value, prepared)
 
     // 2. Pet aktualisieren
     await petsStore.updatePet(petId.value, { photo_file_id: uploadedFile.id })
@@ -90,14 +89,14 @@ async function handlePhotoUpload(event: Event) {
     }
 
     showToast(t('pets.photoUploadSuccess'), 'success')
-  } catch {
+  } catch (error) {
     // PATCH fehlgeschlagen → hochgeladene Datei aufräumen (best-effort)
     if (uploadedFile) {
       try {
         await filesRepo.deleteFile(householdId.value, uploadedFile.id)
       } catch { /* best effort */ }
     }
-    showToast(t('pets.photoUploadError'), 'error')
+    showToast(t('pets.photoUploadErrorReason', { reason: imageUploadErrorReason(error) }), 'error')
   } finally {
     photoUploading.value = false
   }
@@ -640,7 +639,7 @@ async function handleDeleteCareTask() {
       <input
         ref="fileInputRef"
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/*"
         class="pet-photo__input"
         @change="handlePhotoUpload"
       />

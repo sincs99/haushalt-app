@@ -533,7 +533,11 @@
     "TAG_NOTHING_TO_DO": "There is nothing to do right now",
     "TOO_MANY_TAGS": "Maximum number of tags for this household reached",
     "PLANT_NOT_FOUND": "Plant not found",
-    "PLANT_CARE_TASK_NOT_FOUND": "Care task not found"
+    "PLANT_CARE_TASK_NOT_FOUND": "Care task not found",
+    "IMAGE_TOO_MANY_PIXELS": "Image has too many pixels (max. 25 megapixels)",
+    "FILE_MISMATCH": "File does not match (wrong household or not an image)",
+    "FILE_NOT_FOUND": "File not found",
+    "imageUnreadable": "Could not read the image – supported are JPEG, PNG, WebP and iPhone photos (HEIC)"
   },
   "push": {
     "title": "Notifications",
@@ -649,7 +653,8 @@
     "photoUploadSuccess": "Photo updated",
     "photoUploadError": "Could not upload photo",
     "photoDeleteError": "Could not remove old photo",
-    "invalidWeight": "Please enter a valid weight"
+    "invalidWeight": "Please enter a valid weight",
+    "photoUploadErrorReason": "Could not upload photo: {reason}"
   },
   "petCare": {
     "title": "Care & Schedule",
@@ -729,7 +734,8 @@
     "invalidInterval": "Please enter an interval between 1 and 3650 days",
     "photoUploading": "Uploading photo…",
     "photoUploadSuccess": "Photo updated",
-    "photoUploadError": "Photo could not be uploaded"
+    "photoUploadError": "Photo could not be uploaded",
+    "photoUploadErrorReason": "Photo could not be uploaded: {reason}"
   },
   "food": {
     "title": "Food",
@@ -796,7 +802,8 @@
     "FILE_TYPE_NOT_ALLOWED": "File type not allowed",
     "FILE_NOT_FOUND": "File not found",
     "FILE_IN_USE": "File is still in use",
-    "FILE_MISMATCH": "File mismatch (wrong household or not an image)"
+    "FILE_MISMATCH": "File mismatch (wrong household or not an image)",
+    "IMAGE_TOO_MANY_PIXELS": "Image has too many pixels (max. 25 megapixels)"
   },
   "sync": {
     "connected": "Connected",

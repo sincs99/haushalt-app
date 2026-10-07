@@ -124,7 +124,8 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | [`app/services/household_checks.py`](../backend/app/services/household_checks.py) | Prüfungen auf Haushaltsmitgliedschaft (Teilnehmer, Ausgleichs-Parteien, Ex-Mitglieder) | ✅ Fertig |
 | [`app/services/invite_code.py`](../backend/app/services/invite_code.py) | Eindeutige Invite-Code-Generierung mit Retry-Logik | ✅ Fertig |
 | [`app/services/push_service.py`](../backend/app/services/push_service.py) | Web-Push-Versand (Endpoint-Allowlist) und Scheduler für Todo-Erinnerungen, Tier- und Pflanzenpflege, Putzplan („Du bist dran“, materialisiert die heutigen Ämtli selbst) und Ablaufdaten von Dokumenten (30 Tage vorher und am Tag); jede Payload trägt die Zahl fürs App-Icon | ✅ Fertig |
-| [`app/services/attention.py`](../backend/app/services/attention.py) | Zahl am App-Icon: bis heute fällige offene Aufgaben und Ämtli (eigene oder niemandem zugewiesene), Tier- und Pflanzenpflege | ✅ Fertig |
+| [`app/services/attention.py`](../backend/app/services/attention.py) | Was heute ansteht (Zahl am App-Icon und Liste fürs Widget): bis heute fällige offene Aufgaben und Ämtli (eigene oder niemandem zugewiesene), Tier- und Pflanzenpflege | ✅ Fertig |
+| [`app/routers/widget.py`](../backend/app/routers/widget.py) | Homescreen-Widget (Scriptable): Nur-Lese-Schlüssel verwalten (3 Endpoints) und Widget-Daten (`/api/widget/summary`) — siehe [`widget.md`](widget.md) | ✅ Fertig |
 | [`app/services/storage.py`](../backend/app/services/storage.py) | `LocalStorageService`: Dateien unter `UPLOAD_DIR/{household_id}/` | ✅ Fertig |
 | [`alembic.ini`](../backend/alembic.ini), `migrations/` | Alembic-Konfiguration und -Migrationen (33 Versionen unter `migrations/versions/`, einziger Kopf `w1x2y3z4a5b6`) | ✅ Fertig |
 | [`scripts/regenerate_invite_codes.py`](../backend/scripts/regenerate_invite_codes.py) | Dry-Run/Apply-Script für Invite-Code-Migration | ✅ Fertig |
@@ -369,6 +370,8 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | **Dashboard und Aufgaben** | | | |
 | GET | `/api/households/{id}/dashboard` | ✅ | Aggregierte Startseite (Aufgaben, Einkauf, Finanzen) |
 | GET | `/api/households/{id}/dashboard/badge` | ✅ | Zahl am App-Icon für die aufrufende Person (`{count}`) |
+| GET/POST/DELETE | `/api/households/{id}/widget-token` | ✅ | Nur-Lese-Schlüssel fürs Homescreen-Widget anzeigen/erzeugen/widerrufen |
+| GET | `/api/widget/summary` | Widget-Schlüssel | Widget-Daten (fällig heute, Einkauf, Termine) — [`widget.md`](widget.md) |
 | GET | `/api/households/{id}/tasks` | ✅ | Vereinte Aufgabenliste (Todos + Putzplan-Zuweisungen) |
 | **Einkauf** | | | |
 | GET | `/api/households/{id}/shopping-lists/` | ✅ | Einkaufslisten |
@@ -846,6 +849,8 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | PWA (installierbar, Service Worker) | — | ✅ | — |
 | Web Push (Todo-Erinnerungen, Tier-/Pflanzenpflege, Putzplan „Du bist dran“, Dokument-Ablauf) | ✅ | ✅ | — |
 | Zahl am App-Icon (Badging API; iOS ab 16.4 als installierte App mit erlaubten Benachrichtigungen) | ✅ | ✅ | Socket |
+| Homescreen-Widget über Scriptable (iPhone) mit Nur-Lese-Schlüssel | ✅ | ✅ | — |
+| Foto-Upload verkleinert im Browser (1600 px, HEIC → JPEG) und nennt den Fehlergrund | ✅ | ✅ | — |
 | Dokument-Ablage (Verträge, Rechnungen, Garantien; mehrseitig, Vorschau, Speicher-Limit) | ✅ | ✅ DocumentsView | ✅ Socket |
 | Auth-Härtung (Rate-Limits, Refresh-Rotation, Security-Header/CSP) | ✅ | — | — |
 | Refresh-Token als HttpOnly-Cookie (H-01: `casa_rt`, CSRF-Header `X-Requested-With: casa`, Migration alter `localStorage`-Tokens) | ✅ | ✅ Auth-Store, API-Client, Cross-Tab über Sitzungs-Marker | — |

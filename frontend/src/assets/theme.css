@@ -69,6 +69,7 @@
      Nunito (--font-family): alles andere. */
   --font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: 'Quicksand', 'Nunito', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; /* Code, Schlüssel */
   --text-2xs: 0.625rem;   /* 10px  Zähler in Mini-Badges, Avatar sm */
   --text-xs: 0.75rem;     /* 12px  Badges, Meta */
   --text-sm: 0.875rem;    /* 14px  Sekundärtext, Labels */

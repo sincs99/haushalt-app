@@ -1355,3 +1355,37 @@ class AiUsage(Base):
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     household: Mapped["Household"] = relationship(back_populates="ai_usage")
+
+
+class WidgetToken(Base):
+    """Nur-Lese-Schlüssel für Homescreen-Widgets (Scriptable auf dem iPhone).
+
+    Gehört einer Person in einem Haushalt; erlaubt ausschliesslich
+    GET /api/widget/summary. Gespeichert wird nur der SHA-256-Hash, der
+    Klartext wird beim Erzeugen einmal angezeigt. Pro Person und Haushalt
+    gibt es höchstens einen Schlüssel (neu erzeugen ersetzt den alten).
+    """
+
+    __tablename__ = "widget_tokens"
+    __table_args__ = (
+        UniqueConstraint("user_id", "household_id", name="uq_widget_token_user_household"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    # Erste Zeichen zum Wiedererkennen in der Oberfläche (kein Geheimnis)
+    token_prefix: Mapped[str] = mapped_column(String(12), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

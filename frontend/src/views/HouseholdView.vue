@@ -20,6 +20,7 @@ import { PhUserMinus, PhSignOut, PhPlus, PhShareNetwork, PhQrCode } from '@phosp
 import PageHeader from '../components/ui/PageHeader.vue'
 import PushSettings from '../components/PushSettings.vue'
 import AiSettingsCard from '../components/AiSettingsCard.vue'
+import WidgetSettingsCard from '../components/WidgetSettingsCard.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -495,6 +496,9 @@ watch(() => authStore.currentHouseholdId, () => {
         {{ $t('tags.manage') }}
       </BaseButton>
     </BaseCard>
+
+    <!-- ══ Sektion: Homescreen-Widget (Scriptable) ══ -->
+    <WidgetSettingsCard />
 
     <!-- ══ Sektion: KI-Assistent (nur wenn auf dem Server eingerichtet) ══ -->
     <AiSettingsCard />

@@ -537,7 +537,8 @@
     "IMAGE_TOO_MANY_PIXELS": "Image has too many pixels (max. 25 megapixels)",
     "FILE_MISMATCH": "File does not match (wrong household or not an image)",
     "FILE_NOT_FOUND": "File not found",
-    "imageUnreadable": "Could not read the image – supported are JPEG, PNG, WebP and iPhone photos (HEIC)"
+    "imageUnreadable": "Could not read the image – supported are JPEG, PNG, WebP and iPhone photos (HEIC)",
+    "WIDGET_TOKEN_INVALID": "Invalid widget key"
   },
   "push": {
     "title": "Notifications",
@@ -1124,5 +1125,28 @@
       "dueCount": "Due: {n} plant(s)",
       "plantDue": "Watering due: {date}"
     }
+  },
+  "widget": {
+    "title": "Widget (iPhone)",
+    "hint": "Shows what is due today on your home screen: tasks, chores, care, events and the shopping list. Runs in the free app “Scriptable” with its own read-only key.",
+    "create": "Set up widget",
+    "replace": "Create new key",
+    "replaceConfirm": "The current key will stop working. A widget that is already set up needs the new script.",
+    "revoke": "Revoke",
+    "revokeConfirm": "The widget will no longer be able to load data.",
+    "revoked": "Widget key revoked",
+    "active": "Key active ({prefix}…)",
+    "createdAt": "Created on {date}",
+    "lastUsed": "last used on {date}",
+    "neverUsed": "not used yet",
+    "onlyNow": "The script contains your key and is only shown now.",
+    "step1": "Get “Scriptable” from the App Store, open it, tap + to create a script and paste the script.",
+    "step2": "Long-press the home screen → + → “Scriptable” → choose a size → Add widget.",
+    "step3": "Long-press the widget → “Edit widget” → choose this script under “Script”.",
+    "copy": "Copy script",
+    "download": "Download as file",
+    "copied": "Script copied",
+    "copyFailed": "Copying not possible – select the text in the field and copy it",
+    "scriptLabel": "Scriptable script"
   }
 }

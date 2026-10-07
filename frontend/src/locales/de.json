@@ -537,7 +537,8 @@
     "IMAGE_TOO_MANY_PIXELS": "Bild hat zu viele Pixel (max. 25 Megapixel)",
     "FILE_MISMATCH": "Datei passt nicht (falscher Haushalt oder kein Bild)",
     "FILE_NOT_FOUND": "Datei nicht gefunden",
-    "imageUnreadable": "Bild konnte nicht gelesen werden – unterstützt sind JPEG, PNG, WebP und iPhone-Fotos (HEIC)"
+    "imageUnreadable": "Bild konnte nicht gelesen werden – unterstützt sind JPEG, PNG, WebP und iPhone-Fotos (HEIC)",
+    "WIDGET_TOKEN_INVALID": "Widget-Schlüssel ungültig"
   },
   "push": {
     "title": "Benachrichtigungen",
@@ -1124,5 +1125,28 @@
       "dueCount": "Fällig: {n} Pflanze(n)",
       "plantDue": "Gießen fällig: {date}"
     }
+  },
+  "widget": {
+    "title": "Widget (iPhone)",
+    "hint": "Zeigt auf dem Homescreen, was heute ansteht: Aufgaben, Ämtli, Pflege, Termine und die Einkaufsliste. Läuft über die kostenlose App „Scriptable“ mit einem eigenen Schlüssel, der nur lesen darf.",
+    "create": "Widget einrichten",
+    "replace": "Neuen Schlüssel erzeugen",
+    "replaceConfirm": "Der bisherige Schlüssel funktioniert danach nicht mehr. Ein eingerichtetes Widget muss das neue Skript bekommen.",
+    "revoke": "Widerrufen",
+    "revokeConfirm": "Das Widget kann danach keine Daten mehr laden.",
+    "revoked": "Widget-Schlüssel widerrufen",
+    "active": "Schlüssel aktiv ({prefix}…)",
+    "createdAt": "Erstellt am {date}",
+    "lastUsed": "zuletzt genutzt am {date}",
+    "neverUsed": "noch nicht genutzt",
+    "onlyNow": "Das Skript enthält deinen Schlüssel und ist nur jetzt sichtbar.",
+    "step1": "„Scriptable“ aus dem App Store laden, öffnen, mit + ein neues Skript anlegen und das Skript einfügen.",
+    "step2": "Auf dem Homescreen lange tippen → + → „Scriptable“ → Grösse wählen → Widget hinzufügen.",
+    "step3": "Widget antippen und halten → „Widget bearbeiten“ → bei „Script“ dieses Skript auswählen.",
+    "copy": "Skript kopieren",
+    "download": "Als Datei laden",
+    "copied": "Skript kopiert",
+    "copyFailed": "Kopieren nicht möglich – Text im Feld markieren und kopieren",
+    "scriptLabel": "Scriptable-Skript"
   }
 }

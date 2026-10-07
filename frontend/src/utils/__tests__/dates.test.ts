@@ -2,7 +2,7 @@
  * Unit-Tests für Termin-Zeiten in Haushaltszeit und die Tages-Expansion.
  */
 import type {} from 'vitest'
-import { eventDate, eventTime, expandEventToDays } from '../dates'
+import { eventDate, eventTime, expandEventToDays, localDateString } from '../dates'
 
 // dates.ts lädt i18n, das beim Import localStorage liest (in Node nicht vorhanden)
 vi.hoisted(() => {
@@ -40,5 +40,12 @@ describe('expandEventToDays', () => {
     expect(expandEventToDays('2026-10-07T09:00:00+02:00', null)).toEqual([
       { date: '2026-10-07', dayIndex: 1, totalDays: 1 },
     ])
+  })
+})
+
+describe('localDateString', () => {
+  it('liefert das lokale Datum, auch kurz nach Mitternacht', () => {
+    expect(localDateString(new Date(2026, 9, 6, 0, 30))).toBe('2026-10-06')
+    expect(localDateString(new Date(2026, 0, 1, 23, 59))).toBe('2026-01-01')
   })
 })

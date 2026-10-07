@@ -4,6 +4,7 @@ import { useShoppingStore } from '../stores/shopping'
 import { findCanonicalStore, normalizeStoreName, storesEqual } from '../utils/storeName'
 import { useExpensesStore } from '../stores/expenses'
 import { useToast } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
 import { useI18n } from 'vue-i18n'
 import { PhX, PhShoppingCart, PhCaretDown, PhPlus, PhDotsThreeVertical } from '@phosphor-icons/vue'
 import type { ShoppingItem } from '../types'
@@ -12,18 +13,27 @@ import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
 import BaseCheckCircle from './ui/BaseCheckCircle.vue'
 import BaseDialog from './ui/BaseDialog.vue'
+import BaseErrorState from './ui/BaseErrorState.vue'
 import ShoppingItemEditSheet from './ShoppingItemEditSheet.vue'
 
 const shoppingStore = useShoppingStore()
 const expensesStore = useExpensesStore()
-const { showToast } = useToast()
+const { notifyError, notifyUndoable } = useToast()
+const { run, isPending } = useAsyncAction()
 const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   autoFocus?: boolean
+  /** Laden ist gescheitert → Fehlerzustand statt „Keine offenen Artikel“ */
+  loadError?: boolean
+  retrying?: boolean
 }>(), {
   autoFocus: false,
+  loadError: false,
+  retrying: false,
 })
+
+const emit = defineEmits<{ retry: [] }>()
 
 const newItemName = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
@@ -38,6 +48,8 @@ const showRenameDialog = ref(false)
 const showDissolveDialog = ref(false)
 const renameTarget = ref<string>('')
 const renameNewName = ref('')
+// Zweiter Schritt im Umbenennen-Dialog: Zusammenführen mit bestehendem Geschäft bestätigen
+const mergeTarget = ref<string | null>(null)
 const dissolveTarget = ref<string>('')
 const kebabOpen = ref<string | null>(null)
 
@@ -155,82 +167,67 @@ async function handleAddItem() {
   const name = newItemName.value.trim()
   if (!name) return
 
-  newItemName.value = ''
-  try {
-    // Store automatisch von aktivem Filter übernehmen
-    const storeForItem = shoppingStore.activeStoreFilter === '__none__'
-      ? undefined
-      : (shoppingStore.activeStoreFilter ?? undefined)
-    await shoppingStore.addItem(name, undefined, undefined, storeForItem)
-  } catch {
-    showToast(t('shopping.addError'), 'error')
-  }
+  // Store automatisch von aktivem Filter übernehmen
+  const storeForItem = shoppingStore.activeStoreFilter === '__none__'
+    ? undefined
+    : (shoppingStore.activeStoreFilter ?? undefined)
+  // Offline blockiert run() vor dem Leeren → der Text bleibt stehen
+  await run(async () => {
+    // Feld sofort leeren (schnelles Erfassen mehrerer Artikel) …
+    newItemName.value = ''
+    try {
+      await shoppingStore.addItem(name, undefined, undefined, storeForItem)
+    } catch (err) {
+      // … und bei Fehler den Text wiederherstellen, falls nichts Neues getippt wurde
+      if (!newItemName.value) newItemName.value = name
+      throw err
+    }
+  }, { key: `add:${name}`, error: t('shopping.addError') })
   inputRef.value?.focus()
 }
 
 async function handleToggle(itemId: string) {
-  try {
-    await shoppingStore.toggleChecked(itemId)
-  } catch {
-    showToast(t('shopping.toggleError'), 'error')
-  }
+  // Abhaken ist in der Liste sichtbar → kein Erfolgs-Toast
+  await run(() => shoppingStore.toggleChecked(itemId), {
+    key: `toggle:${itemId}`,
+    error: t('shopping.toggleError'),
+  })
 }
 
 async function handleAssignToggle(itemId: string) {
-  try {
-    await shoppingStore.toggleAssigned(itemId)
-  } catch {
-    showToast(t('shopping.toggleError'), 'error')
-  }
+  await run(() => shoppingStore.toggleAssigned(itemId), {
+    key: `assign:${itemId}`,
+    error: t('shopping.toggleError'),
+  })
 }
 
 async function handleDelete(itemId: string) {
   const item = shoppingStore.items.find(i => i.id === itemId)
   if (!item) return
+  // Vollständiger Snapshot (Liste, Abgehakt-Status, Zuweisung) fürs Undo
+  const snapshot = { ...item }
 
-  try {
-    await shoppingStore.deleteItem(itemId)
-    showToast(t('common.deleted'), 'success', undefined, {
-      label: t('common.undo'),
-      onAction: () => {
-        shoppingStore.addItem(
-          item.name,
-          item.quantity ?? undefined,
-          item.category ?? undefined,
-          item.store ?? undefined,
-        ).catch(() => {
-          showToast(t('shopping.addError'), 'error')
-        })
-      },
-    })
-  } catch {
-    showToast(t('shopping.deleteError'), 'error')
-  }
+  await run(() => shoppingStore.deleteItem(itemId), {
+    key: `delete:${itemId}`,
+    success: t('common.deleted'),
+    undo: () => shoppingStore.restoreItems([snapshot]),
+    error: t('shopping.deleteError'),
+  })
 }
 
 async function handleClearDone() {
-  const itemsToDelete = [...checkedItems.value]
-  if (itemsToDelete.length === 0) return
+  const ids = checkedItems.value.map(i => i.id)
+  if (ids.length === 0) return
 
-  await Promise.all(
-    itemsToDelete.map(item => shoppingStore.deleteItem(item.id).catch(() => {})),
-  )
-
-  showToast(t('common.listCleared'), 'success', undefined, {
-    label: t('common.undo'),
-    onAction: () => {
-      Promise.all(
-        itemsToDelete.map(item =>
-          shoppingStore.addItem(
-            item.name,
-            item.quantity ?? undefined,
-            item.category ?? undefined,
-            item.store ?? undefined,
-          ).catch(() => {}),
-        ),
-      )
-    },
-  })
+  await run(async () => {
+    const { removed, failed, error } = await shoppingStore.deleteItems(ids)
+    if (failed > 0) {
+      notifyError(t('shopping.clearDonePartial', { n: failed }), error)
+    }
+    if (removed.length > 0) {
+      notifyUndoable(t('shopping.doneRemoved'), () => shoppingStore.restoreItems(removed))
+    }
+  }, { key: 'clearDone', error: t('shopping.deleteError') })
 }
 
 // ── Edit-Sheet ──
@@ -241,22 +238,39 @@ function handleItemTap(item: ShoppingItem) {
 
 async function handleEditSave(data: { name: string; quantity: string | null; store: string | null; category: string | null }) {
   if (!editItem.value) return
-  try {
-    await shoppingStore.updateItem(editItem.value.id, data)
+  const itemId = editItem.value.id
+  const ok = await run(() => shoppingStore.updateItem(itemId, data), {
+    key: 'editSave',
+    error: t('shopping.toggleError'),
+  })
+  if (ok) {
     showEditSheet.value = false
     editItem.value = null
-  } catch {
-    showToast(t('shopping.toggleError'), 'error')
   }
+}
+
+async function handleEditDelete() {
+  if (!editItem.value) return
+  const itemId = editItem.value.id
+  showEditSheet.value = false
+  editItem.value = null
+  await handleDelete(itemId)
 }
 
 // ── Kebab-Menü Actions ──
 function handleRenameStore(storeName: string) {
   renameTarget.value = storeName
   renameNewName.value = storeName
+  mergeTarget.value = null
   showRenameDialog.value = true
   kebabOpen.value = null
 }
+
+const mergeCount = computed(() =>
+  mergeTarget.value
+    ? shoppingStore.activeListItems.filter(i => storesEqual(i.store, mergeTarget.value)).length
+    : 0,
+)
 
 async function confirmRename() {
   const newName = normalizeStoreName(renameNewName.value)
@@ -267,22 +281,19 @@ async function confirmRename() {
 
   // Merge-Warnung: Prüfe case-insensitive, ob ein anderer Ziel-Store bereits existiert.
   // Eine reine Änderung der Gross-/Kleinschreibung ("coop" → "Coop") ist kein Merge.
+  // Bestätigung als zweiter Schritt im Dialog (statt window.confirm).
   const existingStore = findCanonicalStore(shoppingStore.stores, newName)
-  if (existingStore && !storesEqual(existingStore, renameTarget.value)) {
-    const existingCount = shoppingStore.activeListItems.filter(i => storesEqual(i.store, existingStore)).length
-    const confirmed = window.confirm(
-      t('shopping.mergeStoreConfirm', { to: existingStore, count: existingCount })
-    )
-    if (!confirmed) return
+  if (existingStore && !storesEqual(existingStore, renameTarget.value) && mergeTarget.value !== existingStore) {
+    mergeTarget.value = existingStore
+    return
   }
 
-  try {
-    await shoppingStore.reassignStore(renameTarget.value, newName)
-    showToast(t('shopping.storeRenamed'), 'success')
-  } catch {
-    showToast(t('shopping.reassignError'), 'error')
-  }
-  showRenameDialog.value = false
+  const ok = await run(() => shoppingStore.reassignStore(renameTarget.value, newName), {
+    key: 'reassignStore',
+    success: t('shopping.storeRenamed'),
+    error: t('shopping.reassignError'),
+  })
+  if (ok) showRenameDialog.value = false
 }
 
 function handleDissolveStore(storeName: string) {
@@ -292,13 +303,12 @@ function handleDissolveStore(storeName: string) {
 }
 
 async function confirmDissolve() {
-  try {
-    await shoppingStore.reassignStore(dissolveTarget.value, null)
-    showToast(t('shopping.storeDissolved'), 'success')
-  } catch {
-    showToast(t('shopping.reassignError'), 'error')
-  }
-  showDissolveDialog.value = false
+  const ok = await run(() => shoppingStore.reassignStore(dissolveTarget.value, null), {
+    key: 'reassignStore',
+    success: t('shopping.storeDissolved'),
+    error: t('shopping.reassignError'),
+  })
+  if (ok) showDissolveDialog.value = false
 }
 </script>
 
@@ -312,7 +322,7 @@ async function confirmDissolve() {
         type="text"
         :placeholder="$t('shopping.addPlaceholder')"
         class="quick-add__input"
-        autofocus
+        :aria-label="$t('shopping.addPlaceholder')"
       />
       <button
         type="submit"
@@ -361,9 +371,11 @@ async function confirmDissolve() {
             v-if="groupName !== $t('shopping.miscGroup')"
             type="button"
             class="group-header__kebab"
+            :aria-label="$t('shopping.storeActions', { store: groupName })"
+            :aria-expanded="kebabOpen === groupName"
             @click.stop="kebabOpen = kebabOpen === groupName ? null : groupName"
           >
-            <PhDotsThreeVertical :size="18" />
+            <PhDotsThreeVertical :size="20" />
           </button>
           <!-- Kebab-Dropdown -->
           <div v-if="kebabOpen === groupName" class="kebab-menu" @click.stop>
@@ -377,13 +389,14 @@ async function confirmDissolve() {
             :key="item.id"
             class="item-row"
           >
-            <BaseCheckCircle :checked="item.is_checked" @toggle="handleToggle(item.id)" />
+            <BaseCheckCircle :checked="item.is_checked" :label="item.name" @toggle="handleToggle(item.id)" />
             <span class="item-row__name" @click.stop="handleItemTap(item)">{{ item.name }}</span>
             <span v-if="item.quantity" class="item-row__meta">{{ item.quantity }}</span>
             <button
               type="button"
               class="item-row__assign"
               :title="item.assigned_to_user_id ? $t('shopping.unassign') : $t('shopping.assignToMe')"
+              :aria-label="item.assigned_to_user_id ? $t('shopping.unassign') : $t('shopping.assignToMe')"
               @click.stop="handleAssignToggle(item.id)"
             >
               <BaseAvatar
@@ -399,9 +412,16 @@ async function confirmDissolve() {
       </div>
     </div>
 
+    <!-- Fehlerzustand: Artikel konnten nicht geladen werden -->
+    <BaseErrorState
+      v-if="loadError && !shoppingStore.loading && shoppingStore.activeListItems.length === 0"
+      :retrying="retrying"
+      @retry="emit('retry')"
+    />
+
     <!-- Empty State -->
     <BaseEmptyState
-      v-if="!shoppingStore.loading && openItems.length === 0"
+      v-else-if="!shoppingStore.loading && openItems.length === 0"
       :icon="PhShoppingCart"
       :title="$t('shopping.emptyOpenTitle')"
       :subtitle="$t('shopping.emptyOpenSubtitle')"
@@ -412,7 +432,7 @@ async function confirmDissolve() {
       <div class="done-section__header">
         <button type="button" class="done-section__toggle" @click="showDone = !showDone">
           <PhCaretDown
-            :size="18"
+            :size="20"
             class="done-section__chevron"
             :class="{ 'done-section__chevron--open': showDone }"
           />
@@ -422,9 +442,10 @@ async function confirmDissolve() {
           v-if="showDone"
           type="button"
           class="done-section__clear-btn"
+          :disabled="isPending('clearDone')"
           @click="handleClearDone"
         >
-          {{ $t('shopping.clearDone') }}
+          {{ $t('shopping.clearDoneItems') }}
         </button>
       </div>
 
@@ -435,7 +456,7 @@ async function confirmDissolve() {
             :key="item.id"
             class="item-row item-row--checked"
           >
-            <BaseCheckCircle :checked="item.is_checked" @toggle="handleToggle(item.id)" />
+            <BaseCheckCircle :checked="item.is_checked" :label="item.name" @toggle="handleToggle(item.id)" />
             <span class="item-row__name" @click="handleToggle(item.id)">{{ item.name }}</span>
             <span v-if="item.quantity" class="item-row__meta">{{ item.quantity }}</span>
             <BaseAvatar
@@ -463,8 +484,10 @@ async function confirmDissolve() {
       :stores="shoppingStore.stores"
       :categories="availableCategories"
       :open="showEditSheet"
+      :saving="isPending('editSave')"
       @close="showEditSheet = false; editItem = null"
       @save="handleEditSave"
+      @delete="handleEditDelete"
     />
 
     <!-- Rename-Dialog -->
@@ -475,10 +498,17 @@ async function confirmDissolve() {
     >
       <form @submit.prevent="confirmRename">
         <input v-model="renameNewName" type="text" class="dialog-input"
-               :placeholder="$t('shopping.renameStorePlaceholder')" maxlength="100" autofocus />
+               :placeholder="$t('shopping.renameStorePlaceholder')"
+               :aria-label="$t('shopping.renameStorePlaceholder')"
+               maxlength="100" autofocus @input="mergeTarget = null" />
+        <p v-if="mergeTarget" class="dialog-warning" role="alert">
+          {{ $t('shopping.mergeStoreConfirm', { to: mergeTarget, count: mergeCount }) }}
+        </p>
         <div class="dialog-actions">
           <button type="button" class="btn-secondary" @click="showRenameDialog = false">{{ $t('common.cancel') }}</button>
-          <button type="submit" class="btn-primary" :disabled="!renameNewName.trim()">{{ $t('common.save') }}</button>
+          <button type="submit" class="btn-primary" :disabled="!renameNewName.trim() || isPending('reassignStore')">
+            {{ mergeTarget ? $t('shopping.mergeStores') : $t('common.save') }}
+          </button>
         </div>
       </form>
     </BaseDialog>
@@ -493,7 +523,7 @@ async function confirmDissolve() {
       <p>{{ $t('shopping.dissolveConfirm', { store: dissolveTarget }) }}</p>
       <template #footer>
         <button type="button" class="btn-secondary" @click="showDissolveDialog = false">{{ $t('common.cancel') }}</button>
-        <button type="button" class="btn-danger" @click="confirmDissolve">{{ $t('shopping.dissolveStore') }}</button>
+        <button type="button" class="btn-danger" :disabled="isPending('reassignStore')" @click="confirmDissolve">{{ $t('shopping.dissolveStore') }}</button>
       </template>
     </BaseDialog>
   </div>
@@ -513,7 +543,7 @@ async function confirmDissolve() {
   align-items: center;
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: var(--z-sticky);
   background: var(--bg);
   padding-bottom: var(--space-2);
 }
@@ -554,7 +584,7 @@ async function confirmDissolve() {
   border-radius: var(--radius-full);
   border: none;
   background: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -582,7 +612,7 @@ async function confirmDissolve() {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 6px 14px;
+  padding: var(--chip-padding);
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
@@ -592,7 +622,7 @@ async function confirmDissolve() {
   font-family: var(--font-family);
   background: var(--chip);
   color: var(--ink);
-  transition: all 150ms;
+  transition: all var(--transition-fast);
   min-height: 44px;
 }
 
@@ -602,16 +632,16 @@ async function confirmDissolve() {
 }
 
 .store-chip__badge {
-  font-size: var(--text-xs);
-  background: rgba(0,0,0,0.1);
+  font-size: var(--text-badge);
+  background: var(--line);
   border-radius: var(--radius-full);
-  padding: 1px 6px;
+  padding: var(--badge-padding);
   min-width: 20px;
   text-align: center;
 }
 
 .store-chip--active .store-chip__badge {
-  background: rgba(255,255,255,0.2);
+  background: color-mix(in srgb, var(--card) 20%, transparent);
 }
 
 /* Skeleton Loading */
@@ -672,7 +702,7 @@ async function confirmDissolve() {
   position: absolute;
   right: 0;
   top: 100%;
-  z-index: 20;
+  z-index: var(--z-dropdown);
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius-btn);
@@ -844,7 +874,7 @@ async function confirmDissolve() {
 /* Dialog-Styles */
 .dialog-input {
   width: 100%;
-  padding: 10px 12px;
+  padding: var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
   font-size: var(--text-base);
@@ -860,6 +890,19 @@ async function confirmDissolve() {
   box-shadow: 0 0 0 3px var(--acc-soft);
 }
 
+.dialog-warning {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+}
+
+.btn-danger:disabled,
+.btn-primary:disabled,
+.done-section__clear-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
@@ -872,7 +915,7 @@ async function confirmDissolve() {
   border-radius: var(--radius-btn);
   border: none;
   background: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
   font-family: var(--font-family);
@@ -909,7 +952,7 @@ async function confirmDissolve() {
   border-radius: var(--radius-btn);
   border: none;
   background: var(--color-danger);
-  color: var(--card);
+  color: var(--color-on-danger);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
   font-family: var(--font-family);

@@ -3,11 +3,28 @@ import { ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlinePetsRepository } from '../repositories/petsRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
+import { localDateString } from '../utils/dates'
 import type {
   Pet, PetCreatePayload, PetUpdatePayload, PetFeedingStatus, FeedingLog, FeedingSlot,
   HouseholdMemberInfo, Medication, MedicationCreatePayload, MedicationUpdatePayload, MedicationLog,
   PetCareTask, PetCareTaskCreatePayload, PetCareTaskUpdatePayload,
 } from '../types'
+
+/** Payload, in dem geleerte Felder als `null` gesendet werden (Backend löscht sie dann). */
+export type Clearable<T> = { [K in keyof T]?: T[K] | null }
+
+/** Ergebnis eines Fütterungs-Toggles. `duplicate` = jemand anderes hat schon gefüttert (409). */
+export type FeedingToggleResult = 'fed' | 'unfed' | 'duplicate'
+
+function isFeedingDuplicate(err: unknown): boolean {
+  const e = err as { response?: { status?: number; data?: { detail?: { code?: string } } } }
+  return e?.response?.status === 409 || e?.response?.data?.detail?.code === 'FEEDING_DUPLICATE'
+}
+
+function addDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return localDateString(new Date(y, m - 1, d + days))
+}
 
 export const usePetsStore = defineStore('pets', () => {
   const repo = createOnlinePetsRepository()
@@ -21,6 +38,9 @@ export const usePetsStore = defineStore('pets', () => {
   const medications = ref<Medication[]>([])
   const medicationLogs = ref<Record<string, MedicationLog[]>>({})  // medication_id → logs
   const careTasks = ref<PetCareTask[]>([])
+  // Für welches Tier Medikamente/Pflegeaufgaben geladen sind (Tierwechsel → Listen leeren)
+  const medicationsPetId = ref<string | null>(null)
+  const careTasksPetId = ref<string | null>(null)
 
   // Mutex für Toggle-Operationen
   const pendingToggles = new Set<string>()
@@ -77,12 +97,13 @@ export const usePetsStore = defineStore('pets', () => {
     return created
   }
 
-  async function updatePet(petId: string, payload: PetUpdatePayload) {
+  async function updatePet(petId: string, payload: Clearable<PetUpdatePayload>) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    const updated = await repo.update(householdId, petId, payload)
+    // null = Feld leeren (Backend: exclude_unset, null wird gespeichert)
+    const updated = await repo.update(householdId, petId, payload as PetUpdatePayload)
     const idx = pets.value.findIndex(p => p.id === petId)
     if (idx !== -1) {
       pets.value[idx] = updated
@@ -112,8 +133,12 @@ export const usePetsStore = defineStore('pets', () => {
     }
   }
 
-  // KERN-USECASE: Toggle-Fütterung (optimistic)
-  async function toggleFeeding(petId: string, slot: FeedingSlot) {
+  /**
+   * KERN-USECASE: Toggle-Fütterung (optimistic).
+   * Fehler werden nach dem Rollback weitergereicht; 409 (schon gefüttert) lädt den
+   * Status neu und liefert `duplicate`. `undefined` = nichts passiert (Mutex/unbekannt).
+   */
+  async function toggleFeeding(petId: string, slot: FeedingSlot): Promise<FeedingToggleResult | undefined> {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -132,8 +157,10 @@ export const usePetsStore = defineStore('pets', () => {
       statusItem[slot] = null
       try {
         await repo.deleteFeeding(householdId, petId, existing.id)
-      } catch {
+        return 'unfed'
+      } catch (err) {
         statusItem[slot] = existing  // Rollback
+        throw err
       } finally {
         pendingToggles.delete(key)
       }
@@ -146,32 +173,51 @@ export const usePetsStore = defineStore('pets', () => {
         slot,
         fed_at: new Date().toISOString(),
         fed_by_user_id: authStore.user?.id ?? '',
-        date: new Date().toISOString().slice(0, 10),
+        date: localDateString(),
       }
       statusItem[slot] = tempFeeding
       try {
         const real = await repo.createFeeding(householdId, petId, slot)
         statusItem[slot] = real
+        return 'fed'
       } catch (err: unknown) {
         statusItem[slot] = null  // Rollback
-        // 409 = already fed → refetch
-        const axiosErr = err as { response?: { status?: number } }
-        if (axiosErr.response?.status === 409) await fetchFeedingStatus()
+        // 409 = schon gefüttert → Server-Status holen, kein Fehler
+        if (isFeedingDuplicate(err)) {
+          await fetchFeedingStatus()
+          return 'duplicate'
+        }
+        throw err
       } finally {
         pendingToggles.delete(key)
       }
     }
   }
 
-  async function feedAll(slot: FeedingSlot) {
+  /** Alle Tiere für den Slot füttern. Liefert die neu angelegten Fütterungen (für Undo). */
+  async function feedAll(slot: FeedingSlot): Promise<FeedingLog[]> {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return []
+
+    try {
+      const created = await repo.feedAll(householdId, slot)
+      return Array.isArray(created) ? created : []
+    } finally {
+      // Server-Wahrheit (auch bei Fehler)
+      await fetchFeedingStatus()
+    }
+  }
+
+  /** Undo für „Alle gefüttert“: die eben angelegten Fütterungen wieder löschen. */
+  async function undoFeedings(feedings: FeedingLog[]) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
     try {
-      await repo.feedAll(householdId, slot)
-      await fetchFeedingStatus()
-    } catch {
+      await Promise.all(feedings.map(f => repo.deleteFeeding(householdId, f.pet_id, f.id)))
+    } finally {
       await fetchFeedingStatus()
     }
   }
@@ -183,11 +229,15 @@ export const usePetsStore = defineStore('pets', () => {
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    try {
-      medications.value = await repo.fetchMedications(householdId, petId)
-    } catch {
-      // Silently fail
+    // Tierwechsel: Daten des vorherigen Tiers nicht stehen lassen
+    if (medicationsPetId.value !== petId) {
+      medications.value = []
+      medicationLogs.value = {}
     }
+    medicationsPetId.value = petId
+    const meds = await repo.fetchMedications(householdId, petId)
+    // Antwort eines inzwischen verlassenen Tiers verwerfen
+    if (medicationsPetId.value === petId) medications.value = meds
   }
 
   async function createMedication(petId: string, payload: MedicationCreatePayload) {
@@ -205,12 +255,12 @@ export const usePetsStore = defineStore('pets', () => {
     return created
   }
 
-  async function updateMedication(petId: string, medicationId: string, payload: MedicationUpdatePayload) {
+  async function updateMedication(petId: string, medicationId: string, payload: Clearable<MedicationUpdatePayload>) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    const updated = await repo.updateMedication(householdId, petId, medicationId, payload)
+    const updated = await repo.updateMedication(householdId, petId, medicationId, payload as MedicationUpdatePayload)
     const idx = medications.value.findIndex(m => m.id === medicationId)
     if (idx !== -1) {
       medications.value[idx] = updated
@@ -292,6 +342,8 @@ export const usePetsStore = defineStore('pets', () => {
   // ── Medication Socket-Handler ──
 
   function handleMedicationCreated(med: Medication) {
+    // Nur Medikamente des geöffneten Tiers übernehmen
+    if (med.pet_id !== medicationsPetId.value) return
     const idx = medications.value.findIndex(m => m.id === med.id)
     if (idx !== -1) medications.value[idx] = med
     else medications.value.push(med)
@@ -319,11 +371,10 @@ export const usePetsStore = defineStore('pets', () => {
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    try {
-      careTasks.value = await repo.fetchCareTasks(householdId, petId)
-    } catch {
-      // Silently fail
-    }
+    if (careTasksPetId.value !== petId) careTasks.value = []
+    careTasksPetId.value = petId
+    const tasks = await repo.fetchCareTasks(householdId, petId)
+    if (careTasksPetId.value === petId) careTasks.value = tasks
   }
 
   async function createCareTask(petId: string, payload: PetCareTaskCreatePayload) {
@@ -365,13 +416,11 @@ export const usePetsStore = defineStore('pets', () => {
     // Optimistic: Datum sofort berechnen
     const idx = careTasks.value.findIndex(t => t.id === taskId)
     if (idx !== -1) {
-      const today = new Date().toISOString().slice(0, 10)
-      const nextDue = new Date()
-      nextDue.setDate(nextDue.getDate() + careTasks.value[idx].interval_days)
+      const today = localDateString()
       careTasks.value[idx] = {
         ...careTasks.value[idx],
         last_done_at: today,
-        next_due_at: nextDue.toISOString().slice(0, 10),
+        next_due_at: addDays(today, careTasks.value[idx].interval_days),
         notified_at: null,
       }
     }
@@ -381,6 +430,7 @@ export const usePetsStore = defineStore('pets', () => {
       // Server-Wahrheit übernehmen
       const i = careTasks.value.findIndex(t => t.id === taskId)
       if (i !== -1) careTasks.value[i] = updated
+      return updated
     } catch (error) {
       // Vollständiger Rollback
       careTasks.value = snapshot
@@ -409,6 +459,8 @@ export const usePetsStore = defineStore('pets', () => {
   // ── Care Task Socket-Handler ──
 
   function handleCareTaskCreated(task: PetCareTask) {
+    // Nur Aufgaben des geöffneten Tiers übernehmen
+    if (task.pet_id !== careTasksPetId.value) return
     const idx = careTasks.value.findIndex(t => t.id === task.id)
     if (idx !== -1) careTasks.value[idx] = task
     else careTasks.value.push(task)
@@ -452,6 +504,7 @@ export const usePetsStore = defineStore('pets', () => {
     removePet,
     toggleFeeding,
     feedAll,
+    undoFeedings,
     fetchMedications,
     createMedication,
     updateMedication,

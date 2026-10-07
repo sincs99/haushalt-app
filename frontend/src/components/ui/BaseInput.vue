@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 
 defineOptions({ inheritAttrs: false })
 
@@ -20,7 +20,10 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-const inputId = computed(() => props.id ?? (props.label ? `input-${props.label.toLowerCase().replace(/\s+/g, '-')}` : undefined))
+// Eindeutige ID (nicht aus dem Label ableiten – gleiche Labels würden doppelte IDs ergeben)
+const autoId = `input-${useId()}`
+const inputId = computed(() => props.id ?? autoId)
+const errorId = computed(() => `${inputId.value}-error`)
 </script>
 
 <template>
@@ -38,9 +41,11 @@ const inputId = computed(() => props.id ?? (props.label ? `input-${props.label.t
       :placeholder="placeholder"
       :disabled="disabled"
       :autocomplete="autocomplete"
+      :aria-invalid="error ? 'true' : undefined"
+      :aria-describedby="error ? errorId : undefined"
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     />
-    <p v-if="error" class="base-input__error">
+    <p v-if="error" :id="errorId" class="base-input__error">
       {{ error }}
     </p>
   </div>
@@ -80,7 +85,7 @@ const inputId = computed(() => props.id ?? (props.label ? `input-${props.label.t
 .base-input__field:focus {
   outline: none;
   border-color: var(--acc);
-  box-shadow: 0 0 0 3px var(--acc-soft);
+  box-shadow: var(--focus-ring);
 }
 
 .base-input__field--error {
@@ -88,7 +93,8 @@ const inputId = computed(() => props.id ?? (props.label ? `input-${props.label.t
 }
 
 .base-input__field--error:focus {
-  box-shadow: 0 0 0 3px var(--acc-soft);
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 3px var(--color-danger-soft);
 }
 
 .base-input__field:disabled {

@@ -3,9 +3,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { usePetsStore } from '../stores/pets'
-import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
+import { useLoader } from '../composables/useLoader'
 import { parseWeightKgToGrams } from '../utils/money'
 import type { Pet, PetCreatePayload, FeedingSlot, FeedingLog } from '../types'
 import { PhCat, PhSun, PhMoon, PhPlus } from '@phosphor-icons/vue'
@@ -16,20 +17,26 @@ import BaseDialog from '../components/ui/BaseDialog.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
+import BaseErrorState from '../components/ui/BaseErrorState.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 
 const petsStore = usePetsStore()
-const authStore = useAuthStore()
 const router = useRouter()
 const { on, off, onReconnect, offReconnect } = useSocket()
-const { showToast } = useToast()
+const { notifyInfo } = useToast()
+const { run, isPending } = useAsyncAction()
 const { t } = useI18n()
+
+// Ladefehler → Fehlerzustand mit „Erneut versuchen“ statt „Noch keine Katzen“
+const { loadError, reloading, reload } = useLoader(() => Promise.all([
+  petsStore.fetchPets(),
+  petsStore.fetchFeedingStatus(),
+  petsStore.fetchMembers(),
+]))
 
 // ── Lifecycle ──
 onMounted(() => {
-  petsStore.fetchPets()
-  petsStore.fetchFeedingStatus()
-  petsStore.fetchMembers()
+  reload()
 
   // Socket-Events
   on('pet_created', handleSocketPetCreated)
@@ -72,16 +79,13 @@ function handleSocketFeedingDeleted(data: { id: string; pet_id: string }) {
 }
 
 function handleReconnect() {
-  petsStore.fetchPets()
-  petsStore.fetchFeedingStatus()
+  reload()
 }
 
 // Haushaltswechsel: Daten des neuen Haushalts laden (App.vue hat den Store geleert)
 watch(() => authStore.currentHouseholdId, (id) => {
   if (!id) return
-  petsStore.fetchPets()
-  petsStore.fetchFeedingStatus()
-  petsStore.fetchMembers()
+  reload()
 })
 
 // ── Current Slot ──
@@ -136,21 +140,34 @@ const showFeedAllButton = computed(() => {
   return petsStore.feedingStatus.some(s => !s[slot])
 })
 
-async function handleFeedAll() {
-  try {
-    await petsStore.feedAll(currentSlot.value)
-  } catch {
-    showToast(t('pets.feedError'))
-  }
+function handleFeedAll() {
+  return run(async () => {
+    const created = await petsStore.feedAll(currentSlot.value)
+    // Jemand anderes war schneller: Hinweis statt Erfolg
+    if (created.length === 0) notifyInfo(t('pets.allAlreadyFed'))
+    return created
+  }, {
+    key: 'feed-all',
+    success: (created) => (created.length > 0 ? t('pets.allFedToast') : undefined),
+    undo: (created) => petsStore.undoFeedings(created),
+    error: t('pets.feedError'),
+  })
 }
 
 // ── Toggle Feeding ──
-async function handleToggleFeeding(petId: string, slot: FeedingSlot) {
-  try {
-    await petsStore.toggleFeeding(petId, slot)
-  } catch {
-    showToast(t('pets.feedError'))
-  }
+function handleToggleFeeding(petId: string, slot: FeedingSlot, petName: string) {
+  return run(async () => {
+    const result = await petsStore.toggleFeeding(petId, slot)
+    // 409: schon gefüttert (Status wurde neu geladen) → Hinweis, kein Fehler
+    if (result === 'duplicate') notifyInfo(t('errors.FEEDING_DUPLICATE'))
+    return result
+  }, {
+    key: `feed-${petId}-${slot}`,
+    // Nur fürs Füttern; Entfernen ist selbst schon das Rückgängigmachen
+    success: (result) => (result === 'fed' ? t('pets.fedToast', { name: petName }) : undefined),
+    undo: () => petsStore.toggleFeeding(petId, slot),
+    error: t('pets.feedError'),
+  })
 }
 
 // ── Pet Card Helpers ──
@@ -189,7 +206,11 @@ const formBreed = ref('')
 const formBirthdate = ref('')
 const formWeightGrams = ref('')
 const formNotes = ref('')
-const formSaving = ref(false)
+const formSaving = computed(() => isPending('create'))
+// Inline-Fehler am Gewichtsfeld
+const formWeightError = ref('')
+
+watch(formWeightGrams, () => { formWeightError.value = '' })
 
 function resetForm() {
   formName.value = ''
@@ -197,6 +218,7 @@ function resetForm() {
   formBirthdate.value = ''
   formWeightGrams.value = ''
   formNotes.value = ''
+  formWeightError.value = ''
 }
 
 function openAddDialog() {
@@ -210,33 +232,27 @@ function closeAddDialog() {
 
 async function handleCreatePet() {
   const name = formName.value.trim()
-  if (!name || formSaving.value) return
-
-  formSaving.value = true
+  if (!name) return
 
   const weightResult = parseWeightKgToGrams(formWeightGrams.value)
   if (weightResult === null) {
-    showToast(t('pets.invalidWeight'))
-    formSaving.value = false
+    formWeightError.value = t('pets.invalidWeight')
     return
   }
 
-  try {
-    const payload: PetCreatePayload = {
-      name,
-      breed: formBreed.value.trim() || undefined,
-      birthdate: formBirthdate.value || undefined,
-      weight_grams: weightResult,
-      notes: formNotes.value.trim() || undefined,
-    }
-    await petsStore.createPet(payload)
-    showAddDialog.value = false
-    showToast(t('pets.created'))
-  } catch {
-    showToast(t('pets.createError'))
-  } finally {
-    formSaving.value = false
+  const payload: PetCreatePayload = {
+    name,
+    breed: formBreed.value.trim() || undefined,
+    birthdate: formBirthdate.value || undefined,
+    weight_grams: weightResult,
+    notes: formNotes.value.trim() || undefined,
   }
+  const ok = await run(() => petsStore.createPet(payload), {
+    key: 'create',
+    success: t('pets.created'),
+    error: t('pets.createError'),
+  })
+  if (ok) showAddDialog.value = false
 }
 
 // ── Delete Pet ──
@@ -251,14 +267,14 @@ function cancelDelete() {
 }
 
 async function handleDelete() {
-  if (!deletingPetId.value) return
-  try {
-    await petsStore.removePet(deletingPetId.value)
-    deletingPetId.value = null
-    showToast(t('pets.deleted'))
-  } catch {
-    showToast(t('pets.deleteError'))
-  }
+  const id = deletingPetId.value
+  if (!id) return
+  const ok = await run(() => petsStore.removePet(id), {
+    key: 'delete',
+    success: t('pets.deleted'),
+    error: t('pets.deleteError'),
+  })
+  if (ok) deletingPetId.value = null
 }
 
 // ── Navigate to Detail ──
@@ -275,12 +291,19 @@ function navigateToPet(petId: string) {
     <div v-if="petsStore.loading && petsStore.pets.length === 0" class="skeleton-list">
       <div class="skeleton-row" v-for="n in 3" :key="n">
         <BaseSkeleton width="40px" height="40px" rounded />
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-1);">
           <BaseSkeleton :width="['75%', '60%', '85%'][n - 1]" height="16px" />
           <BaseSkeleton width="40%" height="12px" />
         </div>
       </div>
     </div>
+
+    <!-- Ladefehler (vor dem Leerzustand) -->
+    <BaseErrorState
+      v-else-if="loadError && petsStore.pets.length === 0"
+      :retrying="reloading"
+      @retry="reload"
+    />
 
     <!-- Empty State -->
     <BaseEmptyState
@@ -319,20 +342,24 @@ function navigateToPet(petId: string) {
               </div>
               <div class="feeding-row__toggles">
                 <button
+                  type="button"
                   class="feed-toggle"
                   :class="{ 'feed-toggle--fed': isFed(status.pet_id, 'morning') }"
-                  :title="$t('pets.morning')"
-                  :aria-label="$t('pets.morning')"
-                  @click="handleToggleFeeding(status.pet_id, 'morning')"
+                  :title="$t('pets.feedToggleMorning', { name: status.pet_name })"
+                  :aria-label="$t('pets.feedToggleMorning', { name: status.pet_name })"
+                  :aria-pressed="isFed(status.pet_id, 'morning')"
+                  @click="handleToggleFeeding(status.pet_id, 'morning', status.pet_name)"
                 >
                   <PhSun :size="16" weight="bold" />
                 </button>
                 <button
+                  type="button"
                   class="feed-toggle"
                   :class="{ 'feed-toggle--fed': isFed(status.pet_id, 'evening') }"
-                  :title="$t('pets.evening')"
-                  :aria-label="$t('pets.evening')"
-                  @click="handleToggleFeeding(status.pet_id, 'evening')"
+                  :title="$t('pets.feedToggleEvening', { name: status.pet_name })"
+                  :aria-label="$t('pets.feedToggleEvening', { name: status.pet_name })"
+                  :aria-pressed="isFed(status.pet_id, 'evening')"
+                  @click="handleToggleFeeding(status.pet_id, 'evening', status.pet_name)"
                 >
                   <PhMoon :size="16" weight="bold" />
                 </button>
@@ -345,6 +372,7 @@ function navigateToPet(petId: string) {
             variant="secondary"
             size="sm"
             class="feed-all-btn"
+            :loading="isPending('feed-all')"
             @click="handleFeedAll"
           >
             {{ $t('pets.markAllFed') }}
@@ -358,7 +386,11 @@ function navigateToPet(petId: string) {
           v-for="pet in petsStore.pets"
           :key="pet.id"
           class="pet-card"
+          role="button"
+          tabindex="0"
           @click="navigateToPet(pet.id)"
+          @keydown.enter.self="navigateToPet(pet.id)"
+          @keydown.space.self.prevent="navigateToPet(pet.id)"
         >
           <div class="pet-card__header">
             <PetPhotoAvatar
@@ -397,7 +429,7 @@ function navigateToPet(petId: string) {
 
     <!-- Add Pet Dialog -->
     <BaseDialog :open="showAddDialog" :title="$t('pets.addPet')" @close="closeAddDialog">
-      <form class="dialog-form" @submit.prevent="handleCreatePet">
+      <form id="pet-add-form" class="dialog-form" @submit.prevent="handleCreatePet">
         <BaseInput
           v-model="formName"
           :label="$t('pets.name')"
@@ -417,6 +449,7 @@ function navigateToPet(petId: string) {
           v-model="formWeightGrams"
           :label="$t('pets.weight')"
           :placeholder="$t('pets.weightPlaceholder')"
+          :error="formWeightError || undefined"
           type="text"
           inputmode="decimal"
         />
@@ -433,8 +466,10 @@ function navigateToPet(petId: string) {
           </BaseButton>
           <BaseButton
             variant="primary"
+            type="submit"
+            form="pet-add-form"
             :disabled="!formName.trim() || formSaving"
-            @click="handleCreatePet"
+            :loading="formSaving"
           >
             {{ $t('common.save') }}
           </BaseButton>
@@ -450,7 +485,7 @@ function navigateToPet(petId: string) {
           <BaseButton variant="ghost" @click="cancelDelete">
             {{ $t('common.cancel') }}
           </BaseButton>
-          <BaseButton variant="danger" @click="handleDelete">
+          <BaseButton variant="danger" :loading="isPending('delete')" @click="handleDelete">
             {{ $t('common.delete') }}
           </BaseButton>
         </div>
@@ -468,7 +503,7 @@ function navigateToPet(petId: string) {
 /* ── Card Title ── */
 .card-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   margin: 0 0 var(--space-3) 0;
   color: var(--ink);
@@ -500,7 +535,7 @@ function navigateToPet(petId: string) {
 .feeding-row__info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
   flex: 1;
 }
@@ -547,7 +582,7 @@ function navigateToPet(petId: string) {
 
 .feed-toggle--fed {
   background: var(--ok);
-  color: #fff;
+  color: var(--color-on-success);
 }
 
 /* ── Feed All Button ── */
@@ -565,6 +600,11 @@ function navigateToPet(petId: string) {
   box-shadow: var(--shadow-card);
   cursor: pointer;
   transition: transform var(--transition-fast);
+}
+
+.pet-card:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
 }
 
 @media (hover: hover) {
@@ -585,9 +625,10 @@ function navigateToPet(petId: string) {
 }
 
 .pet-card__name {
-  font-size: var(--text-lg);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
+  font-family: var(--font-display);
 }
 
 .pet-card__details {
@@ -626,18 +667,18 @@ function navigateToPet(petId: string) {
   position: fixed;
   bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   right: var(--space-4);
-  width: 56px;
-  height: 56px;
+  width: var(--fab-size);
+  height: var(--fab-size);
   border-radius: var(--radius-full);
   background: var(--acc);
-  color: #fff;
+  color: var(--color-on-accent);
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow-overlay);
   cursor: pointer;
-  z-index: 50;
+  z-index: var(--z-fab);
   transition: transform var(--transition-fast);
 }
 

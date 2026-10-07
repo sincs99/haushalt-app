@@ -28,11 +28,11 @@ import { usePetsStore } from '../pets'
 const pet = (id = 'p1', o: Record<string, unknown> = {}) => ({ id, name: 'Bello', ...o }) as any
 const feeding = (id: string, slot = 'morning', petId = 'p1') => ({ id, pet_id: petId, slot }) as any
 const status = (petId = 'p1', o: Record<string, unknown> = {}) => ({ pet_id: petId, morning: null, evening: null, ...o }) as any
-const med = (id = 'm1', o: Record<string, unknown> = {}) => ({ id, name: 'Pille', ...o }) as any
+const med = (id = 'm1', o: Record<string, unknown> = {}) => ({ id, pet_id: 'p1', name: 'Pille', ...o }) as any
 const task = (id = 't1', o: Record<string, unknown> = {}) => ({
-  id, interval_days: 7, last_done_at: null, next_due_at: '2026-01-01', notified_at: 'x', ...o,
+  id, pet_id: 'p1', interval_days: 7, last_done_at: null, next_due_at: '2026-01-01', notified_at: 'x', ...o,
 }) as any
-const axios409 = { response: { status: 409 } }
+const axios409 = { response: { status: 409, data: { detail: { code: 'FEEDING_DUPLICATE' } } } }
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -110,18 +110,37 @@ describe('toggleFeeding', () => {
     expect(store.feedingStatus[0].morning.id).toBe('real')
   })
 
-  test('Füttern: Rollback bei Fehler; bei 409 wird der Status neu geladen', async () => {
+  test('Füttern: Rollback + Fehler weiterreichen; bei 409 Status neu laden und „duplicate“', async () => {
     const store = usePetsStore()
     store.feedingStatus = [status()]
     repo.createFeeding.mockRejectedValue(new Error('500'))
-    await store.toggleFeeding('p1', 'morning')
+    await expect(store.toggleFeeding('p1', 'morning')).rejects.toThrow('500')
     expect(store.feedingStatus[0].morning).toBeNull()
     expect(repo.fetchFeedingStatus).not.toHaveBeenCalled()
 
     repo.createFeeding.mockRejectedValue(axios409)
     repo.fetchFeedingStatus.mockResolvedValue([status('p1', { morning: feeding('srv') })])
-    await store.toggleFeeding('p1', 'morning')
+    await expect(store.toggleFeeding('p1', 'morning')).resolves.toBe('duplicate')
     expect(store.feedingStatus[0].morning.id).toBe('srv')
+  })
+
+  test('Füttern liefert „fed“, Entfernen „unfed“; Datum ist lokal', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2024, 2, 10, 0, 30, 0)) // lokal kurz nach Mitternacht
+    try {
+      const store = usePetsStore()
+      store.feedingStatus = [status()]
+      const pending = deferred<any>()
+      repo.createFeeding.mockReturnValue(pending.promise)
+      const p = store.toggleFeeding('p1', 'morning')
+      expect(store.feedingStatus[0].morning.date).toBe('2024-03-10')
+      pending.resolve(feeding('real'))
+      await expect(p).resolves.toBe('fed')
+      repo.deleteFeeding.mockResolvedValue(undefined)
+      await expect(store.toggleFeeding('p1', 'morning')).resolves.toBe('unfed')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('Rückgängig: sofort entfernt, Rollback bei Fehler', async () => {
@@ -131,7 +150,7 @@ describe('toggleFeeding', () => {
     repo.deleteFeeding.mockRejectedValue(new Error('x'))
     const p = store.toggleFeeding('p1', 'morning')
     expect(store.feedingStatus[0].morning).toBeNull()
-    await p
+    await expect(p).rejects.toThrow('x')
     expect(store.feedingStatus[0].morning).toEqual(f)
     repo.deleteFeeding.mockResolvedValue(undefined)
     await store.toggleFeeding('p1', 'morning')
@@ -163,14 +182,24 @@ describe('toggleFeeding', () => {
     expect(repo.createFeeding).toHaveBeenCalledTimes(1)
   })
 
-  test('feedAll lädt den Status danach neu — auch bei Fehler', async () => {
+  test('feedAll lädt den Status danach neu — auch bei Fehler, und reicht den Fehler weiter', async () => {
     const store = usePetsStore()
-    repo.feedAll.mockResolvedValue(undefined)
+    repo.feedAll.mockResolvedValue([feeding('f1')])
     repo.fetchFeedingStatus.mockResolvedValue([])
-    await store.feedAll('morning')
+    await expect(store.feedAll('morning')).resolves.toEqual([feeding('f1')])
     repo.feedAll.mockRejectedValue(new Error('x'))
-    await store.feedAll('evening')
+    await expect(store.feedAll('evening')).rejects.toThrow('x')
     expect(repo.fetchFeedingStatus).toHaveBeenCalledTimes(2)
+  })
+
+  test('undoFeedings löscht die angelegten Fütterungen und lädt den Status neu', async () => {
+    const store = usePetsStore()
+    repo.deleteFeeding.mockResolvedValue(undefined)
+    repo.fetchFeedingStatus.mockResolvedValue([status()])
+    await store.undoFeedings([feeding('f1'), feeding('f2', 'morning', 'p2')])
+    expect(repo.deleteFeeding).toHaveBeenCalledWith(HOUSEHOLD_ID, 'p1', 'f1')
+    expect(repo.deleteFeeding).toHaveBeenCalledWith(HOUSEHOLD_ID, 'p2', 'f2')
+    expect(repo.fetchFeedingStatus).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -181,8 +210,8 @@ describe('Medikation', () => {
     await store.fetchMedications('p1')
     expect(store.medications).toHaveLength(1)
     repo.fetchMedications.mockRejectedValue(new Error('x'))
-    await store.fetchMedications('p1') // schluckt
-    expect(store.medications).toHaveLength(1)
+    await expect(store.fetchMedications('p1')).rejects.toThrow('x')
+    expect(store.medications).toHaveLength(1) // gleiches Tier: Liste bleibt
 
     repo.createMedication.mockResolvedValue(med('m2'))
     await store.createMedication('p1', {} as any)
@@ -228,7 +257,7 @@ describe('Pflegeaufgaben', () => {
     repo.fetchCareTasks.mockResolvedValue([task()])
     await store.fetchCareTasks('p1')
     repo.fetchCareTasks.mockRejectedValue(new Error('x'))
-    await store.fetchCareTasks('p1')
+    await expect(store.fetchCareTasks('p1')).rejects.toThrow('x')
     expect(store.careTasks).toHaveLength(1)
     repo.createCareTask.mockResolvedValue(task('t2'))
     await store.createCareTask('p1', {} as any)
@@ -243,13 +272,56 @@ describe('Pflegeaufgaben', () => {
     const pending = deferred<any>()
     repo.completeCareTask.mockReturnValue(pending.promise)
     const p = store.completeCareTask('p1', 't1')
-    const today = new Date().toISOString().slice(0, 10)
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
     expect(store.careTasks[0].last_done_at).toBe(today)
     expect(store.careTasks[0].notified_at).toBeNull()
     expect(store.careTasks[0].next_due_at).not.toBe('2026-01-01')
     pending.resolve(task('t1', { last_done_at: 'server' }))
     await p
     expect(store.careTasks[0].last_done_at).toBe('server')
+  })
+
+  test('Tierwechsel leert Medikamente, Logs und Pflegeaufgaben – auch wenn das Laden scheitert', async () => {
+    const store = usePetsStore()
+    repo.fetchMedications.mockResolvedValue([med()])
+    repo.fetchCareTasks.mockResolvedValue([task()])
+    await store.fetchMedications('p1')
+    await store.fetchCareTasks('p1')
+    store.medicationLogs = { m1: [{ id: 'l' } as any] }
+    repo.fetchMedications.mockRejectedValue(new Error('x'))
+    repo.fetchCareTasks.mockRejectedValue(new Error('x'))
+    await expect(store.fetchMedications('p2')).rejects.toThrow()
+    await expect(store.fetchCareTasks('p2')).rejects.toThrow()
+    expect(store.medications).toEqual([])
+    expect(store.medicationLogs).toEqual({})
+    expect(store.careTasks).toEqual([])
+  })
+
+  test('späte Antwort eines verlassenen Tiers wird verworfen', async () => {
+    const store = usePetsStore()
+    const slow = deferred<any>()
+    repo.fetchMedications.mockReturnValueOnce(slow.promise).mockResolvedValueOnce([med('m2')])
+    const p = store.fetchMedications('p1')
+    await store.fetchMedications('p2')
+    slow.resolve([med('m1')])
+    await p
+    expect(store.medications.map(m => m.id)).toEqual(['m2'])
+  })
+
+  test('completeCareTask rechnet die nächste Fälligkeit im lokalen Datum', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2024, 2, 10, 0, 30, 0))
+    try {
+      const store = usePetsStore()
+      store.careTasks = [task()]
+      repo.completeCareTask.mockReturnValue(new Promise(() => {}))
+      store.completeCareTask('p1', 't1')
+      expect(store.careTasks[0].last_done_at).toBe('2024-03-10')
+      expect(store.careTasks[0].next_due_at).toBe('2024-03-17')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('completeCareTask: Rollback auf Snapshot bei Fehler', async () => {
@@ -299,8 +371,16 @@ describe('Socket-Handler', () => {
     expect(store.feedingStatus[0].evening).toBeNull()
   })
 
-  test('Medication und CareTask Handler', () => {
+  test('Medication und CareTask Handler (nur für das geöffnete Tier)', async () => {
     const store = usePetsStore()
+    repo.fetchMedications.mockResolvedValue([])
+    repo.fetchCareTasks.mockResolvedValue([])
+    await store.fetchMedications('p1')
+    await store.fetchCareTasks('p1')
+    store.handleMedicationCreated(med('other', { pet_id: 'p2' }))
+    store.handleCareTaskCreated(task('other', { pet_id: 'p2' }))
+    expect(store.medications).toEqual([])
+    expect(store.careTasks).toEqual([])
     store.handleMedicationCreated(med()); store.handleMedicationCreated(med('m1', { name: 'B' }))
     store.handleMedicationUpdated(med('m1', { name: 'C' })); store.handleMedicationUpdated(med('x'))
     expect(store.medications.map(m => m.name)).toEqual(['C'])

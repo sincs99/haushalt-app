@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { PhWallet, PhCat, PhPlant, PhForkKnife, PhNote, PhFolderOpen, PhGear, PhCaretRight, PhSparkle } from '@phosphor-icons/vue'
 import { useI18n } from 'vue-i18n'
 import { useAiStore } from '../stores/ai'
+import { useBackClose } from '../composables/useBackClose'
 
 const props = defineProps<{
   open: boolean
@@ -17,10 +18,15 @@ const router = useRouter()
 const { t } = useI18n()
 const aiStore = useAiStore()
 
-function navigate(path: string) {
-  router.push(path)
+async function navigate(path: string) {
+  // Erst schliessen (entfernt den History-Eintrag des Sheets), dann navigieren
   emit('close')
+  await nextTick()
+  router.push(path)
 }
+
+// Zurück-Taste schliesst das Sheet
+useBackClose(() => props.open, () => emit('close'))
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && props.open) {
@@ -83,7 +89,11 @@ watch(() => props.open, (isOpen) => {
                 :key="entry.label"
                 class="more-sheet__item"
                 :class="{ 'more-sheet__item--disabled': entry.disabled }"
+                role="link"
+                tabindex="0"
                 @click="entry.action?.()"
+                @keydown.enter.prevent="entry.action?.()"
+                @keydown.space.prevent="entry.action?.()"
               >
                 <span class="more-sheet__icon-tile" :class="{ 'more-sheet__icon-tile--accent': entry.highlight }">
                   <component :is="entry.icon" :size="20" />
@@ -92,7 +102,7 @@ watch(() => props.open, (isOpen) => {
                   <span class="more-sheet__label">{{ t(entry.label) }}</span>
                   <span class="more-sheet__sub">{{ t(entry.sub) }}</span>
                 </div>
-                <PhCaretRight :size="16" class="more-sheet__chevron" />
+                <PhCaretRight :size="16" class="more-sheet__chevron" aria-hidden="true" />
               </li>
             </ul>
           </div>
@@ -106,8 +116,8 @@ watch(() => props.open, (isOpen) => {
 .more-sheet-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 200;
-  background: rgba(0, 0, 0, 0.4);
+  z-index: var(--z-sheet);
+  background: var(--color-scrim);
   display: flex;
   align-items: flex-end;
 }
@@ -130,8 +140,8 @@ watch(() => props.open, (isOpen) => {
 
 .more-sheet__title {
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-title-dialog);
   margin: 0 0 var(--space-3);
   color: var(--ink);
 }
@@ -187,7 +197,7 @@ watch(() => props.open, (isOpen) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -209,7 +219,7 @@ watch(() => props.open, (isOpen) => {
 /* --- Backdrop Transition --- */
 .backdrop-enter-active,
 .backdrop-leave-active {
-  transition: opacity 0.2s ease;
+  transition: opacity var(--transition-normal);
 }
 
 .backdrop-enter-from,
@@ -219,11 +229,11 @@ watch(() => props.open, (isOpen) => {
 
 /* --- Sheet Slide-Up Transition --- */
 .sheet-enter-active {
-  transition: transform 0.25s ease-out;
+  transition: transform var(--duration-slow) var(--ease-out);
 }
 
 .sheet-leave-active {
-  transition: transform 0.2s ease-in;
+  transition: transform var(--duration-normal) var(--ease-in);
 }
 
 .sheet-enter-from,

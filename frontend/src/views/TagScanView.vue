@@ -243,7 +243,7 @@ onMounted(resolve)
 
       <!-- Erledigt -->
       <template v-else-if="state === 'done' && result">
-        <PhCheckCircle :size="56" weight="fill" class="scan-icon scan-icon--ok" />
+        <PhCheckCircle :size="48" weight="fill" class="scan-icon scan-icon--ok" />
         <h1 class="scan-title">
           {{ execResult?.changed === false ? $t('tags.scan.successNoChange') : actionText('done') }}
         </h1>
@@ -322,7 +322,7 @@ onMounted(resolve)
 }
 
 .scan-icon--warn {
-  color: var(--color-warning);
+  color: var(--color-warning-strong);
 }
 
 .scan-label {
@@ -334,9 +334,9 @@ onMounted(resolve)
 .scan-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-xl);
+  font-size: var(--text-title-page);
   color: var(--ink);
-  line-height: 1.3;
+  line-height: var(--line-height-snug);
 }
 
 .scan-sub {
@@ -383,7 +383,7 @@ onMounted(resolve)
   border: none;
   border-radius: var(--radius-card);
   background: var(--acc);
-  color: #fff;
+  color: var(--color-on-accent);
   font-family: var(--font-display);
   font-size: var(--text-xl);
   font-weight: var(--font-weight-bold);

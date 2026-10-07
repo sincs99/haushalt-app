@@ -502,6 +502,9 @@ def reassign_assignment(
 
     assert_users_in_household(db, household_id, [body.assigned_user_id])
 
+    if assignment.assigned_user_id != body.assigned_user_id:
+        # Neue Person bekommt ihr "Du bist dran" (Scheduler meldet nur am Fälligkeitstag)
+        assignment.notified_at = None
     assignment.assigned_user_id = body.assigned_user_id
     db.commit()
     db.refresh(assignment)

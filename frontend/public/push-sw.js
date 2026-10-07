@@ -1,5 +1,16 @@
 // Push-Handler — wird per workbox.importScripts in den generierten Service Worker geladen.
-// Payload (vom Backend, app/services/push_service.py): { title, body, url, tag }
+// Payload (vom Backend, app/services/push_service.py): { title, body, url, tag, badge? }
+
+// Zahl am App-Icon (Badging API, services/attention.py im Backend)
+async function updateAppBadge(count) {
+  if (typeof count !== 'number' || !('setAppBadge' in self.navigator)) return
+  try {
+    if (count > 0) await self.navigator.setAppBadge(count)
+    else await self.navigator.clearAppBadge()
+  } catch {
+    // Nicht erlaubt/unterstützt — Benachrichtigung trotzdem anzeigen
+  }
+}
 
 self.addEventListener('push', (event) => {
   let data = {}
@@ -10,13 +21,16 @@ self.addEventListener('push', (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Haushalt App', {
-      body: data.body || '',
-      tag: data.tag,
-      icon: '/pwa-192x192.png',
-      badge: '/pwa-64x64.png',
-      data: { url: data.url || '/' },
-    }),
+    Promise.all([
+      self.registration.showNotification(data.title || 'Haushalt App', {
+        body: data.body || '',
+        tag: data.tag,
+        icon: '/pwa-192x192.png',
+        badge: '/pwa-64x64.png',
+        data: { url: data.url || '/' },
+      }),
+      updateAppBadge(data.badge),
+    ]),
   )
 })
 

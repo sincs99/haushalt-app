@@ -319,7 +319,7 @@ function handleDayClick(day: GridDay) {
       <div v-if="expandedDayEvents.length === 0 && !loading" class="month-grid__detail-empty">
         <BaseEmptyState
           :icon="PhCalendarBlank"
-          :title="t('calendar.noEventsToday')"
+          :title="t('calendar.noEventsDay')"
           subtitle=""
         />
       </div>
@@ -330,7 +330,11 @@ function handleDayClick(day: GridDay) {
           :key="event.id"
           padding="sm"
           class="month-event-card"
+          role="button"
+          tabindex="0"
           @click="emit('edit-event', event)"
+          @keydown.enter.prevent="emit('edit-event', event)"
+          @keydown.space.prevent="emit('edit-event', event)"
         >
           <span
             class="month-event-card__bar"
@@ -455,7 +459,7 @@ function handleDayClick(day: GridDay) {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 2px;
+  gap: var(--space-0-5);
   padding: var(--space-1) 0;
   min-height: 40px;
   border: none;
@@ -489,7 +493,7 @@ function handleDayClick(day: GridDay) {
   width: 28px;
   height: 28px;
   border-radius: var(--radius-full);
-  line-height: 1;
+  line-height: var(--line-height-none);
 }
 
 .month-grid__num--today {
@@ -501,7 +505,7 @@ function handleDayClick(day: GridDay) {
 /* ── Dots ── */
 .month-grid__dots {
   display: flex;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-height: 6px;
   align-items: center;
 }
@@ -514,9 +518,9 @@ function handleDayClick(day: GridDay) {
 }
 
 .month-grid__dot-extra {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--sub);
-  line-height: 1;
+  line-height: var(--line-height-none);
 }
 
 /* ── Expanded Day Detail ── */
@@ -610,10 +614,10 @@ function handleDayClick(day: GridDay) {
 }
 
 .month-event-card__span-badge {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   color: var(--acc);
   background: var(--acc-soft);
-  padding: 1px 6px;
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;
@@ -653,10 +657,10 @@ function handleDayClick(day: GridDay) {
 }
 
 .month-event-card__everyone-chip {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   color: var(--sub);
   background: var(--chip);
-  padding: 2px 8px;
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   white-space: nowrap;
 }

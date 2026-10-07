@@ -31,6 +31,7 @@ from app.models import (
     Todo,
     TodoReminder,
 )
+from app.services.attention import attention_count
 from app.services.balance_service import compute_user_saldo
 from app.services.chore_scheduler import today_in_tz
 from app.services.event_times import to_household_time
@@ -391,3 +392,23 @@ def get_dashboard(
         plants_water=DashboardPlantSection(due_count=plants_due_count, items=plant_items),
         upcoming_reminders=reminder_items,
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /badge — Zahl am App-Icon (Badging API)
+# ---------------------------------------------------------------------------
+
+
+class BadgeResponse(BaseModel):
+    count: int
+
+
+@router.get("/badge", response_model=BadgeResponse)
+def get_badge(
+    household_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    """Was heute für die aufrufende Person ansteht (siehe services/attention.py)."""
+    household = db.get(Household, household_id)
+    return BadgeResponse(count=attention_count(db, household, membership.user_id))

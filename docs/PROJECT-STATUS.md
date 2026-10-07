@@ -116,7 +116,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | [`app/routers/files.py`](../backend/app/routers/files.py) | 3 Endpoints: Upload (Bild-Resize, Magic-Byte-Prüfung, Speicher-Limit), geschützter Download, Löschen (mit `FILE_IN_USE`-Schutz) | ✅ Fertig |
 | [`app/routers/documents.py`](../backend/app/routers/documents.py) | 10 Endpoints: Dokument-Ablage (mehrseitig, Kategorien, Ablaufdatum, Speicher-Auslastung) | ✅ Fertig |
 | [`app/routers/push.py`](../backend/app/routers/push.py) | 4 Endpoints: Web-Push-Konfiguration, Geräte an-/abmelden, Test-Benachrichtigung | ✅ Fertig |
-| [`app/routers/dashboard.py`](../backend/app/routers/dashboard.py) | 1 Endpoint: aggregierte Startseite (Aufgaben, Einkauf, Finanzen) | ✅ Fertig |
+| [`app/routers/dashboard.py`](../backend/app/routers/dashboard.py) | 2 Endpoints: aggregierte Startseite (Aufgaben, Einkauf, Finanzen) und Zahl fürs App-Icon (`/badge`) | ✅ Fertig |
 | [`app/services/balance_service.py`](../backend/app/services/balance_service.py) | Saldo-Berechnung (von Ausgaben-Router und Dashboard gemeinsam genutzt) | ✅ Fertig |
 | [`app/services/chore_scheduler.py`](../backend/app/services/chore_scheduler.py) | Lazy-Materialisierung, Kalender-basierte Rotation, Datumsberechnung (weekly/biweekly/monthly) | ✅ Fertig |
 | [`app/services/client_ids.py`](../backend/app/services/client_ids.py) | Vom Client erzeugte IDs: idempotentes Anlegen (Offline-Meilenstein M0) | ✅ Fertig |
@@ -124,7 +124,9 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | [`app/services/file_cleanup.py`](../backend/app/services/file_cleanup.py) | Periodisches Aufräumen verwaister Uploads | ✅ Fertig |
 | [`app/services/household_checks.py`](../backend/app/services/household_checks.py) | Prüfungen auf Haushaltsmitgliedschaft (Teilnehmer, Ausgleichs-Parteien, Ex-Mitglieder) | ✅ Fertig |
 | [`app/services/invite_code.py`](../backend/app/services/invite_code.py) | Eindeutige Invite-Code-Generierung mit Retry-Logik | ✅ Fertig |
-| [`app/services/push_service.py`](../backend/app/services/push_service.py) | Web-Push-Versand (Endpoint-Allowlist) und Scheduler für Todo-Erinnerungen und Tierpflege | ✅ Fertig |
+| [`app/services/push_service.py`](../backend/app/services/push_service.py) | Web-Push-Versand (Endpoint-Allowlist) und Scheduler für Todo-Erinnerungen, Tier- und Pflanzenpflege, Putzplan („Du bist dran“, materialisiert die heutigen Ämtli selbst) und Ablaufdaten von Dokumenten (30 Tage vorher und am Tag); jede Payload trägt die Zahl fürs App-Icon | ✅ Fertig |
+| [`app/services/attention.py`](../backend/app/services/attention.py) | Was heute ansteht (Zahl am App-Icon und Liste fürs Widget): bis heute fällige offene Aufgaben und Ämtli (eigene oder niemandem zugewiesene), Tier- und Pflanzenpflege | ✅ Fertig |
+| [`app/routers/widget.py`](../backend/app/routers/widget.py) | Homescreen-Widget (Scriptable): Nur-Lese-Schlüssel verwalten (3 Endpoints) und Widget-Daten (`/api/widget/summary`) — siehe [`widget.md`](widget.md) | ✅ Fertig |
 | [`app/services/storage.py`](../backend/app/services/storage.py) | `LocalStorageService`: Dateien unter `UPLOAD_DIR/{household_id}/` | ✅ Fertig |
 | [`alembic.ini`](../backend/alembic.ini), `migrations/` | Alembic-Konfiguration und -Migrationen (33 Versionen unter `migrations/versions/`, einziger Kopf `w1x2y3z4a5b6`) | ✅ Fertig |
 | [`scripts/regenerate_invite_codes.py`](../backend/scripts/regenerate_invite_codes.py) | Dry-Run/Apply-Script für Invite-Code-Migration | ✅ Fertig |
@@ -194,6 +196,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | [`test_file_references.py`](../backend/tests/test_file_references.py) | Datei-Referenzen zwischen Haustieren und Dokumenten, Aufräumen | ✅ Fertig |
 | [`test_documents.py`](../backend/tests/test_documents.py) | Dokument-Ablage: CRUD, mehrseitig, Speicher-Limit, Scoping | ✅ Fertig |
 | [`test_push.py`](../backend/tests/test_push.py) | Web Push: Subscription-API (SSRF-Allowlist), Scheduler | ✅ Fertig |
+| [`test_push_chores_documents.py`](../backend/tests/test_push_chores_documents.py) | Web Push für Putzplan und Dokument-Ablauf, Badge-Zahl (Service und Endpoint) | ✅ Fertig |
 | [`test_offline_sync.py`](../backend/tests/test_offline_sync.py) | Offline-Meilenstein M0: Client-IDs, `version`/`updated_at` | ✅ Fertig |
 
 ### Betrieb und CI (Repository-Wurzel)
@@ -367,6 +370,9 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | GET | `/api/households/{id}/finance-summary` | ✅ | Finanz-Zusammenfassung eines Monats (`month`, Default aktueller Monat) |
 | **Dashboard und Aufgaben** | | | |
 | GET | `/api/households/{id}/dashboard` | ✅ | Aggregierte Startseite (Aufgaben, Einkauf, Finanzen) |
+| GET | `/api/households/{id}/dashboard/badge` | ✅ | Zahl am App-Icon für die aufrufende Person (`{count}`) |
+| GET/POST/DELETE | `/api/households/{id}/widget-token` | ✅ | Nur-Lese-Schlüssel fürs Homescreen-Widget anzeigen/erzeugen/widerrufen |
+| GET | `/api/widget/summary` | Widget-Schlüssel | Widget-Daten (fällig heute, Einkauf, Termine) — [`widget.md`](widget.md) |
 | GET | `/api/households/{id}/tasks` | ✅ | Vereinte Aufgabenliste (Todos + Putzplan-Zuweisungen) |
 | **Einkauf** | | | |
 | GET | `/api/households/{id}/shopping-lists/` | ✅ | Einkaufslisten |
@@ -592,7 +598,7 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `document_updated` | Server → Room | `DocumentResponse` (auch bei Seiten-Änderungen) |
 | `document_deleted` | Server → Room | `{ id, file_ids }` |
 
-Der Client verarbeitet `budget_deleted`, `file_uploaded` und `file_deleted` nicht (kein Handler im Frontend). Web Push (Todo-Erinnerungen, Tierpflege) läuft nicht über Socket.IO, sondern über `/api/push/…` und den Scheduler im Backend.
+Der Client verarbeitet `budget_deleted`, `file_uploaded` und `file_deleted` nicht (kein Handler im Frontend). Web Push (Todo-Erinnerungen, Tier- und Pflanzenpflege, Putzplan, Dokument-Ablauf) läuft nicht über Socket.IO, sondern über `/api/push/…` und den Scheduler im Backend.
 
 ### Lebensdauer einer Socket-Verbindung
 
@@ -780,7 +786,8 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 │  └── Toast-Container                                │
 │                                                     │
 │  Design-System: theme.css (CSS Custom Properties)   │
-│  - Farbe: Teal #2A9D8F (Primär)                    │
+│  - Tokens: docs/design/design-tokens.md            │
+│  - Akzent #896140, Teal #3D7D75, Dark Mode         │
 │  - Breakpoint: 768px                                │
 │  - Content max-width: 640px (zentriert)             │
 │  - Touch-Targets: ≥44×44px                          │
@@ -841,7 +848,10 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Notizen | ✅ | ✅ NotesView | — |
 | App-Shell (Bottom-Nav, MoreSheet, Sync-Status) | — | ✅ | — |
 | PWA (installierbar, Service Worker) | — | ✅ | — |
-| Web Push (Todo-Erinnerungen, Tierpflege) | ✅ | ✅ | — |
+| Web Push (Todo-Erinnerungen, Tier-/Pflanzenpflege, Putzplan „Du bist dran“, Dokument-Ablauf) | ✅ | ✅ | — |
+| Zahl am App-Icon (Badging API; iOS ab 16.4 als installierte App mit erlaubten Benachrichtigungen) | ✅ | ✅ | Socket |
+| Homescreen-Widget über Scriptable (iPhone) mit Nur-Lese-Schlüssel | ✅ | ✅ | — |
+| Foto-Upload verkleinert im Browser (1600 px, HEIC → JPEG) und nennt den Fehlergrund | ✅ | ✅ | — |
 | Dokument-Ablage (Verträge, Rechnungen, Garantien; mehrseitig, Vorschau, Speicher-Limit) | ✅ | ✅ DocumentsView | ✅ Socket |
 | Auth-Härtung (Rate-Limits, Refresh-Rotation, Security-Header/CSP) | ✅ | — | — |
 | Refresh-Token als HttpOnly-Cookie (H-01: `casa_rt`, CSRF-Header `X-Requested-With: casa`, Migration alter `localStorage`-Tokens) | ✅ | ✅ Auth-Store, API-Client, Cross-Tab über Sitzungs-Marker | — |
@@ -859,11 +869,9 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 |---|---|---|---|
 | Offline-Betrieb ab M1 | Gross | 🔵 Niedrig | IndexedDB, Änderungs-Warteschlange, Synchronisation; Plan und Etappen in `docs/offline-first-phase2.md`. Vorher offen: Entscheidung E8 (nur kürzlich abgehakte Einkäufe synchronisieren oder Funktion „Abgehakte löschen“) |
 | Dokumente verknüpfen | Mittel | 🔵 Niedrig | Verknüpfung mit Ausgaben/Terminen (Datenmodell ist vorbereitet, eigene Link-Tabelle) |
-| Push-Erinnerung zum Ablaufdatum von Dokumenten | Klein | 🔵 Niedrig | Garantieende, Kündigungsfrist |
 | Einladungscode nur für Admins sichtbar? | Klein | 🔵 Niedrig | Offene Produktfrage zu H-12: Der Code ist weiterhin für alle Mitglieder sichtbar (Ablauf und Rotation sind umgesetzt) |
 | „Überall abmelden“ | Klein | 🔵 Niedrig | Es gibt keinen Endpunkt, der alle Refresh-Tokens eines Users revoked; das passiert heute nur über die Reuse-Erkennung. Nützlich zusammen mit Passwort-Ändern |
 | Frontend-Testabdeckung | Mittel | 🟡 Mittel | 70,3 % Statements (Schwelle 66 % in `vitest.config.ts`, CI bricht darunter ab); Komponenten, Stores `polls`/`dashboard` und die Repositories sind ungetestet; Schwelle bei Verbesserung nachziehen |
-| Push-Notifications für Chores | Mittel | 🔵 Niedrig | „Du bist dran“-Benachrichtigung |
 | FR/IT-Sprachen | Klein | 🔵 Niedrig | Locale-Erweiterung |
 | Chores-Statistiken | Klein | 🔵 Niedrig | „Wer hat wie oft geputzt“ |
 | KI-Assistent: globales Tageslimit oder Limit pro Nutzer | Klein | 🟡 Mittel | Das Tageslimit gilt pro Haushalt; über weitere Haushalte lässt es sich vervielfachen (A-01 in `docs/security/ai-assistant-review.md`) |
@@ -889,11 +897,9 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | KI-Assistent ohne echten API-Test | Entwickelt und getestet mit gemocktem Client und einem lokalen Fake des Messages-Endpunkts; es gab keinen Aufruf gegen die echte API (kein Schlüssel in der Entwicklungsumgebung). Token-Zahlen in `docs/ai-assistant.md` sind Schätzungen | Prüfen |
 | KI-Tageslimit nach UTC-Tag | `ai_usage` zählt pro UTC-Tag, nicht nach der Zeitzone des Haushalts (Wechsel um 01:00/02:00 Uhr Schweizer Zeit) | Gering |
 | Lange KI-Anfragen hinter Nginx Proxy Manager | Rezeptvorschläge können über 60 s dauern; `nginx.conf` erlaubt 200 s, NPM muss ggf. angepasst werden | Prüfen |
-| `BaseCard` ohne `#header`-Slot | Die Karte „Was essen wir heute?“ in `FoodView.vue` übergibt ihren Titel per `#header`; `BaseCard` rendert nur den Default-Slot, der Titel wird nicht angezeigt (vorbestehend, nicht in diesem Branch behoben) | Gering |
 | Major-Updates ohne Gerätetest | Pillow 12 und cryptography 50 wurden über Tests und Stichproben geprüft, nicht mit einer echten Web-Push-Zustellung auf einem Gerät und nicht mit einem Upload über den laufenden Browser | Prüfen |
 | `deleteItem()` Rollback-Position | Bei paralleler Socket-Mutation kann die Position abweichen (kosmetisch) | Gering |
-| Auth-Styles dupliziert | Login/Register haben identische Scoped-CSS-Blöcke | Gering |
-| Emoji-/Icon-Größen und Toast-Transitions | Hardcoded statt Design-Tokens | Gering |
+| UI-Audit: offene Punkte | Eigene Dialoge (`ExpenseFormDialog`, `BalanceSummary`) statt `BaseDialog`, nachgebaute Pill-Tabs in `ShoppingView`, Löschen als Text-Link in Pflanzen-/Tierkarten, Sync-Punkt „verbindet neu“ unter 3 : 1 — siehe `docs/design/ui-audit.md` | Gering |
 
 ---
 

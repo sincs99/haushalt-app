@@ -2,10 +2,14 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { usePetsStore } from '../stores/pets'
+import { usePetsStore, type Clearable } from '../stores/pets'
 import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
+import { useLoader } from '../composables/useLoader'
+import { localDateString } from '../utils/dates'
+import { MAX_UPLOAD_BYTES, imageUploadErrorReason, prepareImageForUpload } from '../utils/imageUpload'
 import { parseWeightKgToGrams } from '../utils/money'
 import { useProtectedImage } from '../composables/useProtectedImage'
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
@@ -18,23 +22,27 @@ import type {
 import {
   PhArrowLeft, PhPencilSimple, PhSun, PhMoon, PhPlus, PhPill,
   PhCheck, PhTrash, PhCalendarCheck, PhCamera, PhCat,
+  PhUser,
 } from '@phosphor-icons/vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
+import BaseErrorState from '../components/ui/BaseErrorState.vue'
 
 const route = useRoute()
 const router = useRouter()
 const petsStore = usePetsStore()
 const authStore = useAuthStore()
 const { on, off, onReconnect, offReconnect } = useSocket()
-const { showToast } = useToast()
+const { showToast, notifyError, notifyInfo } = useToast()
+const { run, isPending } = useAsyncAction()
 const { t } = useI18n()
 
 const petId = computed(() => route.params.id as string)
-const loading = ref(true)
+// Erst nach dem ersten Ladeversuch „nicht gefunden“ oder Fehler zeigen
+const loaded = ref(false)
 
 // ── Computed ──
 
@@ -52,8 +60,6 @@ const householdId = computed(() => authStore.currentHouseholdId)
 const photoFileId = computed(() => pet.value?.photo_file_id ?? null)
 const { objectUrl: photoObjectUrl } = useProtectedImage(householdId, photoFileId)
 
-const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 MB
-
 async function handlePhotoUpload(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -62,19 +68,19 @@ async function handlePhotoUpload(event: Event) {
   // Reset input damit dasselbe Bild erneut gewählt werden kann
   input.value = ''
 
-  // Client-seitige Dateigrössen-Prüfung
-  if (file.size > MAX_PHOTO_SIZE) {
-    showToast(t('files.FILE_TOO_LARGE'), 'error')
-    return
-  }
 
   photoUploading.value = true
   const oldFileId = pet.value?.photo_file_id ?? null
   let uploadedFile: StoredFile | null = null
 
   try {
-    // 1. Upload
-    uploadedFile = await filesRepo.uploadFile(householdId.value, file)
+    // 1. Verkleinern (Handy-Fotos, HEIC) und hochladen
+    const prepared = await prepareImageForUpload(file)
+    if (prepared.size > MAX_UPLOAD_BYTES) {
+      showToast(t('pets.photoUploadErrorReason', { reason: t('errors.FILE_TOO_LARGE') }), 'error')
+      return
+    }
+    uploadedFile = await filesRepo.uploadFile(householdId.value, prepared)
 
     // 2. Pet aktualisieren
     await petsStore.updatePet(petId.value, { photo_file_id: uploadedFile.id })
@@ -89,14 +95,14 @@ async function handlePhotoUpload(event: Event) {
     }
 
     showToast(t('pets.photoUploadSuccess'), 'success')
-  } catch {
+  } catch (error) {
     // PATCH fehlgeschlagen → hochgeladene Datei aufräumen (best-effort)
     if (uploadedFile) {
       try {
         await filesRepo.deleteFile(householdId.value, uploadedFile.id)
       } catch { /* best effort */ }
     }
-    showToast(t('pets.photoUploadError'), 'error')
+    notifyError(t('pets.photoUploadErrorReason', { reason: imageUploadErrorReason(error) }))
   } finally {
     photoUploading.value = false
   }
@@ -120,21 +126,24 @@ const sortedCareTasks = computed(() =>
 
 // ── Lifecycle ──
 
+async function loadAll() {
+  await Promise.all([
+    petsStore.fetchPets(),
+    petsStore.fetchFeedingStatus(),
+    petsStore.fetchMembers(),
+    petsStore.fetchMedications(petId.value),
+    petsStore.fetchCareTasks(petId.value),
+  ])
+  // Load medication logs for all medications
+  await loadAllMedicationLogs()
+}
+
+// Ladefehler → Fehlerzustand mit „Erneut versuchen“ (statt „nicht gefunden“)
+const { loadError, reloading, reload } = useLoader(loadAll)
+
 onMounted(async () => {
-  loading.value = true
-  try {
-    await Promise.all([
-      petsStore.fetchPets(),
-      petsStore.fetchFeedingStatus(),
-      petsStore.fetchMembers(),
-      petsStore.fetchMedications(petId.value),
-      petsStore.fetchCareTasks(petId.value),
-    ])
-    // Load medication logs for all medications
-    await loadAllMedicationLogs()
-  } finally {
-    loading.value = false
-  }
+  await reload()
+  loaded.value = true
 
   // Socket-Events
   on('pet_updated', handleSocketPetUpdated)
@@ -164,6 +173,11 @@ onUnmounted(() => {
   off('pet_care_task_updated', handleSocketCareTaskUpdated)
   off('pet_care_task_deleted', handleSocketCareTaskDeleted)
   offReconnect(handleReconnect)
+})
+
+// Wechsel zu einem anderen Tier (z. B. über Push-Link): Listen leert der Store, hier neu laden
+watch(petId, () => {
+  reload()
 })
 
 async function loadAllMedicationLogs() {
@@ -225,14 +239,8 @@ function handleSocketCareTaskDeleted(data: { id: string }) {
   petsStore.handleCareTaskDeleted(data)
 }
 
-async function handleReconnect() {
-  await Promise.all([
-    petsStore.fetchPets(),
-    petsStore.fetchFeedingStatus(),
-    petsStore.fetchMedications(petId.value),
-    petsStore.fetchCareTasks(petId.value),
-  ])
-  await loadAllMedicationLogs()
+function handleReconnect() {
+  reload()
 }
 
 // ── Feeding Helpers ──
@@ -264,12 +272,21 @@ function feedingSlotInfo(slot: FeedingSlot): string | null {
   })
 }
 
-async function handleToggleFeeding(slot: FeedingSlot) {
-  try {
-    await petsStore.toggleFeeding(petId.value, slot)
-  } catch {
-    showToast(t('pets.feedError'))
-  }
+function handleToggleFeeding(slot: FeedingSlot) {
+  const id = petId.value
+  const name = pet.value?.name ?? ''
+  return run(async () => {
+    const result = await petsStore.toggleFeeding(id, slot)
+    // 409: schon gefüttert (Status wurde neu geladen) → Hinweis, kein Fehler
+    if (result === 'duplicate') notifyInfo(t('errors.FEEDING_DUPLICATE'))
+    return result
+  }, {
+    key: `feed-${slot}`,
+    // Nur fürs Füttern; Entfernen ist selbst schon das Rückgängigmachen
+    success: (result) => (result === 'fed' ? t('pets.fedToast', { name }) : undefined),
+    undo: () => petsStore.toggleFeeding(id, slot),
+    error: t('pets.feedError'),
+  })
 }
 
 // ── Medication Helpers ──
@@ -277,9 +294,8 @@ async function handleToggleFeeding(slot: FeedingSlot) {
 function isGivenToday(medicationId: string): boolean {
   const logs = petsStore.medicationLogs[medicationId]
   if (!logs || logs.length === 0) return false
-  const today = new Date().toISOString().slice(0, 10)
-  const lastGiven = new Date(logs[0].given_at).toISOString().slice(0, 10)
-  return lastGiven === today
+  // Lokales Datum, nicht UTC (sonst gilt nachts die Gabe von gestern als heute)
+  return localDateString(new Date(logs[0].given_at)) === localDateString()
 }
 
 function formatLogDateTime(givenAt: string): string {
@@ -293,13 +309,13 @@ function formatLogDateTime(givenAt: string): string {
   })
 }
 
-async function handleGiveMedication(medicationId: string) {
-  try {
-    await petsStore.giveMedication(petId.value, medicationId)
-    showToast(t('pets.medicationGiven'), 'success')
-  } catch {
-    showToast(t('common.error'))
-  }
+// Guard gegen Doppeltipp (sonst zwei Gaben). Kein Undo: Backend kann Gaben nicht löschen.
+function handleGiveMedication(medicationId: string) {
+  return run(() => petsStore.giveMedication(petId.value, medicationId), {
+    key: `give-${medicationId}`,
+    success: t('pets.medicationGiven'),
+    error: t('pets.medicationGiveError'),
+  })
 }
 
 // ── Add / Edit Medication Dialog ──
@@ -310,7 +326,7 @@ const medFormName = ref('')
 const medFormDosage = ref('')
 const medFormSchedule = ref('')
 const medFormActive = ref(true)
-const medSaving = ref(false)
+const medSaving = computed(() => isPending('med-save'))
 
 function openAddMedDialog() {
   editingMedId.value = null
@@ -336,19 +352,19 @@ function closeMedDialog() {
 
 async function handleSaveMedication() {
   const name = medFormName.value.trim()
-  if (!name || medSaving.value) return
+  if (!name) return
 
-  medSaving.value = true
-  try {
-    if (editingMedId.value) {
-      const payload: MedicationUpdatePayload = {
+  const editingId = editingMedId.value
+  const ok = await run(async () => {
+    if (editingId) {
+      // Geleerte Felder als null senden, sonst bleibt der alte Wert gespeichert
+      const payload: Clearable<MedicationUpdatePayload> = {
         name,
-        dosage: medFormDosage.value.trim() || undefined,
-        schedule: medFormSchedule.value.trim() || undefined,
+        dosage: medFormDosage.value.trim() || null,
+        schedule: medFormSchedule.value.trim() || null,
         active: medFormActive.value,
       }
-      await petsStore.updateMedication(petId.value, editingMedId.value, payload)
-      showToast(t('pets.medicationUpdated'), 'success')
+      await petsStore.updateMedication(petId.value, editingId, payload)
     } else {
       const payload: MedicationCreatePayload = {
         name,
@@ -360,14 +376,13 @@ async function handleSaveMedication() {
       if (created) {
         await petsStore.fetchMedicationLog(petId.value, created.id)
       }
-      showToast(t('pets.medicationCreated'), 'success')
     }
-    showMedDialog.value = false
-  } catch {
-    showToast(t('common.error'))
-  } finally {
-    medSaving.value = false
-  }
+  }, {
+    key: 'med-save',
+    success: editingId ? t('pets.medicationUpdated') : t('pets.medicationCreated'),
+    error: t('pets.medicationSaveError'),
+  })
+  if (ok) showMedDialog.value = false
 }
 
 // ── Delete Medication ──
@@ -383,14 +398,14 @@ function cancelDeleteMed() {
 }
 
 async function handleDeleteMed() {
-  if (!deletingMedId.value) return
-  try {
-    await petsStore.removeMedication(petId.value, deletingMedId.value)
-    deletingMedId.value = null
-    showToast(t('pets.medicationDeleted'), 'success')
-  } catch {
-    showToast(t('common.error'))
-  }
+  const medId = deletingMedId.value
+  if (!medId) return
+  const ok = await run(() => petsStore.removeMedication(petId.value, medId), {
+    key: 'med-delete',
+    success: t('pets.medicationDeleted'),
+    error: t('pets.medicationDeleteError'),
+  })
+  if (ok) deletingMedId.value = null
 }
 
 // ── Edit Pet Dialog ──
@@ -406,7 +421,11 @@ const editFormInsurance = ref('')
 const editFormVetName = ref('')
 const editFormFoodNotes = ref('')
 const editFormHealthEntries = ref<HealthEntry[]>([])
-const editPetSaving = ref(false)
+const editPetSaving = computed(() => isPending('pet-save'))
+// Inline-Fehler am Gewichtsfeld
+const editFormWeightError = ref('')
+
+watch(editFormWeightGrams, () => { editFormWeightError.value = '' })
 
 function openEditPetDialog() {
   if (!pet.value) return
@@ -424,6 +443,7 @@ function openEditPetDialog() {
   editFormHealthEntries.value = pet.value.health_entries
     ? pet.value.health_entries.map(e => ({ ...e }))
     : []
+  editFormWeightError.value = ''
   showEditPetDialog.value = true
 }
 
@@ -441,41 +461,36 @@ function removeHealthEntry(index: number) {
 
 async function handleUpdatePet() {
   const name = editFormName.value.trim()
-  if (!name || editPetSaving.value) return
-
-  editPetSaving.value = true
+  if (!name) return
 
   const weightResult = parseWeightKgToGrams(editFormWeightGrams.value)
   if (weightResult === null) {
-    showToast(t('pets.invalidWeight'))
-    editPetSaving.value = false
+    editFormWeightError.value = t('pets.invalidWeight')
     return
   }
 
-  try {
-    // Filter out empty health entries
-    const validEntries = editFormHealthEntries.value.filter(e => e.title.trim())
+  // Filter out empty health entries
+  const validEntries = editFormHealthEntries.value.filter(e => e.title.trim())
 
-    const payload: PetUpdatePayload = {
-      name,
-      breed: editFormBreed.value.trim() || undefined,
-      birthdate: editFormBirthdate.value || undefined,
-      weight_grams: weightResult,
-      notes: editFormNotes.value.trim() || undefined,
-      chip_number: editFormChipNumber.value.trim() || undefined,
-      insurance: editFormInsurance.value.trim() || undefined,
-      vet_name: editFormVetName.value.trim() || undefined,
-      food_notes: editFormFoodNotes.value.trim() || undefined,
-      health_entries: validEntries.length > 0 ? validEntries : undefined,
-    }
-    await petsStore.updatePet(petId.value, payload)
-    showEditPetDialog.value = false
-    showToast(t('pets.updated'), 'success')
-  } catch {
-    showToast(t('pets.updateError'))
-  } finally {
-    editPetSaving.value = false
+  // Geleerte Felder als null senden (bzw. [] für Gesundheit), sonst bleibt der alte Wert
+  const payload: Clearable<PetUpdatePayload> = {
+    name,
+    breed: editFormBreed.value.trim() || null,
+    birthdate: editFormBirthdate.value || null,
+    weight_grams: weightResult ?? null,
+    notes: editFormNotes.value.trim() || null,
+    chip_number: editFormChipNumber.value.trim() || null,
+    insurance: editFormInsurance.value.trim() || null,
+    vet_name: editFormVetName.value.trim() || null,
+    food_notes: editFormFoodNotes.value.trim() || null,
+    health_entries: validEntries,
   }
+  const ok = await run(() => petsStore.updatePet(petId.value, payload), {
+    key: 'pet-save',
+    success: t('pets.updated'),
+    error: t('pets.updateError'),
+  })
+  if (ok) showEditPetDialog.value = false
 }
 
 // ── Pet Info Helpers ──
@@ -511,7 +526,7 @@ function speciesEmoji(species: string): string {
 // ── Care Task Helpers ──
 
 function isOverdue(task: PetCareTask): boolean {
-  return task.next_due_at < new Date().toISOString().slice(0, 10)
+  return task.next_due_at < localDateString()
 }
 
 function formatDate(dateStr: string): string {
@@ -525,12 +540,17 @@ const showCareTaskDialog = ref(false)
 const careTaskName = ref('')
 const careTaskInterval = ref('')
 const careTaskDueDate = ref('')
-const careTaskSaving = ref(false)
+const careTaskSaving = computed(() => isPending('care-save'))
+// Inline-Fehler am Intervall-Feld (statt still nichts zu tun)
+const careTaskIntervalError = ref('')
+
+watch(careTaskInterval, () => { careTaskIntervalError.value = '' })
 
 function openAddCareTaskDialog() {
   careTaskName.value = ''
   careTaskInterval.value = ''
   careTaskDueDate.value = ''
+  careTaskIntervalError.value = ''
   showCareTaskDialog.value = true
 }
 
@@ -540,37 +560,34 @@ function closeCareTaskDialog() {
 
 async function handleSaveCareTask() {
   const name = careTaskName.value.trim()
-  const interval = parseInt(careTaskInterval.value, 10)
-  if (!name || !interval || interval < 1 || interval > 3650 || !careTaskDueDate.value) return
-
-  careTaskSaving.value = true
-  try {
-    await petsStore.createCareTask(petId.value, {
-      name,
-      interval_days: interval,
-      next_due_at: careTaskDueDate.value,
-    })
-    showToast(t('petCare.taskCreated'), 'success')
-    showCareTaskDialog.value = false
-  } catch {
-    showToast(t('common.error'))
-  } finally {
-    careTaskSaving.value = false
+  const raw = careTaskInterval.value.trim()
+  const interval = Number(raw)
+  if (!name || !careTaskDueDate.value) return
+  if (!/^\d+$/.test(raw) || interval < 1 || interval > 3650) {
+    careTaskIntervalError.value = t('petCare.invalidInterval')
+    return
   }
+
+  const ok = await run(() => petsStore.createCareTask(petId.value, {
+    name,
+    interval_days: interval,
+    next_due_at: careTaskDueDate.value,
+  }), { key: 'care-save', success: t('petCare.taskCreated'), error: t('petCare.saveError') })
+  if (ok) showCareTaskDialog.value = false
 }
 
 // ── Complete Care Task ──
 
-async function handleCompleteCareTask(taskId: string) {
-  try {
-    await petsStore.completeCareTask(petId.value, taskId)
-    const task = petsStore.careTasks.find(t => t.id === taskId)
-    if (task) {
-      showToast(t('petCare.completed', { date: formatDate(task.next_due_at) }), 'success')
-    }
-  } catch {
-    showToast(t('common.error'))
-  }
+// Guard + Loading gegen Doppeltipp. Kein Undo: Backend kann „erledigt“ nicht zurücknehmen.
+function handleCompleteCareTask(taskId: string) {
+  return run(() => petsStore.completeCareTask(petId.value, taskId), {
+    key: `complete-${taskId}`,
+    success: () => {
+      const task = petsStore.careTasks.find(c => c.id === taskId)
+      return task ? t('petCare.completed', { date: formatDate(task.next_due_at) }) : undefined
+    },
+    error: t('petCare.completeError'),
+  })
 }
 
 // ── Delete Care Task ──
@@ -586,30 +603,40 @@ function cancelDeleteCareTask() {
 }
 
 async function handleDeleteCareTask() {
-  if (!deletingCareTaskId.value) return
-  try {
-    await petsStore.removeCareTask(petId.value, deletingCareTaskId.value)
-    deletingCareTaskId.value = null
-    showToast(t('petCare.taskDeleted'), 'success')
-  } catch {
-    showToast(t('common.error'))
-  }
+  const taskId = deletingCareTaskId.value
+  if (!taskId) return
+  const ok = await run(() => petsStore.removeCareTask(petId.value, taskId), {
+    key: 'care-delete',
+    success: t('petCare.taskDeleted'),
+    error: t('petCare.deleteError'),
+  })
+  if (ok) deletingCareTaskId.value = null
 }
 </script>
 
 <template>
   <div class="view-page">
     <!-- ═══ Loading State ═══ -->
-    <div v-if="loading" class="skeleton-list">
+    <div v-if="!loaded || (reloading && !pet)" class="skeleton-list">
       <BaseSkeleton width="120px" height="28px" />
       <BaseSkeleton width="100%" height="120px" />
       <BaseSkeleton width="100%" height="180px" />
       <BaseSkeleton width="100%" height="100px" />
     </div>
 
+    <!-- ═══ Ladefehler ═══ -->
+    <div v-else-if="loadError && !pet">
+      <BaseErrorState :retrying="reloading" @retry="reload" />
+      <div class="not-found__back">
+        <BaseButton variant="ghost" size="sm" @click="router.push('/pets')">
+          {{ $t('common.back') }}
+        </BaseButton>
+      </div>
+    </div>
+
     <!-- ═══ Pet not found ═══ -->
     <div v-else-if="!pet" class="not-found">
-      <p>{{ $t('common.error') }}</p>
+      <p>{{ $t('errors.PET_NOT_FOUND') }}</p>
       <BaseButton variant="secondary" size="sm" @click="router.push('/pets')">
         {{ $t('common.back') }}
       </BaseButton>
@@ -627,7 +654,7 @@ async function handleDeleteCareTask() {
             class="pet-photo__camera-btn"
             @click="fileInputRef?.click()"
             :disabled="photoUploading"
-            :aria-label="$t('pets.photoUploading')"
+            :aria-label="$t('pets.changePhoto')"
           >
             <PhCamera :size="16" />
           </button>
@@ -639,7 +666,7 @@ async function handleDeleteCareTask() {
       <input
         ref="fileInputRef"
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/*"
         class="pet-photo__input"
         @change="handlePhotoUpload"
       />
@@ -647,7 +674,7 @@ async function handleDeleteCareTask() {
       <!-- ═══ Header ═══ -->
       <div class="detail-header">
         <button class="back-btn" @click="router.back()" :aria-label="$t('common.back')">
-          <PhArrowLeft :size="22" weight="bold" />
+          <PhArrowLeft :size="24" weight="bold" />
         </button>
         <div class="detail-header__info">
           <span class="detail-header__emoji">{{ speciesEmoji(pet.species) }}</span>
@@ -657,6 +684,9 @@ async function handleDeleteCareTask() {
           <PhPencilSimple :size="20" weight="bold" />
         </button>
       </div>
+
+      <!-- Teilweise nicht geladen (z. B. Medikamente/Pflege): Hinweis statt leerer Listen -->
+      <BaseErrorState v-if="loadError" :retrying="reloading" @retry="reload" />
 
       <!-- ═══ Fütterung heute ═══ -->
       <section class="section">
@@ -675,10 +705,12 @@ async function handleDeleteCareTask() {
                 </span>
               </div>
               <button
+                type="button"
                 class="feed-toggle"
                 :class="{ 'feed-toggle--fed': isFed('morning') }"
-                :title="$t('pets.morningShort')"
-                :aria-label="$t('pets.morning')"
+                :title="$t('pets.feedToggleMorning', { name: pet.name })"
+                :aria-label="$t('pets.feedToggleMorning', { name: pet.name })"
+                :aria-pressed="isFed('morning')"
                 @click="handleToggleFeeding('morning')"
               >
                 <PhSun :size="16" weight="bold" />
@@ -696,10 +728,12 @@ async function handleDeleteCareTask() {
                 </span>
               </div>
               <button
+                type="button"
                 class="feed-toggle"
                 :class="{ 'feed-toggle--fed': isFed('evening') }"
-                :title="$t('pets.eveningShort')"
-                :aria-label="$t('pets.evening')"
+                :title="$t('pets.feedToggleEvening', { name: pet.name })"
+                :aria-label="$t('pets.feedToggleEvening', { name: pet.name })"
+                :aria-pressed="isFed('evening')"
                 @click="handleToggleFeeding('evening')"
               >
                 <PhMoon :size="16" weight="bold" />
@@ -716,7 +750,7 @@ async function handleDeleteCareTask() {
 
           <!-- Keine Medikamente -->
           <div v-if="petsStore.medications.length === 0" class="med-empty">
-            <PhPill :size="32" weight="light" class="med-empty__icon" />
+            <PhPill :size="32" weight="regular" class="med-empty__icon" />
             <p class="med-empty__title">{{ $t('pets.noMedications') }}</p>
             <p class="med-empty__hint">{{ $t('pets.noMedicationsHint') }}</p>
           </div>
@@ -770,6 +804,7 @@ async function handleDeleteCareTask() {
                 variant="primary"
                 size="sm"
                 class="med-give-btn"
+                :loading="isPending(`give-${med.id}`)"
                 @click="handleGiveMedication(med.id)"
               >
                 {{ $t('pets.giveNow') }}
@@ -787,7 +822,7 @@ async function handleDeleteCareTask() {
                     :key="log.id"
                     class="med-log__entry"
                   >
-                    <span class="med-log__user">👤 {{ getMemberName(log.given_by_user_id) }}</span>
+                    <span class="med-log__user"><PhUser :size="12" aria-hidden="true" /> {{ getMemberName(log.given_by_user_id) }}</span>
                     <span class="med-log__time">{{ formatLogDateTime(log.given_at) }}</span>
                   </li>
                 </ul>
@@ -883,9 +918,10 @@ async function handleDeleteCareTask() {
               <BaseButton
                 variant="primary"
                 size="sm"
+                :loading="isPending(`complete-${task.id}`)"
                 @click="handleCompleteCareTask(task.id)"
               >
-                <PhCheck :size="18" weight="bold" />
+                <PhCheck :size="20" weight="bold" />
                 {{ $t('petCare.complete') }}
               </BaseButton>
               <button
@@ -893,7 +929,7 @@ async function handleDeleteCareTask() {
                 @click="confirmDeleteCareTask(task.id)"
                 :aria-label="$t('common.delete')"
               >
-                <PhTrash :size="18" />
+                <PhTrash :size="20" />
               </button>
             </div>
           </div>
@@ -961,7 +997,7 @@ async function handleDeleteCareTask() {
       :title="editingMedId ? $t('pets.editMedication') : $t('pets.addMedication')"
       @close="closeMedDialog"
     >
-      <form class="dialog-form" @submit.prevent="handleSaveMedication">
+      <form id="pet-med-form" class="dialog-form" @submit.prevent="handleSaveMedication">
         <BaseInput
           v-model="medFormName"
           :label="$t('pets.medicationName')"
@@ -993,9 +1029,10 @@ async function handleDeleteCareTask() {
           </BaseButton>
           <BaseButton
             variant="primary"
+            type="submit"
+            form="pet-med-form"
             :disabled="!medFormName.trim() || medSaving"
             :loading="medSaving"
-            @click="handleSaveMedication"
           >
             {{ $t('common.save') }}
           </BaseButton>
@@ -1015,7 +1052,7 @@ async function handleDeleteCareTask() {
           <BaseButton variant="ghost" @click="cancelDeleteMed">
             {{ $t('common.cancel') }}
           </BaseButton>
-          <BaseButton variant="danger" @click="handleDeleteMed">
+          <BaseButton variant="danger" :loading="isPending('med-delete')" @click="handleDeleteMed">
             {{ $t('common.delete') }}
           </BaseButton>
         </div>
@@ -1028,7 +1065,7 @@ async function handleDeleteCareTask() {
       :title="$t('petCare.addTask')"
       @close="closeCareTaskDialog"
     >
-      <form class="dialog-form" @submit.prevent="handleSaveCareTask">
+      <form id="pet-care-form" class="dialog-form" @submit.prevent="handleSaveCareTask">
         <BaseInput
           v-model="careTaskName"
           :label="$t('petCare.name')"
@@ -1038,6 +1075,7 @@ async function handleDeleteCareTask() {
           v-model="careTaskInterval"
           :label="$t('petCare.intervalDays')"
           :placeholder="$t('petCare.intervalDays')"
+          :error="careTaskIntervalError || undefined"
           inputmode="numeric"
         />
         <BaseInput
@@ -1053,9 +1091,10 @@ async function handleDeleteCareTask() {
           </BaseButton>
           <BaseButton
             variant="primary"
+            type="submit"
+            form="pet-care-form"
             :disabled="!careTaskName.trim() || !careTaskInterval || !careTaskDueDate || careTaskSaving"
             :loading="careTaskSaving"
-            @click="handleSaveCareTask"
           >
             {{ $t('common.save') }}
           </BaseButton>
@@ -1075,7 +1114,7 @@ async function handleDeleteCareTask() {
           <BaseButton variant="ghost" @click="cancelDeleteCareTask">
             {{ $t('common.cancel') }}
           </BaseButton>
-          <BaseButton variant="danger" @click="handleDeleteCareTask">
+          <BaseButton variant="danger" :loading="isPending('care-delete')" @click="handleDeleteCareTask">
             {{ $t('common.delete') }}
           </BaseButton>
         </div>
@@ -1088,7 +1127,7 @@ async function handleDeleteCareTask() {
       :title="$t('pets.editPet')"
       @close="closeEditPetDialog"
     >
-      <form class="dialog-form" @submit.prevent="handleUpdatePet">
+      <form id="pet-edit-form" class="dialog-form" @submit.prevent="handleUpdatePet">
         <BaseInput
           v-model="editFormName"
           :label="$t('pets.name')"
@@ -1108,6 +1147,7 @@ async function handleDeleteCareTask() {
           v-model="editFormWeightGrams"
           :label="$t('pets.weight')"
           :placeholder="$t('pets.weightPlaceholder')"
+          :error="editFormWeightError || undefined"
           type="text"
           inputmode="decimal"
         />
@@ -1194,7 +1234,7 @@ async function handleDeleteCareTask() {
             class="health-editor__add"
             @click="addHealthEntry"
           >
-            <PhPlus :size="14" weight="bold" />
+            <PhPlus :size="16" weight="bold" />
             {{ $t('pets.addHealthEntry') }}
           </button>
         </div>
@@ -1206,9 +1246,10 @@ async function handleDeleteCareTask() {
           </BaseButton>
           <BaseButton
             variant="primary"
+            type="submit"
+            form="pet-edit-form"
             :disabled="!editFormName.trim() || editPetSaving"
             :loading="editPetSaving"
-            @click="handleUpdatePet"
           >
             {{ $t('common.save') }}
           </BaseButton>
@@ -1227,7 +1268,7 @@ async function handleDeleteCareTask() {
 /* ── Card Title ── */
 .card-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   margin: 0 0 var(--space-3) 0;
   color: var(--ink);
@@ -1305,7 +1346,7 @@ async function handleDeleteCareTask() {
 .feeding-detail__info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   flex: 1;
   min-width: 0;
 }
@@ -1347,7 +1388,7 @@ async function handleDeleteCareTask() {
 
 .feed-toggle--fed {
   background: var(--ok);
-  color: #fff;
+  color: var(--color-on-success);
 }
 
 /* ── Medications ── */
@@ -1412,28 +1453,28 @@ async function handleDeleteCareTask() {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-top: 2px;
-  font-size: 10px;
+  margin-top: var(--space-0-5);
+  font-size: var(--text-2xs);
   color: var(--sub);
 }
 
 .med-check--given {
   background: var(--ok);
   border-color: var(--ok);
-  color: #fff;
+  color: var(--color-on-success);
 }
 
 .med-check--inactive {
   border-color: var(--sub);
   color: var(--sub);
-  font-size: 8px;
+  font-size: var(--text-2xs);
 }
 
 .med-item__info {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -1444,12 +1485,12 @@ async function handleDeleteCareTask() {
 }
 
 .med-item__badge {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-normal);
   color: var(--sub);
   background: var(--chip);
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
+  padding: var(--badge-padding);
+  border-radius: var(--radius-full);
   margin-left: var(--space-1);
 }
 
@@ -1468,7 +1509,7 @@ async function handleDeleteCareTask() {
 }
 
 .med-item__status--pending {
-  color: var(--warn, var(--sub));
+  color: var(--color-warning-strong);
 }
 
 .med-item__actions {
@@ -1522,7 +1563,7 @@ async function handleDeleteCareTask() {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .med-log__entry {
@@ -1533,6 +1574,9 @@ async function handleDeleteCareTask() {
 }
 
 .med-log__user {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font-weight: var(--font-weight-medium);
 }
 
@@ -1616,13 +1660,13 @@ async function handleDeleteCareTask() {
 }
 
 .health-dot--green { background: var(--ok); }
-.health-dot--yellow { background: var(--color-warning, #f59e0b); }
-.health-dot--red { background: var(--color-danger, #ef4444); }
+.health-dot--yellow { background: var(--color-warning); }
+.health-dot--red { background: var(--color-danger); }
 
 .health-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .health-entry-title {
@@ -1661,8 +1705,8 @@ async function handleDeleteCareTask() {
 .health-editor__severity {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding-top: 4px;
+  gap: var(--space-1);
+  padding-top: var(--space-1);
 }
 
 .severity-btn {
@@ -1685,14 +1729,14 @@ async function handleDeleteCareTask() {
 }
 
 .severity-btn--green { background: var(--ok); }
-.severity-btn--yellow { background: var(--color-warning, #f59e0b); }
-.severity-btn--red { background: var(--color-danger, #ef4444); }
+.severity-btn--yellow { background: var(--color-warning); }
+.severity-btn--red { background: var(--color-danger); }
 
 .health-editor__fields {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .health-editor__input {
@@ -1700,9 +1744,9 @@ async function handleDeleteCareTask() {
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
+  font-size: var(--text-base); /* 16px — verhindert iOS-Zoom */
   color: var(--ink);
-  background: var(--surface);
+  background: var(--card);
 }
 
 .health-editor__input::placeholder {
@@ -1721,7 +1765,7 @@ async function handleDeleteCareTask() {
 }
 
 .health-editor__delete:hover {
-  color: var(--color-danger, #ef4444);
+  color: var(--color-danger);
   background: var(--chip);
 }
 
@@ -1749,6 +1793,11 @@ async function handleDeleteCareTask() {
   text-align: center;
   padding: var(--space-8) 0;
   color: var(--sub);
+}
+
+.not-found__back {
+  display: flex;
+  justify-content: center;
 }
 
 /* ── Dialog Form ── */
@@ -1801,7 +1850,7 @@ async function handleDeleteCareTask() {
 
 .section-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
   margin: 0;
@@ -1824,7 +1873,7 @@ async function handleDeleteCareTask() {
 }
 
 .icon-btn--danger:hover {
-  color: var(--color-danger, #ef4444);
+  color: var(--color-danger);
 }
 
 .empty-hint {
@@ -1851,7 +1900,7 @@ async function handleDeleteCareTask() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -1876,16 +1925,16 @@ async function handleDeleteCareTask() {
 }
 
 .care-task-card__due--overdue {
-  color: #C75B39;
+  color: var(--color-danger);
   font-weight: var(--font-weight-semibold);
 }
 
 .overdue-badge {
-  background: #C75B39;
-  color: white;
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 0.75rem;
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+  border-radius: var(--radius-full);
+  padding: var(--badge-padding);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-medium);
 }
 
@@ -1939,9 +1988,9 @@ async function handleDeleteCareTask() {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--color-primary, var(--acc));
-  color: #fff;
-  border: 2px solid var(--surface, #fff);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border: 2px solid var(--card);
   display: flex;
   align-items: center;
   justify-content: center;

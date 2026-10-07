@@ -9,6 +9,14 @@ import i18n from '../i18n'
 
 const HOUSEHOLD_KEY = 'haushalt_household_id'
 
+/** Mindestlänge Passwort, wie Backend (RegisterRequest.password min_length) */
+export const PASSWORD_MIN_LENGTH = 8
+
+/** Grobe E-Mail-Prüfung für Inline-Fehler; die genaue Prüfung macht das Backend. */
+export function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+}
+
 /** True nur wenn der Server explizit 401 zurückgegeben hat (Auth-Rejection). */
 function isAuthRejection(err: any): boolean {
   return err?.response?.status === 401
@@ -33,6 +41,11 @@ export const useAuthStore = defineStore('auth', () => {
   const currentHouseholdId = ref<string | null>(null)
   const households = ref<HouseholdInfo[]>([])
   const isInitialized = ref(false)
+  /**
+   * Letzter Logout war automatisch (Sitzung abgelaufen): LoginView zeigt dann einen Hinweis.
+   * Wird bei erfolgreicher Anmeldung und bei manuellem Logout zurückgesetzt.
+   */
+  const sessionExpired = ref(false)
 
   // Internes Promise-Setup für authReady
   let _authReadyResolve: () => void
@@ -71,6 +84,7 @@ export const useAuthStore = defineStore('auth', () => {
         if (isAuthRejection(err)) {
           // Cookie fehlt/abgelaufen/revoked (Backend hat ihn gelöscht) → ausgeloggt
           await _clearState()
+          sessionExpired.value = true
         } else if (!token.value) {
           // Netzwerkfehler beim Refresh → Sitzung vermutlich noch gültig, "offline eingeloggt"
           hasOfflineSession.value = true
@@ -120,6 +134,7 @@ export const useAuthStore = defineStore('auth', () => {
   function _applyTokens(data: TokenPayload) {
     token.value = data.access_token
     hasOfflineSession.value = false
+    sessionExpired.value = false
     sessionMarker.set()
   }
 
@@ -251,6 +266,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     await _clearState()
+    sessionExpired.value = reason === 'expired'
 
     const { default: router } = await import('../router')
     if (reason === 'expired') {
@@ -329,7 +345,49 @@ export const useAuthStore = defineStore('auth', () => {
     _handleRemoval(data.household_id, data.user_id)
   }
 
+  // ── Haushalt verlassen ──
+
+  /** Haushalte, die der User gerade selbst verlässt (Socket-Event ist dann keine „Entfernung“). */
+  const _ownLeaves = new Set<string>()
+
+  /**
+   * Eigener Austritt: `request` ruft die API auf. Das Socket-Event `household_member_left`
+   * kann schon vor der HTTP-Antwort eintreffen – solange der Austritt läuft, entfernt
+   * _handleRemoval den Haushalt nur still (kein „Du wurdest entfernt“, keine Navigation).
+   * Gibt das Navigationsziel zurück; Meldung und Navigation übernimmt die View.
+   */
+  async function leaveHousehold(
+    householdId: string,
+    request: () => Promise<unknown>,
+  ): Promise<'/dashboard' | '/no-household'> {
+    _ownLeaves.add(householdId)
+    try {
+      await request()
+      _dropHousehold(householdId)
+    } finally {
+      _ownLeaves.delete(householdId)
+    }
+    return households.value.length > 0 ? '/dashboard' : '/no-household'
+  }
+
+  /** Haushalt lokal entfernen; war er aktiv, auf den nächsten wechseln (oder keinen). */
+  function _dropHousehold(householdId: string) {
+    households.value = households.value.filter(h => h.id !== householdId)
+    if (currentHouseholdId.value !== householdId) return
+    if (households.value.length > 0) {
+      switchHousehold(households.value[0].id)
+    } else {
+      currentHouseholdId.value = null
+      localStorage.removeItem(HOUSEHOLD_KEY)
+    }
+  }
+
   function _handleRemoval(householdId: string, userId: string) {
+    // Eigener Austritt läuft gerade → still entfernen, die View meldet und navigiert
+    if (userId === user.value?.id && _ownLeaves.has(householdId)) {
+      _dropHousehold(householdId)
+      return
+    }
     // Jemand anderes ist gegangen: Verlässt der einzige Admin den Haushalt, befördert der
     // Server das dienstälteste Mitglied — vielleicht uns. Rollen kommen nur über /me,
     // deshalb neu laden statt bis zum nächsten Start mit alter Rolle weiterzuarbeiten.
@@ -377,6 +435,7 @@ export const useAuthStore = defineStore('auth', () => {
     households,
     isInitialized,
     authReady,
+    sessionExpired,
     // Getters
     isAuthenticated,
     currentHousehold,
@@ -388,6 +447,7 @@ export const useAuthStore = defineStore('auth', () => {
     refresh,
     refreshForSocket,
     switchHousehold,
+    leaveHousehold,
     logout,
     // Socket-Event-Handler
     handleHouseholdUpdated,

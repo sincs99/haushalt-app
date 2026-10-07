@@ -5,7 +5,6 @@ import { PhSparkle } from '@phosphor-icons/vue'
 import { useAiStore } from '../stores/ai'
 import { useAuthStore } from '../stores/auth'
 import { useToast } from '../composables/useToast'
-import { translateApiError } from '../utils/apiErrors'
 import BaseCard from './ui/BaseCard.vue'
 import BaseButton from './ui/BaseButton.vue'
 
@@ -16,7 +15,7 @@ import BaseButton from './ui/BaseButton.vue'
 const aiStore = useAiStore()
 const authStore = useAuthStore()
 const { t } = useI18n()
-const { showToast } = useToast()
+const { notifyError } = useToast()
 
 const busy = ref(false)
 const isAdmin = computed(() => authStore.currentHousehold?.role === 'admin')
@@ -39,7 +38,7 @@ async function toggle() {
   try {
     await aiStore.setEnabled(!enabled.value)
   } catch (error) {
-    showToast(translateApiError(error), 'error')
+    notifyError(t('ai.settings.saveError'), error)
   } finally {
     busy.value = false
   }
@@ -90,7 +89,7 @@ watch(() => authStore.currentHouseholdId, load)
   gap: var(--space-2);
   margin: 0 0 var(--space-3);
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }

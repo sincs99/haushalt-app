@@ -22,18 +22,18 @@ withDefaults(defineProps<{
   border-style: solid;
   border-color: var(--line-strong);
   border-top-color: var(--acc);
-  animation: spin 0.6s linear infinite;
+  animation: spin var(--duration-spin) linear infinite;
 }
 
 .base-spinner--sm {
-  width: 16px;
-  height: 16px;
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
   border-width: 2px;
 }
 
 .base-spinner--md {
-  width: 24px;
-  height: 24px;
+  width: var(--icon-size-lg);
+  height: var(--icon-size-lg);
   border-width: 3px;
 }
 

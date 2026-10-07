@@ -1,6 +1,12 @@
+<script lang="ts">
+// Modulweit: offene Dialoge, der zuletzt geöffnete oben – nur er reagiert auf Escape/Tab
+const openStack: symbol[] = []
+</script>
+
 <script setup lang="ts">
-import { watch, nextTick, ref } from 'vue'
+import { watch, nextTick, ref, onBeforeUnmount } from 'vue'
 import { PhX } from '@phosphor-icons/vue'
+import { useBackClose } from '../../composables/useBackClose'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -15,17 +21,72 @@ const emit = defineEmits<{
 }>()
 
 const dialogRef = ref<HTMLElement | null>(null)
+const titleId = `dialog-title-${Math.random().toString(36).slice(2, 9)}`
+let returnFocusTo: HTMLElement | null = null
+
+const instanceId = Symbol('dialog')
+
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+function focusables(): HTMLElement[] {
+  return Array.from(dialogRef.value?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])
+}
+
+// Zurück-Taste (Android/Browser) schliesst den Dialog statt die Seite zu verlassen
+useBackClose(() => props.open, () => emit('close'))
 
 watch(() => props.open, async (isOpen) => {
   if (isOpen) {
+    returnFocusTo = document.activeElement as HTMLElement | null
+    openStack.push(instanceId)
+    document.addEventListener('keydown', onKeydown)
     await nextTick()
-    dialogRef.value?.focus()
+    // Erstes Feld mit autofocus bzw. erstes Eingabefeld, sonst das Panel
+    const panel = dialogRef.value
+    const target =
+      panel?.querySelector<HTMLElement>('[autofocus]') ??
+      panel?.querySelector<HTMLElement>('.dialog-body input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([disabled]), .dialog-body textarea:not([disabled])')
+    ;(target ?? panel)?.focus({ preventScroll: true })
+  } else {
+    removeFromStack()
+    document.removeEventListener('keydown', onKeydown)
+    // Fokus zurück auf den auslösenden Button
+    if (returnFocusTo && document.contains(returnFocusTo)) returnFocusTo.focus({ preventScroll: true })
+    returnFocusTo = null
   }
+}, { immediate: true })
+
+function removeFromStack() {
+  const idx = openStack.indexOf(instanceId)
+  if (idx !== -1) openStack.splice(idx, 1)
+}
+
+onBeforeUnmount(() => {
+  removeFromStack()
+  document.removeEventListener('keydown', onKeydown)
 })
 
 function onKeydown(e: KeyboardEvent) {
+  if (openStack[openStack.length - 1] !== instanceId) return
   if (e.key === 'Escape') {
+    e.stopPropagation()
     emit('close')
+    return
+  }
+  if (e.key === 'Tab') {
+    // Fokus im Dialog halten
+    const items = focusables()
+    if (items.length === 0) return
+    const first = items[0]
+    const last = items[items.length - 1]
+    const active = document.activeElement
+    if (e.shiftKey && (active === first || active === dialogRef.value)) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault()
+      first.focus()
+    }
   }
 }
 </script>
@@ -33,18 +94,19 @@ function onKeydown(e: KeyboardEvent) {
 <template>
   <Teleport to="body">
     <Transition name="dialog">
-      <div v-if="open" class="dialog-overlay" @click.self="emit('close')" @keydown="onKeydown">
+      <div v-if="open" class="dialog-overlay" @click.self="emit('close')">
         <div
           ref="dialogRef"
           class="dialog-panel"
           role="dialog"
           aria-modal="true"
+          :aria-labelledby="title ? titleId : undefined"
           tabindex="-1"
         >
           <div class="dialog-header" v-if="title">
-            <h2 class="dialog-title">{{ title }}</h2>
-            <button class="dialog-close" @click="emit('close')" :aria-label="$t('common.close')">
-              <PhX :size="18" />
+            <h2 :id="titleId" class="dialog-title">{{ title }}</h2>
+            <button type="button" class="dialog-close" @click="emit('close')" :aria-label="$t('common.close')">
+              <PhX :size="20" />
             </button>
           </div>
           <div class="dialog-body">
@@ -63,12 +125,12 @@ function onKeydown(e: KeyboardEvent) {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-dialog);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--color-scrim);
   backdrop-filter: blur(2px);
 }
 
@@ -94,7 +156,7 @@ function onKeydown(e: KeyboardEvent) {
 .dialog-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-title-dialog);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }
@@ -104,10 +166,11 @@ function onKeydown(e: KeyboardEvent) {
   border: none;
   cursor: pointer;
   color: var(--sub);
-  padding: var(--space-1);
+  padding: var(--space-2);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .dialog-close:hover {
@@ -130,11 +193,11 @@ function onKeydown(e: KeyboardEvent) {
 /* Transitions */
 .dialog-enter-active,
 .dialog-leave-active {
-  transition: opacity 0.15s ease;
+  transition: opacity var(--transition-fast);
 }
 .dialog-enter-active .dialog-panel,
 .dialog-leave-active .dialog-panel {
-  transition: transform 0.15s ease;
+  transition: transform var(--transition-fast);
 }
 .dialog-enter-from,
 .dialog-leave-to {

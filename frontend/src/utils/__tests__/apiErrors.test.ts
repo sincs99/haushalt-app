@@ -4,8 +4,8 @@ import { translateApiError } from '../apiErrors'
 
 const t = i18n.global.t
 
-function axiosError(detail: unknown) {
-  return { message: 'Request failed', response: { data: { detail } } }
+function axiosError(detail: unknown, status = 400) {
+  return { message: 'Request failed', response: { status, data: { detail } } }
 }
 
 describe('translateApiError', () => {
@@ -21,21 +21,26 @@ describe('translateApiError', () => {
     )
   })
 
-  it('returns string details as-is', () => {
-    expect(translateApiError(axiosError('Plain legacy error'))).toBe('Plain legacy error')
+  it('never shows English string details, maps them by status', () => {
+    expect(translateApiError(axiosError('Todo not found in this household', 404))).toBe(t('errors.notFound'))
+    expect(translateApiError(axiosError('list_id does not belong to this household', 400))).toBe(t('errors.validation'))
   })
 
-  it('joins pydantic validation arrays', () => {
-    const err = axiosError([{ msg: 'field required' }, { msg: 'too short' }, { loc: ['x'] }])
-    expect(translateApiError(err)).toBe('field required, too short, {"loc":["x"]}')
+  it('maps pydantic validation arrays to a readable message', () => {
+    const err = axiosError([{ msg: 'field required' }, { msg: 'too short' }], 422)
+    expect(translateApiError(err)).toBe(t('errors.validation'))
+  })
+
+  it('maps server errors', () => {
+    expect(translateApiError({ message: 'Request failed with status code 500', response: { status: 500, data: {} } })).toBe(t('errors.server'))
   })
 
   it('reports network errors when there is no response', () => {
     expect(translateApiError({ message: 'Network Error' })).toBe(t('errors.network'))
   })
 
-  it('uses error.message when a response exists without usable detail', () => {
-    expect(translateApiError({ message: 'Boom', response: { data: {} } })).toBe('Boom')
+  it('does not show raw error.message when a response exists without usable detail', () => {
+    expect(translateApiError({ message: 'Boom', response: { data: {} } })).toBe(t('errors.unknown'))
   })
 
   it('returns the unknown fallback for empty input', () => {

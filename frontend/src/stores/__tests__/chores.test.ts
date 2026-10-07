@@ -182,6 +182,40 @@ describe('chores store', () => {
     })
   })
 
+  describe('ohne lokal geladene Einträge (Dashboard)', () => {
+    it('completeAssignment calls the server even if the assignment is not loaded', async () => {
+      const s = useChoresStore()
+      repo.completeAssignment.mockResolvedValue(assignment({ completed_at: 'x' }))
+      await s.completeAssignment('a1')
+      expect(repo.completeAssignment).toHaveBeenCalledWith('h1', 'a1')
+      // Unbekannte Einträge werden nicht eingefügt
+      expect(s.assignments).toHaveLength(0)
+    })
+
+    it('uncompleteAssignment calls the server even if the assignment is not loaded', async () => {
+      const s = useChoresStore()
+      repo.uncompleteAssignment.mockResolvedValue(assignment())
+      await s.uncompleteAssignment('a1')
+      expect(repo.uncompleteAssignment).toHaveBeenCalledWith('h1', 'a1')
+    })
+  })
+
+  it('loading stays true until both parallel loads are finished', async () => {
+    const s = useChoresStore()
+    let resolveChores!: (c: ChoreInfo[]) => void
+    let resolveAssignments!: (a: ChoreAssignmentInfo[]) => void
+    repo.fetchChores.mockReturnValue(new Promise(r => (resolveChores = r)))
+    repo.fetchAssignments.mockReturnValue(new Promise(r => (resolveAssignments = r)))
+    const p1 = s.fetchChores()
+    const p2 = s.fetchAssignments()
+    resolveChores([])
+    await p1
+    expect(s.loading).toBe(true)
+    resolveAssignments([])
+    await p2
+    expect(s.loading).toBe(false)
+  })
+
   describe('uncompleteAssignment', () => {
     const done = () => assignment({ completed_at: '2024-01-01T10:00:00Z', completed_by_user_id: 'u2' })
 

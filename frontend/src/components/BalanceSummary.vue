@@ -5,14 +5,17 @@ import { useSettlementsStore } from '../stores/settlements'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatRappen, parseAmountToRappen } from '../utils/money'
+import { localDateString } from '../utils/dates'
 import BaseCard from './ui/BaseCard.vue'
 import BaseButton from './ui/BaseButton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
+import BaseDialog from './ui/BaseDialog.vue'
+import BaseErrorState from './ui/BaseErrorState.vue'
 import type { SettlementEntry } from '../types'
 
 const expensesStore = useExpensesStore()
 const settlementsStore = useSettlementsStore()
-const { showToast } = useToast()
+const { notifySuccess, notifyError, notifyInfo } = useToast()
 const { t } = useI18n()
 
 function resolveUserName(userId: string): string {
@@ -45,29 +48,43 @@ const dialogAmount = ref('')
 const dialogDate = ref('')
 const dialogNote = ref('')
 const settlementSaving = ref(false)
+const settlementFormId = `settlement-form-${Math.random().toString(36).slice(2, 9)}`
 
-function todayISO(): string {
-  const d = new Date()
-  return d.toISOString().slice(0, 10)
+// Salden erneut laden (nach Ladefehler)
+const retryingBalances = ref(false)
+async function retryBalances() {
+  retryingBalances.value = true
+  try {
+    await expensesStore.fetchBalances()
+  } finally {
+    retryingBalances.value = false
+  }
 }
 
 function openSettlementDialog(s: SettlementEntry) {
   dialogFrom.value = s.from_user_id
   dialogTo.value = s.to_user_id
   dialogAmount.value = (s.amount_rappen / 100).toFixed(2)
-  dialogDate.value = todayISO()
+  // Lokales Datum (toISOString() wäre nachts noch „gestern“)
+  dialogDate.value = localDateString()
   dialogNote.value = ''
   showSettlementDialog.value = true
 }
 
 async function confirmSettlement() {
+  // Doppelt-Senden verhindern (Enter + Klick)
+  if (settlementSaving.value) return
   const rappen = parseAmountToRappen(dialogAmount.value)
   if (!rappen) {
-    showToast(t('settlements.invalidAmount'), 'error')
+    notifyError(t('settlements.invalidAmount'))
     return
   }
   if (dialogFrom.value === dialogTo.value) {
-    showToast(t('settlements.sameUser'), 'error')
+    notifyError(t('settlements.sameUser'))
+    return
+  }
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    notifyInfo(t('offline.actionBlocked'))
     return
   }
 
@@ -80,10 +97,10 @@ async function confirmSettlement() {
       settled_date: dialogDate.value || undefined,
       note: dialogNote.value.trim() || undefined,
     })
-    showToast(t('settlements.created'), 'success')
+    notifySuccess(t('settlements.created'))
     showSettlementDialog.value = false
-  } catch {
-    showToast(t('settlements.saveError'), 'error')
+  } catch (e) {
+    notifyError(t('settlements.saveError'), e)
   } finally {
     settlementSaving.value = false
   }
@@ -140,44 +157,52 @@ async function confirmSettlement() {
     </div>
   </BaseCard>
 
+  <!-- Salden konnten nicht geladen werden: Karte nicht still verschwinden lassen -->
+  <BaseCard v-else-if="expensesStore.balancesError" padding="md">
+    <BaseErrorState
+      :message="$t('expenses.balance.loadError')"
+      :retrying="retryingBalances"
+      @retry="retryBalances"
+    />
+  </BaseCard>
+
   <!-- Settlement-Bestätigungsdialog -->
-  <Teleport to="body">
-    <div v-if="showSettlementDialog" class="dialog-backdrop" @click.self="showSettlementDialog = false">
-      <div class="dialog-panel">
-        <h3 class="dialog-title">{{ $t('settlements.dialogTitle') }}</h3>
-        <div class="dialog-form">
-          <label class="dialog-label">
-            {{ $t('settlements.from') }}
-            <select v-model="dialogFrom" class="dialog-select">
-              <option v-for="m in expensesStore.members" :key="m.id" :value="m.id">{{ m.display_name }}</option>
-            </select>
-          </label>
-          <label class="dialog-label">
-            {{ $t('settlements.to') }}
-            <select v-model="dialogTo" class="dialog-select">
-              <option v-for="m in expensesStore.members" :key="m.id" :value="m.id">{{ m.display_name }}</option>
-            </select>
-          </label>
-          <label class="dialog-label">
-            {{ $t('settlements.amount') }}
-            <input v-model="dialogAmount" type="text" inputmode="decimal" class="dialog-input" />
-          </label>
-          <label class="dialog-label">
-            {{ $t('settlements.date') }}
-            <input v-model="dialogDate" type="date" class="dialog-input" />
-          </label>
-          <label class="dialog-label">
-            {{ $t('settlements.note') }}
-            <input v-model="dialogNote" type="text" maxlength="200" class="dialog-input" :placeholder="$t('settlements.notePlaceholder')" />
-          </label>
-        </div>
-        <div class="dialog-actions">
-          <BaseButton variant="ghost" size="sm" @click="showSettlementDialog = false">{{ $t('common.cancel') }}</BaseButton>
-          <BaseButton variant="primary" size="sm" @click="confirmSettlement" :loading="settlementSaving">{{ $t('settlements.confirm') }}</BaseButton>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+  <BaseDialog
+    :open="showSettlementDialog"
+    :title="$t('settlements.dialogTitle')"
+    @close="showSettlementDialog = false"
+  >
+    <form :id="settlementFormId" class="dialog-form" @submit.prevent="confirmSettlement">
+      <label class="dialog-label">
+        {{ $t('settlements.from') }}
+        <select v-model="dialogFrom" class="dialog-select">
+          <option v-for="m in expensesStore.members" :key="m.id" :value="m.id">{{ m.display_name }}</option>
+        </select>
+      </label>
+      <label class="dialog-label">
+        {{ $t('settlements.to') }}
+        <select v-model="dialogTo" class="dialog-select">
+          <option v-for="m in expensesStore.members" :key="m.id" :value="m.id">{{ m.display_name }}</option>
+        </select>
+      </label>
+      <label class="dialog-label">
+        {{ $t('settlements.amount') }}
+        <input v-model="dialogAmount" type="text" inputmode="decimal" class="dialog-input" />
+      </label>
+      <label class="dialog-label">
+        {{ $t('settlements.date') }}
+        <input v-model="dialogDate" type="date" class="dialog-input" />
+      </label>
+      <label class="dialog-label">
+        {{ $t('settlements.note') }}
+        <input v-model="dialogNote" type="text" maxlength="200" class="dialog-input" :placeholder="$t('settlements.notePlaceholder')" />
+      </label>
+    </form>
+    <template #footer>
+      <BaseButton variant="ghost" size="sm" @click="showSettlementDialog = false">{{ $t('common.cancel') }}</BaseButton>
+      <BaseButton variant="primary" size="sm" type="submit" :form="settlementFormId" :loading="settlementSaving">{{ $t('settlements.confirm') }}</BaseButton>
+    </template>
+  </BaseDialog>
 </template>
 
 <style scoped>
@@ -214,7 +239,7 @@ async function confirmSettlement() {
 .settlement-section {
   margin-top: var(--space-2);
   padding-top: var(--space-2);
-  border-top: 1px solid var(--color-neutral-200);
+  border-top: 1px solid var(--line);
 }
 
 .settlement-section__title {
@@ -238,7 +263,7 @@ async function confirmSettlement() {
   flex-shrink: 0;
   padding: var(--space-1) var(--space-2);
   background: var(--color-success);
-  color: var(--color-surface);
+  color: var(--color-on-success);
   border: none;
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
@@ -255,7 +280,7 @@ async function confirmSettlement() {
 .settled-message {
   margin: var(--space-2) 0 0 0;
   padding-top: var(--space-2);
-  border-top: 1px solid var(--color-neutral-200);
+  border-top: 1px solid var(--line);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
   color: var(--color-success);
@@ -268,36 +293,6 @@ async function confirmSettlement() {
 }
 
 /* ── Settlement-Dialog ── */
-.dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9000;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-4);
-}
-
-.dialog-panel {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-overlay);
-  width: 100%;
-  max-width: 400px;
-  padding: var(--space-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.dialog-title {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text);
-}
-
 .dialog-form {
   display: flex;
   flex-direction: column;
@@ -316,7 +311,7 @@ async function confirmSettlement() {
 .dialog-select,
 .dialog-input {
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   font-size: var(--text-base);
   font-family: var(--font-family);
@@ -331,9 +326,4 @@ async function confirmSettlement() {
   box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
 </style>

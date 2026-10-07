@@ -3,24 +3,24 @@ import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
-import { useToast } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
 import { useI18n } from 'vue-i18n'
-import { translateApiError } from '../utils/apiErrors'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
+import BaseDialog from '../components/ui/BaseDialog.vue'
 import { PhHouse, PhUsers } from '@phosphor-icons/vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const repo = createOnlineHouseholdsRepository()
-const { showToast } = useToast()
+const { run } = useAsyncAction()
 const { t } = useI18n()
 
 // Sobald Haushalte via Socket/fetchMe erscheinen → weiterleiten
 watch(() => authStore.households.length, (len) => {
   if (len > 0 && router.currentRoute.value.path === '/no-household') {
-    router.replace('/shopping')
+    router.replace('/dashboard')
   }
 })
 
@@ -29,18 +29,16 @@ const newHouseholdName = ref('')
 const createLoading = ref(false)
 
 async function createHousehold() {
-  if (!newHouseholdName.value.trim()) return
+  const name = newHouseholdName.value.trim()
+  if (!name) return
   createLoading.value = true
-  try {
-    const result = await repo.create(newHouseholdName.value.trim())
+  const ok = await run(async () => {
+    const result = await repo.create(name)
     await authStore.fetchMe()
     authStore.switchHousehold(result.id)
-    router.push('/shopping')
-  } catch (err: any) {
-    showToast(translateApiError(err), 'error')
-  } finally {
-    createLoading.value = false
-  }
+  }, { key: 'create', error: t('household.createError') })
+  createLoading.value = false
+  if (ok) router.push('/dashboard')
 }
 
 // Mit Code beitreten
@@ -48,19 +46,37 @@ const joinCode = ref('')
 const joinLoading = ref(false)
 
 async function joinHousehold() {
-  if (!joinCode.value.trim()) return
+  const code = joinCode.value.trim().toUpperCase()
+  if (!code) return
   joinLoading.value = true
-  try {
-    const result = await repo.join(joinCode.value.trim().toUpperCase())
-    showToast(t('household.joinSuccess', { name: result.name }), 'success')
+  const ok = await run(async () => {
+    const result = await repo.join(code)
     await authStore.fetchMe()
     authStore.switchHousehold(result.id)
-    router.push('/shopping')
-  } catch (err: any) {
-    showToast(translateApiError(err), 'error')
-  } finally {
-    joinLoading.value = false
+    return result
+  }, {
+    key: 'join',
+    success: (result) => t('household.joinSuccess', { name: result.name }),
+    error: t('household.joinFailed'),
+  })
+  joinLoading.value = false
+  if (ok) router.push('/dashboard')
+}
+
+// Abmelden: offline nachfragen (ohne Netz ist eine erneute Anmeldung nicht möglich)
+const logoutDialogOpen = ref(false)
+
+function requestLogout() {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    logoutDialogOpen.value = true
+    return
   }
+  authStore.logout({ reason: 'user' })
+}
+
+function confirmLogout() {
+  logoutDialogOpen.value = false
+  authStore.logout({ reason: 'user' })
 }
 </script>
 
@@ -72,13 +88,14 @@ async function joinHousehold() {
     <div class="no-household-cards">
       <!-- Karte: Haushalt gründen -->
       <BaseCard>
-        <h2 class="card-title"><PhHouse :size="18" /> {{ $t('noHousehold.createTitle') }}</h2>
+        <h2 class="card-title"><PhHouse :size="20" /> {{ $t('noHousehold.createTitle') }}</h2>
         <p class="card-hint">{{ $t('noHousehold.createHint') }}</p>
         <form @submit.prevent="createHousehold" class="card-form">
           <BaseInput
             v-model="newHouseholdName"
             :label="$t('auth.householdName')"
             :placeholder="$t('auth.householdPlaceholder')"
+            maxlength="100"
           />
           <BaseButton
             type="submit"
@@ -93,13 +110,15 @@ async function joinHousehold() {
 
       <!-- Karte: Mit Code beitreten -->
       <BaseCard>
-        <h2 class="card-title"><PhUsers :size="18" /> {{ $t('noHousehold.joinTitle') }}</h2>
+        <h2 class="card-title"><PhUsers :size="20" /> {{ $t('noHousehold.joinTitle') }}</h2>
         <p class="card-hint">{{ $t('noHousehold.joinHint') }}</p>
         <form @submit.prevent="joinHousehold" class="card-form">
           <BaseInput
             v-model="joinCode"
             :label="$t('auth.inviteCodeLabel')"
             :placeholder="$t('auth.inviteCodePlaceholder')"
+            autocapitalize="characters"
+            autocomplete="off"
             style="text-transform: uppercase"
           />
           <BaseButton
@@ -115,10 +134,27 @@ async function joinHousehold() {
     </div>
 
     <div class="no-household-logout">
-      <BaseButton variant="ghost" @click="authStore.logout({ reason: 'user' })">
+      <BaseButton variant="ghost" @click="requestLogout">
         {{ $t('auth.logout') }}
       </BaseButton>
     </div>
+
+    <BaseDialog
+      :open="logoutDialogOpen"
+      :title="$t('auth.logoutOfflineTitle')"
+      danger
+      @close="logoutDialogOpen = false"
+    >
+      <p>{{ $t('auth.logoutOfflineConfirm') }}</p>
+      <template #footer>
+        <BaseButton variant="ghost" size="sm" @click="logoutDialogOpen = false">
+          {{ $t('common.cancel') }}
+        </BaseButton>
+        <BaseButton variant="danger" size="sm" @click="confirmLogout">
+          {{ $t('auth.logout') }}
+        </BaseButton>
+      </template>
+    </BaseDialog>
   </div>
 </template>
 
@@ -139,7 +175,7 @@ async function joinHousehold() {
   gap: var(--space-2);
   margin: 0 0 var(--space-1);
   font-family: var(--font-display);
-  font-size: var(--text-xl);
+  font-size: var(--text-title-page);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }
@@ -165,7 +201,7 @@ async function joinHousehold() {
   gap: var(--space-2);
   margin: 0 0 var(--space-2);
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }

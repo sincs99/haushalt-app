@@ -14,7 +14,7 @@ import {
 } from '../services/pushService'
 
 const { t } = useI18n()
-const { showToast } = useToast()
+const { notifySuccess, notifyError, notifyInfo } = useToast()
 
 const support = getPushSupport()
 const permission = ref<NotificationPermission>(getPermission())
@@ -37,22 +37,28 @@ onMounted(async () => {
 })
 
 async function toggle() {
+  if (busy.value) return
+  // Ohne Netz kann der Server die Anmeldung nicht speichern
+  if (navigator.onLine === false) {
+    notifyInfo(t('offline.actionBlocked'))
+    return
+  }
   busy.value = true
   try {
     if (subscribed.value) {
       await disablePush()
       subscribed.value = false
-      showToast(t('push.disabled'), 'success')
+      notifySuccess(t('push.disabled'))
     } else {
       await enablePush()
       subscribed.value = true
-      showToast(t('push.enabled'), 'success')
+      notifySuccess(t('push.enabled'))
     }
   } catch (err) {
     if (err instanceof PushError && err.code === 'disabled') {
-      showToast(t('push.serverDisabled'), 'error')
+      notifyError(t('push.serverDisabled'))
     } else if (!(err instanceof PushError && err.code === 'denied')) {
-      showToast(t('push.error'), 'error')
+      notifyError(t('push.error'), err)
     }
   } finally {
     permission.value = getPermission()
@@ -61,11 +67,17 @@ async function toggle() {
 }
 
 async function sendTest() {
+  if (testing.value) return
+  if (navigator.onLine === false) {
+    notifyInfo(t('offline.actionBlocked'))
+    return
+  }
   testing.value = true
   try {
     await sendTestPush()
-  } catch {
-    showToast(t('push.error'), 'error')
+    notifySuccess(t('push.testSent'))
+  } catch (err) {
+    notifyError(t('push.error'), err)
   } finally {
     testing.value = false
   }
@@ -97,7 +109,7 @@ async function sendTest() {
 .push-settings {
   margin-top: var(--space-4);
   padding-top: var(--space-4);
-  border-top: 1px solid var(--color-neutral-200);
+  border-top: 1px solid var(--line);
 }
 
 .settings-row {

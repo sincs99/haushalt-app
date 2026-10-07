@@ -10,15 +10,15 @@ describe('getMemberColor', () => {
     // 'a' = 97 → 97 % 4 = 1 → second colour
     expect(getMemberColor('a')).toBe('var(--p2)')
     // 'b' = 98 → 2
-    expect(getMemberColor('b')).toBe('#94798C')
+    expect(getMemberColor('b')).toBe('var(--member-3)')
     // 'd' = 100 → 0
     expect(getMemberColor('d')).toBe('var(--p1)')
     // 'c' = 99 → 3
-    expect(getMemberColor('c')).toBe('#8A8272')
+    expect(getMemberColor('c')).toBe('var(--member-4)')
   })
 
   it('always returns a palette colour, including for the empty string', () => {
-    const palette = ['var(--p1)', 'var(--p2)', '#94798C', '#8A8272']
+    const palette = ['var(--p1)', 'var(--p2)', 'var(--member-3)', 'var(--member-4)']
     for (const id of ['', 'x', '123e4567-e89b-12d3-a456-426614174000']) {
       expect(palette).toContain(getMemberColor(id))
     }

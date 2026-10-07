@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useTodosStore } from '../stores/todos'
 import { useToast } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
 import { useI18n } from 'vue-i18n'
 import { formatDateShort } from '../utils/dates'
 import type { TodoItem } from '../types'
@@ -11,18 +12,30 @@ import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseSkeleton from './ui/BaseSkeleton.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
 import BaseCheckCircle from './ui/BaseCheckCircle.vue'
+import BaseErrorState from './ui/BaseErrorState.vue'
 
 const todosStore = useTodosStore()
-const { showToast } = useToast()
+const { notifyError, notifyInfo } = useToast()
+const { run } = useAsyncAction()
 const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   autoFocus?: boolean
   filterUserId?: string
+  /** Vorname der gefilterten Person (für Hinweise) */
+  filterUserName?: string
+  /** Laden ist gescheitert → Fehlerzustand statt „Keine offenen Aufgaben“ */
+  loadError?: boolean
+  retrying?: boolean
 }>(), {
   autoFocus: false,
   filterUserId: undefined,
+  filterUserName: undefined,
+  loadError: false,
+  retrying: false,
 })
+
+const emit = defineEmits<{ retry: [] }>()
 
 // Quick-Add
 const newTodoTitle = ref('')
@@ -35,6 +48,14 @@ const newDueDate = ref('')
 const newAssignedTo = ref('')
 const newReminders = ref<string[]>([])
 
+// Mit aktivem Personen-Filter die neue Aufgabe dieser Person vorbelegen —
+// sonst verschwände sie nach dem Erfassen sofort aus der gefilterten Ansicht
+watch(() => props.filterUserId, (id, oldId) => {
+  if (!newAssignedTo.value || newAssignedTo.value === oldId) {
+    newAssignedTo.value = id ?? ''
+  }
+}, { immediate: true })
+
 // Bearbeitungs-Toggle pro Todo
 const editingId = ref<string | null>(null)
 const editTitle = ref('')
@@ -42,6 +63,8 @@ const editDescription = ref('')
 const editDueDate = ref('')
 const editAssignedTo = ref('')
 const editNewReminders = ref<string[]>([])
+const editTitleError = ref('')
+const editSaving = ref(false)
 
 // Eingeklappte Erledigt-Sektion
 const showDone = ref(false)
@@ -100,10 +123,20 @@ function getNextReminder(todo: TodoItem): string | null {
 
 // Reminder löschen
 async function handleDeleteReminder(todoId: string, reminderId: string) {
-  try {
-    await todosStore.deleteReminder(todoId, reminderId)
-  } catch {
-    showToast(t('todos.deleteReminderError'))
+  await run(() => todosStore.deleteReminder(todoId, reminderId), {
+    key: `reminder:${reminderId}`,
+    error: t('todos.deleteReminderError'),
+  })
+}
+
+// Erinnerungen an eine Aufgabe hängen; Fehler einmal melden
+async function addReminders(todoId: string, reminders: string[]) {
+  for (const remindAt of reminders) {
+    try {
+      await todosStore.addReminder(todoId, new Date(remindAt).toISOString())
+    } catch (err) {
+      notifyError(t('todos.reminderError'), err)
+    }
   }
 }
 
@@ -112,71 +145,91 @@ async function handleAddTodo() {
   const title = newTodoTitle.value.trim()
   if (!title) return
 
-  newTodoTitle.value = ''
   const description = newDescription.value.trim() || undefined
   const dueDate = newDueDate.value || undefined
   const assignedTo = newAssignedTo.value || undefined
   const remindersToAdd = newReminders.value.filter(r => r.trim() !== '')
 
-  // Details zurücksetzen
-  newDescription.value = ''
-  newDueDate.value = ''
-  newAssignedTo.value = ''
-  newReminders.value = []
-  showAddDetails.value = false
-
-  try {
-    await todosStore.addTodo(title, description, assignedTo, dueDate)
-
-    // Reminders nachträglich hinzufügen (braucht die Todo-ID vom Server)
-    if (remindersToAdd.length > 0) {
-      const newItem = todosStore.items[todosStore.items.length - 1]
-      if (newItem) {
-        for (const remindAt of remindersToAdd) {
-          try {
-            await todosStore.addReminder(newItem.id, new Date(remindAt).toISOString())
-          } catch {
-            showToast(t('todos.reminderError'))
-          }
-        }
-      }
-    }
-  } catch {
-    showToast(t('todos.addError'))
+  // Eingaben für die Wiederherstellung bei Fehler merken
+  const saved = {
+    title: newTodoTitle.value,
+    description: newDescription.value,
+    dueDate: newDueDate.value,
+    assignedTo: newAssignedTo.value,
+    reminders: [...newReminders.value],
+    showDetails: showAddDetails.value,
   }
+
+  // Offline blockiert run() vor dem Zurücksetzen → nichts geht verloren
+  await run(async () => {
+    // Felder sofort leeren (schnelles Erfassen) …
+    newTodoTitle.value = ''
+    newDescription.value = ''
+    newDueDate.value = ''
+    newAssignedTo.value = props.filterUserId ?? ''
+    newReminders.value = []
+    showAddDetails.value = false
+
+    let todoId: string | undefined
+    try {
+      todoId = await todosStore.addTodo(title, description, assignedTo, dueDate)
+    } catch (err) {
+      // … und bei Fehler wiederherstellen, falls inzwischen nichts Neues getippt wurde
+      if (!newTodoTitle.value) {
+        newTodoTitle.value = saved.title
+        newDescription.value = saved.description
+        newDueDate.value = saved.dueDate
+        newAssignedTo.value = saved.assignedTo
+        newReminders.value = saved.reminders
+        showAddDetails.value = saved.showDetails
+      }
+      throw err
+    }
+
+    // Erinnerungen an die neue Aufgabe hängen (ID aus addTodo, nicht „letzter Eintrag“)
+    if (todoId && remindersToAdd.length > 0) {
+      await addReminders(todoId, remindersToAdd)
+    }
+
+    // Bewusst jemand anderem (oder niemandem) zugewiesen → durch den Filter ausgeblendet
+    if (props.filterUserId !== undefined && assignedTo !== props.filterUserId) {
+      notifyInfo(t('todos.createdHidden', { name: props.filterUserName ?? '' }))
+    }
+  }, { key: `add:${title}`, error: t('todos.addError') })
   inputRef.value?.focus()
 }
 
-async function handleToggle(todoId: string) {
-  try {
-    await todosStore.toggleDone(todoId)
-  } catch {
-    showToast(t('todos.toggleError'))
+async function handleToggle(todo: TodoItem) {
+  const todoId = todo.id
+  if (todo.is_done) {
+    // Wieder öffnen: in der Liste sichtbar, kein Toast
+    await run(() => todosStore.setDone(todoId, false), {
+      key: `toggle:${todoId}`,
+      error: t('todos.toggleError'),
+    })
+    return
   }
+  // Erledigen: Eintrag wandert in den eingeklappten Bereich → Toast mit Rückgängig
+  await run(() => todosStore.setDone(todoId, true), {
+    key: `toggle:${todoId}`,
+    success: t('todos.done'),
+    undo: () => todosStore.setDone(todoId, false),
+    error: t('todos.toggleError'),
+  })
 }
 
 async function handleDelete(todoId: string) {
   const todo = todosStore.items.find(t => t.id === todoId)
   if (!todo) return
+  // Vollständiger Snapshot (Tags, Erinnerungen, Status) fürs Undo
+  const snapshot: TodoItem = { ...todo, tags: [...todo.tags], reminders: [...todo.reminders] }
 
-  try {
-    await todosStore.deleteTodo(todoId)
-    showToast(t('common.deleted'), 'success', undefined, {
-      label: t('common.undo'),
-      onAction: () => {
-        todosStore.addTodo(
-          todo.title,
-          todo.description ?? undefined,
-          todo.assigned_to_user_id ?? undefined,
-          todo.due_date ?? undefined,
-        ).catch(() => {
-          showToast(t('todos.addError'), 'error')
-        })
-      },
-    })
-  } catch {
-    showToast(t('todos.deleteError'))
-  }
+  await run(() => todosStore.deleteTodo(todoId), {
+    key: `delete:${todoId}`,
+    success: t('common.deleted'),
+    undo: () => todosStore.restoreTodo(snapshot),
+    error: t('todos.deleteError'),
+  })
 }
 
 // Bearbeitung starten
@@ -187,36 +240,48 @@ function startEdit(todo: TodoItem) {
   editDueDate.value = todo.due_date ?? ''
   editAssignedTo.value = todo.assigned_to_user_id ?? ''
   editNewReminders.value = []
+  editTitleError.value = ''
+  // Fokus aufs Titelfeld
+  nextTick(() => editTitleRef.value?.focus())
+}
+
+const editTitleRef = ref<HTMLInputElement | null>(null)
+
+function setEditTitleRef(el: unknown) {
+  editTitleRef.value = (el as HTMLInputElement | null) ?? null
 }
 
 function cancelEdit() {
   editingId.value = null
+  editTitleError.value = ''
 }
 
 async function saveEdit(todoId: string) {
   const title = editTitle.value.trim()
-  if (!title) return
+  if (!title) {
+    editTitleError.value = t('todos.titleRequired')
+    editTitleRef.value?.focus()
+    return
+  }
+  if (editSaving.value) return
+  editTitleError.value = ''
 
+  editSaving.value = true
   try {
-    await todosStore.updateTodo(todoId, {
+    const ok = await run(() => todosStore.updateTodo(todoId, {
       title,
       description: editDescription.value.trim() || null,
       due_date: editDueDate.value || null,
       assigned_to_user_id: editAssignedTo.value || null,
-    })
+    }), { key: `save:${todoId}`, error: t('todos.saveError') })
+    if (!ok) return
 
     // Neue Reminders hinzufügen
-    for (const remindAt of editNewReminders.value.filter(r => r.trim() !== '')) {
-      try {
-        await todosStore.addReminder(todoId, new Date(remindAt).toISOString())
-      } catch {
-        showToast(t('todos.reminderError'))
-      }
-    }
+    await addReminders(todoId, editNewReminders.value.filter(r => r.trim() !== ''))
 
     editingId.value = null
-  } catch {
-    showToast(t('todos.saveError'))
+  } finally {
+    editSaving.value = false
   }
 }
 </script>
@@ -231,7 +296,7 @@ async function saveEdit(todoId: string) {
         type="text"
         :placeholder="$t('todos.addPlaceholder')"
         class="quick-add__input"
-        autofocus
+        :aria-label="$t('todos.addPlaceholder')"
       />
       <button
         type="submit"
@@ -244,8 +309,14 @@ async function saveEdit(todoId: string) {
     </form>
 
     <!-- Details Toggle -->
-    <button type="button" class="details-toggle" @click="showAddDetails = !showAddDetails">
-      {{ showAddDetails ? '▾ ' + $t('todos.detailsHide') : '▸ ' + $t('todos.detailsShow') }}
+    <button
+      type="button"
+      class="details-toggle"
+      :aria-expanded="showAddDetails"
+      @click="showAddDetails = !showAddDetails"
+    >
+      <span aria-hidden="true">{{ showAddDetails ? '▾' : '▸' }}</span>
+      {{ showAddDetails ? $t('todos.detailsHide') : $t('todos.detailsShow') }}
     </button>
 
     <!-- Erweiterte Felder -->
@@ -254,6 +325,7 @@ async function saveEdit(todoId: string) {
         v-model="newDescription"
         :placeholder="$t('todos.descriptionPlaceholder')"
         class="add-details__textarea"
+        :aria-label="$t('todos.descriptionPlaceholder')"
         rows="2"
       />
       <input
@@ -261,8 +333,14 @@ async function saveEdit(todoId: string) {
         type="date"
         class="add-details__input"
         :title="$t('todos.dueDate')"
+        :aria-label="$t('todos.dueDate')"
       />
-      <select v-model="newAssignedTo" class="add-details__input" :title="$t('todos.assignTo')">
+      <select
+        v-model="newAssignedTo"
+        class="add-details__input"
+        :title="$t('todos.assignTo')"
+        :aria-label="$t('todos.assignTo')"
+      >
         <option value="">{{ $t('todos.noneAssigned') }}</option>
         <option v-for="member in todosStore.members" :key="member.id" :value="member.id">
           {{ member.display_name }}
@@ -277,8 +355,14 @@ async function saveEdit(todoId: string) {
             type="datetime-local"
             class="add-details__input reminder-row__input"
           />
-          <button type="button" class="action-btn action-btn--danger" @click="newReminders.splice(idx, 1)">
-            <PhX :size="14" />
+          <button
+            type="button"
+            class="action-btn action-btn--danger"
+            :aria-label="$t('todos.removeReminder')"
+            :title="$t('todos.removeReminder')"
+            @click="newReminders.splice(idx, 1)"
+          >
+            <PhX :size="16" />
           </button>
         </div>
         <button
@@ -297,12 +381,19 @@ async function saveEdit(todoId: string) {
     <div v-if="todosStore.loading && todosStore.items.length === 0" class="skeleton-list">
       <div class="skeleton-row" v-for="n in 3" :key="n">
         <BaseSkeleton width="20px" height="20px" rounded />
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-1);">
           <BaseSkeleton :width="['75%', '60%', '85%'][n - 1]" height="16px" />
           <BaseSkeleton width="40%" height="12px" />
         </div>
       </div>
     </div>
+
+    <!-- Fehlerzustand: Laden gescheitert -->
+    <BaseErrorState
+      v-if="loadError && !todosStore.loading && todosStore.items.length === 0"
+      :retrying="retrying"
+      @retry="emit('retry')"
+    />
 
     <!-- Offene Todos -->
     <ul v-if="openTodos.length > 0" class="item-list">
@@ -314,8 +405,8 @@ async function saveEdit(todoId: string) {
       >
         <!-- Anzeige-Modus -->
         <template v-if="editingId !== todo.id">
-          <div class="todo-row__main" @click="handleToggle(todo.id)">
-            <BaseCheckCircle :checked="todo.is_done" @toggle="handleToggle(todo.id)" />
+          <div class="todo-row__main" @click="handleToggle(todo)">
+            <BaseCheckCircle :checked="todo.is_done" :label="todo.title" @toggle="handleToggle(todo)" />
             <div class="todo-row__content">
               <div class="todo-row__title-line">
                 <span class="todo-row__name">{{ todo.title }}</span>
@@ -348,8 +439,19 @@ async function saveEdit(todoId: string) {
 
         <!-- Bearbeitungs-Modus -->
         <template v-else>
-          <form class="edit-form" @submit.prevent="saveEdit(todo.id)">
-            <input v-model="editTitle" type="text" class="add-details__input" :placeholder="$t('todos.titlePlaceholder')" />
+          <form class="edit-form" @submit.prevent="saveEdit(todo.id)" @keydown.esc.stop="cancelEdit">
+            <input
+              :ref="setEditTitleRef"
+              v-model="editTitle"
+              type="text"
+              class="add-details__input"
+              :class="{ 'add-details__input--error': editTitleError }"
+              :placeholder="$t('todos.titlePlaceholder')"
+              :aria-label="$t('todos.titlePlaceholder')"
+              :aria-invalid="!!editTitleError"
+              @input="editTitleError = ''"
+            />
+            <p v-if="editTitleError" class="field-error" role="alert">{{ editTitleError }}</p>
             <textarea v-model="editDescription" class="add-details__textarea" :placeholder="$t('todos.descriptionPlaceholder')" rows="2" />
             <input v-model="editDueDate" type="date" class="add-details__input" :title="$t('todos.dueDate')" />
             <select v-model="editAssignedTo" class="add-details__input" :title="$t('todos.assignTo')">
@@ -363,8 +465,14 @@ async function saveEdit(todoId: string) {
               <label class="reminder-section__label">{{ $t('todos.reminders') }}</label>
               <div v-for="rem in todo.reminders" :key="rem.id" class="reminder-row">
                 <span class="reminder-row__text">{{ formatReminderDate(rem.remind_at) }}</span>
-                <button type="button" class="action-btn action-btn--danger" @click="handleDeleteReminder(todo.id, rem.id)">
-                  <PhX :size="14" />
+                <button
+                  type="button"
+                  class="action-btn action-btn--danger"
+                  :aria-label="$t('todos.removeReminder')"
+                  :title="$t('todos.removeReminder')"
+                  @click="handleDeleteReminder(todo.id, rem.id)"
+                >
+                  <PhX :size="16" />
                 </button>
               </div>
               <!-- Neue Reminders hinzufügen -->
@@ -374,8 +482,14 @@ async function saveEdit(todoId: string) {
                   type="datetime-local"
                   class="add-details__input reminder-row__input"
                 />
-                <button type="button" class="action-btn action-btn--danger" @click="editNewReminders.splice(idx, 1)">
-                  <PhX :size="14" />
+                <button
+                  type="button"
+                  class="action-btn action-btn--danger"
+                  :aria-label="$t('todos.removeReminder')"
+                  :title="$t('todos.removeReminder')"
+                  @click="editNewReminders.splice(idx, 1)"
+                >
+                  <PhX :size="16" />
                 </button>
               </div>
               <button
@@ -389,7 +503,7 @@ async function saveEdit(todoId: string) {
               <span v-else class="reminder-max-hint">{{ $t('todos.maxReminders') }}</span>
             </div>
             <div class="edit-form__actions">
-              <BaseButton type="submit" variant="primary" size="sm">{{ $t('common.save') }}</BaseButton>
+              <BaseButton type="submit" variant="primary" size="sm" :loading="editSaving">{{ $t('common.save') }}</BaseButton>
               <BaseButton type="button" variant="secondary" size="sm" @click="cancelEdit">{{ $t('common.cancel') }}</BaseButton>
             </div>
           </form>
@@ -399,7 +513,7 @@ async function saveEdit(todoId: string) {
 
     <!-- Empty State -->
     <BaseEmptyState
-      v-if="!todosStore.loading && openTodos.length === 0"
+      v-if="!todosStore.loading && openTodos.length === 0 && !(loadError && todosStore.items.length === 0)"
       :icon="PhListChecks"
       :title="$t('todos.emptyOpenTitle')"
       :subtitle="$t('todos.emptySubtitle')"
@@ -407,13 +521,19 @@ async function saveEdit(todoId: string) {
 
     <!-- Erledigte Todos (eingeklappt) -->
     <div v-if="doneTodos.length > 0" class="done-section">
-      <button type="button" class="done-section__toggle" @click="showDone = !showDone">
-        {{ $t('todos.doneToggle', { count: doneTodos.length }) }} {{ showDone ? '▾' : '▸' }}
+      <button
+        type="button"
+        class="done-section__toggle"
+        :aria-expanded="showDone"
+        @click="showDone = !showDone"
+      >
+        {{ $t('todos.doneToggle', { count: doneTodos.length }) }}
+        <span aria-hidden="true">{{ showDone ? '▾' : '▸' }}</span>
       </button>
       <ul v-if="showDone" class="item-list">
         <li v-for="todo in doneTodos" :key="todo.id" class="todo-row todo-row--done">
-          <div class="todo-row__main" @click="handleToggle(todo.id)">
-            <BaseCheckCircle :checked="todo.is_done" @toggle="handleToggle(todo.id)" />
+          <div class="todo-row__main" @click="handleToggle(todo)">
+            <BaseCheckCircle :checked="todo.is_done" :label="todo.title" @toggle="handleToggle(todo)" />
             <div class="todo-row__content">
               <span class="todo-row__name">{{ todo.title }}</span>
               <div v-if="todo.description || todo.due_date || todo.assigned_to_user_id" class="todo-row__meta">
@@ -454,7 +574,7 @@ async function saveEdit(todoId: string) {
   align-items: center;
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: var(--z-sticky);
   background: var(--bg);
   padding-bottom: var(--space-2);
 }
@@ -495,7 +615,7 @@ async function saveEdit(todoId: string) {
   border-radius: var(--radius-full);
   border: none;
   background: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -537,7 +657,7 @@ async function saveEdit(todoId: string) {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-btn);
-  font-size: var(--text-sm);
+  font-size: var(--text-base); /* 16px — iOS-Zoom-Prevention */
   font-family: var(--font-family);
   background: var(--card);
   color: var(--ink);
@@ -549,10 +669,20 @@ async function saveEdit(todoId: string) {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-btn);
-  font-size: var(--text-sm);
+  font-size: var(--text-base); /* 16px — iOS-Zoom-Prevention */
   font-family: var(--font-family);
   background: var(--card);
   color: var(--ink);
+}
+
+.add-details__input--error {
+  border-color: var(--color-danger);
+}
+
+.field-error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger);
 }
 
 .add-details__textarea:focus,
@@ -595,7 +725,7 @@ async function saveEdit(todoId: string) {
 }
 
 .todo-row--overdue {
-  background: #FFF5F5;
+  background: var(--color-danger-soft);
 }
 
 .todo-row__main {
@@ -612,7 +742,7 @@ async function saveEdit(todoId: string) {
 .todo-row__content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   flex: 1;
   min-width: 0;
 }
@@ -642,7 +772,7 @@ async function saveEdit(todoId: string) {
   gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--sub);
-  margin-top: 2px;
+  margin-top: var(--space-0-5);
 }
 
 .todo-row__desc {

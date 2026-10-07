@@ -5,8 +5,9 @@ import { useAuthStore } from '../stores/auth'
 import { useTagsStore } from '../stores/tags'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
+import { useLoader } from '../composables/useLoader'
 import { useNfcWriter } from '../composables/useNfcWriter'
-import { translateApiError } from '../utils/apiErrors'
 import { formatDateShort } from '../utils/dates'
 import { qrSvgDataUrl } from '../utils/qr'
 import { tagUrl } from '../utils/tagScan'
@@ -17,11 +18,13 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
 import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
+import BaseErrorState from '../components/ui/BaseErrorState.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
-import { PhPlus, PhQrCode, PhCopy, PhDownloadSimple, PhArrowsClockwise, PhTrash, PhContactlessPayment } from '@phosphor-icons/vue'
+import { PhPlus, PhQrCode, PhCopy, PhDownloadSimple, PhArrowsClockwise, PhTrash, PhContactlessPayment, PhWarningCircle } from '@phosphor-icons/vue'
 
 const { t, te } = useI18n()
-const { showToast } = useToast()
+const { notifySuccess, notifyError } = useToast()
+const { run, isPending, anyPending } = useAsyncAction()
 const socket = useSocket()
 const authStore = useAuthStore()
 const store = useTagsStore()
@@ -88,35 +91,36 @@ async function openCreate() {
     await store.fetchTargets()
     createType.value = store.targets[0]?.target_type ?? ''
   } catch (err) {
-    showToast(translateApiError(err), 'error')
+    notifyError(t('tags.loadTargetsError'), err)
   }
 }
 
 async function handleCreate() {
-  if (!canCreate.value) return
+  if (!canCreate.value || creating.value) return
   creating.value = true
-  try {
-    const tag = await store.createTag({
+  let tag = undefined as TagInfo | undefined
+  const ok = await run(async () => {
+    tag = await store.createTag({
       label: createLabel.value.trim(),
       target_type: createType.value,
       target_id: createTarget.value || null,
       action: createAction.value,
     })
-    showCreate.value = false
-    showToast(t('tags.createSuccess'), 'success')
-    if (tag) openDetail(tag)
-  } catch (err) {
-    showToast(translateApiError(err) || t('tags.createError'), 'error')
-  } finally {
-    creating.value = false
-  }
+  }, { key: 'create', error: t('tags.createError') })
+  creating.value = false
+  if (!ok) return
+  // Ergebnis ist direkt sichtbar (Detail-Dialog öffnet sich) → kein Toast nötig
+  showCreate.value = false
+  if (tag) openDetail(tag)
 }
 
 // ── Detail (QR, URL, NFC, Verwaltung) ──
 const detailId = ref<string | null>(null)
 const detail = computed(() => store.items.find((tag) => tag.id === detailId.value) ?? null)
 const editLabel = ref('')
-const busy = ref(false)
+const busy = computed(() => anyPending())
+/** Bestätigung im Detail-Dialog (statt confirm(); ein zweiter Dialog darüber würde mit Escape beide schliessen) */
+const pendingConfirm = ref<'regenerate' | 'delete' | null>(null)
 
 const detailUrl = computed(() => (detail.value ? tagUrl(detail.value.token, window.location.origin) : ''))
 const detailQr = computed(() => (detailUrl.value ? qrSvgDataUrl(detailUrl.value) : ''))
@@ -125,11 +129,13 @@ const qrFileName = computed(() => `tag-${(detail.value?.label ?? 'qr').replace(/
 function openDetail(tag: TagInfo) {
   detailId.value = tag.id
   editLabel.value = tag.label
+  pendingConfirm.value = null
 }
 
 function closeDetail() {
   if (nfc.writing.value) nfc.cancel()
   detailId.value = null
+  pendingConfirm.value = null
 }
 
 // Tag wurde von jemand anderem gelöscht → Dialog schliessen
@@ -140,32 +146,19 @@ watch(detail, (value) => {
 async function copyUrl() {
   try {
     await navigator.clipboard.writeText(detailUrl.value)
-    showToast(t('tags.urlCopied'), 'success')
+    notifySuccess(t('tags.urlCopied'))
   } catch {
-    showToast(t('tags.copyFailed'), 'error')
+    notifyError(t('tags.copyFailed'))
   }
 }
 
 async function writeNfc() {
   try {
     await nfc.writeUrl(detailUrl.value)
-    showToast(t('tags.nfcSuccess'), 'success')
+    notifySuccess(t('tags.nfcSuccess'))
   } catch (err: any) {
     if (err?.kind === 'aborted') return
-    showToast(err?.kind === 'permission' ? t('tags.nfcPermission') : t('tags.nfcError'), 'error')
-  }
-}
-
-async function run(action: () => Promise<unknown>, errorKey = 'tags.saveError') {
-  busy.value = true
-  try {
-    await action()
-    return true
-  } catch (err) {
-    showToast(translateApiError(err) || t(errorKey), 'error')
-    return false
-  } finally {
-    busy.value = false
+    notifyError(err?.kind === 'permission' ? t('tags.nfcPermission') : t('tags.nfcError'))
   }
 }
 
@@ -173,36 +166,45 @@ async function saveLabel() {
   const tag = detail.value
   const label = editLabel.value.trim()
   if (!tag || !label || label === tag.label) return
-  await run(() => store.updateTag(tag.id, { label }))
+  await run(() => store.updateTag(tag.id, { label }), {
+    key: 'label',
+    success: t('tags.labelSaved'),
+    error: t('tags.saveError'),
+  })
 }
 
 async function toggleEnabled() {
   const tag = detail.value
   if (!tag) return
-  await run(() => store.setEnabled(tag.id, !tag.enabled))
+  // Ergebnis sichtbar (Badge + Button-Text) → kein Toast
+  await run(() => store.setEnabled(tag.id, !tag.enabled), { key: 'enabled', error: t('tags.saveError') })
 }
 
 async function regenerate() {
   const tag = detail.value
-  if (!tag || !confirm(t('tags.regenerateConfirm'))) return
-  if (await run(() => store.regenerateToken(tag.id))) {
-    showToast(t('tags.regenerateSuccess'), 'success')
-  }
+  if (!tag) return
+  const ok = await run(() => store.regenerateToken(tag.id), {
+    key: 'regenerate',
+    success: t('tags.regenerateSuccess'),
+    error: t('tags.saveError'),
+  })
+  if (ok) pendingConfirm.value = null
 }
 
 async function remove() {
   const tag = detail.value
-  if (!tag || !confirm(t('tags.deleteConfirm', { label: tag.label }))) return
-  if (await run(() => store.deleteTag(tag.id), 'tags.deleteError')) {
-    detailId.value = null
-    showToast(t('tags.deleted'), 'success')
-  }
+  if (!tag) return
+  const ok = await run(() => store.deleteTag(tag.id), {
+    key: 'delete',
+    success: t('tags.deleted'),
+    error: t('tags.deleteError'),
+  })
+  if (ok) closeDetail()
 }
 
 // ── Socket + Lifecycle ──
-function load() {
-  store.fetchTags().catch((err) => showToast(translateApiError(err), 'error'))
-}
+// Laden mit Fehlerzustand (statt „Noch keine Tags“ nach einem Ladefehler)
+const { loadError, reloading, reload: load } = useLoader(() => store.fetchTags())
 
 onMounted(() => {
   load()
@@ -244,12 +246,25 @@ watch(() => authStore.currentHouseholdId, () => {
       <BaseSkeleton v-for="i in 3" :key="i" width="100%" height="64px" />
     </div>
 
+    <BaseErrorState
+      v-else-if="loadError && store.items.length === 0"
+      :retrying="reloading"
+      @retry="load"
+    />
+
     <BaseEmptyState
       v-else-if="store.items.length === 0"
       :icon="PhQrCode"
       :title="$t('tags.emptyTitle')"
       :subtitle="$t('tags.emptySubtitle')"
-    />
+    >
+      <template v-if="isAdmin" #action>
+        <BaseButton size="sm" @click="openCreate">
+          <PhPlus :size="16" weight="bold" />
+          {{ $t('tags.add') }}
+        </BaseButton>
+      </template>
+    </BaseEmptyState>
 
     <ul v-else class="tag-list">
       <li v-for="tag in store.sortedTags" :key="tag.id">
@@ -259,7 +274,7 @@ watch(() => authStore.currentHouseholdId, () => {
           :class="{ 'tag-row--disabled': !tag.enabled }"
           @click="openDetail(tag)"
         >
-          <PhQrCode :size="28" class="tag-row__icon" />
+          <PhQrCode :size="24" class="tag-row__icon" />
           <span class="tag-row__body">
             <span class="tag-row__title">
               {{ tag.label }}
@@ -276,7 +291,7 @@ watch(() => authStore.currentHouseholdId, () => {
 
     <!-- Anlegen -->
     <BaseDialog :open="showCreate" :title="$t('tags.add')" @close="showCreate = false">
-      <form class="form" @submit.prevent="handleCreate">
+      <form id="tag-create-form" class="form" @submit.prevent="handleCreate">
         <BaseInput
           v-model="createLabel"
           :label="$t('tags.labelLabel')"
@@ -325,7 +340,7 @@ watch(() => authStore.currentHouseholdId, () => {
       <template #footer>
         <div class="dialog-actions">
           <BaseButton variant="ghost" @click="showCreate = false">{{ $t('common.cancel') }}</BaseButton>
-          <BaseButton :disabled="!canCreate" :loading="creating" @click="handleCreate">
+          <BaseButton type="submit" form="tag-create-form" :disabled="!canCreate" :loading="creating">
             {{ $t('tags.add') }}
           </BaseButton>
         </div>
@@ -372,24 +387,56 @@ watch(() => authStore.currentHouseholdId, () => {
         </section>
 
         <section v-if="isAdmin" class="detail__section">
-          <div class="rename-row">
+          <form class="rename-row" @submit.prevent="saveLabel">
             <BaseInput v-model="editLabel" :label="$t('tags.labelLabel')" maxlength="80" />
             <BaseButton
+              type="submit"
               size="sm"
+              :loading="isPending('label')"
               :disabled="busy || !editLabel.trim() || editLabel.trim() === detail.label"
-              @click="saveLabel"
             >
               {{ $t('common.save') }}
             </BaseButton>
+          </form>
+
+          <!-- Bestätigung: Token neu erzeugen / Tag löschen -->
+          <div v-if="pendingConfirm" class="confirm-box" role="alertdialog" aria-live="assertive">
+            <p class="confirm-box__text">
+              <PhWarningCircle :size="18" aria-hidden="true" />
+              {{ pendingConfirm === 'delete' ? $t('tags.deleteConfirm', { label: detail.label }) : $t('tags.regenerateConfirm') }}
+            </p>
+            <div class="admin-actions">
+              <BaseButton variant="ghost" size="sm" :disabled="busy" @click="pendingConfirm = null">
+                {{ $t('common.cancel') }}
+              </BaseButton>
+              <BaseButton
+                v-if="pendingConfirm === 'delete'"
+                variant="danger"
+                size="sm"
+                :loading="isPending('delete')"
+                @click="remove"
+              >
+                <PhTrash :size="16" /> {{ $t('tags.deleteTitle') }}
+              </BaseButton>
+              <BaseButton
+                v-else
+                variant="danger"
+                size="sm"
+                :loading="isPending('regenerate')"
+                @click="regenerate"
+              >
+                <PhArrowsClockwise :size="16" /> {{ $t('tags.regenerate') }}
+              </BaseButton>
+            </div>
           </div>
-          <div class="admin-actions">
-            <BaseButton variant="secondary" size="sm" :disabled="busy" @click="toggleEnabled">
+          <div v-else class="admin-actions">
+            <BaseButton variant="secondary" size="sm" :loading="isPending('enabled')" :disabled="busy" @click="toggleEnabled">
               {{ detail.enabled ? $t('tags.disable') : $t('tags.enable') }}
             </BaseButton>
-            <BaseButton variant="ghost" size="sm" :disabled="busy" @click="regenerate">
+            <BaseButton variant="ghost" size="sm" :disabled="busy" @click="pendingConfirm = 'regenerate'">
               <PhArrowsClockwise :size="16" /> {{ $t('tags.regenerate') }}
             </BaseButton>
-            <BaseButton variant="danger" size="sm" :disabled="busy" @click="remove">
+            <BaseButton variant="danger" size="sm" :disabled="busy" @click="pendingConfirm = 'delete'">
               <PhTrash :size="16" /> {{ $t('common.delete') }}
             </BaseButton>
           </div>
@@ -404,6 +451,23 @@ watch(() => authStore.currentHouseholdId, () => {
   color: var(--sub);
   font-size: var(--text-sm);
   margin: 0 0 var(--space-3);
+}
+
+.confirm-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.confirm-box__text {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
 }
 
 .tag-list {
@@ -423,7 +487,7 @@ watch(() => authStore.currentHouseholdId, () => {
   padding: var(--space-3);
   background: var(--card);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-item);
   box-shadow: var(--shadow-card);
   text-align: left;
   color: var(--ink);
@@ -448,7 +512,7 @@ watch(() => authStore.currentHouseholdId, () => {
 .tag-row__body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -457,6 +521,7 @@ watch(() => authStore.currentHouseholdId, () => {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  font-size: var(--text-title-item);
 }
 
 .tag-row__meta {
@@ -472,9 +537,9 @@ watch(() => authStore.currentHouseholdId, () => {
 }
 
 .badge {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-semibold);
-  padding: 1px var(--space-2);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   background: var(--chip);
   color: var(--sub);
@@ -503,7 +568,7 @@ watch(() => authStore.currentHouseholdId, () => {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-btn);
-  font-size: 16px; /* iOS-Zoom verhindern */
+  font-size: var(--text-base); /* iOS-Zoom verhindern */
   font-family: var(--font-family);
   background: var(--card);
   color: var(--ink);
@@ -552,7 +617,7 @@ watch(() => authStore.currentHouseholdId, () => {
 .detail__heading {
   font-family: var(--font-display);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--sub);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -563,7 +628,7 @@ watch(() => authStore.currentHouseholdId, () => {
   align-self: center;
   width: 220px;
   height: 220px;
-  background: #fff;
+  background: #fff; /* bewusst: QR-Codes brauchen weissen Grund, auch im Dark Mode */
   border-radius: var(--radius-sm);
   image-rendering: pixelated;
 }

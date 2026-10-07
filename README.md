@@ -6,6 +6,8 @@ Web-App (PWA) für die gemeinsame Organisation eines Haushalts: Einkaufslisten, 
 
 Detaillierter Stand und Architektur: [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md).
 
+Homescreen-Widget fürs iPhone (über die App Scriptable): [`docs/widget.md`](docs/widget.md).
+
 ## Tech-Stack
 
 | Bereich | Technologie |

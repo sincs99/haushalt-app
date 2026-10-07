@@ -83,24 +83,53 @@ export const useFoodStore = defineStore('food', () => {
     recipes.value = recipes.value.filter(r => r.id !== id)
   }
 
+  /** Favorit optimistisch umschalten (Liste und eingebettete Rezepte im Wochenplan), Rollback bei Fehler. */
   async function toggleFavorite(id: string) {
     const recipe = recipes.value.find(r => r.id === id)
+      ?? weekPlan.value.find(e => e.recipe_id === id)?.recipe
     if (!recipe) return
-    return updateRecipe(id, { is_favorite: !recipe.is_favorite })
+    const previous = recipe.is_favorite
+    setFavoriteLocally(id, !previous)
+    try {
+      return await updateRecipe(id, { is_favorite: !previous })
+    } catch (error) {
+      setFavoriteLocally(id, previous)
+      throw error
+    }
+  }
+
+  function setFavoriteLocally(id: string, value: boolean) {
+    const recipe = recipes.value.find(r => r.id === id)
+    if (recipe) recipe.is_favorite = value
+    for (const entry of weekPlan.value) {
+      if (entry.recipe_id === id && entry.recipe) entry.recipe.is_favorite = value
+    }
   }
 
   // ── Meal Plan Actions ──
+
+  // Laufende Nummer der letzten Wochenplan-Anfrage: beim schnellen Wochenwechsel
+  // darf eine ältere Antwort die aktuelle Woche nicht überschreiben.
+  let weekRequestId = 0
 
   async function fetchWeekPlan(weekDate?: string) {
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
     const week = weekDate ?? currentWeekStart.value
+    const requestId = ++weekRequestId
     loading.value = true
     try {
-      weekPlan.value = await repo.fetchWeekPlan(householdId, week)
+      const plan = await repo.fetchWeekPlan(householdId, week)
+      // Veraltete Antwort verwerfen
+      if (requestId !== weekRequestId) return
+      weekPlan.value = plan
+    } catch (error) {
+      // Fehler einer überholten Anfrage interessiert nicht mehr
+      if (requestId !== weekRequestId) return
+      throw error
     } finally {
-      loading.value = false
+      if (requestId === weekRequestId) loading.value = false
     }
   }
 
@@ -118,12 +147,20 @@ export const useFoodStore = defineStore('food', () => {
     return entry
   }
 
-  async function removeMeal(date: string) {
+  /** Entfernt das Essen eines Tages; liefert den entfernten Eintrag (für Rückgängig). */
+  async function removeMeal(date: string): Promise<MealPlanEntry | undefined> {
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
+    const removed = weekPlan.value.find(e => e.date === date)
     await repo.removeMeal(householdId, date)
     weekPlan.value = weekPlan.value.filter(e => e.date !== date)
+    return removed
+  }
+
+  /** Rückgängig für removeMeal: denselben Tag wieder mit Rezept bzw. Freitext belegen. */
+  async function restoreMeal(entry: MealPlanEntry) {
+    return assignMeal(entry.date, { recipe_id: entry.recipe_id ?? null, free_text: entry.free_text ?? null })
   }
 
   async function addMissingToShopping(entryId: string): Promise<AddToShoppingResponse | undefined> {
@@ -137,7 +174,7 @@ export const useFoodStore = defineStore('food', () => {
     const d = new Date(currentWeekStart.value + 'T00:00:00')
     d.setDate(d.getDate() + direction * 7)
     currentWeekStart.value = toISODate(d)
-    fetchWeekPlan()
+    return fetchWeekPlan()
   }
 
   // ── Socket-Handlers ──
@@ -204,6 +241,7 @@ export const useFoodStore = defineStore('food', () => {
     fetchWeekPlan,
     assignMeal,
     removeMeal,
+    restoreMeal,
     addMissingToShopping,
     navigateWeek,
     // Socket-Handlers

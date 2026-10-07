@@ -16,19 +16,35 @@ import { resetHouseholdScopedStores } from './stores/householdScope'
 import { useSocket } from './composables/useSocket'
 import { useConnectivity } from './composables/useConnectivity'
 import BaseAvatar from './components/ui/BaseAvatar.vue'
+import BaseButton from './components/ui/BaseButton.vue'
+import BaseDialog from './components/ui/BaseDialog.vue'
 import TheBottomNav from './components/TheBottomNav.vue'
 import MoreSheet from './components/MoreSheet.vue'
 import { useToast } from './composables/useToast'
 import { syncPushSubscription } from './services/pushService'
+import { BADGE_EVENTS, refreshAppBadge, refreshAppBadgeSoon, setAppBadgeHousehold } from './composables/useAppBadge'
 import { useI18n } from 'vue-i18n'
-import { PhShoppingBagOpen, PhListChecks, PhWallet, PhHouse, PhCalendarDots, PhWifiSlash, PhCheckCircle, PhWarningCircle, PhInfo } from '@phosphor-icons/vue'
+import { PhShoppingBagOpen, PhListChecks, PhWallet, PhHouse, PhCalendarDots, PhWifiSlash, PhCheckCircle, PhWarningCircle, PhInfo, PhDotsThreeCircle } from '@phosphor-icons/vue'
 
 const route = useRoute()
 const { isOnline } = useConnectivity()
 const { toasts, dismissToast } = useToast()
 const moreOpen = ref(false)
+
+// Abmelden: offline nachfragen, weil Anmelden erst wieder mit Netz geht
+const logoutDialogOpen = ref(false)
+function requestLogout() {
+  if (isOnline.value) authStore.logout({ reason: 'user' })
+  else logoutDialogOpen.value = true
+}
+function confirmLogout() {
+  logoutDialogOpen.value = false
+  authStore.logout({ reason: 'user' })
+}
+// „Mehr“ ist aktiv für alle Seiten, die keinen eigenen Tab haben (inkl. Detailseiten)
+const TAB_ROUTES = ['/dashboard', '/calendar', '/todos', '/shopping']
 const moreActive = computed(() =>
-  moreOpen.value || ['/expenses', '/chores', '/household', '/documents'].includes(route.path)
+  moreOpen.value || !TAB_ROUTES.some((p) => route.path === p || route.path.startsWith(`${p}/`))
 )
 const authStore = useAuthStore()
 const shoppingStore = useShoppingStore()
@@ -141,10 +157,12 @@ watch(
     off('plant_care_logged', dashboardStore.invalidate)
     off('plant_created', dashboardStore.invalidate)
     off('plant_deleted', dashboardStore.invalidate)
+    BADGE_EVENTS.forEach((event) => off(event, refreshAppBadgeSoon))
 
-    // Wenn Token weg (Logout): Socket disconnecten
+    // Wenn Token weg (Logout): Socket disconnecten, Zahl am App-Icon entfernen
     if (!token) {
       disconnect()
+      setAppBadgeHousehold(null)
       return
     }
 
@@ -239,42 +257,42 @@ watch(
       on('plant_created', dashboardStore.invalidate)
       on('plant_deleted', dashboardStore.invalidate)
 
-      shoppingStore.fetchLists()
-      shoppingStore.fetchItems()
-      shoppingStore.fetchStores()
-      todosStore.fetchTodos()
-      expensesStore.fetchExpenses()
-      expensesStore.fetchBalances()
-      settlementsStore.fetchAll()
-      choresStore.fetchChores()
-      choresStore.fetchAssignments()
-      financeStore.fetchSummary()
-      financeStore.fetchBills()
-      dashboardStore.fetchDashboard()
-      pollsStore.fetchPolls('offen')
+      // Zahl am App-Icon aktuell halten
+      BADGE_EVENTS.forEach((event) => on(event, refreshAppBadgeSoon))
+      setAppBadgeHousehold(householdId)
+
+      refreshAllStores()
     }
   },
   { immediate: true }
 )
+
+// Hintergrund-Aktualisierung aller Stores. Fehler werden hier bewusst
+// verschluckt: die Ansichten zeigen ihren eigenen Fehlerzustand mit „Erneut versuchen“.
+function refreshAllStores() {
+  const quiet = (p: Promise<unknown> | void) => { if (p) p.catch(() => {}) }
+  quiet(shoppingStore.fetchLists())
+  quiet(shoppingStore.fetchItems())
+  quiet(shoppingStore.fetchStores())
+  quiet(todosStore.fetchTodos())
+  quiet(expensesStore.fetchExpenses())
+  quiet(expensesStore.fetchBalances())
+  quiet(settlementsStore.fetchAll())
+  quiet(choresStore.fetchChores())
+  quiet(choresStore.fetchAssignments())
+  quiet(financeStore.fetchSummary())
+  quiet(financeStore.fetchBills())
+  quiet(dashboardStore.fetchDashboard())
+  quiet(pollsStore.fetchPolls('offen'))
+}
 
 // Reconnect-Handler: Room neu beitreten + Daten nachladen
 function handleReconnect() {
   const householdId = authStore.currentHouseholdId
   if (householdId) {
     joinHousehold(householdId)
-    shoppingStore.fetchLists()
-    shoppingStore.fetchItems()
-    shoppingStore.fetchStores()
-    todosStore.fetchTodos()
-    expensesStore.fetchExpenses()
-    expensesStore.fetchBalances()
-    settlementsStore.fetchAll()
-    choresStore.fetchChores()
-    choresStore.fetchAssignments()
-    financeStore.fetchSummary()
-    financeStore.fetchBills()
-    dashboardStore.fetchDashboard()
-    pollsStore.fetchPolls('offen')
+    refreshAllStores()
+    void refreshAppBadge()
   }
 }
 
@@ -348,7 +366,8 @@ onUnmounted(() => {
   off('plant_care_logged', dashboardStore.invalidate)
   off('plant_created', dashboardStore.invalidate)
   off('plant_deleted', dashboardStore.invalidate)
- offReconnect(handleReconnect)
+  BADGE_EVENTS.forEach((event) => off(event, refreshAppBadgeSoon))
+  offReconnect(handleReconnect)
   setTokenRefresher(null)
   disconnect()
 })
@@ -370,23 +389,34 @@ onUnmounted(() => {
         <span class="top-bar__brand"><PhHouse :size="20" /> {{ $t('nav.brand') }}</span>
         <nav class="top-bar__nav">
           <router-link to="/dashboard" class="top-bar__link" active-class="top-bar__link--active">
-            <PhHouse :size="18" /> {{ $t('nav.start') }}
+            <PhHouse :size="16" /> {{ $t('nav.start') }}
           </router-link>
           <router-link to="/calendar" class="top-bar__link" active-class="top-bar__link--active">
-            <PhCalendarDots :size="18" /> {{ $t('nav.calendar') }}
+            <PhCalendarDots :size="16" /> {{ $t('nav.calendar') }}
           </router-link>
           <router-link to="/shopping" class="top-bar__link" active-class="top-bar__link--active">
-            <PhShoppingBagOpen :size="18" /> {{ $t('nav.shopping') }}
+            <PhShoppingBagOpen :size="16" /> {{ $t('nav.shopping') }}
           </router-link>
           <router-link to="/todos" class="top-bar__link" active-class="top-bar__link--active">
-            <PhListChecks :size="18" /> {{ $t('nav.todos') }}
+            <PhListChecks :size="16" /> {{ $t('nav.todos') }}
           </router-link>
           <router-link to="/expenses" class="top-bar__link" active-class="top-bar__link--active">
-            <PhWallet :size="18" /> {{ $t('nav.expenses') }}
+            <PhWallet :size="16" /> {{ $t('nav.expenses') }}
           </router-link>
           <router-link to="/household" class="top-bar__link" active-class="top-bar__link--active">
-            <PhHouse :size="18" /> {{ $t('nav.household') }}
+            <PhHouse :size="16" /> {{ $t('nav.household') }}
           </router-link>
+          <!-- Weitere Module (Haustiere, Pflanzen, Essen, …) wie im Mobile-„Mehr“-Sheet -->
+          <button
+            type="button"
+            class="top-bar__link top-bar__more"
+            :class="{ 'top-bar__link--active': moreOpen }"
+            aria-haspopup="dialog"
+            :aria-expanded="moreOpen"
+            @click="moreOpen = !moreOpen"
+          >
+            <PhDotsThreeCircle :size="18" /> {{ $t('nav.more') }}
+          </button>
         </nav>
         <div class="top-bar__right">
           <!-- Household-Wechsel (nur bei >1 Haushalt) -->
@@ -395,6 +425,7 @@ onUnmounted(() => {
             :value="authStore.currentHouseholdId"
             @change="authStore.switchHousehold(($event.target as HTMLSelectElement).value)"
             class="household-select"
+            :aria-label="$t('household.title')"
           >
             <option v-for="h in authStore.households" :key="h.id" :value="h.id">
               {{ h.name }}
@@ -406,7 +437,7 @@ onUnmounted(() => {
             :user-id="authStore.user.id"
             size="md"
           />
-          <button class="top-bar__logout" @click="authStore.logout({ reason: 'user' })">{{ $t('auth.logout') }}</button>
+          <button class="top-bar__logout" @click="requestLogout">{{ $t('auth.logout') }}</button>
           <span
             class="sync-dot"
             :class="`sync-dot--${syncStatus}`"
@@ -430,6 +461,23 @@ onUnmounted(() => {
       @toggle-more="moreOpen = !moreOpen"
     />
     <MoreSheet :open="moreOpen" @close="moreOpen = false" />
+
+    <BaseDialog
+      :open="logoutDialogOpen"
+      :title="$t('auth.logoutOfflineTitle')"
+      danger
+      @close="logoutDialogOpen = false"
+    >
+      <p>{{ $t('auth.logoutOfflineConfirm') }}</p>
+      <template #footer>
+        <BaseButton variant="ghost" size="sm" @click="logoutDialogOpen = false">
+          {{ $t('common.cancel') }}
+        </BaseButton>
+        <BaseButton variant="danger" size="sm" @click="confirmLogout">
+          {{ $t('auth.logout') }}
+        </BaseButton>
+      </template>
+    </BaseDialog>
   </div>
 
   <!-- Unauthenticated: nur Router-View (Login/Register) -->
@@ -443,7 +491,7 @@ onUnmounted(() => {
           v-for="toast in toasts"
           :key="toast.id"
           :class="['toast', `toast--${toast.type}`]"
-          role="status"
+          :role="toast.type === 'error' ? 'alert' : 'status'"
         >
           <PhCheckCircle v-if="toast.type === 'success'" :size="16" />
           <PhWarningCircle v-if="toast.type === 'error'" :size="16" />
@@ -469,14 +517,14 @@ onUnmounted(() => {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 9999;
+  z-index: var(--z-banner);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   background-color: var(--color-warning);
-  color: var(--color-neutral-900);
+  color: var(--color-on-warning);
   text-align: center;
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm);
@@ -488,10 +536,10 @@ onUnmounted(() => {
 .top-bar {
   display: none;
   background: var(--color-surface);
-  border-bottom: 1px solid var(--color-neutral-200);
+  border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: var(--z-nav);
 }
 
 @media (min-width: 768px) {
@@ -537,7 +585,7 @@ onUnmounted(() => {
 }
 
 .top-bar__link:hover {
-  background: var(--color-neutral-100);
+  background: var(--chip);
   color: var(--color-text);
 }
 
@@ -554,10 +602,17 @@ onUnmounted(() => {
 }
 
 
+.top-bar__more {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
 .top-bar__logout {
   padding: var(--space-1) var(--space-3);
   background: none;
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--text-sm);
@@ -566,13 +621,13 @@ onUnmounted(() => {
 }
 
 .top-bar__logout:hover {
-  background: var(--color-neutral-100);
+  background: var(--chip);
 }
 
 .household-select {
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   background: var(--color-surface);
   font-size: var(--text-sm);
   cursor: pointer;
@@ -612,11 +667,11 @@ onUnmounted(() => {
 
 .sync-dot--reconnecting {
   background-color: var(--color-warning);
-  animation: sync-pulse 1.5s ease-in-out infinite;
+  animation: sync-pulse var(--duration-pulse) ease-in-out infinite;
 }
 
 .sync-dot--offline {
-  background-color: var(--color-neutral-400);
+  background-color: var(--sub);
 }
 
 @keyframes sync-pulse {
@@ -630,7 +685,7 @@ onUnmounted(() => {
   bottom: calc(64px + env(safe-area-inset-bottom, 0) + var(--space-3));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 10000;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -683,26 +738,26 @@ onUnmounted(() => {
 
 .toast--error {
   background-color: var(--color-danger);
-  color: var(--color-surface);
+  color: var(--color-on-danger);
 }
 
 .toast--success {
   background-color: var(--color-success);
-  color: var(--color-surface);
+  color: var(--color-on-success);
 }
 
 .toast--info {
   background-color: var(--color-primary);
-  color: var(--color-surface);
+  color: var(--color-on-primary);
 }
 
 /* ── Toast-Transitions ── */
 .toast-enter-active {
-  transition: all 0.3s ease-out;
+  transition: opacity var(--duration-slow) var(--ease-out), transform var(--duration-slow) var(--ease-out);
 }
 
 .toast-leave-active {
-  transition: all 0.25s ease-in;
+  transition: opacity var(--duration-normal) var(--ease-in), transform var(--duration-normal) var(--ease-in);
 }
 
 .toast-enter-from {
@@ -716,6 +771,6 @@ onUnmounted(() => {
 }
 
 .toast-move {
-  transition: transform 0.25s ease;
+  transition: transform var(--transition-normal);
 }
 </style>

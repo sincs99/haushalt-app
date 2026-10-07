@@ -219,6 +219,62 @@ describe('shopping store', () => {
     })
   })
 
+  describe('deleteItems', () => {
+    it('returns the removed snapshots and counts failures; failed items stay', async () => {
+      const s = useShoppingStore()
+      s.items = [item({ id: 'a', is_checked: true }), item({ id: 'b', is_checked: true })]
+      repo.remove.mockImplementation(async (_h: string, id: string) => {
+        if (id === 'b') throw new Error('fail')
+      })
+      const result = await s.deleteItems(['a', 'b'])
+      expect(result.removed.map(i => i.id)).toEqual(['a'])
+      expect(result.failed).toBe(1)
+      expect(result.error).toBeInstanceOf(Error)
+      expect(s.items.map(i => i.id)).toEqual(['b'])
+    })
+  })
+
+  describe('restoreItems', () => {
+    it('restores items checked, in their original list, with assignment', async () => {
+      const s = useShoppingStore()
+      s.activeListId = 'other'
+      repo.create.mockImplementation(async (_h: string, p: { id: string; list_id: string }) =>
+        item({ id: p.id, list_id: p.list_id, version: 1 }))
+      repo.update.mockImplementation(async (_h: string, id: string) =>
+        item({ id, list_id: 'l1', is_checked: true, assigned_to_user_id: 'u2', version: 2 }))
+      await s.restoreItems([item({ id: 'old', list_id: 'l1', is_checked: true, assigned_to_user_id: 'u2', store: 'Coop' })])
+      expect(repo.create.mock.calls[0][1]).toMatchObject({ list_id: 'l1', assigned_to_user_id: 'u2', store: 'Coop' })
+      expect(repo.create.mock.calls[0][1].id).not.toBe('old')
+      expect(repo.update).toHaveBeenCalledWith('h1', repo.create.mock.calls[0][1].id, { is_checked: true })
+      expect(s.items).toHaveLength(1)
+      expect(s.items[0]).toMatchObject({ list_id: 'l1', is_checked: true })
+    })
+
+    it('shows restored items optimistically and keeps the successful ones on partial failure', async () => {
+      const s = useShoppingStore()
+      repo.create.mockImplementation(async (_h: string, p: { id: string; name: string }) => {
+        if (p.name === 'Bad') throw new Error('fail')
+        return item({ id: p.id, name: p.name })
+      })
+      const p = s.restoreItems([item({ id: 'x', name: 'Good' }), item({ id: 'y', name: 'Bad' })])
+      expect(s.items).toHaveLength(2)
+      await expect(p).rejects.toThrow('fail')
+      expect(s.items.map(i => i.name)).toEqual(['Good'])
+      expect(repo.update).not.toHaveBeenCalled()
+    })
+  })
+
+  it('addItem returns the new id and createList returns the list', async () => {
+    const s = useShoppingStore()
+    s.activeListId = 'l1'
+    repo.create.mockImplementation(async (_h: string, p: { id: string }) => item({ id: p.id }))
+    const id = await s.addItem('Brot')
+    expect(s.items[0].id).toBe(id)
+    repo.createList.mockResolvedValue(list('l2', 1))
+    const created = await s.createList('Neu')
+    expect(created?.id).toBe('l2')
+  })
+
   describe('toggleAssigned', () => {
     it('assigns to the current user and unassigns on second call', async () => {
       const s = useShoppingStore()

@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useNotesStore } from '../stores/notes'
 import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
-import { useToast } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
+import { useLoader } from '../composables/useLoader'
+import { waitForOverlayBack } from '../composables/useBackClose'
 import { formatDateShort } from '../utils/dates'
 import type { NoteItem } from '../types'
 
@@ -14,15 +16,19 @@ import BaseButton from '../components/ui/BaseButton.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
+import BaseErrorState from '../components/ui/BaseErrorState.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import { PhPushPin, PhNote, PhTrash, PhPlus } from '@phosphor-icons/vue'
 
 const { t } = useI18n()
-const { showToast } = useToast()
+const { run, isPending } = useAsyncAction()
 const socket = useSocket()
 
 const store = useNotesStore()
 const authStore = useAuthStore()
+const { loadError, reloading, reload } = useLoader(() => store.fetchNotes())
+
+const QUICK_ADD_ID = 'notes-quick-add'
 
 // ── Quick-Add State ──
 const quickAddTitle = ref('')
@@ -35,6 +41,7 @@ const editBody = ref('')
 const editTag = ref('')
 const editPinned = ref(false)
 const editLoading = ref(false)
+const showDiscardConfirm = ref(false)
 
 // ── Member Name Lookup ──
 function memberName(userId: string): string {
@@ -54,12 +61,17 @@ async function handleQuickAdd() {
   const title = quickAddTitle.value.trim()
   if (!title) return
 
-  quickAddTitle.value = ''
-  try {
+  // Feld sofort leeren (Notiz erscheint optimistisch); offline wird gar nicht
+  // gesendet und der Text bleibt stehen, bei Fehler kommt er zurück.
+  const ok = await run(async () => {
+    quickAddTitle.value = ''
     await store.addNote(title)
-  } catch {
-    showToast(t('notes.addError'), 'error')
-  }
+  }, { key: `add:${title}`, error: t('notes.addError') })
+  if (!ok && !quickAddTitle.value.trim()) quickAddTitle.value = title
+}
+
+function focusQuickAdd() {
+  document.getElementById(QUICK_ADD_ID)?.focus()
 }
 
 // ── Edit Dialog ──
@@ -69,52 +81,77 @@ function openEditDialog(note: NoteItem) {
   editBody.value = note.body
   editTag.value = note.tag ?? ''
   editPinned.value = note.pinned
+  showDiscardConfirm.value = false
   showEditDialog.value = true
 }
 
 function closeEditDialog() {
+  showDiscardConfirm.value = false
   showEditDialog.value = false
   editingNote.value = null
 }
 
+/** Ungespeicherte Änderungen im Bearbeiten-Dialog? */
+const editDirty = computed(() => {
+  const note = editingNote.value
+  if (!note) return false
+  return editTitle.value !== note.title
+    || editBody.value !== note.body
+    || editTag.value !== (note.tag ?? '')
+    || editPinned.value !== note.pinned
+})
+
+/** Overlay, Escape, Zurück, X und „Abbrechen“: bei Änderungen erst nachfragen. */
+function requestCloseEdit() {
+  if (showDiscardConfirm.value) return
+  if (editDirty.value && !editLoading.value) {
+    showDiscardConfirm.value = true
+    return
+  }
+  closeEditDialog()
+}
+
+/** „Verwerfen“ in der Rückfrage: erst die Rückfrage, dann den Dialog schliessen (sauberer Verlauf für Zurück). */
+async function discardEdit() {
+  showDiscardConfirm.value = false
+  await nextTick()
+  await waitForOverlayBack()
+  closeEditDialog()
+}
+
 async function handleSave() {
-  if (!editingNote.value || !editTitle.value.trim()) return
+  if (!editingNote.value || !editTitle.value.trim() || editLoading.value) return
 
   editLoading.value = true
   try {
-    await store.updateNote(editingNote.value.id, {
+    const ok = await run(() => store.updateNote(editingNote.value!.id, {
       title: editTitle.value.trim(),
       body: editBody.value,
       tag: editTag.value.trim() || null,
       pinned: editPinned.value,
-    })
-    closeEditDialog()
-  } catch {
-    showToast(t('notes.saveError'), 'error')
+    }), { key: 'save', error: t('notes.saveError') })
+    if (ok) closeEditDialog()
   } finally {
     editLoading.value = false
   }
 }
 
+/** Sofort löschen (Store ist optimistisch), mit „Rückgängig“ statt Rückfrage. */
 async function handleDelete() {
-  if (!editingNote.value) return
-  if (!confirm(t('notes.deleteConfirm'))) return
-
-  try {
-    await store.deleteNote(editingNote.value.id)
-    closeEditDialog()
-  } catch {
-    showToast(t('notes.deleteError'), 'error')
-  }
+  const note = editingNote.value
+  if (!note) return
+  const snapshot = { ...note }
+  closeEditDialog()
+  await run(() => store.deleteNote(snapshot.id), {
+    key: `delete:${snapshot.id}`,
+    success: t('notes.deleted'),
+    undo: () => store.restoreNote(snapshot),
+    error: t('notes.deleteError'),
+  })
 }
 
-async function handleTogglePin(noteId: string, event: Event) {
-  event.stopPropagation()
-  try {
-    await store.togglePin(noteId)
-  } catch {
-    showToast(t('notes.saveError'), 'error')
-  }
+async function handleTogglePin(noteId: string) {
+  await run(() => store.togglePin(noteId), { key: `pin:${noteId}`, error: t('notes.saveError') })
 }
 
 // ── Computed ──
@@ -122,20 +159,25 @@ const hasNotes = computed(() => store.items.length > 0)
 
 // ── Socket Events ──
 function handleReconnect() {
-  store.fetchNotes()
+  reload()
+}
+
+function loadMembers() {
+  // Mitglieder nur für Avatare/Namen – ein Fehler hier soll nicht zusätzlich melden
+  store.fetchMembers().catch(() => {})
 }
 
 // Haushaltswechsel: Daten des neuen Haushalts laden (App.vue hat den Store geleert)
 watch(() => authStore.currentHouseholdId, (id) => {
   if (!id) return
-  store.fetchNotes()
-  store.fetchMembers()
+  reload()
+  loadMembers()
 })
 
 // ── Lifecycle ──
 onMounted(() => {
-  store.fetchNotes()
-  store.fetchMembers()
+  reload()
+  loadMembers()
 
   socket.on('note_created', store.handleNoteCreated)
   socket.on('note_updated', store.handleNoteUpdated)
@@ -158,8 +200,10 @@ onUnmounted(() => {
     <!-- Quick-Add -->
     <form class="quick-add" @submit.prevent="handleQuickAdd">
       <BaseInput
+        :id="QUICK_ADD_ID"
         v-model="quickAddTitle"
         :placeholder="$t('notes.addPlaceholder')"
+        :aria-label="$t('notes.addLabel')"
         autocomplete="off"
         enterkeyhint="done"
       />
@@ -174,11 +218,18 @@ onUnmounted(() => {
     </form>
 
     <!-- Loading -->
-    <template v-if="store.loading && store.items.length === 0">
+    <template v-if="(store.loading || reloading) && store.items.length === 0 && !loadError">
       <div class="skeleton-list">
         <BaseSkeleton v-for="i in 3" :key="i" width="100%" height="80px" />
       </div>
     </template>
+
+    <!-- Ladefehler -->
+    <BaseErrorState
+      v-else-if="loadError && !hasNotes"
+      :retrying="reloading"
+      @retry="reload"
+    />
 
     <!-- Empty State -->
     <BaseEmptyState
@@ -186,7 +237,14 @@ onUnmounted(() => {
       :icon="PhNote"
       :title="$t('notes.emptyTitle')"
       :subtitle="$t('notes.emptySubtitle')"
-    />
+    >
+      <template #action>
+        <BaseButton variant="secondary" size="sm" @click="focusQuickAdd">
+          <PhPlus :size="16" />
+          {{ $t('notes.emptyAction') }}
+        </BaseButton>
+      </template>
+    </BaseEmptyState>
 
     <!-- Notes Content -->
     <template v-else>
@@ -198,14 +256,21 @@ onUnmounted(() => {
             v-for="note in store.pinnedNotes"
             :key="note.id"
             class="note-card note-card--pinned"
+            role="button"
+            tabindex="0"
             @click="openEditDialog(note)"
+            @keydown.enter.self.prevent="openEditDialog(note)"
+            @keydown.space.self.prevent="openEditDialog(note)"
           >
             <div class="note-card__top">
               <span class="note-card__title">{{ note.title }}</span>
               <button
+                type="button"
                 class="pin-btn pin-btn--active"
-                @click="handleTogglePin(note.id, $event)"
-                :aria-label="$t('notes.pinLabel')"
+                @click.stop="handleTogglePin(note.id)"
+                :aria-label="$t('notes.unpin')"
+                :title="$t('notes.unpin')"
+                aria-pressed="true"
               >
                 <PhPushPin :size="16" weight="fill" />
               </button>
@@ -224,14 +289,21 @@ onUnmounted(() => {
             v-for="note in store.unpinnedNotes"
             :key="note.id"
             class="note-card"
+            role="button"
+            tabindex="0"
             @click="openEditDialog(note)"
+            @keydown.enter.self.prevent="openEditDialog(note)"
+            @keydown.space.self.prevent="openEditDialog(note)"
           >
             <div class="note-card__top">
               <span class="note-card__title">{{ note.title }}</span>
               <button
+                type="button"
                 class="pin-btn"
-                @click="handleTogglePin(note.id, $event)"
-                :aria-label="$t('notes.pinLabel')"
+                @click.stop="handleTogglePin(note.id)"
+                :aria-label="$t('notes.pin')"
+                :title="$t('notes.pin')"
+                aria-pressed="false"
               >
                 <PhPushPin :size="16" weight="regular" />
               </button>
@@ -256,9 +328,9 @@ onUnmounted(() => {
     <BaseDialog
       :open="showEditDialog"
       :title="$t('notes.editTitle')"
-      @close="closeEditDialog"
+      @close="requestCloseEdit"
     >
-      <form class="edit-form" @submit.prevent="handleSave">
+      <form id="note-edit-form" class="edit-form" @submit.prevent="handleSave">
         <BaseInput
           v-model="editTitle"
           :label="$t('notes.titleLabel')"
@@ -267,8 +339,9 @@ onUnmounted(() => {
         />
 
         <div class="form-field">
-          <label class="form-field__label">{{ $t('notes.bodyLabel') }}</label>
+          <label class="form-field__label" for="note-edit-body">{{ $t('notes.bodyLabel') }}</label>
           <textarea
+            id="note-edit-body"
             v-model="editBody"
             class="edit-textarea"
             :placeholder="$t('notes.bodyPlaceholder')"
@@ -293,12 +366,46 @@ onUnmounted(() => {
 
       <template #footer>
         <div class="dialog-actions">
-          <BaseButton variant="danger" @click="handleDelete">
+          <BaseButton
+            variant="danger"
+            :disabled="editLoading"
+            :loading="!!editingNote && isPending(`delete:${editingNote.id}`)"
+            @click="handleDelete"
+          >
             <PhTrash :size="16" />
             {{ $t('common.delete') }}
           </BaseButton>
-          <BaseButton @click="handleSave" :disabled="!editTitle.trim() || editLoading">
+          <div class="dialog-actions__spacer" />
+          <BaseButton variant="secondary" @click="requestCloseEdit">
+            {{ $t('common.cancel') }}
+          </BaseButton>
+          <BaseButton
+            type="submit"
+            form="note-edit-form"
+            :disabled="!editTitle.trim()"
+            :loading="editLoading"
+          >
             {{ $t('common.save') }}
+          </BaseButton>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- Rückfrage: ungespeicherte Änderungen verwerfen? -->
+    <BaseDialog
+      :open="showDiscardConfirm"
+      :title="$t('notes.discardTitle')"
+      danger
+      @close="showDiscardConfirm = false"
+    >
+      <p class="discard-text">{{ $t('notes.discardText') }}</p>
+      <template #footer>
+        <div class="dialog-actions">
+          <BaseButton variant="secondary" autofocus @click="showDiscardConfirm = false">
+            {{ $t('notes.keepEditing') }}
+          </BaseButton>
+          <BaseButton variant="danger" @click="discardEdit">
+            {{ $t('notes.discardConfirm') }}
           </BaseButton>
         </div>
       </template>
@@ -326,7 +433,7 @@ onUnmounted(() => {
   border-radius: var(--radius-full);
   border: none;
   background: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -356,7 +463,7 @@ onUnmounted(() => {
 
 .notes-section__header {
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm);
   color: var(--sub);
   text-transform: uppercase;
@@ -370,9 +477,14 @@ onUnmounted(() => {
   gap: var(--space-2);
 }
 
+.note-card:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
 .note-card {
   background: var(--card);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-item);
   padding: var(--space-3);
   box-shadow: var(--shadow-card);
   cursor: pointer;
@@ -404,9 +516,9 @@ onUnmounted(() => {
 
 .note-card__title {
   font-weight: var(--font-weight-semibold);
-  font-size: var(--text-base);
+  font-size: var(--text-title-item);
   color: var(--ink);
-  line-height: 1.3;
+  line-height: var(--line-height-snug);
   min-width: 0;
   word-break: break-word;
 }
@@ -437,8 +549,8 @@ onUnmounted(() => {
   display: inline-block;
   background: var(--chip);
   border-radius: var(--radius-full);
-  padding: 2px 10px;
-  font-size: var(--text-xs);
+  padding: var(--badge-padding);
+  font-size: var(--text-badge);
   color: var(--sub);
   align-self: flex-start;
   margin-top: var(--space-1);
@@ -527,8 +639,19 @@ onUnmounted(() => {
 
 .dialog-actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   width: 100%;
   gap: var(--space-2);
+}
+
+.dialog-actions__spacer {
+  flex: 1;
+}
+
+.discard-text {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-sm);
 }
 </style>

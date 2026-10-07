@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useTodosStore } from '../stores/todos'
 import { useSocket } from '../composables/useSocket'
-import { PhListChecks } from '@phosphor-icons/vue'
+import { useLoader } from '../composables/useLoader'
 
 import PageHeader from '../components/ui/PageHeader.vue'
 import BasePillTabs from '../components/ui/BasePillTabs.vue'
@@ -16,6 +16,11 @@ const { t } = useI18n()
 const socket = useSocket()
 
 const todosStore = useTodosStore()
+
+// Laden mit Fehlerzustand („Erneut versuchen“ statt „Keine offenen Aufgaben“)
+const { loadError, reloading, reload } = useLoader(() =>
+  Promise.all([todosStore.fetchTodos(), todosStore.fetchMembers()]),
+)
 
 // ── Filter State ──
 const activeFilter = ref('all')
@@ -46,44 +51,37 @@ const filterUserId = computed<string | undefined>(() => {
   return activeFilter.value
 })
 
+const filterUserName = computed(() =>
+  todosStore.members.find((m) => m.id === filterUserId.value)?.display_name.split(' ')[0],
+)
+
 const openCount = computed(() => todosStore.items.filter((i) => !i.is_done).length)
 
 // ── Auto-Focus wenn ?new=1 ──
 const shouldAutoFocus = computed(() => route.query.new === '1')
 
-// ── Socket Events ──
-const socketEvents = [
-  'todo_created',
-  'todo_updated',
-  'todo_deleted',
-] as const
-
-function handleSocketEvent() {
-  todosStore.fetchTodos()
+// ── Socket ──
+// Einzelne todo_*-Events verarbeitet der Store (in App.vue registriert) per
+// Merge — kein Komplett-Refetch, der laufende optimistische Änderungen überschreibt.
+// Nur nach einem Reconnect alles neu laden (verpasste Events).
+function handleReconnect() {
+  todosStore.fetchTodos().catch(() => {})
 }
 
 // ── Lifecycle ──
 onMounted(() => {
-  todosStore.fetchTodos()
-  todosStore.fetchMembers()
+  reload()
 
   // ?new=1 Query-Param entfernen nach dem Lesen
   if (route.query.new === '1') {
     router.replace({ query: {} })
   }
 
-  // Socket-Events registrieren
-  for (const event of socketEvents) {
-    socket.on(event, handleSocketEvent)
-  }
-  socket.onReconnect(handleSocketEvent)
+  socket.onReconnect(handleReconnect)
 })
 
 onUnmounted(() => {
-  for (const event of socketEvents) {
-    socket.off(event, handleSocketEvent)
-  }
-  socket.offReconnect(handleSocketEvent)
+  socket.offReconnect(handleReconnect)
 })
 </script>
 
@@ -113,7 +111,11 @@ onUnmounted(() => {
     <!-- TodoList Komponente (Herzstück) -->
     <TodoList
       :filter-user-id="filterUserId"
+      :filter-user-name="filterUserName"
       :auto-focus="shouldAutoFocus"
+      :load-error="loadError"
+      :retrying="reloading"
+      @retry="reload"
     />
   </div>
 </template>
@@ -131,7 +133,7 @@ onUnmounted(() => {
   background: var(--chip);
   border-radius: var(--radius-btn);
   padding: 3px;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .segment-control a {

@@ -19,10 +19,12 @@
     "unknown": "Unknown",
     "formerMember": "Former member",
     "copy": "Copy",
-    "copied": "Copied!",
+    "copied": "Copied",
     "deleted": "Deleted",
     "undo": "Undo",
-    "listCleared": "List cleared"
+    "undoError": "Could not undo",
+    "retry": "Try again",
+    "loadError": "Couldn't load. Check your connection and try again."
   },
   "auth": {
     "login": "Log in",
@@ -50,7 +52,15 @@
     "inviteCodeLabel": "Invite code",
     "inviteCodePlaceholder": "e.g. ABCD1234",
     "sessionExpired": "Session expired",
-    "sessionExpiredMessage": "Your session has expired. Please log in again."
+    "sessionExpiredMessage": "Your session has expired. Please log in again.",
+    "emailInvalid": "Please enter a valid email address",
+    "passwordRequired": "Password required",
+    "passwordTooShort": "The password needs at least 8 characters",
+    "displayNameRequired": "Please enter your name",
+    "householdNameRequired": "Please enter a household name",
+    "inviteCodeRequired": "Please enter the invite code",
+    "logoutOfflineTitle": "Log out while offline?",
+    "logoutOfflineConfirm": "You are offline. After logging out you can only log in again once you have a connection."
   },
   "nav": {
     "start": "Home",
@@ -68,7 +78,8 @@
     "settings": "Settings",
     "documents": "Documents",
     "assistant": "AI assistant",
-    "plants": "Plants"
+    "plants": "Plants",
+    "mainNav": "Main navigation"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -87,15 +98,21 @@
     "quickShopping": "Shopping",
     "quickTask": "Task",
     "quickExpense": "Expense",
-    "petCareTitle": "Upcoming Pet Care",
+    "petCareTitle": "Upcoming pet care",
     "petCareEmpty": "No upcoming appointments",
     "petCareOverdue": "Overdue",
     "petCareDueIn": "in {n} days",
     "petCareDueToday": "Due today",
-    "remindersTitle": "Upcoming Reminders",
+    "remindersTitle": "Upcoming reminders",
     "remindersEmpty": "No upcoming reminders",
     "reminderFor": "for \"{title}\"",
-    "plantsWaterTitle": "Plants need water"
+    "plantsWaterTitle": "Plants need water",
+    "taskDone": "Done",
+    "completeError": "Couldn't mark as done.",
+    "addTask": "Add task",
+    "quickShoppingAction": "Add item",
+    "quickTaskAction": "Add task",
+    "quickExpenseAction": "Add expense"
   },
   "calendar": {
     "title": "Calendar",
@@ -133,7 +150,12 @@
     "noEventsMonth": "No events this month",
     "moreEvents": "+{n} more",
     "nextMonth": "Next month",
-    "prevMonth": "Previous month"
+    "prevMonth": "Previous month",
+    "savedOn": "Event saved for {date}",
+    "deleted": "Event deleted",
+    "prevWeek": "Previous week",
+    "nextWeek": "Next week",
+    "noEventsDay": "No events on this day"
   },
   "calendars": {
     "manage": "Manage calendars",
@@ -150,7 +172,9 @@
     "deleted": "Calendar deleted",
     "selectCalendar": "Select calendar",
     "allCalendars": "All",
-    "default": "General"
+    "default": "General",
+    "saveError": "Couldn't save the calendar.",
+    "deleteConfirmNamed": "Really delete the calendar “{name}”?"
   },
   "moreSheet": {
     "title": "More",
@@ -177,7 +201,7 @@
     "emptyOpenTitle": "No open items",
     "emptyOpenSubtitle": "Add an item above",
     "doneCount": "Done ({count})",
-    "clearDone": "Clear list",
+    "clearDone": "Remove checked",
     "openCount": "{n} open",
     "lists": "Lists",
     "newList": "New list",
@@ -214,7 +238,14 @@
     "itemStore": "Store",
     "itemCategory": "Category",
     "newStore": "New store…",
-    "mergeStoreConfirm": "\"{to}\" already exists with {count} items. Do you want to merge the stores?"
+    "mergeStoreConfirm": "\"{to}\" already exists with {count} items. Do you want to merge the stores?",
+    "clearDoneItems": "Remove checked items",
+    "doneRemoved": "Checked items removed",
+    "clearDonePartial": "{n} items couldn't be removed.",
+    "listDeleted": "List deleted",
+    "listName": "List name",
+    "storeActions": "Actions for {store}",
+    "mergeStores": "Merge"
   },
   "todos": {
     "title": "Tasks",
@@ -242,7 +273,11 @@
     "maxReminders": "Maximum 5 reminders",
     "reminderError": "Could not save reminder.",
     "deleteReminderError": "Could not delete reminder.",
-    "nextReminder": "Next reminder"
+    "nextReminder": "Next reminder",
+    "done": "Task done",
+    "createdHidden": "Task added. It's hidden because only {name}'s tasks are shown.",
+    "titleRequired": "Enter a title.",
+    "removeReminder": "Remove reminder"
   },
   "tasks": {
     "title": "Tasks",
@@ -250,11 +285,11 @@
     "filterShared": "Shared",
     "groupOverdue": "Overdue",
     "groupToday": "Today",
-    "groupThisWeek": "This Week",
+    "groupThisWeek": "This week",
     "groupLater": "Later",
     "claim": "Claim",
     "recurring": "recurring",
-    "createTitle": "New Task",
+    "createTitle": "New task",
     "descriptionLabel": "Description",
     "dueDateLabel": "Due date",
     "assignLabel": "Assign to",
@@ -273,7 +308,7 @@
   },
   "expenses": {
     "title": "Expenses",
-    "addExpense": "+ Add expense",
+    "addExpense": "Add expense",
     "emptyTitle": "No expenses yet",
     "emptySubtitle": "Add an expense above",
     "deleteError": "Could not delete expense.",
@@ -293,7 +328,7 @@
     "descriptionPlaceholder": "e.g. Grocery shopping",
     "descriptionRequired": "Description required",
     "amountPlaceholder": "e.g. 23.50",
-    "invalidAmount": "Invalid amount",
+    "invalidAmount": "Enter a valid amount, e.g. 23.50",
     "submitError": "An error occurred",
     "customSplit": {
       "allocated": "Allocated",
@@ -304,7 +339,8 @@
       "settled": "All settled",
       "settlementTitle": "Settlements",
       "pays": "pays",
-      "unassignedHint": "{amount} from former members unassignable"
+      "unassignedHint": "{amount} from former members unassignable",
+      "loadError": "Couldn't load balances."
     },
     "category": "Category",
     "categoryAll": "All",
@@ -316,7 +352,9 @@
       "health": "Health",
       "other": "Other",
       "uncategorized": "Uncategorized"
-    }
+    },
+    "saved": "Expense saved",
+    "deleteLabel": "Delete expense “{name}”"
   },
   "finance": {
     "available": "Still available",
@@ -343,7 +381,11 @@
     "overspent": "Overspent",
     "bookBillTitle": "Book \"{name}\"",
     "paidBy": "Paid by",
-    "bookBillHint": "{amount} will be split evenly across all members."
+    "bookBillHint": "{amount} will be split evenly across all members.",
+    "spentThisMonth": "Spent this month",
+    "allBooked": "All bills for this month are booked.",
+    "budgetSaveError": "Couldn't save the budget.",
+    "bookError": "Couldn't book the bill."
   },
   "settlements": {
     "title": "Settlements",
@@ -358,11 +400,12 @@
     "confirm": "Record payment",
     "deleteConfirm": "Really delete this settlement?",
     "deleteError": "Could not delete payment.",
-    "created": "Settlement recorded!",
+    "created": "Settlement recorded",
     "invalidAmount": "Please enter a valid amount.",
     "sameUser": "Sender and recipient must be different.",
     "flow": "{from} → {to}",
-    "saveError": "Could not save payment."
+    "saveError": "Could not save payment.",
+    "deleteLabel": "Delete settlement"
   },
   "chores": {
     "title": "Chores",
@@ -373,7 +416,7 @@
     "noAssignments": "No chores this week",
     "noChores": "No chores defined yet",
     "noChoresSubtitle": "Create a new chore to start the rotation",
-    "addChore": "+ Create chore",
+    "addChore": "Create chore",
     "editChore": "Edit chore",
     "newChore": "New chore",
     "choreTitleLabel": "Title",
@@ -406,7 +449,12 @@
     "filterAll": "All",
     "filterMine": "Only mine",
     "dayOfMonthPlaceholder": "1–31",
-    "dayOfMonthError": "Please enter a day between 1 and 31"
+    "dayOfMonthError": "Enter a day between 1 and 31",
+    "assignmentDone": "Chore done",
+    "noAssignmentsWeek": "No chores this week",
+    "addChoreLabel": "Create chore",
+    "moveUpLabel": "Move up",
+    "moveDownLabel": "Move down"
   },
   "household": {
     "title": "Household",
@@ -417,18 +465,18 @@
     "inviteExpiredAskAdmin": "Ask an admin to generate a new code.",
     "inviteHint": "Share this code so others can join your household:",
     "copyCode": "Copy",
-    "codeCopied": "Invite code copied!",
+    "codeCopied": "Invite code copied",
     "copyFailed": "Copy failed",
     "shareInvite": "Share invite",
     "shareTitle": "Join household",
-    "shareText": "Join our household \"{name}\" — Code: {code}",
-    "shareCopied": "Invite copied to clipboard!",
+    "shareText": "Join our household “{name}”: {link} (code: {code})",
+    "shareCopied": "Invitation copied to clipboard",
     "members": "Members",
     "noMembers": "No members loaded.",
     "joinTitle": "Join another household",
     "joinPlaceholder": "Enter invite code",
     "joinButton": "Join",
-    "joinSuccess": "Joined household \"{name}\"!",
+    "joinSuccess": "Joined household “{name}”",
     "joinNotFound": "Code not found",
     "joinAlreadyMember": "You are already a member",
     "joinFailed": "Join failed",
@@ -443,7 +491,6 @@
     "renameError": "Could not change name",
     "leaveTitle": "Leave household",
     "leaveConfirm": "Do you really want to leave this household?",
-    "leaveBalanceWarning": "You still have an open balance of {amount}. Your data will be preserved, but you won't be able to settle the balance yourself.",
     "leaveButton": "Leave",
     "leaveSuccess": "Left household",
     "leaveError": "Could not leave household",
@@ -459,11 +506,14 @@
     "householdLeft": "You have left the household",
     "createNewTitle": "Create another household",
     "createNewButton": "Create household",
-    "createNewSuccess": "Household \"{name}\" created!",
+    "createNewSuccess": "Household “{name}” created",
     "rotateCode": "Generate new code",
     "rotateCodeConfirm": "Generate a new invite code? The current code will stop working.",
     "rotateCodeSuccess": "New invite code created",
-    "rotateCodeHint": "The code is renewed automatically when a member is removed."
+    "rotateCodeHint": "The code is renewed automatically when a member is removed.",
+    "leaveBalanceOwe": "You still owe {amount}. The data is kept, but you can no longer settle the balance yourself after leaving.",
+    "leaveBalanceOwed": "You are still owed {amount}. The data is kept, but you can no longer settle the balance yourself after leaving.",
+    "createError": "Household could not be created"
   },
   "noHousehold": {
     "title": "Welcome back",
@@ -533,11 +583,54 @@
     "TAG_NOTHING_TO_DO": "There is nothing to do right now",
     "TOO_MANY_TAGS": "Maximum number of tags for this household reached",
     "PLANT_NOT_FOUND": "Plant not found",
-    "PLANT_CARE_TASK_NOT_FOUND": "Care task not found"
+    "PLANT_CARE_TASK_NOT_FOUND": "Care task not found",
+    "validation": "Please check your input",
+    "server": "Something went wrong on the server – please try again shortly",
+    "TODO_NOT_FOUND": "Task not found – it may have been deleted",
+    "TODO_ALREADY_CLAIMED": "Someone has already taken this task",
+    "BUDGET_NOT_FOUND": "No budget set for this month",
+    "RECURRING_BILL_NOT_FOUND": "Bill not found – it may have been deleted",
+    "BILL_INACTIVE": "This bill is inactive",
+    "INVALID_MONTH": "Invalid month",
+    "CHORE_INACTIVE": "This chore is paused",
+    "EVENT_NOT_FOUND": "Event not found – it may have been deleted",
+    "EVENT_END_BEFORE_START": "The end is before the start",
+    "CALENDAR_NOT_FOUND": "Calendar not found",
+    "LAST_CALENDAR": "The last calendar can't be deleted",
+    "CALENDAR_NOT_EMPTY": "The calendar still has events – move or delete them first",
+    "CALENDAR_MISMATCH": "This calendar doesn't belong to this household",
+    "POLL_NOT_FOUND": "Poll not found – it may have been deleted",
+    "POLL_ALREADY_DECIDED": "This poll has already been decided",
+    "POLL_OPTION_INVALID": "This option no longer exists",
+    "POLL_TYPE_MISMATCH": "This poll doesn't match this action",
+    "POLL_MEAL_DATE_REQUIRED": "Choose a day for the meal",
+    "PET_NOT_FOUND": "Pet not found – it may have been deleted",
+    "PET_CARE_TASK_NOT_FOUND": "Care task not found",
+    "FEEDING_NOT_FOUND": "This feeding no longer exists",
+    "FEEDING_DUPLICATE": "Already fed – someone was quicker",
+    "FEEDING_INVALID_SLOT": "Invalid feeding time",
+    "MEDICATION_NOT_FOUND": "Medication not found",
+    "RECIPE_NOT_FOUND": "Recipe not found – it may have been deleted",
+    "MEAL_PLAN_ENTRY_NOT_FOUND": "This meal plan entry no longer exists",
+    "MEAL_PLAN_DATE_TAKEN": "A meal is already planned for this day",
+    "MEAL_PLAN_NO_RECIPE": "Choose a recipe or enter a dish",
+    "NOTE_NOT_FOUND": "Note not found – it may have been deleted",
+    "FILE_NOT_FOUND": "File not found",
+    "FILE_MISMATCH": "The file does not match (wrong household or not an image)",
+    "REFRESH_TOKEN_INVALID": "Your session has expired – please sign in again",
+    "REFRESH_TOKEN_EXPIRED": "Your session has expired – please sign in again",
+    "REFRESH_TOKEN_REUSED": "You were signed out for security reasons – please sign in again",
+    "CSRF_HEADER_MISSING": "Request rejected – please reload the page",
+    "PUSH_DISABLED": "Push notifications aren't set up on this server",
+    "PUSH_ENDPOINT_NOT_ALLOWED": "This browser's notification service isn't supported",
+    "notFound": "Not found – it may have been deleted",
+    "IMAGE_TOO_MANY_PIXELS": "Image has too many pixels (max. 25 megapixels)",
+    "imageUnreadable": "Could not read the image – supported are JPEG, PNG, WebP and iPhone photos (HEIC)",
+    "WIDGET_TOKEN_INVALID": "Invalid widget key"
   },
   "push": {
     "title": "Notifications",
-    "hint": "Get reminders for tasks and pet care on this device.",
+    "hint": "Get reminders for tasks, chores, pet and plant care and expiring documents on this device. The number on the app icon shows what is due today.",
     "enable": "Enable",
     "disable": "Disable",
     "test": "Send test notification",
@@ -547,14 +640,16 @@
     "unsupported": "This browser does not support push notifications.",
     "iosInstallHint": "On iPhone/iPad: open the app in Safari, tap Share → “Add to Home Screen” and launch it from there. Then you can enable notifications.",
     "serverDisabled": "Notifications are not set up on the server.",
-    "error": "Could not change notification settings."
+    "error": "Could not change notification settings.",
+    "testSent": "Test notification sent"
   },
   "pwa": {
     "updateAvailable": "A new version is available.",
     "reload": "Reload"
   },
   "offline": {
-    "banner": "No connection – changes cannot be saved right now."
+    "banner": "No connection – changes cannot be saved right now.",
+    "actionBlocked": "You're offline – the change wasn't saved."
   },
   "polls": {
     "title": "Polls",
@@ -575,7 +670,8 @@
     "decideEventTitle": "Event title",
     "decideCalendar": "Calendar",
     "voteError": "Could not submit vote.",
-    "decideError": "Could not accept poll."
+    "decideError": "Could not accept poll.",
+    "decidedOn": "Event added for {date}"
   },
   "pets": {
     "title": "Cats",
@@ -649,7 +745,17 @@
     "photoUploadSuccess": "Photo updated",
     "photoUploadError": "Could not upload photo",
     "photoDeleteError": "Could not remove old photo",
-    "invalidWeight": "Please enter a valid weight"
+    "invalidWeight": "Enter a valid weight, e.g. 4.5",
+    "fedToast": "{name} fed",
+    "allFedToast": "All fed",
+    "allAlreadyFed": "Everyone has already been fed",
+    "feedToggleMorning": "{name} fed in the morning",
+    "feedToggleEvening": "{name} fed in the evening",
+    "medicationGiveError": "Couldn't save the dose",
+    "medicationSaveError": "Couldn't save the medication",
+    "medicationDeleteError": "Couldn't delete the medication",
+    "changePhoto": "Change photo",
+    "photoUploadErrorReason": "Could not upload photo: {reason}"
   },
   "petCare": {
     "title": "Care & Schedule",
@@ -665,7 +771,11 @@
     "completed": "Done! Next due: {date}",
     "taskCreated": "Care task created",
     "taskDeleted": "Care task deleted",
-    "deleteConfirm": "Really delete this care task?"
+    "deleteConfirm": "Really delete this care task?",
+    "invalidInterval": "Enter an interval between 1 and 3650 days",
+    "saveError": "Couldn't save the care task",
+    "completeError": "Couldn't mark the task as done",
+    "deleteError": "Couldn't delete the care task"
   },
   "plants": {
     "title": "Plants",
@@ -729,11 +839,18 @@
     "invalidInterval": "Please enter an interval between 1 and 3650 days",
     "photoUploading": "Uploading photo…",
     "photoUploadSuccess": "Photo updated",
-    "photoUploadError": "Photo could not be uploaded"
+    "photoUploadError": "Photo could not be uploaded",
+    "wateredToast": "{name} watered",
+    "statusLoadError": "Couldn't load the care status – due dates may be out of date.",
+    "taskCreateError": "Couldn't create the care task",
+    "taskDeleteError": "Couldn't delete the care task",
+    "deleteTaskHint": "The care history is kept.",
+    "changePhoto": "Change photo",
+    "photoUploadErrorReason": "Photo could not be uploaded: {reason}"
   },
   "food": {
     "title": "Food",
-    "weekMenu": "Weekly Menu",
+    "weekMenu": "Weekly menu",
     "kwLabel": "CW {week}",
     "noMeal": "—",
     "portions": "{n} servings",
@@ -744,7 +861,6 @@
     "remove": "Remove",
     "ingredients": "Ingredients",
     "addToShopping": "Add missing to shopping list",
-    "addedToShopping": "{n} ingredients added ✓",
     "skippedItems": "{n} already on list",
     "newRecipe": "New recipe",
     "recipeName": "Name",
@@ -769,7 +885,22 @@
     "pollDecided": "Decided! 🎉",
     "openPollCount": "{n} open vote | {n} open votes",
     "voteCount": "{n} vote | {n} votes",
-    "steps": "Preparation"
+    "steps": "Preparation",
+    "prevWeek": "Previous week",
+    "nextWeek": "Next week",
+    "removeOption": "Remove option",
+    "assignError": "Couldn't assign the meal.",
+    "removeError": "Couldn't remove the meal.",
+    "mealRemoved": "Meal removed",
+    "addToShoppingError": "Couldn't add the ingredients to the shopping list.",
+    "goToShopping": "Go to shopping list",
+    "favoriteError": "Couldn't save the favourite.",
+    "createPollError": "Couldn't start the poll.",
+    "decideTitle": "Decide poll",
+    "decideWinner": "“{option}” is in the lead ({n} vote) and goes into the meal plan. | “{option}” is in the lead ({n} votes) and goes into the meal plan.",
+    "decideTie": "It's a tie – pick which meal it will be.",
+    "decideHint": "This ends the poll for the whole household.",
+    "pollDecidedToast": "Decided: “{option}”"
   },
   "notes": {
     "title": "Notes",
@@ -777,8 +908,8 @@
     "emptyTitle": "No notes",
     "emptySubtitle": "Write your first note",
     "pinnedSection": "Pinned",
-    "allSection": "All Notes",
-    "editTitle": "Edit Note",
+    "allSection": "All notes",
+    "editTitle": "Edit note",
     "titleLabel": "Title",
     "titlePlaceholder": "Note title",
     "bodyLabel": "Text",
@@ -789,14 +920,24 @@
     "deleteConfirm": "Really delete this note?",
     "addError": "Could not create note.",
     "saveError": "Could not save changes.",
-    "deleteError": "Could not delete note."
+    "deleteError": "Could not delete note.",
+    "addLabel": "New note",
+    "emptyAction": "Write a note",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "deleted": "Note deleted",
+    "discardTitle": "Discard changes?",
+    "discardText": "Your changes to this note haven't been saved yet.",
+    "keepEditing": "Keep editing",
+    "discardConfirm": "Discard"
   },
   "files": {
     "FILE_TOO_LARGE": "File is too large (max 10 MB)",
     "FILE_TYPE_NOT_ALLOWED": "File type not allowed",
     "FILE_NOT_FOUND": "File not found",
     "FILE_IN_USE": "File is still in use",
-    "FILE_MISMATCH": "File mismatch (wrong household or not an image)"
+    "FILE_MISMATCH": "File mismatch (wrong household or not an image)",
+    "IMAGE_TOO_MANY_PIXELS": "Image has too many pixels (max. 25 megapixels)"
   },
   "sync": {
     "connected": "Connected",
@@ -808,7 +949,7 @@
     "upload": "Upload",
     "uploadTitle": "Upload document",
     "editTitle": "Edit document",
-    "searchPlaceholder": "Search documents…",
+    "searchPlaceholder": "Search titles…",
     "storageUsage": "{used} of {quota} used",
     "emptyTitle": "No documents yet",
     "emptySubtitle": "Upload contracts, invoices or warranties",
@@ -855,7 +996,13 @@
     "removePageConfirm": "Really remove page \"{name}\"?",
     "previousPage": "Previous page",
     "nextPage": "Next page",
-    "pageOf": "Page {current} / {total}"
+    "pageOf": "Page {current} / {total}",
+    "deleteTitle": "Delete document",
+    "deleted": "Document deleted",
+    "saveSuccess": "Changes saved",
+    "pagesAdded": "{n} page added | {n} pages added",
+    "previewError": "Preview could not be loaded.",
+    "saveError": "Document could not be saved."
   },
   "ai": {
     "title": "AI assistant",
@@ -870,7 +1017,8 @@
       "privacyHint": "When the AI assistant is on, your input (e.g. ingredients, plant species, later also photos) is sent to the Anthropic API for processing. Only what you choose to keep is saved in the app.",
       "adminOnly": "Only admins can turn the AI assistant on or off.",
       "usage": "{used} of {limit} requests used today",
-      "openAssistant": "Open AI assistant"
+      "openAssistant": "Open AI assistant",
+      "saveError": "AI assistant could not be switched"
     },
     "recipe": {
       "title": "Suggest a recipe",
@@ -898,7 +1046,8 @@
       "saved": "Recipe saved",
       "discard": "Discard",
       "newSuggestion": "New suggestion",
-      "defaultListName": "Shopping list"
+      "defaultListName": "Shopping list",
+      "saveError": "Couldn't save the recipe."
     },
     "plant": {
       "title": "Plant care",
@@ -955,7 +1104,7 @@
     "labelPlaceholder": "e.g. Kitchen food bowl",
     "targetTypeLabel": "Target type",
     "targetLabel": "Target",
-    "targetChoose": "Please choose",
+    "targetChoose": "Choose target",
     "targetNoneDefault": "No specific target",
     "noTargets": "There are no entries of this type in the household yet.",
     "actionLabel": "Action",
@@ -1084,7 +1233,7 @@
       "lastDone": "Last done: {date}",
       "lastDoneBy": "Last done: {date} by {name}",
       "nextDue": "Next due: {date}",
-      "success": "Done!",
+      "success": "Done",
       "successNoChange": "Already done — nothing changed.",
       "toDashboard": "Go to home",
       "openModule": "View",
@@ -1116,6 +1265,32 @@
       "neverWatered": "Never watered",
       "dueCount": "Due: {n} plant(s)",
       "plantDue": "Watering due: {date}"
-    }
+    },
+    "deleteTitle": "Delete tag",
+    "labelSaved": "Name saved",
+    "loadTargetsError": "Targets could not be loaded"
+  },
+  "widget": {
+    "title": "Widget (iPhone)",
+    "hint": "Shows what is due today on your home screen: tasks, chores, care, events and the shopping list. Runs in the free app “Scriptable” with its own read-only key.",
+    "create": "Set up widget",
+    "replace": "Create new key",
+    "replaceConfirm": "The current key will stop working. A widget that is already set up needs the new script.",
+    "revoke": "Revoke",
+    "revokeConfirm": "The widget will no longer be able to load data.",
+    "revoked": "Widget key revoked",
+    "active": "Key active ({prefix}…)",
+    "createdAt": "Created on {date}",
+    "lastUsed": "last used on {date}",
+    "neverUsed": "not used yet",
+    "onlyNow": "The script contains your key and is only shown now.",
+    "step1": "Get “Scriptable” from the App Store, open it, tap + to create a script and paste the script.",
+    "step2": "Long-press the home screen → + → “Scriptable” → choose a size → Add widget.",
+    "step3": "Long-press the widget → “Edit widget” → choose this script under “Script”.",
+    "copy": "Copy script",
+    "download": "Download as file",
+    "copied": "Script copied",
+    "copyFailed": "Copying not possible – select the text in the field and copy it",
+    "scriptLabel": "Scriptable script"
   }
 }

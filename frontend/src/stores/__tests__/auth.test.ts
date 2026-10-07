@@ -371,6 +371,54 @@ describe('Haushalte', () => {
     expect(api.get).toHaveBeenCalledTimes(1)
   })
 
+  test('eigener Austritt: Socket-Event während des Requests meldet keine Entfernung', async () => {
+    api.get.mockResolvedValue(meResponse())
+    const store = useAuthStore()
+    await store.fetchMe()
+
+    const target = await store.leaveHousehold('hh-1', async () => {
+      // Server meldet household_member_left noch vor der HTTP-Antwort
+      store.handleMemberLeft({ household_id: 'hh-1', user_id: 'user-1' })
+    })
+
+    expect(target).toBe('/dashboard')
+    expect(store.households.map(h => h.id)).toEqual(['hh-2'])
+    expect(store.currentHouseholdId).toBe('hh-2')
+    expect(showToast).not.toHaveBeenCalled()
+    expect(router.replace).not.toHaveBeenCalled()
+
+    // Verspätetes Event nach der Antwort ändert auch nichts mehr
+    store.handleMemberLeft({ household_id: 'hh-1', user_id: 'user-1' })
+    expect(showToast).not.toHaveBeenCalled()
+  })
+
+  test('eigener Austritt aus dem letzten Haushalt führt zu /no-household', async () => {
+    api.get.mockResolvedValue(meResponse({ households: [{ id: 'hh-1', name: 'WG', role: 'owner', currency: 'CHF' }] }))
+    const store = useAuthStore()
+    await store.fetchMe()
+
+    const target = await store.leaveHousehold('hh-1', async () => {})
+
+    expect(target).toBe('/no-household')
+    expect(store.households).toHaveLength(0)
+    expect(store.currentHouseholdId).toBeNull()
+    expect(localStorage.getItem(HOUSEHOLD_KEY)).toBeNull()
+  })
+
+  test('fehlgeschlagener Austritt lässt den Haushalt stehen', async () => {
+    api.get.mockResolvedValue(meResponse())
+    const store = useAuthStore()
+    await store.fetchMe()
+
+    await expect(store.leaveHousehold('hh-1', async () => { throw new Error('fail') })).rejects.toThrow('fail')
+
+    expect(store.households).toHaveLength(2)
+    expect(store.currentHouseholdId).toBe('hh-1')
+    // Spätere echte Entfernung wird wieder gemeldet
+    store.handleMemberRemoved({ household_id: 'hh-1', user_id: 'user-1' })
+    expect(showToast).toHaveBeenCalledWith('household.switchedTo', 'info')
+  })
+
   test('household_updated übernimmt Name und KI-Opt-in', async () => {
     api.get.mockResolvedValue(meResponse())
     const store = useAuthStore()
@@ -401,6 +449,24 @@ describe('logout', () => {
     expect(store.isAuthenticated).toBe(false)
     expect(localStorage.getItem(SESSION_MARKER_KEY)).toBeNull()
     expect(router.push).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/shopping' } })
+  })
+
+  test('abgelaufene Session merkt sich den Grund für die Login-Seite, manueller Logout nicht', async () => {
+    const store = useAuthStore()
+    store.token = 'access'
+    axiosPost.mockResolvedValue({ data: {} })
+
+    await store.logout({ reason: 'expired' })
+    expect(store.sessionExpired).toBe(true)
+
+    // Erneute Anmeldung setzt den Hinweis zurück
+    api.post.mockResolvedValue(tokenResponse)
+    api.get.mockResolvedValue(meResponse())
+    await store.login('a@example.com', 'secret')
+    expect(store.sessionExpired).toBe(false)
+
+    await store.logout({ reason: 'user' })
+    expect(store.sessionExpired).toBe(false)
   })
 
   test('manueller Logout räumt auch auf, wenn der Backend-Call fehlschlägt', async () => {

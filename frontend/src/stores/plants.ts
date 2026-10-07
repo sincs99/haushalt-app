@@ -4,6 +4,7 @@ import { useAuthStore } from './auth'
 import { createOnlinePlantsRepository } from '../repositories/plantsRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import { planAdvice, mergeCareNotes } from '../utils/plantCare'
+import { localDateString } from '../utils/dates'
 import type {
   AiPlantCareAdvice, Plant, PlantCreatePayload, PlantUpdatePayload, PlantCareStatus, PlantCareStatusTask,
   PlantCareTask, PlantCareTaskCreatePayload, PlantCareTaskUpdatePayload, PlantCareLog,
@@ -11,14 +12,6 @@ import type {
 } from '../types'
 
 const CARE_LOG_LIMIT = 50
-
-/** Lokales Datum als "YYYY-MM-DD" (nicht UTC — sonst stimmt der Tag nachts nicht). */
-function localDateString(date: Date = new Date()): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
 
 function addDays(dateStr: string, days: number): string {
   const [y, m, d] = dateStr.split('-').map(Number)
@@ -53,6 +46,8 @@ export const usePlantsStore = defineStore('plants', () => {
   const careStatus = ref<PlantCareStatus[]>([])
   const members = ref<HouseholdMemberInfo[]>([])
   const loading = ref(false)
+  // Letztes Laden des Pflegestatus gescheitert (alter Status bleibt stehen)
+  const careStatusError = ref(false)
   // Detailansicht: Pflegeaufgaben und Log der gerade geöffneten Pflanze
   const careTasks = ref<PlantCareTask[]>([])
   const careTasksPlantId = ref<string | null>(null)
@@ -118,8 +113,11 @@ export const usePlantsStore = defineStore('plants', () => {
 
     try {
       careStatus.value = await repo.fetchCareStatus(householdId)
+      careStatusError.value = false
     } catch {
-      // Silently fail — Status ist unkritisch
+      // Kein Throw (viele Aufrufer, u. a. Socket-Events); bisheriger Status bleibt stehen,
+      // die Ansicht zeigt über careStatusError einen Hinweis mit „Erneut versuchen“.
+      careStatusError.value = true
     }
   }
 
@@ -190,13 +188,9 @@ export const usePlantsStore = defineStore('plants', () => {
 
     if (careTasksPlantId.value !== plantId) careTasks.value = []
     careTasksPlantId.value = plantId
-    try {
-      const tasks = await repo.fetchCareTasks(householdId, plantId)
-      // Antwort einer inzwischen verlassenen Pflanze verwerfen
-      if (careTasksPlantId.value === plantId) careTasks.value = tasks
-    } catch {
-      // Silently fail
-    }
+    const tasks = await repo.fetchCareTasks(householdId, plantId)
+    // Antwort einer inzwischen verlassenen Pflanze verwerfen
+    if (careTasksPlantId.value === plantId) careTasks.value = tasks
   }
 
   async function createCareTask(plantId: string, payload: PlantCareTaskCreatePayload) {
@@ -271,14 +265,14 @@ export const usePlantsStore = defineStore('plants', () => {
     }
   }
 
-  /** "Gegossen": erledigt alle Gießaufgaben der Pflanze. */
+  /** "Gegossen": erledigt alle Giessaufgaben der Pflanze. */
   async function waterPlant(plantId: string) {
     const item = careStatus.value.find(s => s.plant_id === plantId)
     const waterTasks = item?.tasks.filter(t => t.care_type === 'water') ?? []
     await Promise.all(waterTasks.map(t => completeCareTask(plantId, t.task_id)))
   }
 
-  /** "Alle fälligen gießen". */
+  /** "Alle fälligen giessen". */
   async function waterAll() {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
@@ -353,12 +347,8 @@ export const usePlantsStore = defineStore('plants', () => {
 
     if (careLogPlantId.value !== plantId) careLog.value = []
     careLogPlantId.value = plantId
-    try {
-      const log = await repo.fetchCareLog(householdId, plantId)
-      if (careLogPlantId.value === plantId) careLog.value = log.slice(0, CARE_LOG_LIMIT)
-    } catch {
-      // Silently fail
-    }
+    const log = await repo.fetchCareLog(householdId, plantId)
+    if (careLogPlantId.value === plantId) careLog.value = log.slice(0, CARE_LOG_LIMIT)
   }
 
   // ── Socket-Handler — Idempotent (Server gewinnt) ──
@@ -429,6 +419,7 @@ export const usePlantsStore = defineStore('plants', () => {
     careStatus,
     members,
     loading,
+    careStatusError,
     careTasks,
     careLog,
     // Actions

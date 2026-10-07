@@ -45,6 +45,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | Branch `claude/nfc-qr-tags` | Tags (NFC-Chips/QR-Sticker) mit Ein-Tipp-Aktionen: Füttern, Pflegeaufgabe, Ämtli, Todo abhaken, Einkaufsliste öffnen; Verwaltung mit QR-Code und Web NFC; Review `docs/security/tags-review.md` (Epic 32) |
 | Branch `claude/plants-ai-tags-integration` | Pflanzen × KI × Tags: KI-Pflegehinweise im Pflanzen-Formular und in der Detailansicht; Tag-Aktionen `plant.water` und `plant.care_task.done` (Epic 34) |
 | Branch `claude/ai-assistant` | KI-Assistent Etappe 1: Rezeptvorschlag und Pflanzenpflege, Opt-in pro Haushalt, Tageslimit; Rezepte erhalten Zubereitungsschritte und Tags (Epic 33, `docs/ai-assistant.md`) |
+| Branch `claude/logic-review` | Logik-Review der Geschäftsregeln (`docs/qa/logic-review.md`): Kalenderdaten der Finanzen in Haushaltszeit (`services/household_time.py`), gebuchte Rechnungen immer `even`, `decide` sendet den vollständigen Termin, Dashboard zählt heute fällige Todos nicht als überfällig, Ämtli mit Ex-Mitglied in der Rotation bleibt bearbeitbar, Tierpflege-Erinnerung nach Verschieben der Fälligkeit, Haushaltswechsel leert alle Stores, Rolle nach Auto-Beförderung wird sofort geladen; 10 offene Produktentscheidungen |
 
 **Kennzahlen (nach #28, inkl. Branch `claude/plants-ai-tags-integration`):** Backend 792 Tests in 58 Dateien, Coverage 94 %; Frontend 363 Tests in 26 Dateien, Coverage 73,7 % (Statements), Schwelle 66 %; 993 i18n-Schlüssel; 37 Alembic-Migrationen (einziger Kopf `y1z2a3b4c5d6`).
 
@@ -688,7 +689,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 ### Invarianten
 
 - `SUM(expense_shares.amount_rappen) == expenses.amount_rappen` (im Service-Layer erzwungen, nicht als DB-Constraint).
-- `households.timezone` (Default `Europe/Zurich`) steuert Putzplan-Datumsberechnung und Termin-Uhrzeiten; `households.currency` (Default `CHF`): eine Währung pro Haushalt.
+- `households.timezone` (Default `Europe/Zurich`) steuert Putzplan-Datumsberechnung, Termin-Uhrzeiten, Fütterungs-/Pflegetage sowie die Kalenderdaten der Finanzen (Buchungsmonat, Default-Monat von Budget und Übersicht, Standard-Datum von Ausgaben/Ausgleich; `services/household_time.py`); `households.currency` (Default `CHF`): eine Währung pro Haushalt.
 - Beim Löschen eines Haushalts werden alle zugehörigen Tabellen per `CASCADE` geleert; die Dateien auf dem Datenträger entfernt der Router beim Auflösen des Haushalts (`POST /leave` durch das letzte Mitglied); verwaiste Uploads räumt `app/services/file_cleanup.py` periodisch auf.
 
 ---

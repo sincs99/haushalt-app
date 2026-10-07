@@ -110,9 +110,18 @@ router = APIRouter(
 
 
 def _validate_rotation_order(
-    db: Session, household_id: uuid.UUID, rotation_order: list[str]
+    db: Session,
+    household_id: uuid.UUID,
+    rotation_order: list[str],
+    already_on_record: set[str] = frozenset(),
 ) -> None:
-    """Validiert rotation_order: UUID-parsbar, keine Duplikate, alle im Household."""
+    """Validiert rotation_order: UUID-parsbar, keine Duplikate, alle im Household.
+
+    Personen, die bereits in der gespeicherten Rotation stehen (``already_on_record``),
+    dürfen Ex-Mitglieder sein: Die UI schickt die Rotation bei jedem Speichern mit,
+    und der Scheduler überspringt Nicht-Mitglieder ohnehin. Nur neu hinzukommende
+    Personen müssen aktuelle Mitglieder sein.
+    """
     parsed_ids: list[uuid.UUID] = []
     seen: set[str] = set()
     for uid_str in rotation_order:
@@ -136,7 +145,9 @@ def _validate_rotation_order(
             )
         seen.add(uid_str)
 
-    assert_users_in_household(db, household_id, parsed_ids)
+    new_ids = [uid for uid, raw in zip(parsed_ids, rotation_order, strict=True) if raw not in already_on_record]
+    if new_ids:
+        assert_users_in_household(db, household_id, new_ids)
 
 
 def _validate_recurrence_fields(
@@ -269,7 +280,9 @@ def update_chore(
 
     # Rotation Order validieren (wenn geändert)
     if "rotation_order" in update_data and update_data["rotation_order"] is not None:
-        _validate_rotation_order(db, household_id, update_data["rotation_order"])
+        _validate_rotation_order(
+            db, household_id, update_data["rotation_order"], set(chore.rotation_order or [])
+        )
 
     # Recurrence/Weekday/DayOfMonth-Änderungen → Validierung + anchor_date neu.
     # Nur echte Wertänderungen zählen: das UI sendet beim Speichern immer alle Felder

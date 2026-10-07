@@ -11,6 +11,7 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import Expense, ExpenseShare, Household, HouseholdMember
 from app.services.household_checks import assert_users_allowed, assert_users_in_household
+from app.services.household_time import household_today
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -313,7 +314,7 @@ def create_expense(
         amount_rappen=body.amount_rappen,
         currency=household.currency,
         paid_by_user_id=body.paid_by_user_id,
-        expense_date=body.expense_date or date.today(),
+        expense_date=body.expense_date or household_today(db, household),
         split_type=body.split_type,
         category=body.category,
     )

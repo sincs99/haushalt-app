@@ -21,7 +21,9 @@ from app.models import (
     MealPlanEntry,
     Recipe,
 )
+from app.routers.events import _event_response
 from app.services.event_times import household_tz, to_utc
+from app.services.household_time import household_today
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -427,10 +429,13 @@ def decide_poll(
         "poll_decided",
         PollResponse.model_validate(poll).model_dump(mode="json"),
     )
+    # Vollständiger Termin wie bei POST /events (Zeiten in Haushaltszeit): der
+    # Kalender fügt das Objekt direkt in seine Liste ein
+    tz = household_tz(db.get(Household, household_id).timezone)
     emit_to_household_sync(
         str(household_id),
         "event_created",
-        {"id": str(event.id), "title": event.title},
+        _event_response(event, tz).model_dump(mode="json"),
     )
     return poll
 
@@ -481,7 +486,7 @@ def meal_decide_poll(
     _claim_poll(db, poll_id)
 
     # MealPlanEntry erzeugen (Upsert: wenn Datum schon belegt, updaten)
-    meal_date = poll.decided_meal_date or date.today()
+    meal_date = poll.decided_meal_date or household_today(db, household_id)
 
     existing = (
         db.query(MealPlanEntry)

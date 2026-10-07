@@ -327,16 +327,48 @@ describe('Haushalte', () => {
     expect(showToast).toHaveBeenCalledWith('household.switchedTo', 'info')
   })
 
-  test('member_removed für andere User ändert nichts', async () => {
+  test('member_removed für andere User wechselt den Haushalt nicht', async () => {
     api.get.mockResolvedValue(meResponse())
     const store = useAuthStore()
     await store.fetchMe()
 
     store.handleMemberRemoved({ household_id: 'hh-1', user_id: 'user-2' })
+    await Promise.resolve()
 
     expect(store.households).toHaveLength(2)
     expect(store.currentHouseholdId).toBe('hh-1')
     expect(showToast).not.toHaveBeenCalled()
+  })
+
+  test('member_left einer anderen Person lädt /me neu — die eigene Rolle kann sich geändert haben', async () => {
+    // Anna ist Mitglied; der einzige Admin verlässt den Haushalt → Server befördert Anna
+    api.get.mockResolvedValueOnce(meResponse({
+      households: [{ id: 'hh-1', name: 'WG', role: 'member', currency: 'CHF' }],
+    }))
+    const store = useAuthStore()
+    await store.fetchMe()
+    expect(store.currentHousehold?.role).toBe('member')
+    api.get.mockResolvedValueOnce(meResponse({
+      households: [{ id: 'hh-1', name: 'WG', role: 'admin', currency: 'CHF' }],
+    }))
+
+    store.handleMemberLeft({ household_id: 'hh-1', user_id: 'user-2' })
+    await vi.waitFor(() => expect(store.currentHousehold?.role).toBe('admin'))
+
+    expect(api.get).toHaveBeenCalledTimes(2)
+    expect(store.currentHouseholdId).toBe('hh-1')
+    expect(showToast).not.toHaveBeenCalled()
+  })
+
+  test('member_left in einem fremden Haushalt löst kein /me aus', async () => {
+    api.get.mockResolvedValue(meResponse())
+    const store = useAuthStore()
+    await store.fetchMe()
+
+    store.handleMemberLeft({ household_id: 'hh-other', user_id: 'user-2' })
+    await Promise.resolve()
+
+    expect(api.get).toHaveBeenCalledTimes(1)
   })
 
   test('eigener Austritt: Socket-Event während des Requests meldet keine Entfernung', async () => {

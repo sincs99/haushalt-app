@@ -4,6 +4,7 @@ Stellt sicher, dass Cross-Household-Zugriffe mit 403 abgelehnt werden.
 + Funktionstest für /complete.
 """
 
+import uuid
 from datetime import date, timedelta
 
 # ---------------------------------------------------------------------------
@@ -230,3 +231,35 @@ def test_complete_care_task_updates_dates(
     assert data["last_done_at"] == str(today)
     assert data["next_due_at"] == str(expected_next_due)
     assert data["notified_at"] is None
+
+
+# ---------------------------------------------------------------------------
+# Fälligkeit verschieben setzt die Erinnerung zurück (Logik-Review L-06)
+# ---------------------------------------------------------------------------
+
+
+def test_update_care_task_due_date_resets_notified_at(client, db, household_a, token_a, pet_a, user_a):
+    """Wurde zur alten Fälligkeit schon erinnert, muss die neue Fälligkeit wieder erinnern."""
+    from datetime import datetime, timezone
+
+    from app.models import PetCareTask
+
+    task = _create_care_task(client, household_a.id, pet_a.id, token_a, next_due_at=str(date.today()))
+    row = db.get(PetCareTask, uuid.UUID(task["id"]))
+    row.notified_at = datetime.now(timezone.utc)
+    db.commit()
+
+    headers = {"Authorization": f"Bearer {token_a}"}
+    url = f"/api/households/{household_a.id}/pets/{pet_a.id}/care-tasks/{task['id']}"
+
+    # Nur umbenennen → Erinnerung bleibt verschickt
+    resp = client.patch(url, headers=headers, json={"name": "Entwurmung"})
+    assert resp.status_code == 200
+    assert resp.json()["notified_at"] is not None
+
+    # Fälligkeit verschieben → Erinnerung wieder offen
+    new_due = date.today() + timedelta(days=7)
+    resp = client.patch(url, headers=headers, json={"next_due_at": str(new_due)})
+    assert resp.status_code == 200
+    assert resp.json()["next_due_at"] == str(new_due)
+    assert resp.json()["notified_at"] is None

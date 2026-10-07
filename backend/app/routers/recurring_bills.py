@@ -13,6 +13,7 @@ from app.database import get_db
 from app.models import Expense, ExpenseShare, Household, HouseholdMember, RecurringBill
 from app.routers.expenses import ExpenseResponse, split_evenly
 from app.services.household_checks import assert_users_in_household
+from app.services.household_time import household_today
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -230,7 +231,7 @@ def book_recurring_bill(
     assert_users_in_household(db, household_id, [payer_id])
 
     # 3b. Aktuellen Monat ermitteln
-    today = date.today()
+    today = household_today(db, household_id)
     first_of_month = date(today.year, today.month, 1)
 
     # 4. Idempotenz: Prüfen ob bereits gebucht (über booked_month, nicht expense_date —
@@ -268,7 +269,11 @@ def book_recurring_bill(
         amount_rappen=bill.amount_rappen,
         currency=household.currency,
         category=bill.category,
-        split_type=bill.split_type,
+        # Gebucht wird immer gleichmässig auf alle Mitglieder (siehe share_map oben);
+        # die Ausgabe muss das auch sagen, sonst lässt sich ihr Betrag später nicht
+        # ändern (custom verlangt Anteile im PATCH). RecurringBill.split_type hat
+        # keine Wirkung — Produktentscheidung E-5 in docs/qa/logic-review.md.
+        split_type="even",
         recurring_bill_id=bill.id,
         booked_month=first_of_month,
         expense_date=expense_date,

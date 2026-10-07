@@ -140,3 +140,42 @@ def test_dashboard_plants_water_section(client, db, household_a, household_b, to
 def test_dashboard_plants_water_empty(client, household_a, token_a):
     resp = client.get(f"/api/households/{household_a.id}/dashboard", headers={"Authorization": f"Bearer {token_a}"})
     assert resp.json()["plants_water"] == {"due_count": 0, "items": []}
+
+
+# ---------------------------------------------------------------------------
+# Überfällig: Fälligkeit ist ein Datum und gilt den ganzen Tag (Logik-Review L-04)
+# ---------------------------------------------------------------------------
+
+
+def _todo_due(client, household_a, token_a, title, due: str):
+    resp = client.post(
+        f"/api/households/{household_a.id}/todos/",
+        headers={"Authorization": f"Bearer {token_a}"},
+        json={"title": title, "due_date": due},
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+def test_dashboard_todo_due_today_is_not_overdue(client, household_a, token_a, user_a):
+    from datetime import timedelta
+
+    from app.services.chore_scheduler import today_in_tz
+
+    today = today_in_tz(household_a.timezone)
+    due_today = _todo_due(client, household_a, token_a, "Heute", today.isoformat())
+    due_yesterday = _todo_due(client, household_a, token_a, "Gestern", (today - timedelta(days=1)).isoformat())
+    _todo_due(client, household_a, token_a, "Morgen", (today + timedelta(days=1)).isoformat())
+
+    resp = client.get(
+        f"/api/households/{household_a.id}/dashboard",
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()["todos"]
+    assert data["overdue_count"] == 1
+    by_id = {item["id"]: item for item in data["items"]}
+    assert by_id[due_yesterday]["is_overdue"] is True
+    assert by_id[due_today]["is_overdue"] is False
+    # Überfällige zuerst, dann nach Fälligkeit
+    assert [item["title"] for item in data["items"]] == ["Gestern", "Heute", "Morgen"]

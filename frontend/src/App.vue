@@ -12,6 +12,7 @@ import { useDashboardStore } from './stores/dashboard'
 import { usePollsStore } from './stores/polls'
 import { usePetsStore } from './stores/pets'
 import { usePlantsStore } from './stores/plants'
+import { resetHouseholdScopedStores } from './stores/householdScope'
 import { useSocket } from './composables/useSocket'
 import { useConnectivity } from './composables/useConnectivity'
 import BaseAvatar from './components/ui/BaseAvatar.vue'
@@ -174,27 +175,10 @@ watch(
     }
 
     if (householdId) {
-      // Stores leeren bei Household-Wechsel
+      // Stores leeren bei Household-Wechsel (alle haushaltsbezogenen Stores, auch die
+      // der Ansichten, die ihre Daten nur beim Öffnen laden)
       if (oldHouseholdId && oldHouseholdId !== householdId) {
-        shoppingStore.items = []
-        shoppingStore.lists = []
-        shoppingStore.activeListId = null
-        shoppingStore.stores = []
-        shoppingStore.activeStoreFilter = null
-        todosStore.items = []
-        todosStore.members = []
-        expensesStore.expenses = []
-        expensesStore.balances = null
-        expensesStore.members = []
-        settlementsStore.settlements = []
-        choresStore.chores = []
-        choresStore.assignments = []
-        choresStore.members = []
-        financeStore.budget = null
-        financeStore.bills = []
-        financeStore.summary = null
-        dashboardStore.data = null
-        pollsStore.polls = []
+        resetHouseholdScopedStores()
       }
 
       joinHousehold(householdId)

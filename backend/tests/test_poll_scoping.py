@@ -210,3 +210,27 @@ def test_decide_creates_event_and_closes_poll(
     )
     assert resp3.status_code == 400
     assert resp3.json()["detail"]["code"] == "POLL_ALREADY_DECIDED"
+
+
+def test_decide_emits_full_event_payload(client, household_a, token_a, poll_a, calendar_a, _mock_socket_emit):
+    """Logik-Review L-03: Der Kalender fügt das `event_created`-Objekt direkt in seine Liste
+    ein; ohne Zeiten und Kalender-ID stürzt die Ansicht beim Rendern ab."""
+    headers = {"Authorization": f"Bearer {token_a}"}
+    options = client.get(f"/api/households/{household_a.id}/polls/{poll_a.id}", headers=headers).json()["options"]
+    resp = client.post(
+        f"/api/households/{household_a.id}/polls/{poll_a.id}/decide",
+        headers=headers,
+        json={"option_id": options[0]["id"], "event_title": "Treffen", "calendar_id": str(calendar_a.id)},
+    )
+    assert resp.status_code == 200
+
+    payloads = [c.args[2] for c in _mock_socket_emit.call_args_list if c.args[1] == "event_created"]
+    assert len(payloads) == 1
+    event = payloads[0]
+    assert event["id"] == resp.json()["decided_event_id"]
+    assert event["calendar_id"] == str(calendar_a.id)
+    assert event["all_day"] is False
+    assert event["participant_ids"] == []
+    # Zeiten wie bei POST /events: in Haushaltszeit mit Offset
+    assert event["starts_at"].endswith(("+01:00", "+02:00"))
+    assert event["ends_at"] is None

@@ -9,6 +9,7 @@ from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import Budget, HouseholdMember
+from app.services.household_time import household_today
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -115,7 +116,7 @@ def get_budget(
     db: Session = Depends(get_db),
 ):
     if month is None:
-        today = date.today()
+        today = household_today(db, household_id)
         month = date(today.year, today.month, 1)
     elif month.day != 1:
         raise HTTPException(

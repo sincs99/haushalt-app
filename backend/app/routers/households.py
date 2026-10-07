@@ -12,6 +12,7 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Budget, Calendar, Expense, Household, HouseholdMember, RecurringBill, User
+from app.services.household_time import household_today
 from app.services.invite_code import (
     generate_unique_invite_code,
     is_invite_code_expired,
@@ -314,7 +315,7 @@ def get_finance_summary(
     db: Session = Depends(get_db),
 ):
     # 1. Monat ermitteln
-    today = date.today()
+    today = household_today(db, household_id)
     if month is None:
         month = date(today.year, today.month, 1)
     elif month.day != 1:

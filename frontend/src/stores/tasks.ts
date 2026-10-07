@@ -58,5 +58,11 @@ export const useTasksStore = defineStore('tasks', () => {
     fetchTasks().catch((e) => console.error('Failed to refetch tasks:', e))
   }
 
-  return { items, members, loading, fetchTasks, fetchMembers, claimTask, completeChoreAssignment, invalidate }
+  /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
+  function reset() {
+    items.value = []
+    members.value = []
+  }
+
+  return { items, members, loading, fetchTasks, fetchMembers, claimTask, completeChoreAssignment, invalidate, reset }
 })

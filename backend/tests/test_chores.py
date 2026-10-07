@@ -972,3 +972,59 @@ class TestBackfillLimit:
         # Rotation: nur 3 Schritte weiter (nicht 9)
         db.refresh(chore)
         assert chore.next_rotation_index == 3
+
+
+# ---------------------------------------------------------------------------
+# Ex-Mitglied in der Rotation (Logik-Review L-05)
+# ---------------------------------------------------------------------------
+
+
+class TestRotationWithDepartedMember:
+    """Die UI schickt beim Speichern immer die gespeicherte Rotation mit. Ist darin
+    ein Mitglied, das den Haushalt inzwischen verlassen hat, muss das Ämtli trotzdem
+    bearbeitbar bleiben (der Scheduler überspringt Ex-Mitglieder ohnehin)."""
+
+    def _leave(self, client, household_a, token_a2):
+        resp = client.post(f"/api/households/{household_a.id}/leave", headers=_auth(token_a2))
+        assert resp.status_code == 204
+
+    def test_rename_chore_with_departed_member_in_rotation(
+        self, client, household_a, token_a, token_a2, user_a, user_a2
+    ):
+        chore = _create_chore_via_api(
+            client, household_a.id, token_a, _create_chore_body(user_a, user_a2)
+        ).json()
+        self._leave(client, household_a, token_a2)
+
+        resp = client.patch(
+            f"{_chores_url(household_a.id)}{chore['id']}",
+            headers=_auth(token_a),
+            json={
+                "title": "Boden saugen", "recurrence": "weekly", "weekday": 0, "day_of_month": None,
+                "rotation_order": chore["rotation_order"], "active": True,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["title"] == "Boden saugen"
+        assert resp.json()["rotation_order"] == chore["rotation_order"]
+
+    def test_departed_member_can_be_removed_but_not_added(
+        self, client, household_a, token_a, token_a2, user_a, user_a2
+    ):
+        chore = _create_chore_via_api(
+            client, household_a.id, token_a, _create_chore_body(user_a, user_a2)
+        ).json()
+        self._leave(client, household_a, token_a2)
+        url = f"{_chores_url(household_a.id)}{chore['id']}"
+
+        # Entfernen geht
+        resp = client.patch(url, headers=_auth(token_a), json={"rotation_order": [str(user_a.id)]})
+        assert resp.status_code == 200
+        assert resp.json()["rotation_order"] == [str(user_a.id)]
+
+        # Erneut hinzufügen geht nicht — nur aktuelle Mitglieder dürfen neu in die Rotation
+        resp = client.patch(
+            url, headers=_auth(token_a), json={"rotation_order": [str(user_a.id), str(user_a2.id)]}
+        )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "USERS_NOT_IN_HOUSEHOLD"

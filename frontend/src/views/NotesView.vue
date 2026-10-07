@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useNotesStore } from '../stores/notes'
+import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useAsyncAction } from '../composables/useAsyncAction'
 import { useLoader } from '../composables/useLoader'
@@ -24,6 +25,7 @@ const { run, isPending } = useAsyncAction()
 const socket = useSocket()
 
 const store = useNotesStore()
+const authStore = useAuthStore()
 const { loadError, reloading, reload } = useLoader(() => store.fetchNotes())
 
 const QUICK_ADD_ID = 'notes-quick-add'
@@ -164,6 +166,13 @@ function loadMembers() {
   // Mitglieder nur für Avatare/Namen – ein Fehler hier soll nicht zusätzlich melden
   store.fetchMembers().catch(() => {})
 }
+
+// Haushaltswechsel: Daten des neuen Haushalts laden (App.vue hat den Store geleert)
+watch(() => authStore.currentHouseholdId, (id) => {
+  if (!id) return
+  reload()
+  loadMembers()
+})
 
 // ── Lifecycle ──
 onMounted(() => {

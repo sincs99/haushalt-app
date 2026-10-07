@@ -36,6 +36,11 @@ from app.services.balance_service import compute_user_saldo
 from app.services.chore_scheduler import today_in_tz
 from app.services.event_times import to_household_time
 
+
+def _as_utc(dt: datetime) -> datetime:
+    """SQLite liefert naive Werte (gespeichert als UTC), PostgreSQL aware."""
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
 # ---------------------------------------------------------------------------
@@ -147,6 +152,13 @@ def get_dashboard(
     db: Session = Depends(get_db),
 ):
     now = datetime.now(timezone.utc)
+    household = db.get(Household, household_id)
+    tz = zoneinfo.ZoneInfo(household.timezone or "Europe/Zurich")
+    today = today_in_tz(household.timezone)
+    # Tagesgrenzen in Haushaltszeit, explizit nach UTC (Termine und Fälligkeiten sind
+    # in UTC gespeichert; SQLite würde den Offset beim Vergleich sonst verwerfen)
+    today_start = datetime.combine(today, dt_time.min, tzinfo=tz).astimezone(timezone.utc)
+    today_end = datetime.combine(today, dt_time.max, tzinfo=tz).astimezone(timezone.utc)
 
     # ------------------------------------------------------------------
     # 1. Todos
@@ -158,17 +170,21 @@ def get_dashboard(
 
     open_count = open_todos_query.count()
 
+    # Überfällig ist ein Todo erst, wenn sein Fälligkeitstag vorbei ist. Die UI
+    # speichert die Fälligkeit als Datum (00:00 UTC); ein Vergleich mit now() würde
+    # ein heute fälliges Todo ab 00:00 UTC als überfällig zählen — anders als die
+    # Aufgabenliste, die mit der lokalen Mitternacht vergleicht.
     overdue_count = (
         open_todos_query.filter(
             Todo.due_date.isnot(None),
-            Todo.due_date < now,
+            Todo.due_date < today_start,
         ).count()
     )
 
     # Top 3: Überfällige zuerst, dann due_date ASC NULLS LAST, dann created_at ASC
     is_overdue_expr = case(
         (
-            (Todo.due_date.isnot(None)) & (Todo.due_date < now),
+            (Todo.due_date.isnot(None)) & (Todo.due_date < today_start),
             1,
         ),
         else_=0,
@@ -189,7 +205,7 @@ def get_dashboard(
             id=t.id,
             title=t.title,
             due_date=t.due_date,
-            is_overdue=t.due_date is not None and t.due_date < now,
+            is_overdue=t.due_date is not None and _as_utc(t.due_date) < today_start,
             type="todo",
         )
         for t in top_todos
@@ -198,9 +214,6 @@ def get_dashboard(
     # ------------------------------------------------------------------
     # 2. Chores (fällig heute)
     # ------------------------------------------------------------------
-    household = db.get(Household, household_id)
-    today = today_in_tz(household.timezone)
-
     chore_assignments = (
         db.query(ChoreAssignment, Chore.title)
         .join(Chore, ChoreAssignment.chore_id == Chore.id)
@@ -247,12 +260,6 @@ def get_dashboard(
     # ------------------------------------------------------------------
     # 5. Events (heute)
     # ------------------------------------------------------------------
-    tz = zoneinfo.ZoneInfo(household.timezone or "Europe/Zurich")
-    # Explizit nach UTC: Termine sind in UTC gespeichert (SQLite würde den Offset
-    # beim Vergleich sonst ohne Umrechnung verwerfen)
-    today_start = datetime.combine(today, dt_time.min, tzinfo=tz).astimezone(timezone.utc)
-    today_end = datetime.combine(today, dt_time.max, tzinfo=tz).astimezone(timezone.utc)
-
     today_events = (
         db.query(Event)
         .filter(

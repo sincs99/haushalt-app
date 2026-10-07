@@ -82,6 +82,12 @@ function handleReconnect() {
   reload()
 }
 
+// Haushaltswechsel: Daten des neuen Haushalts laden (App.vue hat den Store geleert)
+watch(() => authStore.currentHouseholdId, (id) => {
+  if (!id) return
+  reload()
+})
+
 // ── Current Slot ──
 const currentSlot = computed<FeedingSlot>(() => {
   const hour = new Date().getHours()

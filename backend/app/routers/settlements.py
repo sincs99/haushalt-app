@@ -10,6 +10,7 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import Household, HouseholdMember, Settlement
 from app.services.household_checks import assert_settlement_parties
+from app.services.household_time import household_today
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -105,7 +106,7 @@ def create_settlement(
         to_user_id=body.to_user_id,
         amount_rappen=body.amount_rappen,
         currency=household.currency,
-        settled_date=body.settled_date or date.today(),
+        settled_date=body.settled_date or household_today(db, household),
         note=body.note,
         created_by_user_id=membership.user_id,  # aktueller User
     )

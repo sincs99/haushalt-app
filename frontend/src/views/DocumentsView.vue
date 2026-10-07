@@ -712,7 +712,7 @@ onUnmounted(() => {
         <!-- Bestätigung: Dokument löschen / Seite entfernen -->
         <div v-if="pendingConfirm && editingDoc" class="confirm-bar" role="alertdialog" aria-live="assertive">
           <p class="confirm-bar__text">
-            <PhWarningCircle :size="18" aria-hidden="true" />
+            <PhWarningCircle :size="20" aria-hidden="true" />
             {{ confirmText }}
           </p>
           <div class="dialog-actions">

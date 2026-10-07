@@ -378,11 +378,11 @@ onMounted(async () => {
 }
 
 .btn-danger-text {
-  padding: 8px 0;
+  padding: var(--space-2) 0;
   border: none;
   background: transparent;
   color: var(--color-danger);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm);
   font-family: var(--font-family);
   cursor: pointer;

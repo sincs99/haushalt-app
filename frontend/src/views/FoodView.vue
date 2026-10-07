@@ -540,7 +540,7 @@ async function doCreateMealPoll() {
       <!-- Keine offenen Polls → Erstellen-Button -->
       <BaseButton
         v-if="todaysMealPolls.length === 0"
-        variant="outline"
+        variant="secondary"
         @click="openCreateMealPoll"
       >
         {{ t('food.createPoll') }}

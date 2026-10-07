@@ -402,7 +402,7 @@ watch(() => authStore.currentHouseholdId, () => {
           <!-- Bestätigung: Token neu erzeugen / Tag löschen -->
           <div v-if="pendingConfirm" class="confirm-box" role="alertdialog" aria-live="assertive">
             <p class="confirm-box__text">
-              <PhWarningCircle :size="18" aria-hidden="true" />
+              <PhWarningCircle :size="20" aria-hidden="true" />
               {{ pendingConfirm === 'delete' ? $t('tags.deleteConfirm', { label: detail.label }) : $t('tags.regenerateConfirm') }}
             </p>
             <div class="admin-actions">

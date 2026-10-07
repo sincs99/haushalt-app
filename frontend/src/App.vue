@@ -415,7 +415,7 @@ onUnmounted(() => {
             :aria-expanded="moreOpen"
             @click="moreOpen = !moreOpen"
           >
-            <PhDotsThreeCircle :size="18" /> {{ $t('nav.more') }}
+            <PhDotsThreeCircle :size="16" /> {{ $t('nav.more') }}
           </button>
         </nav>
         <div class="top-bar__right">

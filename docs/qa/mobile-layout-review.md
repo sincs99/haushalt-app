@@ -95,9 +95,11 @@ Screenshots und `summary.tsv`/`findings.json` landen unter
 **Nachtrag (auf Wunsch des Betreibers in diesem Branch behoben):**
 überfällige Aufgaben (`/todos`) und die Ämtli-Löschbestätigung (`/chores`)
 hatten im Dark Mode hellen Text auf hartkodiertem `#FFF5F5` (praktisch
-unlesbar, Kontrast ≈ 1:1). Jetzt `var(--color-danger-light)` (Theme-Token,
-Light `#F2E8DC`, Dark `#3A2F23`); Titel 11,2:1 im Dark Mode. Screenshots
-`qa/mobile/before-12-overdue-dark/` → `qa/mobile/after-14-overdue-dark/`.
+unlesbar, Kontrast ≈ 1:1). Screenshots `qa/mobile/before-12-overdue-dark/` →
+`qa/mobile/after-14-overdue-dark/`. Parallel hat das UI-Design-Audit (jetzt in
+`master`) dieselben Stellen auf `--color-danger-soft` umgestellt; beim Merge
+wurde diese Lösung übernommen (Dark `#3A2424`, Danger-Text im Dark Mode
+`#E86E6E`).
 
 **Summe:** 20 gemeldete Punkte, davon 16 behoben, 2 offen (16, 17) und 2 ohne
 Handlungsbedarf (18, 19). Sprache: EN wurde in allen Zuständen bei 360 px
@@ -117,21 +119,21 @@ Texte, die nur auf Englisch überlaufen.
 
 ### `claude/ui-design-audit`
 
-- **Nicht definierte Tokens**: `--color-neutral-50…900`, `--surface`,
-  `--border`, `--shadow-sm`, `--green`, `--warn`, `--ink-secondary` (u. a.
-  `App.vue`, `ChoresView`, `HouseholdView`, `PetDetailView`,
-  `ExpenseFormDialog`, `BalanceSummary`, `ShoppingView`). Folge: Eingabefelder
-  im Ausgleichs-Dialog und im Neue-Liste-Dialog haben keinen sichtbaren Rand.
-- Kontrast von `--color-danger` (#DC2626): im Dark Mode nur 2,7–2,8:1 auf
-  Karten und auf dem Überfällig-Hintergrund („Überfällig“, Fälligkeitsdatum,
-  Fehlertexte). Im Light Mode auf `--color-danger-light` 4,0:1 (seit dem
-  Dark-Mode-Fix unten, vorher 4,5:1 auf `#FFF5F5`). Braucht eine
-  theme-abhängige Danger-Textfarbe.
+Stand nach dem Merge von `master` (UI-Design-Audit ist dort bereits
+eingeflossen):
+
+- ~~Nicht definierte Tokens (`--color-neutral-*`, `--surface`, `--border`,
+  `--shadow-sm` …), dadurch Eingabefelder ohne sichtbaren Rand~~ – in `master`
+  behoben; Prüfung im Merge: keine undefinierten Tokens mehr.
+- ~~`#FFF5F5` bei überfälligen Aufgaben / Kontrast von `--color-danger` im
+  Dark Mode~~ – in `master` behoben (`--color-danger-soft`, Dark-Werte).
 - Kalender: Pill-Tabs und Kalender-Chips sind gegenüber dem Seitentitel um
-  16 px eingerückt, Monatsraster ebenso (andere Seiten bündig).
+  16 px eingerückt, Monatsraster ebenso (andere Seiten bündig) – nach dem
+  Merge erneut zu prüfen.
 - Schweregrad-Auswahl im Gesundheitseditor (siehe Befund 17).
-- Schreibweise uneinheitlich: „Gießen“, „Alle fälligen gießen“ (ß) neben
-  Schweizer Schreibweise sonst („Schliessen“, „Gleichmässig“).
+- Schreibweise uneinheitlich: „Gießen“, „Alle fälligen gießen“ (ß, `de.json`
+  `plantsSub`, `addWaterTask`, `waterAll`) neben Schweizer Schreibweise sonst
+  („Schliessen“, „Gleichmässig“) – weiterhin offen.
 
 ### `claude/ux-feedback`
 

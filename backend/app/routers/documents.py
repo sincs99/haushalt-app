@@ -401,8 +401,13 @@ def update_document(
 ):
     doc = _get_document_or_404(db, document_id, household_id)
 
+    old_expiry = doc.expiry_date
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(doc, field, value)
+    if doc.expiry_date != old_expiry:
+        # Neues Ablaufdatum → Erinnerungen neu planen
+        doc.expiry_soon_notified_at = None
+        doc.expiry_notified_at = None
 
     db.commit()
     db.refresh(doc)

@@ -8,6 +8,7 @@ import { useToast } from '../composables/useToast'
 import { useAsyncAction } from '../composables/useAsyncAction'
 import { useLoader } from '../composables/useLoader'
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
+import { imageUploadErrorReason } from '../utils/imageUpload'
 import { formatDate } from '../utils/dates'
 import { formatBytes, getExpiryStatus, isPreviewable } from '../utils/documents'
 import { DOCUMENT_CATEGORIES, type DocumentCategory, type DocumentItem, type StoredFile } from '../types'
@@ -186,11 +187,13 @@ function onProgress(current: number, total: number) {
 
 /** Prüft ausgewählte Dateien clientseitig (Grösse, Seitenlimit); Backend prüft zusätzlich */
 function acceptFiles(selected: File[]): File[] {
-  const tooLarge = selected.filter((f) => f.size > MAX_FILE_SIZE)
+  // Fotos werden vor dem Upload verkleinert (utils/imageUpload) — nur PDFs hier begrenzen
+  const isTooLarge = (f: File) => !f.type.startsWith('image/') && f.size > MAX_FILE_SIZE
+  const tooLarge = selected.filter(isTooLarge)
   if (tooLarge.length > 0) {
     showToast(t('files.FILE_TOO_LARGE'), 'error')
   }
-  const valid = selected.filter((f) => f.size <= MAX_FILE_SIZE)
+  const valid = selected.filter((f) => !isTooLarge(f))
   const free = MAX_DOCUMENT_FILES - pageCount.value
   if (valid.length > free) {
     showToast(t('documents.tooManyPages', { max: MAX_DOCUMENT_FILES }), 'error')
@@ -221,7 +224,7 @@ async function handleFilesSelected(event: Event) {
     await store.addPages(editingDoc.value.id, selected, onProgress)
     notifySuccess(t('documents.pagesAdded', { n: selected.length }, selected.length))
   } catch (error) {
-    notifyError(t('documents.saveError'), error)
+    notifyError(imageUploadErrorReason(error))
   } finally {
     pagesBusy.value = false
     uploadProgress.value = null
@@ -245,7 +248,7 @@ async function moveStoredPage(fileId: string, direction: -1 | 1) {
   if (!doc) return
   await run(() => store.movePage(doc.id, fileId, direction), {
     key: `move-${fileId}`,
-    error: t('documents.saveError'),
+    error: (err) => imageUploadErrorReason(err),
   })
 }
 
@@ -262,7 +265,7 @@ async function removeStoredPage(file: StoredFile) {
   pagesBusy.value = true
   const ok = await run(() => store.removePage(doc.id, file.id), {
     key: 'removePage',
-    error: t('documents.saveError'),
+    error: (err) => imageUploadErrorReason(err),
   })
   pagesBusy.value = false
   if (ok) pendingConfirm.value = null
@@ -290,7 +293,7 @@ async function handleSave() {
     {
       key: 'save',
       success: doc ? t('documents.saveSuccess') : t('documents.uploadSuccess'),
-      error: t('documents.saveError'),
+      error: (err) => imageUploadErrorReason(err),
     },
   )
   formLoading.value = false
@@ -468,7 +471,7 @@ onUnmounted(() => {
 
     <!-- Suche -->
     <div class="search">
-      <PhMagnifyingGlass :size="18" class="search__icon" aria-hidden="true" />
+      <PhMagnifyingGlass :size="20" class="search__icon" aria-hidden="true" />
       <BaseInput
         v-model="searchInput"
         type="search"
@@ -554,7 +557,7 @@ onUnmounted(() => {
             :aria-label="$t('documents.preview')"
             @click.stop="openPreview(doc)"
           >
-            <PhEye :size="18" />
+            <PhEye :size="20" />
           </button>
           <!-- Mehrseitige Dokumente: Download pro Seite im Dialog/Vorschau -->
           <button
@@ -563,7 +566,7 @@ onUnmounted(() => {
             :aria-label="$t('documents.download')"
             @click.stop="handleDownload(doc.files[0])"
           >
-            <PhDownloadSimple :size="18" />
+            <PhDownloadSimple :size="20" />
           </button>
         </div>
       </li>
@@ -647,7 +650,7 @@ onUnmounted(() => {
               :disabled="pagesBusy || formLoading || pageCount >= MAX_DOCUMENT_FILES"
               @click="fileInputRef?.click()"
             >
-              <PhPlus :size="14" weight="bold" />
+              <PhPlus :size="16" weight="bold" />
               {{ pageCount > 0 ? $t('documents.addPages') : $t('documents.chooseFiles') }}
             </BaseButton>
             <BaseButton
@@ -656,7 +659,7 @@ onUnmounted(() => {
               :disabled="pagesBusy || formLoading || pageCount >= MAX_DOCUMENT_FILES"
               @click="cameraInputRef?.click()"
             >
-              <PhCamera :size="14" />
+              <PhCamera :size="16" />
               {{ $t('documents.takePhoto') }}
             </BaseButton>
           </div>
@@ -778,13 +781,13 @@ onUnmounted(() => {
         <div class="preview-footer">
           <div v-if="previewDoc && previewDoc.files.length > 1" class="preview-nav">
             <button class="icon-btn" :disabled="previewIndex === 0" :aria-label="$t('documents.previousPage')" @click="showPreviewPage(previewIndex - 1)">
-              <PhCaretLeft :size="18" />
+              <PhCaretLeft :size="20" />
             </button>
             <span class="preview-nav__label">
               {{ $t('documents.pageOf', { current: previewIndex + 1, total: previewDoc.files.length }) }}
             </span>
             <button class="icon-btn" :disabled="previewIndex >= previewDoc.files.length - 1" :aria-label="$t('documents.nextPage')" @click="showPreviewPage(previewIndex + 1)">
-              <PhCaretRight :size="18" />
+              <PhCaretRight :size="20" />
             </button>
           </div>
           <span v-else />
@@ -811,7 +814,7 @@ onUnmounted(() => {
   transform: translateY(-50%);
   color: var(--sub);
   pointer-events: none;
-  z-index: 1;
+  z-index: var(--z-raised);
 }
 
 .search :deep(.base-input__field) {
@@ -859,7 +862,7 @@ onUnmounted(() => {
   align-items: center;
   gap: var(--space-3);
   background: var(--card);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-item);
   padding: var(--space-3);
   box-shadow: var(--shadow-card);
   cursor: pointer;
@@ -894,9 +897,9 @@ onUnmounted(() => {
 
 .doc-card__title {
   font-weight: var(--font-weight-semibold);
-  font-size: var(--text-base);
+  font-size: var(--text-title-item);
   color: var(--ink);
-  line-height: 1.3;
+  line-height: var(--line-height-snug);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -922,25 +925,26 @@ onUnmounted(() => {
 .category-chip {
   background: var(--chip);
   border-radius: var(--radius-full);
-  padding: 2px 10px;
-  font-size: var(--text-xs);
+  padding: var(--badge-padding);
+  font-size: var(--text-badge);
   color: var(--sub);
 }
 
 .expiry-badge {
   border-radius: var(--radius-full);
-  padding: 2px 10px;
-  font-size: var(--text-xs);
+  padding: var(--badge-padding);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-semibold);
-  color: var(--card);
 }
 
 .expiry-badge--soon {
-  background: var(--color-warning);
+  background: var(--color-warning-soft);
+  color: var(--color-warning-strong);
 }
 
 .expiry-badge--expired {
   background: var(--color-danger);
+  color: var(--color-on-danger);
 }
 
 .icon-btn {

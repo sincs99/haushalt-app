@@ -9,8 +9,11 @@ export interface AsyncActionOptions<T> {
   success?: string | ((result: T) => string | undefined)
   /** Mit `undo` wird die Erfolgsmeldung zum Toast mit „Rückgängig“. */
   undo?: (result: T) => unknown | Promise<unknown>
-  /** Fehlermeldung, falls der API-Fehlercode keine eigene Übersetzung hat. */
-  error?: string
+  /**
+   * Fehlermeldung, falls der API-Fehlercode keine eigene Übersetzung hat.
+   * Als Funktion bestimmt sie den Text selbst aus dem Fehler (z. B. Upload-Gründe).
+   */
+  error?: string | ((err: unknown) => string)
   /** Ohne Netz gar nicht erst senden, sondern einen Hinweis zeigen. Standard: true */
   requireOnline?: boolean
 }
@@ -58,7 +61,8 @@ export function useAsyncAction() {
       }
       return true
     } catch (err) {
-      notifyError(options.error ?? t('errors.unknown'), err)
+      if (typeof options.error === 'function') notifyError(options.error(err))
+      else notifyError(options.error ?? t('errors.unknown'), err)
       return false
     } finally {
       const next = new Set(pending.value)

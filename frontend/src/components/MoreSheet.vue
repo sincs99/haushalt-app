@@ -116,8 +116,8 @@ watch(() => props.open, (isOpen) => {
 .more-sheet-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 200;
-  background: rgba(0, 0, 0, 0.4);
+  z-index: var(--z-sheet);
+  background: var(--color-scrim);
   display: flex;
   align-items: flex-end;
 }
@@ -140,8 +140,8 @@ watch(() => props.open, (isOpen) => {
 
 .more-sheet__title {
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-title-dialog);
   margin: 0 0 var(--space-3);
   color: var(--ink);
 }
@@ -197,7 +197,7 @@ watch(() => props.open, (isOpen) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -219,7 +219,7 @@ watch(() => props.open, (isOpen) => {
 /* --- Backdrop Transition --- */
 .backdrop-enter-active,
 .backdrop-leave-active {
-  transition: opacity 0.2s ease;
+  transition: opacity var(--transition-normal);
 }
 
 .backdrop-enter-from,
@@ -229,11 +229,11 @@ watch(() => props.open, (isOpen) => {
 
 /* --- Sheet Slide-Up Transition --- */
 .sheet-enter-active {
-  transition: transform 0.25s ease-out;
+  transition: transform var(--duration-slow) var(--ease-out);
 }
 
 .sheet-leave-active {
-  transition: transform 0.2s ease-in;
+  transition: transform var(--duration-normal) var(--ease-in);
 }
 
 .sheet-enter-from,

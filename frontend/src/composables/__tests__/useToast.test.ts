@@ -186,3 +186,12 @@ describe('useLoader', () => {
     expect(reloading.value).toBe(false)
   })
 })
+
+describe('useAsyncAction – Fehlertext als Funktion', () => {
+  it('übergibt den Fehler an die Funktion', async () => {
+    const { run } = useAsyncAction()
+    const { toasts } = useToast()
+    await run(() => Promise.reject(new Error('kaputt')), { error: (e) => `Grund: ${(e as Error).message}` })
+    expect(toasts.value.at(-1)).toMatchObject({ type: 'error', text: 'Grund: kaputt' })
+  })
+})

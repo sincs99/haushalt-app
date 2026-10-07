@@ -128,6 +128,10 @@ def read_upload_limited(file: BinaryIO, max_size: int = MAX_FILE_SIZE) -> bytes:
     return b"".join(chunks)
 
 
+class ImageTooManyPixels(ValueError):
+    """Bild überschreitet Image.MAX_IMAGE_PIXELS (z.B. 48-MP-Fotos)."""
+
+
 def _process_image(data: bytes, content_type: str) -> tuple[bytes, str, str]:
     """Validiert und verarbeitet Bild: verkleinern, Format konvertieren.
 
@@ -138,7 +142,7 @@ def _process_image(data: bytes, content_type: str) -> tuple[bytes, str, str]:
     # Pixel-Limit VOR dem Dekomprimieren prüfen — Pillow warnt zwischen 1x und
     # 2x MAX_IMAGE_PIXELS nur, statt abzubrechen
     if img.width * img.height > Image.MAX_IMAGE_PIXELS:
-        raise ValueError("Image exceeds pixel limit")
+        raise ImageTooManyPixels("Image exceeds pixel limit")
     img.load()  # Validiert den Bildinhalt vollständig
     img = ImageOps.exif_transpose(img)  # EXIF-Rotation anwenden
 
@@ -192,6 +196,15 @@ def validate_upload(raw_data: bytes, content_type: str) -> tuple[bytes, str, str
     if content_type in IMAGE_MIME_TYPES:
         try:
             return _process_image(raw_data, content_type)
+        except ImageTooManyPixels:
+            # Eigener Code: sonst sieht ein grosses Foto aus wie ein falsches Format
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=error_detail(
+                    ErrorCode.IMAGE_TOO_MANY_PIXELS,
+                    f"Image has too many pixels (max. {Image.MAX_IMAGE_PIXELS // 1_000_000} megapixels)",
+                ),
+            )
         except Exception:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

@@ -85,7 +85,7 @@ const errorId = computed(() => `${inputId.value}-error`)
 .base-input__field:focus {
   outline: none;
   border-color: var(--acc);
-  box-shadow: 0 0 0 3px var(--acc-soft);
+  box-shadow: var(--focus-ring);
 }
 
 .base-input__field--error {
@@ -93,7 +93,8 @@ const errorId = computed(() => `${inputId.value}-error`)
 }
 
 .base-input__field--error:focus {
-  box-shadow: 0 0 0 3px var(--acc-soft);
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 3px var(--color-danger-soft);
 }
 
 .base-input__field:disabled {

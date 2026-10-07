@@ -9,6 +9,7 @@ import { useToast } from '../composables/useToast'
 import { useAsyncAction } from '../composables/useAsyncAction'
 import { useLoader } from '../composables/useLoader'
 import { localDateString } from '../utils/dates'
+import { MAX_UPLOAD_BYTES, imageUploadErrorReason, prepareImageForUpload } from '../utils/imageUpload'
 import { parseWeightKgToGrams } from '../utils/money'
 import { useProtectedImage } from '../composables/useProtectedImage'
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
@@ -21,6 +22,7 @@ import type {
 import {
   PhArrowLeft, PhPencilSimple, PhSun, PhMoon, PhPlus, PhPill,
   PhCheck, PhTrash, PhCalendarCheck, PhCamera, PhCat,
+  PhUser,
 } from '@phosphor-icons/vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
@@ -58,8 +60,6 @@ const householdId = computed(() => authStore.currentHouseholdId)
 const photoFileId = computed(() => pet.value?.photo_file_id ?? null)
 const { objectUrl: photoObjectUrl } = useProtectedImage(householdId, photoFileId)
 
-const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 MB
-
 async function handlePhotoUpload(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -68,19 +68,19 @@ async function handlePhotoUpload(event: Event) {
   // Reset input damit dasselbe Bild erneut gewählt werden kann
   input.value = ''
 
-  // Client-seitige Dateigrössen-Prüfung
-  if (file.size > MAX_PHOTO_SIZE) {
-    showToast(t('files.FILE_TOO_LARGE'), 'error')
-    return
-  }
 
   photoUploading.value = true
   const oldFileId = pet.value?.photo_file_id ?? null
   let uploadedFile: StoredFile | null = null
 
   try {
-    // 1. Upload
-    uploadedFile = await filesRepo.uploadFile(householdId.value, file)
+    // 1. Verkleinern (Handy-Fotos, HEIC) und hochladen
+    const prepared = await prepareImageForUpload(file)
+    if (prepared.size > MAX_UPLOAD_BYTES) {
+      showToast(t('pets.photoUploadErrorReason', { reason: t('errors.FILE_TOO_LARGE') }), 'error')
+      return
+    }
+    uploadedFile = await filesRepo.uploadFile(householdId.value, prepared)
 
     // 2. Pet aktualisieren
     await petsStore.updatePet(petId.value, { photo_file_id: uploadedFile.id })
@@ -95,14 +95,14 @@ async function handlePhotoUpload(event: Event) {
     }
 
     showToast(t('pets.photoUploadSuccess'), 'success')
-  } catch (err) {
+  } catch (error) {
     // PATCH fehlgeschlagen → hochgeladene Datei aufräumen (best-effort)
     if (uploadedFile) {
       try {
         await filesRepo.deleteFile(householdId.value, uploadedFile.id)
       } catch { /* best effort */ }
     }
-    notifyError(t('pets.photoUploadError'), err)
+    notifyError(t('pets.photoUploadErrorReason', { reason: imageUploadErrorReason(error) }))
   } finally {
     photoUploading.value = false
   }
@@ -666,7 +666,7 @@ async function handleDeleteCareTask() {
       <input
         ref="fileInputRef"
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/*"
         class="pet-photo__input"
         @change="handlePhotoUpload"
       />
@@ -674,7 +674,7 @@ async function handleDeleteCareTask() {
       <!-- ═══ Header ═══ -->
       <div class="detail-header">
         <button class="back-btn" @click="router.back()" :aria-label="$t('common.back')">
-          <PhArrowLeft :size="22" weight="bold" />
+          <PhArrowLeft :size="24" weight="bold" />
         </button>
         <div class="detail-header__info">
           <span class="detail-header__emoji">{{ speciesEmoji(pet.species) }}</span>
@@ -750,7 +750,7 @@ async function handleDeleteCareTask() {
 
           <!-- Keine Medikamente -->
           <div v-if="petsStore.medications.length === 0" class="med-empty">
-            <PhPill :size="32" weight="light" class="med-empty__icon" />
+            <PhPill :size="32" weight="regular" class="med-empty__icon" />
             <p class="med-empty__title">{{ $t('pets.noMedications') }}</p>
             <p class="med-empty__hint">{{ $t('pets.noMedicationsHint') }}</p>
           </div>
@@ -822,7 +822,7 @@ async function handleDeleteCareTask() {
                     :key="log.id"
                     class="med-log__entry"
                   >
-                    <span class="med-log__user">👤 {{ getMemberName(log.given_by_user_id) }}</span>
+                    <span class="med-log__user"><PhUser :size="12" aria-hidden="true" /> {{ getMemberName(log.given_by_user_id) }}</span>
                     <span class="med-log__time">{{ formatLogDateTime(log.given_at) }}</span>
                   </li>
                 </ul>
@@ -921,7 +921,7 @@ async function handleDeleteCareTask() {
                 :loading="isPending(`complete-${task.id}`)"
                 @click="handleCompleteCareTask(task.id)"
               >
-                <PhCheck :size="18" weight="bold" />
+                <PhCheck :size="20" weight="bold" />
                 {{ $t('petCare.complete') }}
               </BaseButton>
               <button
@@ -929,7 +929,7 @@ async function handleDeleteCareTask() {
                 @click="confirmDeleteCareTask(task.id)"
                 :aria-label="$t('common.delete')"
               >
-                <PhTrash :size="18" />
+                <PhTrash :size="20" />
               </button>
             </div>
           </div>
@@ -1234,7 +1234,7 @@ async function handleDeleteCareTask() {
             class="health-editor__add"
             @click="addHealthEntry"
           >
-            <PhPlus :size="14" weight="bold" />
+            <PhPlus :size="16" weight="bold" />
             {{ $t('pets.addHealthEntry') }}
           </button>
         </div>
@@ -1268,7 +1268,7 @@ async function handleDeleteCareTask() {
 /* ── Card Title ── */
 .card-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   margin: 0 0 var(--space-3) 0;
   color: var(--ink);
@@ -1346,7 +1346,7 @@ async function handleDeleteCareTask() {
 .feeding-detail__info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   flex: 1;
   min-width: 0;
 }
@@ -1388,7 +1388,7 @@ async function handleDeleteCareTask() {
 
 .feed-toggle--fed {
   background: var(--ok);
-  color: #fff;
+  color: var(--color-on-success);
 }
 
 /* ── Medications ── */
@@ -1453,28 +1453,28 @@ async function handleDeleteCareTask() {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-top: 2px;
-  font-size: 10px;
+  margin-top: var(--space-0-5);
+  font-size: var(--text-2xs);
   color: var(--sub);
 }
 
 .med-check--given {
   background: var(--ok);
   border-color: var(--ok);
-  color: #fff;
+  color: var(--color-on-success);
 }
 
 .med-check--inactive {
   border-color: var(--sub);
   color: var(--sub);
-  font-size: 8px;
+  font-size: var(--text-2xs);
 }
 
 .med-item__info {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -1485,12 +1485,12 @@ async function handleDeleteCareTask() {
 }
 
 .med-item__badge {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-normal);
   color: var(--sub);
   background: var(--chip);
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
+  padding: var(--badge-padding);
+  border-radius: var(--radius-full);
   margin-left: var(--space-1);
 }
 
@@ -1509,7 +1509,7 @@ async function handleDeleteCareTask() {
 }
 
 .med-item__status--pending {
-  color: var(--warn, var(--sub));
+  color: var(--color-warning-strong);
 }
 
 .med-item__actions {
@@ -1563,7 +1563,7 @@ async function handleDeleteCareTask() {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .med-log__entry {
@@ -1574,6 +1574,9 @@ async function handleDeleteCareTask() {
 }
 
 .med-log__user {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font-weight: var(--font-weight-medium);
 }
 
@@ -1657,13 +1660,13 @@ async function handleDeleteCareTask() {
 }
 
 .health-dot--green { background: var(--ok); }
-.health-dot--yellow { background: var(--color-warning, #f59e0b); }
-.health-dot--red { background: var(--color-danger, #ef4444); }
+.health-dot--yellow { background: var(--color-warning); }
+.health-dot--red { background: var(--color-danger); }
 
 .health-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .health-entry-title {
@@ -1702,8 +1705,8 @@ async function handleDeleteCareTask() {
 .health-editor__severity {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding-top: 4px;
+  gap: var(--space-1);
+  padding-top: var(--space-1);
 }
 
 .severity-btn {
@@ -1726,14 +1729,14 @@ async function handleDeleteCareTask() {
 }
 
 .severity-btn--green { background: var(--ok); }
-.severity-btn--yellow { background: var(--color-warning, #f59e0b); }
-.severity-btn--red { background: var(--color-danger, #ef4444); }
+.severity-btn--yellow { background: var(--color-warning); }
+.severity-btn--red { background: var(--color-danger); }
 
 .health-editor__fields {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .health-editor__input {
@@ -1743,7 +1746,7 @@ async function handleDeleteCareTask() {
   border-radius: var(--radius-sm);
   font-size: var(--text-base); /* 16px — verhindert iOS-Zoom */
   color: var(--ink);
-  background: var(--surface);
+  background: var(--card);
 }
 
 .health-editor__input::placeholder {
@@ -1762,7 +1765,7 @@ async function handleDeleteCareTask() {
 }
 
 .health-editor__delete:hover {
-  color: var(--color-danger, #ef4444);
+  color: var(--color-danger);
   background: var(--chip);
 }
 
@@ -1847,7 +1850,7 @@ async function handleDeleteCareTask() {
 
 .section-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
   margin: 0;
@@ -1870,7 +1873,7 @@ async function handleDeleteCareTask() {
 }
 
 .icon-btn--danger:hover {
-  color: var(--color-danger, #ef4444);
+  color: var(--color-danger);
 }
 
 .empty-hint {
@@ -1897,7 +1900,7 @@ async function handleDeleteCareTask() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -1922,16 +1925,16 @@ async function handleDeleteCareTask() {
 }
 
 .care-task-card__due--overdue {
-  color: #C75B39;
+  color: var(--color-danger);
   font-weight: var(--font-weight-semibold);
 }
 
 .overdue-badge {
-  background: #C75B39;
-  color: white;
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 0.75rem;
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+  border-radius: var(--radius-full);
+  padding: var(--badge-padding);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-medium);
 }
 
@@ -1985,9 +1988,9 @@ async function handleDeleteCareTask() {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--color-primary, var(--acc));
-  color: #fff;
-  border: 2px solid var(--surface, #fff);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border: 2px solid var(--card);
   display: flex;
   align-items: center;
   justify-content: center;

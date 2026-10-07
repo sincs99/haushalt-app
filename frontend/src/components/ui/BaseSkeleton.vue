@@ -23,7 +23,7 @@ withDefaults(defineProps<{
 .base-skeleton {
   background: var(--chip);
   border-radius: var(--radius-sm);
-  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  animation: skeleton-pulse var(--duration-pulse) ease-in-out infinite;
 }
 
 .base-skeleton--rounded {

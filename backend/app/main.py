@@ -40,6 +40,7 @@ from app.routers import (
     tags,
     tasks,
     todos,
+    widget,
 )
 from app.services.file_cleanup import cleanup_loop
 from app.services.push_service import scheduler_loop
@@ -191,6 +192,8 @@ app.include_router(tags.router)
 app.include_router(tags.scan_router)
 app.include_router(ai.status_router)
 app.include_router(ai.router)
+app.include_router(widget.manage_router)
+app.include_router(widget.router)
 
 # Socket.IO unter /socket.io mounten
 app.mount("/socket.io", socket_app)

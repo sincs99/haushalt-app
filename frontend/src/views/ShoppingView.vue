@@ -299,18 +299,23 @@ onMounted(async () => {
   padding-bottom: var(--space-1);
 }
 
+/* Gleiche Tokens wie components/ui/BasePillTabs.vue */
 .pill-tab {
-  padding: 6px 16px;
+  padding: var(--chip-padding);
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   white-space: nowrap;
   cursor: pointer;
-  transition: all 150ms;
+  transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
   border: none;
   font-family: var(--font-family);
   background: var(--chip);
   color: var(--ink);
+}
+
+.pill-tab:active {
+  transform: scale(0.97);
 }
 
 .pill-tab--active {
@@ -322,9 +327,9 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 12px;
+  padding: var(--space-1-5) var(--space-3);
   background: var(--chip);
-  color: var(--ink-secondary);
+  color: var(--sub);
 }
 
 .pill-tab--add:active {
@@ -334,9 +339,9 @@ onMounted(async () => {
 
 .dialog-input {
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-btn);
   font-size: var(--text-base);
   font-family: var(--font-family);
   background: var(--card);
@@ -384,9 +389,9 @@ onMounted(async () => {
 }
 
 .btn-primary {
-  padding: 8px 20px;
+  padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-md);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm);
   border: none;
   cursor: pointer;
@@ -401,14 +406,14 @@ onMounted(async () => {
 }
 
 .btn-secondary {
-  padding: 8px 20px;
+  padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-md);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm);
   border: none;
   cursor: pointer;
   font-family: var(--font-family);
   background: transparent;
-  color: var(--ink-secondary);
+  color: var(--sub);
 }
 </style>

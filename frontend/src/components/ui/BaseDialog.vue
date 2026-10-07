@@ -106,7 +106,7 @@ function onKeydown(e: KeyboardEvent) {
           <div class="dialog-header" v-if="title">
             <h2 :id="titleId" class="dialog-title">{{ title }}</h2>
             <button type="button" class="dialog-close" @click="emit('close')" :aria-label="$t('common.close')">
-              <PhX :size="18" />
+              <PhX :size="20" />
             </button>
           </div>
           <div class="dialog-body">
@@ -125,12 +125,12 @@ function onKeydown(e: KeyboardEvent) {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-dialog);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--color-scrim);
   backdrop-filter: blur(2px);
 }
 
@@ -156,7 +156,7 @@ function onKeydown(e: KeyboardEvent) {
 .dialog-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-title-dialog);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }
@@ -166,10 +166,11 @@ function onKeydown(e: KeyboardEvent) {
   border: none;
   cursor: pointer;
   color: var(--sub);
-  padding: var(--space-1);
+  padding: var(--space-2);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .dialog-close:hover {
@@ -192,11 +193,11 @@ function onKeydown(e: KeyboardEvent) {
 /* Transitions */
 .dialog-enter-active,
 .dialog-leave-active {
-  transition: opacity 0.15s ease;
+  transition: opacity var(--transition-fast);
 }
 .dialog-enter-active .dialog-panel,
 .dialog-leave-active .dialog-panel {
-  transition: transform 0.15s ease;
+  transition: transform var(--transition-fast);
 }
 .dialog-enter-from,
 .dialog-leave-to {

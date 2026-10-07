@@ -35,7 +35,7 @@ const isTabActive = (to: string) => route.path === to
       class="bottom-nav__tab"
       :class="{ 'bottom-nav__tab--active': isTabActive(tab.to) }"
     >
-      <component :is="tab.icon" :size="22" :weight="isTabActive(tab.to) ? 'fill' : 'regular'" class="bottom-nav__icon" />
+      <component :is="tab.icon" :size="24" :weight="isTabActive(tab.to) ? 'fill' : 'regular'" class="bottom-nav__icon" />
       <span class="bottom-nav__label">{{ tab.label }}</span>
     </router-link>
 
@@ -45,7 +45,7 @@ const isTabActive = (to: string) => route.path === to
       @click="emit('toggle-more')"
     >
       <span class="bottom-nav__icon-wrap">
-        <PhDotsThreeCircle :size="22" :weight="moreActive ? 'fill' : 'regular'" class="bottom-nav__icon" />
+        <PhDotsThreeCircle :size="24" :weight="moreActive ? 'fill' : 'regular'" class="bottom-nav__icon" />
         <span
           class="bottom-nav__sync-dot sync-dot"
           :class="`sync-dot--${syncStatus}`"
@@ -64,7 +64,7 @@ const isTabActive = (to: string) => route.path === to
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 100;
+  z-index: var(--z-nav);
   display: flex;
   background: var(--nav);
   border-top: 1px solid var(--line);
@@ -83,7 +83,7 @@ const isTabActive = (to: string) => route.path === to
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: var(--space-0-5);
   padding: var(--space-2) 0;
   min-height: 56px;
   text-decoration: none;
@@ -101,7 +101,7 @@ const isTabActive = (to: string) => route.path === to
 }
 
 .bottom-nav__icon {
-  line-height: 1;
+  line-height: var(--line-height-none);
   width: 22px;
   height: 22px;
 }
@@ -135,7 +135,7 @@ const isTabActive = (to: string) => route.path === to
 
 .sync-dot--reconnecting {
   background-color: var(--color-warning);
-  animation: sync-pulse 1.5s ease-in-out infinite;
+  animation: sync-pulse var(--duration-pulse) ease-in-out infinite;
 }
 
 .sync-dot--offline {

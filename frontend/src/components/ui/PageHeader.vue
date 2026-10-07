@@ -28,7 +28,7 @@ defineProps<{
 .page-header__title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-xl);
+  font-size: var(--text-title-page);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }

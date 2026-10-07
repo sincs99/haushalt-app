@@ -21,6 +21,7 @@ import TheBottomNav from './components/TheBottomNav.vue'
 import MoreSheet from './components/MoreSheet.vue'
 import { useToast } from './composables/useToast'
 import { syncPushSubscription } from './services/pushService'
+import { BADGE_EVENTS, refreshAppBadge, refreshAppBadgeSoon, setAppBadgeHousehold } from './composables/useAppBadge'
 import { useI18n } from 'vue-i18n'
 import { PhShoppingBagOpen, PhListChecks, PhWallet, PhHouse, PhCalendarDots, PhWifiSlash, PhCheckCircle, PhWarningCircle, PhInfo, PhDotsThreeCircle } from '@phosphor-icons/vue'
 
@@ -155,10 +156,12 @@ watch(
     off('plant_care_logged', dashboardStore.invalidate)
     off('plant_created', dashboardStore.invalidate)
     off('plant_deleted', dashboardStore.invalidate)
+    BADGE_EVENTS.forEach((event) => off(event, refreshAppBadgeSoon))
 
-    // Wenn Token weg (Logout): Socket disconnecten
+    // Wenn Token weg (Logout): Socket disconnecten, Zahl am App-Icon entfernen
     if (!token) {
       disconnect()
+      setAppBadgeHousehold(null)
       return
     }
 
@@ -270,6 +273,10 @@ watch(
       on('plant_created', dashboardStore.invalidate)
       on('plant_deleted', dashboardStore.invalidate)
 
+      // Zahl am App-Icon aktuell halten
+      BADGE_EVENTS.forEach((event) => on(event, refreshAppBadgeSoon))
+      setAppBadgeHousehold(householdId)
+
       refreshAllStores()
     }
   },
@@ -301,6 +308,7 @@ function handleReconnect() {
   if (householdId) {
     joinHousehold(householdId)
     refreshAllStores()
+    void refreshAppBadge()
   }
 }
 
@@ -374,7 +382,8 @@ onUnmounted(() => {
   off('plant_care_logged', dashboardStore.invalidate)
   off('plant_created', dashboardStore.invalidate)
   off('plant_deleted', dashboardStore.invalidate)
- offReconnect(handleReconnect)
+  BADGE_EVENTS.forEach((event) => off(event, refreshAppBadgeSoon))
+  offReconnect(handleReconnect)
   setTokenRefresher(null)
   disconnect()
 })
@@ -396,22 +405,22 @@ onUnmounted(() => {
         <span class="top-bar__brand"><PhHouse :size="20" /> {{ $t('nav.brand') }}</span>
         <nav class="top-bar__nav">
           <router-link to="/dashboard" class="top-bar__link" active-class="top-bar__link--active">
-            <PhHouse :size="18" /> {{ $t('nav.start') }}
+            <PhHouse :size="16" /> {{ $t('nav.start') }}
           </router-link>
           <router-link to="/calendar" class="top-bar__link" active-class="top-bar__link--active">
-            <PhCalendarDots :size="18" /> {{ $t('nav.calendar') }}
+            <PhCalendarDots :size="16" /> {{ $t('nav.calendar') }}
           </router-link>
           <router-link to="/shopping" class="top-bar__link" active-class="top-bar__link--active">
-            <PhShoppingBagOpen :size="18" /> {{ $t('nav.shopping') }}
+            <PhShoppingBagOpen :size="16" /> {{ $t('nav.shopping') }}
           </router-link>
           <router-link to="/todos" class="top-bar__link" active-class="top-bar__link--active">
-            <PhListChecks :size="18" /> {{ $t('nav.todos') }}
+            <PhListChecks :size="16" /> {{ $t('nav.todos') }}
           </router-link>
           <router-link to="/expenses" class="top-bar__link" active-class="top-bar__link--active">
-            <PhWallet :size="18" /> {{ $t('nav.expenses') }}
+            <PhWallet :size="16" /> {{ $t('nav.expenses') }}
           </router-link>
           <router-link to="/household" class="top-bar__link" active-class="top-bar__link--active">
-            <PhHouse :size="18" /> {{ $t('nav.household') }}
+            <PhHouse :size="16" /> {{ $t('nav.household') }}
           </router-link>
           <!-- Weitere Module (Haustiere, Pflanzen, Essen, …) wie im Mobile-„Mehr“-Sheet -->
           <button
@@ -524,14 +533,14 @@ onUnmounted(() => {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 9999;
+  z-index: var(--z-banner);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   background-color: var(--color-warning);
-  color: var(--color-neutral-900);
+  color: var(--color-on-warning);
   text-align: center;
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm);
@@ -543,10 +552,10 @@ onUnmounted(() => {
 .top-bar {
   display: none;
   background: var(--color-surface);
-  border-bottom: 1px solid var(--color-neutral-200);
+  border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: var(--z-nav);
 }
 
 @media (min-width: 768px) {
@@ -592,7 +601,7 @@ onUnmounted(() => {
 }
 
 .top-bar__link:hover {
-  background: var(--color-neutral-100);
+  background: var(--chip);
   color: var(--color-text);
 }
 
@@ -619,7 +628,7 @@ onUnmounted(() => {
 .top-bar__logout {
   padding: var(--space-1) var(--space-3);
   background: none;
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--text-sm);
@@ -628,13 +637,13 @@ onUnmounted(() => {
 }
 
 .top-bar__logout:hover {
-  background: var(--color-neutral-100);
+  background: var(--chip);
 }
 
 .household-select {
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   background: var(--color-surface);
   font-size: var(--text-sm);
   cursor: pointer;
@@ -674,11 +683,11 @@ onUnmounted(() => {
 
 .sync-dot--reconnecting {
   background-color: var(--color-warning);
-  animation: sync-pulse 1.5s ease-in-out infinite;
+  animation: sync-pulse var(--duration-pulse) ease-in-out infinite;
 }
 
 .sync-dot--offline {
-  background-color: var(--color-neutral-400);
+  background-color: var(--sub);
 }
 
 @keyframes sync-pulse {
@@ -692,7 +701,7 @@ onUnmounted(() => {
   bottom: calc(64px + env(safe-area-inset-bottom, 0) + var(--space-3));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 10000;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -745,26 +754,26 @@ onUnmounted(() => {
 
 .toast--error {
   background-color: var(--color-danger);
-  color: var(--color-surface);
+  color: var(--color-on-danger);
 }
 
 .toast--success {
   background-color: var(--color-success);
-  color: var(--color-surface);
+  color: var(--color-on-success);
 }
 
 .toast--info {
   background-color: var(--color-primary);
-  color: var(--color-surface);
+  color: var(--color-on-primary);
 }
 
 /* ── Toast-Transitions ── */
 .toast-enter-active {
-  transition: all 0.3s ease-out;
+  transition: opacity var(--duration-slow) var(--ease-out), transform var(--duration-slow) var(--ease-out);
 }
 
 .toast-leave-active {
-  transition: all 0.25s ease-in;
+  transition: opacity var(--duration-normal) var(--ease-in), transform var(--duration-normal) var(--ease-in);
 }
 
 .toast-enter-from {
@@ -778,6 +787,6 @@ onUnmounted(() => {
 }
 
 .toast-move {
-  transition: transform 0.25s ease;
+  transition: transform var(--transition-normal);
 }
 </style>

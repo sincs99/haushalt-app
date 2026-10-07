@@ -188,42 +188,14 @@ async function handleRegister() {
   </div>
 </template>
 
+<style scoped src="../assets/auth.css"></style>
+
 <style scoped>
-.auth-page {
-  min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-4);
-  background: var(--color-bg);
-}
-
-.auth-card {
-  width: 100%;
-  max-width: 400px;
-}
-
-.auth-title {
-  margin: 0 0 var(--space-1);
-  font-family: var(--font-display);
-  font-size: var(--text-xl);
-  font-weight: var(--font-weight-semibold);
-  text-align: center;
-  color: var(--ink);
-}
-
-.auth-subtitle {
-  margin: 0 0 var(--space-6);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  text-align: center;
-}
-
 .register-tabs {
   display: flex;
   gap: var(--space-1);
   margin-bottom: var(--space-4);
-  background: var(--color-neutral-100);
+  background: var(--chip);
   border-radius: var(--radius-md);
   padding: var(--space-1);
 }
@@ -239,50 +211,12 @@ async function handleRegister() {
   color: var(--color-text-secondary);
   cursor: pointer;
   font-family: var(--font-family);
-  transition: all 0.15s ease;
+  transition: background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .register-tab--active {
   background: var(--color-surface);
   color: var(--color-text);
   box-shadow: var(--shadow-sm);
-}
-
-.auth-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.auth-error {
-  margin: 0;
-  padding: var(--space-3);
-  background: var(--color-danger-light);
-  border: 1px solid #FECACA;
-  border-radius: var(--radius-sm);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-  font-weight: var(--font-weight-medium);
-}
-
-.auth-submit {
-  width: 100%;
-}
-
-.auth-link {
-  text-align: center;
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  margin: 0;
-}
-
-.auth-link a {
-  color: var(--color-primary);
-  text-decoration: none;
-  font-weight: var(--font-weight-medium);
-}
-
-.auth-link a:hover {
-  text-decoration: underline;
 }
 </style>

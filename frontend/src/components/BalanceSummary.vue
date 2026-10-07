@@ -239,7 +239,7 @@ async function confirmSettlement() {
 .settlement-section {
   margin-top: var(--space-2);
   padding-top: var(--space-2);
-  border-top: 1px solid var(--color-neutral-200);
+  border-top: 1px solid var(--line);
 }
 
 .settlement-section__title {
@@ -263,7 +263,7 @@ async function confirmSettlement() {
   flex-shrink: 0;
   padding: var(--space-1) var(--space-2);
   background: var(--color-success);
-  color: var(--color-surface);
+  color: var(--color-on-success);
   border: none;
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
@@ -280,7 +280,7 @@ async function confirmSettlement() {
 .settled-message {
   margin: var(--space-2) 0 0 0;
   padding-top: var(--space-2);
-  border-top: 1px solid var(--color-neutral-200);
+  border-top: 1px solid var(--line);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
   color: var(--color-success);
@@ -311,7 +311,7 @@ async function confirmSettlement() {
 .dialog-select,
 .dialog-input {
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   font-size: var(--text-base);
   font-family: var(--font-family);

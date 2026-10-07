@@ -8,6 +8,7 @@ import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
 import { useAsyncAction } from '../composables/useAsyncAction'
 import { useLoader } from '../composables/useLoader'
+import { MAX_UPLOAD_BYTES, imageUploadErrorReason, prepareImageForUpload } from '../utils/imageUpload'
 import { useProtectedImage } from '../composables/useProtectedImage'
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
 import { formatDate } from '../utils/dates'
@@ -55,8 +56,6 @@ const householdId = computed(() => authStore.currentHouseholdId)
 const photoFileId = computed(() => plant.value?.photo_file_id ?? null)
 const { objectUrl: photoObjectUrl } = useProtectedImage(householdId, photoFileId)
 
-const MAX_PHOTO_SIZE = 10 * 1024 * 1024 // 10 MB
-
 async function handlePhotoUpload(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -65,18 +64,19 @@ async function handlePhotoUpload(event: Event) {
   // Reset input damit dasselbe Bild erneut gewählt werden kann
   input.value = ''
 
-  if (file.size > MAX_PHOTO_SIZE) {
-    showToast(t('files.FILE_TOO_LARGE'), 'error')
-    return
-  }
 
   photoUploading.value = true
   const oldFileId = plant.value?.photo_file_id ?? null
   let uploadedFile: StoredFile | null = null
 
   try {
-    // 1. Upload
-    uploadedFile = await filesRepo.uploadFile(householdId.value, file)
+    // 1. Verkleinern (Handy-Fotos, HEIC) und hochladen
+    const prepared = await prepareImageForUpload(file)
+    if (prepared.size > MAX_UPLOAD_BYTES) {
+      showToast(t('plants.photoUploadErrorReason', { reason: t('errors.FILE_TOO_LARGE') }), 'error')
+      return
+    }
+    uploadedFile = await filesRepo.uploadFile(householdId.value, prepared)
 
     // 2. Pflanze aktualisieren
     await plantsStore.updatePlant(plantId.value, { photo_file_id: uploadedFile.id })
@@ -91,14 +91,14 @@ async function handlePhotoUpload(event: Event) {
     }
 
     showToast(t('plants.photoUploadSuccess'), 'success')
-  } catch (err) {
+  } catch (error) {
     // PATCH fehlgeschlagen → hochgeladene Datei aufräumen (best-effort)
     if (uploadedFile) {
       try {
         await filesRepo.deleteFile(householdId.value, uploadedFile.id)
       } catch { /* best effort */ }
     }
-    notifyError(t('plants.photoUploadError'), err)
+    notifyError(t('plants.photoUploadErrorReason', { reason: imageUploadErrorReason(error) }))
   } finally {
     photoUploading.value = false
   }
@@ -366,7 +366,7 @@ async function handleDeleteTask() {
       <input
         ref="fileInputRef"
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/*"
         class="plant-photo__input"
         @change="handlePhotoUpload"
       />
@@ -374,7 +374,7 @@ async function handleDeleteTask() {
       <!-- ═══ Header ═══ -->
       <div class="detail-header">
         <button class="back-btn" :aria-label="$t('common.back')" @click="router.back()">
-          <PhArrowLeft :size="22" weight="bold" />
+          <PhArrowLeft :size="24" weight="bold" />
         </button>
         <div class="detail-header__info">
           <h1 class="detail-header__name">{{ plant.name }}</h1>
@@ -405,6 +405,7 @@ async function handleDeleteTask() {
       <!-- ═══ KI-Pflegehinweise (nur mit Server-Schlüssel + Haushalts-Opt-in) ═══ -->
       <AiPlantCareCard
         :key="plant.id"
+        class="ai-care"
         :plant-name="plant.species || plant.name"
         :location="plant.location ?? undefined"
         :apply-label="$t('ai.plant.applyToPlant')"
@@ -453,7 +454,7 @@ async function handleDeleteTask() {
                 :loading="isPending(`complete-${task.id}`)"
                 @click="handleComplete(task.id)"
               >
-                <PhCheck :size="18" weight="bold" />
+                <PhCheck :size="20" weight="bold" />
                 {{ $t('plants.complete') }}
               </BaseButton>
               <button
@@ -461,7 +462,7 @@ async function handleDeleteTask() {
                 :aria-label="$t('common.delete')"
                 @click="deletingTaskId = task.id"
               >
-                <PhTrash :size="18" />
+                <PhTrash :size="20" />
               </button>
             </div>
           </div>
@@ -689,9 +690,9 @@ async function handleDeleteTask() {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--color-primary, var(--acc));
-  color: #fff;
-  border: 2px solid var(--surface, #fff);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border: 2px solid var(--card);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -788,7 +789,12 @@ async function handleDeleteTask() {
 
 /* ── Sections ── */
 .section {
-  margin-bottom: var(--space-5, var(--space-4));
+  margin-bottom: var(--space-5);
+}
+
+/* KI-Block steht frei zwischen Notizen und Pflege: eigener Abstand wie eine Section */
+.ai-care {
+  margin-bottom: var(--space-6);
 }
 
 .section-header {
@@ -800,7 +806,7 @@ async function handleDeleteTask() {
 
 .section-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
   margin: 0 0 var(--space-3) 0;
@@ -832,7 +838,7 @@ async function handleDeleteTask() {
 .care-task-card__info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -865,11 +871,11 @@ async function handleDeleteTask() {
 
 .due-badge {
   margin-left: var(--space-1);
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-semibold);
-  padding: 2px var(--space-2);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
-  color: #fff;
+  color: var(--color-on-danger);
 }
 
 .due-badge--overdue {
@@ -877,7 +883,8 @@ async function handleDeleteTask() {
 }
 
 .due-badge--today {
-  background: var(--color-warning);
+  background: var(--color-warning-soft);
+  color: var(--color-warning-strong);
 }
 
 .icon-btn {
@@ -910,7 +917,7 @@ async function handleDeleteTask() {
 .log-row {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--line);
 }
@@ -973,6 +980,6 @@ async function handleDeleteTask() {
 
 .type-chip--active {
   background: var(--acc);
-  color: #fff;
+  color: var(--color-on-accent);
 }
 </style>

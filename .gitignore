@@ -75,3 +75,6 @@ backups/
 
 # Frontend coverage
 frontend/coverage/
+
+# UI-Screenshots (lokal, Playwright)
+frontend/qa/

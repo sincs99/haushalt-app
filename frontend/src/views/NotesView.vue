@@ -424,7 +424,7 @@ onUnmounted(() => {
   border-radius: var(--radius-full);
   border: none;
   background: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -454,7 +454,7 @@ onUnmounted(() => {
 
 .notes-section__header {
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm);
   color: var(--sub);
   text-transform: uppercase;
@@ -475,7 +475,7 @@ onUnmounted(() => {
 
 .note-card {
   background: var(--card);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-item);
   padding: var(--space-3);
   box-shadow: var(--shadow-card);
   cursor: pointer;
@@ -507,9 +507,9 @@ onUnmounted(() => {
 
 .note-card__title {
   font-weight: var(--font-weight-semibold);
-  font-size: var(--text-base);
+  font-size: var(--text-title-item);
   color: var(--ink);
-  line-height: 1.3;
+  line-height: var(--line-height-snug);
   min-width: 0;
   word-break: break-word;
 }
@@ -540,8 +540,8 @@ onUnmounted(() => {
   display: inline-block;
   background: var(--chip);
   border-radius: var(--radius-full);
-  padding: 2px 10px;
-  font-size: var(--text-xs);
+  padding: var(--badge-padding);
+  font-size: var(--text-badge);
   color: var(--sub);
   align-self: flex-start;
   margin-top: var(--space-1);

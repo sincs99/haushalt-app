@@ -99,6 +99,65 @@ function status(over: Partial<PlantCareStatus> = {}): PlantCareStatus {
 }
 
 describe('plants store', () => {
+  it.each(['switch', 'socket'])('care deletion rollback preserves a concurrent %s change', async change => {
+    const store = usePlantsStore()
+    repo.fetchCareTasks.mockResolvedValueOnce([task()])
+    await store.fetchCareTasks('p1')
+    store.careStatus = [status()]
+    const response = deferred<void>()
+    repo.removeCareTask.mockReturnValue(response.promise)
+    const removal = store.removeCareTask('p1', 't1')
+    if (change === 'switch') {
+      store.reset()
+      auth.currentHouseholdId = 'h2'
+      repo.fetchCareTasks.mockResolvedValueOnce([task({ id: 'b', plant_id: 'p2', household_id: 'h2' })])
+      await store.fetchCareTasks('p2')
+    } else store.handleCareTaskCreated(task({ id: 'new' }))
+    const rejected = expect(removal).rejects.toThrow('late failure')
+    response.reject(new Error('late failure'))
+    await rejected
+    expect(store.careTasks.map(item => item.id)).toEqual(change === 'switch' ? ['b'] : ['new', 't1'])
+    if (change === 'socket') expect(store.careStatus[0].tasks.map(item => item.task_id)).toEqual(['new', 't1'])
+  })
+
+  it('discards late plant lists after a household reset', async () => {
+    const response = deferred<Plant[]>()
+    repo.fetchAll.mockReturnValueOnce(response.promise)
+    const store = usePlantsStore()
+    const loading = store.fetchPlants()
+    store.reset()
+    auth.currentHouseholdId = 'h2'
+    response.resolve([plant()])
+    await loading
+    expect(store.plants).toEqual([])
+    expect(store.loading).toBe(false)
+  })
+
+  it('keeps a late care completion failure from restoring another plant over the current one', async () => {
+    const store = usePlantsStore()
+    repo.fetchCareTasks.mockResolvedValueOnce([task()])
+    await store.fetchCareTasks('p1')
+    const response = deferred<any>()
+    repo.completeCareTask.mockReturnValueOnce(response.promise)
+    const completing = store.completeCareTask('p1', 't1')
+    repo.fetchCareTasks.mockResolvedValueOnce([task({ id: 'other-task', plant_id: 'p2' })])
+    await store.fetchCareTasks('p2')
+    const rejected = expect(completing).rejects.toThrow('late failure')
+    response.reject(new Error('late failure'))
+    await rejected
+    expect(store.careTasks.map(task => task.id)).toEqual(['other-task'])
+  })
+
+  it('pins photo PATCH requests to their original household without altering the active one', async () => {
+    const store = usePlantsStore()
+    auth.currentHouseholdId = 'h2'
+    store.plants = [plant({ household_id: 'h2', name: 'Current' })]
+    repo.update.mockResolvedValueOnce(plant({ name: 'Original' }))
+    await store.updatePlant('p1', { photo_file_id: 'photo' }, 'h1')
+    expect(repo.update).toHaveBeenCalledWith('h1', 'p1', { photo_file_id: 'photo' })
+    expect(store.plants[0].name).toBe('Current')
+  })
+
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2024, 2, 10, 12, 0, 0)) // lokal 2024-03-10

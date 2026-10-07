@@ -14,10 +14,3 @@ declare module '*.vue' {
   const component: DefineComponent<object, object, any>
   export default component
 }
-
-// vue-i18n global type augmentation
-declare module 'vue' {
-  interface ComponentCustomProperties {
-    $t: (key: string, ...args: any[]) => string
-  }
-}

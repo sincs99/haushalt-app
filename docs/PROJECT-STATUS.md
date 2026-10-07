@@ -1,6 +1,6 @@
 # Haushalt-App — Aktueller Projektstand
 
-**Stand:** 2026-10-06 (Kopf, Kennzahlen, Feature-Status, Einschränkungen und Dependencies aktualisiert, H-01 Refresh-Token-Cookie, Pflanzen, Tags und KI-Assistent ergänzt; Abschnitte 3–5 und 10 am Code und an der Git-Historie abgeglichen — die OpenAPI-Doku des Backends unter `/docs` bleibt für Details maßgeblich)
+**Stand:** 2026-10-07 (Audit-Korrekturen, aktuelle lokale Test- und Locale-Zahlen, HEIC/HEIF und Build-Prüfung nachgeführt; die OpenAPI-Doku des Backends unter `/docs` bleibt für API-Details maßgeblich)
 **Autor:** Tech Lead (automatisch generiert)
 
 ---
@@ -16,7 +16,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzp
 | Realtime | Socket.IO (python-socketio) |
 | Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4, PWA (`vite-plugin-pwa`) |
 | Auth | JWT-Access-Token (15 Min., nur im Speicher) + rotierender Refresh-Token als HttpOnly-Cookie (`SameSite=Strict`, CSRF-Header) mit Reuse-Erkennung, bcrypt-Hashing |
-| i18n | vue-i18n, 964 Keys (DE + EN), Build-gesicherter Key-Sync |
+| i18n | vue-i18n, 1173 Keys (DE + EN), Build-gesicherter Key-Sync |
 | KI (optional) | Anthropic-API (`claude-opus-5-5`) über das offizielle `anthropic`-SDK, Structured Outputs; ohne `ANTHROPIC_API_KEY` ausgeblendet |
 | Qualität / CI | GitHub Actions: Backend (ruff, pytest mit Coverage), Frontend (Locale-Check, Typecheck, Vitest mit Coverage), Dependency-Audit (pip-audit, npm audit) |
 | Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager), Backup-Skripte für Datenbank und Uploads |
@@ -47,7 +47,9 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | Branch `claude/ai-assistant` | KI-Assistent Etappe 1: Rezeptvorschlag und Pflanzenpflege, Opt-in pro Haushalt, Tageslimit; Rezepte erhalten Zubereitungsschritte und Tags (Epic 33, `docs/ai-assistant.md`) |
 | Branch `claude/logic-review` | Logik-Review der Geschäftsregeln (`docs/qa/logic-review.md`): Kalenderdaten der Finanzen in Haushaltszeit (`services/household_time.py`), gebuchte Rechnungen immer `even`, `decide` sendet den vollständigen Termin, Dashboard zählt heute fällige Todos nicht als überfällig, Ämtli mit Ex-Mitglied in der Rotation bleibt bearbeitbar, Tierpflege-Erinnerung nach Verschieben der Fälligkeit, Haushaltswechsel leert alle Stores, Rolle nach Auto-Beförderung wird sofort geladen; 10 offene Produktentscheidungen |
 
-**Kennzahlen (nach #28, inkl. Branch `claude/plants-ai-tags-integration`):** Backend 792 Tests in 58 Dateien, Coverage 94 %; Frontend 363 Tests in 26 Dateien, Coverage 73,7 % (Statements), Schwelle 66 %; 993 i18n-Schlüssel; 37 Alembic-Migrationen (einziger Kopf `y1z2a3b4c5d6`).
+**Kennzahlen (lokaler Reparaturstand vom 7. Oktober 2026):** Backend 837 Tests in 62 Dateien, Coverage 94 %; Frontend 473 Tests in 33 Dateien, Coverage 77,49 % (Statements), 72,14 % (Branches), Statement-Schwelle 66 %; 1173 i18n-Schlüssel; 37 Alembic-Migrationen (einziger Kopf `y1z2a3b4c5d6`).
+
+Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fixes.md). App-Typprüfung und Produktionsbuild bestehen; Chromium und WebKit wurden lokal geprüft. Produktion und das echte iPhone bleiben ungeprüft. Für den HEIC/HEIF-Serverfallback sind passende Frontend- und Backend-Builds mit `pillow-heif==1.8.0` erforderlich; keine neue Datenbankmigration.
 
 
 **Neue Bausteine (Auswahl):** Router `documents`, `files`, `push`, `plants`, `tags`, `ai`; Services `client_ids`, `event_times`, `file_cleanup`, `push_service`; Ansichten `DocumentsView`, `PetsView`/`PetDetailView`, `PlantsView`/`PlantDetailView`, `FoodView`, `NotesView`, `CalendarView`, `DashboardView`; Repositories und Stores für Dokumente, Haustiere, Pflanzen, Essen, Notizen, Kalender und Finanzen.
@@ -135,7 +137,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 
 ### Backend-Tests (`backend/tests/`)
 
-51 Testdateien, 576 Tests (SQLite in-memory, Coverage 91 %). Die Mehrmandanten-Dateien (`*_scoping`) prüfen jeweils, dass Zugriffe auf fremde Haushalte mit 403 abgewiesen werden.
+62 Testdateien, 837 Tests (SQLite in-memory, Coverage 94 %). Die Mehrmandanten-Dateien (`*_scoping`) prüfen jeweils, dass Zugriffe auf fremde Haushalte mit 403 abgewiesen werden.
 
 | Datei | Abdeckung | Status |
 |---|---|---|
@@ -226,8 +228,8 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | [`services/pushService.ts`](../frontend/src/services/pushService.ts) | Web-Push-Abo im Browser verwalten und mit dem Backend synchronisieren | ✅ Fertig |
 | [`public/push-sw.js`](../frontend/public/push-sw.js) | Service-Worker-Teil für Push-Benachrichtigungen | ✅ Fertig |
 | **i18n** | | |
-| [`locales/de.json`](../frontend/src/locales/de.json) | Deutsche Übersetzungen (700 Keys) | ✅ Fertig |
-| [`locales/en.json`](../frontend/src/locales/en.json) | Englische Übersetzungen (700 Keys) | ✅ Fertig |
+| [`locales/de.json`](../frontend/src/locales/de.json) | Deutsche Übersetzungen (1173 Keys) | ✅ Fertig |
+| [`locales/en.json`](../frontend/src/locales/en.json) | Englische Übersetzungen (1173 Keys) | ✅ Fertig |
 | [`scripts/check-locales.js`](../frontend/scripts/check-locales.js) | Build-Script: prüft Key-Sync zwischen DE und EN | ✅ Fertig |
 | **Design-System** | | |
 | [`assets/theme.css`](../frontend/src/assets/theme.css) | Design-Token-System: Farben (Light/Dark), Typografie (Nunito/Quicksand), Spacing, Radii, Schatten, Transitions, Avatar-Palette, Global Reset | ✅ Fertig |
@@ -291,6 +293,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | [`composables/useToast.ts`](../frontend/src/composables/useToast.ts) | App-weites Toast-System | ✅ Fertig |
 | [`composables/useTheme.ts`](../frontend/src/composables/useTheme.ts) | Theme-Einstellung (hell/dunkel/System), gespeichert in localStorage | ✅ Fertig |
 | [`composables/useProtectedImage.ts`](../frontend/src/composables/useProtectedImage.ts) | JWT-geschützte Bilder als Blob-URL laden | ✅ Fertig |
+| [`composables/usePhotoUpload.ts`](../frontend/src/composables/usePhotoUpload.ts) | Foto-Upload und Zuordnung an den ursprünglichen Haushalt und das Tier/die Pflanze binden; nicht zugeordnete Dateien aufräumen | ✅ Fertig |
 | **Views** | | |
 | [`views/LoginView.vue`](../frontend/src/views/LoginView.vue) | Login-Formular | ✅ Fertig |
 | [`views/RegisterView.vue`](../frontend/src/views/RegisterView.vue) | Registrierung: Tab-Umschalter (Haushalt gründen / Mit Code beitreten), `?code=`-Query-Param | ✅ Fertig |
@@ -310,6 +313,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | **Komponenten** | | |
 | [`components/TheBottomNav.vue`](../frontend/src/components/TheBottomNav.vue) | Mobile Bottom-Nav: Start, Kalender, Aufgaben, Einkauf, „Mehr“ | ✅ Fertig |
 | [`components/MoreSheet.vue`](../frontend/src/components/MoreSheet.vue) | „Mehr“-Sheet: Finanzen, Katzen, Essen, Notizen, Dokumente, Einstellungen | ✅ Fertig |
+| [`components/ConnectionStatus.vue`](../frontend/src/components/ConnectionStatus.vue) | Verbindungsstatus mit Text und Erklärung in „Mehr“ und Einstellungen; Offline hat Vorrang | ✅ Fertig |
 | [`components/ShoppingList.vue`](../frontend/src/components/ShoppingList.vue) | Einkaufsliste: Geschäfts-Chips, Gruppierung, Quick-Add, Kebab-Menü (Umbenennen/Auflösen) | ✅ Fertig |
 | [`components/ShoppingItemEditSheet.vue`](../frontend/src/components/ShoppingItemEditSheet.vue) | Eintrag bearbeiten: Name, Menge, Geschäft, Abteilung | ✅ Fertig |
 | [`components/TodoList.vue`](../frontend/src/components/TodoList.vue) | Aufgabenliste: Quick-Add, Detail-Edit, Zuweisung, Fälligkeit, Erinnerungen | ✅ Fertig |
@@ -324,7 +328,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 
 ### Frontend-Tests (`frontend/src/**/__tests__/`)
 
-13 Testdateien, 156 Tests (Vitest, Umgebung `node`). Die Coverage (31,8 % Statements) misst nur `utils/`, `stores/` und `repositories/`. Views und Komponenten sind nicht getestet.
+33 Testdateien, 473 Tests (Vitest, Umgebung `node`). Die Coverage (77,49 % Statements, 72,14 % Branches) misst nur `utils/`, `stores/` und `repositories/`. Views und Komponenten sind nicht Teil dieser Coverage; lokale Browserprüfungen stehen im [aktuellen Audit](qa/current-audit-fixes.md).
 
 | Datei | Abdeckung | Status |
 |---|---|---|
@@ -476,7 +480,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | PATCH | `/api/households/{id}/notes/{note_id}` | ✅ | Notiz aktualisieren |
 | DELETE | `/api/households/{id}/notes/{note_id}` | ✅ | Notiz löschen |
 | **Dateien** | | | |
-| POST | `/api/households/{id}/files/` | ✅ | Datei hochladen (JPEG/PNG/WebP/PDF, max. 10 MB; Bilder auf 1600 px verkleinert; Speicher-Limit pro Haushalt) |
+| POST | `/api/households/{id}/files/` | ✅ | Datei hochladen (JPEG/PNG/WebP/HEIC/HEIF/PDF, max. 10 MB; Bilder vor dem Decode auf 25 MP geprüft und auf 1600 px verkleinert; Speicher-Limit pro Haushalt) |
 | GET | `/api/households/{id}/files/{file_id}` | ✅ | Datei herunterladen (JWT-geschützt) |
 | DELETE | `/api/households/{id}/files/{file_id}` | ✅ | Datei löschen (204; `FILE_IN_USE`, wenn noch referenziert) |
 | **Dokumente** | | | |
@@ -821,7 +825,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Expenses-Modul (CRUD + Split + Saldo) | ✅ | ✅ ExpensesView, ExpenseList, BalanceSummary, ExpenseFormDialog | ✅ Socket |
 | Settlements-Modul | ✅ | ✅ | ✅ Socket |
 | Chores-Modul (Putzplan + Rotation) | ✅ | ✅ | ✅ Socket |
-| i18n (DE + EN, 993 Keys, Locale-Check) | ✅ | ✅ | — |
+| i18n (DE + EN, 1173 Keys, Locale-Check) | ✅ | ✅ | — |
 | Error-Code-System (maschinenlesbar) | ✅ | ✅ i18n-Mapping | — |
 | Offline-Banner | — | ✅ | — |
 | Toast-System | — | ✅ | — |
@@ -834,7 +838,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Haushalt verlassen / Mitglied entfernen | ✅ POST /leave, DELETE /members/{uid} | ✅ HouseholdView | ✅ Socket |
 | Rollen-System (admin/member) | ✅ verify_household_admin | ✅ UI-Anzeige | — |
 | Währung pro Haushalt | ✅ Household.currency | ✅ /me Response | — |
-| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 58 Testdateien, 792 Tests (Coverage 94 %) | — | — |
+| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 62 Testdateien, 837 Tests (Coverage 94 %) | — | — |
 | Dashboard | ✅ | ✅ DashboardView | — |
 | Einkauf 2.0 (Multi-Listen, Stores) | ✅ | ✅ ShoppingView | ✅ Socket |
 | Aufgaben 2.0 (Unified Tasks) | ✅ | ✅ TodosView | ✅ Socket |
@@ -851,7 +855,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Web Push (Todo-Erinnerungen, Tier-/Pflanzenpflege, Putzplan „Du bist dran“, Dokument-Ablauf) | ✅ | ✅ | — |
 | Zahl am App-Icon (Badging API; iOS ab 16.4 als installierte App mit erlaubten Benachrichtigungen) | ✅ | ✅ | Socket |
 | Homescreen-Widget über Scriptable (iPhone) mit Nur-Lese-Schlüssel | ✅ | ✅ | — |
-| Foto-Upload verkleinert im Browser (1600 px, HEIC → JPEG) und nennt den Fehlergrund | ✅ | ✅ | — |
+| Foto-Upload verkleinert im Browser (1600 px, HEIC → JPEG), nutzt bei fehlendem HEIC-Decoder den Serverfallback und nennt den Fehlergrund | ✅ | ✅ | — |
 | Dokument-Ablage (Verträge, Rechnungen, Garantien; mehrseitig, Vorschau, Speicher-Limit) | ✅ | ✅ DocumentsView | ✅ Socket |
 | Auth-Härtung (Rate-Limits, Refresh-Rotation, Security-Header/CSP) | ✅ | — | — |
 | Refresh-Token als HttpOnly-Cookie (H-01: `casa_rt`, CSRF-Header `X-Requested-With: casa`, Migration alter `localStorage`-Tokens) | ✅ | ✅ Auth-Store, API-Client, Cross-Tab über Sitzungs-Marker | — |
@@ -871,7 +875,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Dokumente verknüpfen | Mittel | 🔵 Niedrig | Verknüpfung mit Ausgaben/Terminen (Datenmodell ist vorbereitet, eigene Link-Tabelle) |
 | Einladungscode nur für Admins sichtbar? | Klein | 🔵 Niedrig | Offene Produktfrage zu H-12: Der Code ist weiterhin für alle Mitglieder sichtbar (Ablauf und Rotation sind umgesetzt) |
 | „Überall abmelden“ | Klein | 🔵 Niedrig | Es gibt keinen Endpunkt, der alle Refresh-Tokens eines Users revoked; das passiert heute nur über die Reuse-Erkennung. Nützlich zusammen mit Passwort-Ändern |
-| Frontend-Testabdeckung | Mittel | 🟡 Mittel | 70,3 % Statements (Schwelle 66 % in `vitest.config.ts`, CI bricht darunter ab); Komponenten, Stores `polls`/`dashboard` und die Repositories sind ungetestet; Schwelle bei Verbesserung nachziehen |
+| Frontend-Testabdeckung | Mittel | 🟡 Mittel | 77,49 % Statements, 72,14 % Branches (Statement-Schwelle 66 % in `vitest.config.ts`, CI bricht darunter ab); Komponenten, Stores `polls`/`dashboard` und die Repositories sind ungetestet; Schwelle bei Verbesserung nachziehen |
 | FR/IT-Sprachen | Klein | 🔵 Niedrig | Locale-Erweiterung |
 | Chores-Statistiken | Klein | 🔵 Niedrig | „Wer hat wie oft geputzt“ |
 | KI-Assistent: globales Tageslimit oder Limit pro Nutzer | Klein | 🟡 Mittel | Das Tageslimit gilt pro Haushalt; über weitere Haushalte lässt es sich vervielfachen (A-01 in `docs/security/ai-assistant-review.md`) |
@@ -897,7 +901,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | KI-Assistent ohne echten API-Test | Entwickelt und getestet mit gemocktem Client und einem lokalen Fake des Messages-Endpunkts; es gab keinen Aufruf gegen die echte API (kein Schlüssel in der Entwicklungsumgebung). Token-Zahlen in `docs/ai-assistant.md` sind Schätzungen | Prüfen |
 | KI-Tageslimit nach UTC-Tag | `ai_usage` zählt pro UTC-Tag, nicht nach der Zeitzone des Haushalts (Wechsel um 01:00/02:00 Uhr Schweizer Zeit) | Gering |
 | Lange KI-Anfragen hinter Nginx Proxy Manager | Rezeptvorschläge können über 60 s dauern; `nginx.conf` erlaubt 200 s, NPM muss ggf. angepasst werden | Prüfen |
-| Major-Updates ohne Gerätetest | Pillow 12 und cryptography 50 wurden über Tests und Stichproben geprüft, nicht mit einer echten Web-Push-Zustellung auf einem Gerät und nicht mit einem Upload über den laufenden Browser | Prüfen |
+| Major-Updates ohne Gerätetest | Pillow 12, pillow-heif und cryptography 50 wurden über Tests und Stichproben geprüft; PNG/HEIC-Uploads auch lokal in Chromium und WebKit. Kein Test auf einem echten iPhone oder einer echten Web-Push-Zustellung auf einem Gerät | Prüfen |
 | `deleteItem()` Rollback-Position | Bei paralleler Socket-Mutation kann die Position abweichen (kosmetisch) | Gering |
 | UI-Audit: offene Punkte | Eigene Dialoge (`ExpenseFormDialog`, `BalanceSummary`) statt `BaseDialog`, nachgebaute Pill-Tabs in `ShoppingView`, Löschen als Text-Link in Pflanzen-/Tierkarten, Sync-Punkt „verbindet neu“ unter 3 : 1 — siehe `docs/design/ui-audit.md` | Gering |
 
@@ -917,6 +921,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | pydantic | 2.13.4 | Validierung |
 | PyJWT | 2.15.0 | JWT |
 | Pillow | 12.3.0 | Bildverarbeitung (Uploads) |
+| pillow-heif | 1.8.0 | HEIC/HEIF-Decoder als Pillow-Plugin für den Upload-Serverfallback |
 | pywebpush | 2.5.0 | Web Push |
 | anthropic | 1.11.0 | KI-Assistent (offizielles SDK, basiert auf `httpx2`) |
 | pytest, httpx, pytest-cov, ruff | (nicht in `requirements.txt`) | Tests und Lint; werden in der CI separat installiert |

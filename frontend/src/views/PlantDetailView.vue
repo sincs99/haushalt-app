@@ -8,12 +8,12 @@ import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
 import { useAsyncAction } from '../composables/useAsyncAction'
 import { useLoader } from '../composables/useLoader'
-import { MAX_UPLOAD_BYTES, imageUploadErrorReason, prepareImageForUpload } from '../utils/imageUpload'
+import { imageUploadErrorReason } from '../utils/imageUpload'
 import { useProtectedImage } from '../composables/useProtectedImage'
-import { createOnlineFilesRepository } from '../repositories/filesRepository'
+import { usePhotoUpload } from '../composables/usePhotoUpload'
 import { formatDate } from '../utils/dates'
 import { careTaskName, daysUntil, dueText } from '../utils/plantCare'
-import type { AiPlantCareAdvice, Plant, PlantCareLog, PlantCareTask, PlantCareType, StoredFile } from '../types'
+import type { AiPlantCareAdvice, Plant, PlantCareLog, PlantCareTask, PlantCareType } from '../types'
 import {
   PhArrowLeft, PhPencilSimple, PhPlus, PhCheck, PhTrash, PhCamera, PhPlant,
 } from '@phosphor-icons/vue'
@@ -48,59 +48,29 @@ const sortedCareTasks = computed(() =>
 
 // ── Foto ──
 
-const filesRepo = createOnlineFilesRepository()
 const fileInputRef = ref<HTMLInputElement | null>(null)
-const photoUploading = ref(false)
+
 
 const householdId = computed(() => authStore.currentHouseholdId)
 const photoFileId = computed(() => plant.value?.photo_file_id ?? null)
 const { objectUrl: photoObjectUrl } = useProtectedImage(householdId, photoFileId)
 
+const { uploading: photoUploading, upload: uploadPhoto } = usePhotoUpload({
+  householdId,
+  entityId: plantId,
+  fileId: photoFileId,
+  update: (hid, id, fileId) => plantsStore.updatePlant(id, { photo_file_id: fileId }, hid),
+})
+
 async function handlePhotoUpload(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
-  if (!file || !householdId.value) return
-
-  // Reset input damit dasselbe Bild erneut gewählt werden kann
   input.value = ''
-
-
-  photoUploading.value = true
-  const oldFileId = plant.value?.photo_file_id ?? null
-  let uploadedFile: StoredFile | null = null
-
+  if (!file) return
   try {
-    // 1. Verkleinern (Handy-Fotos, HEIC) und hochladen
-    const prepared = await prepareImageForUpload(file)
-    if (prepared.size > MAX_UPLOAD_BYTES) {
-      showToast(t('plants.photoUploadErrorReason', { reason: t('errors.FILE_TOO_LARGE') }), 'error')
-      return
-    }
-    uploadedFile = await filesRepo.uploadFile(householdId.value, prepared)
-
-    // 2. Pflanze aktualisieren
-    await plantsStore.updatePlant(plantId.value, { photo_file_id: uploadedFile.id })
-
-    // 3. Altes Foto aufräumen (best-effort)
-    if (oldFileId) {
-      try {
-        await filesRepo.deleteFile(householdId.value, oldFileId)
-      } catch {
-        // Ignorieren – kann FILE_IN_USE sein
-      }
-    }
-
-    showToast(t('plants.photoUploadSuccess'), 'success')
+    if (await uploadPhoto(file)) showToast(t('plants.photoUploadSuccess'), 'success')
   } catch (error) {
-    // PATCH fehlgeschlagen → hochgeladene Datei aufräumen (best-effort)
-    if (uploadedFile) {
-      try {
-        await filesRepo.deleteFile(householdId.value, uploadedFile.id)
-      } catch { /* best effort */ }
-    }
     notifyError(t('plants.photoUploadErrorReason', { reason: imageUploadErrorReason(error) }))
-  } finally {
-    photoUploading.value = false
   }
 }
 
@@ -137,7 +107,7 @@ onUnmounted(() => {
 })
 
 // Navigation zwischen zwei Pflanzen (z.B. über Push-Link) lädt neu
-watch(plantId, () => {
+watch([plantId, householdId], () => {
   reload()
 })
 

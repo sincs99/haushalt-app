@@ -287,9 +287,10 @@ async function handleSave() {
   const doc = editingDoc.value
   formLoading.value = true
   const ok = await run(
-    () => doc
-      ? store.updateDocument(doc.id, formMeta())
-      : store.uploadDocument(pendingFiles.value, formMeta(), onProgress),
+    async () => {
+      if (doc) await store.updateDocument(doc.id, formMeta())
+      else await store.uploadDocument(pendingFiles.value, formMeta(), onProgress)
+    },
     {
       key: 'save',
       success: doc ? t('documents.saveSuccess') : t('documents.uploadSuccess'),

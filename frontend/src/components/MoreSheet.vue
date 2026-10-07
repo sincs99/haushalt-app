@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { PhWallet, PhCat, PhPlant, PhForkKnife, PhNote, PhFolderOpen, PhGear, PhCaretRight, PhSparkle } from '@phosphor-icons/vue'
 import { useI18n } from 'vue-i18n'
 import { useAiStore } from '../stores/ai'
 import { useBackClose } from '../composables/useBackClose'
+import ConnectionStatus from './ConnectionStatus.vue'
 
 const props = defineProps<{
   open: boolean
@@ -17,6 +18,14 @@ const emit = defineEmits<{
 const router = useRouter()
 const { t } = useI18n()
 const aiStore = useAiStore()
+const panelRef = ref<HTMLElement | null>(null)
+let returnFocusTo: HTMLElement | null = null
+let previousOverflow = ''
+let overflowLocked = false
+
+function focusables() {
+  return Array.from(panelRef.value?.querySelectorAll<HTMLElement>('[tabindex="0"], button:not([disabled]), a[href]') ?? [])
+}
 
 async function navigate(path: string) {
   // Erst schliessen (entfernt den History-Eintrag des Sheets), dann navigieren
@@ -29,23 +38,60 @@ async function navigate(path: string) {
 useBackClose(() => props.open, () => emit('close'))
 
 function onKeydown(e: KeyboardEvent) {
+  if (!props.open) return
   if (e.key === 'Escape' && props.open) {
+    e.preventDefault()
+    e.stopPropagation()
     emit('close')
+  }
+  if (e.key === 'Tab') {
+    const items = focusables()
+    const first = items[0]
+    const last = items.at(-1)
+    if (!first || !last) { e.preventDefault(); panelRef.value?.focus(); return }
+    const active = document.activeElement
+    if (e.shiftKey && (active === first || !panelRef.value?.contains(active))) {
+      e.preventDefault(); last.focus()
+    } else if (!e.shiftKey && (active === last || !panelRef.value?.contains(active))) {
+      e.preventDefault(); first.focus()
+    }
+  }
+}
+
+function onFocusIn(event: FocusEvent) {
+  if (props.open && panelRef.value && !panelRef.value.contains(event.target as Node)) {
+    (focusables()[0] ?? panelRef.value).focus({ preventScroll: true })
   }
 }
 
 onMounted(() => {
   document.addEventListener('keydown', onKeydown)
+  document.addEventListener('focusin', onFocusIn)
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('focusin', onFocusIn)
+  if (overflowLocked) document.body.style.overflow = previousOverflow
 })
 
 // Body-Scroll sperren wenn Sheet offen
-watch(() => props.open, (isOpen) => {
-  document.body.style.overflow = isOpen ? 'hidden' : ''
-})
+watch(() => props.open, async (isOpen) => {
+  if (isOpen) {
+    previousOverflow = document.body.style.overflow
+    overflowLocked = true
+    returnFocusTo = document.activeElement as HTMLElement | null
+    document.body.style.overflow = 'hidden'
+    await nextTick()
+    if (props.open) (focusables()[0] ?? panelRef.value)?.focus({ preventScroll: true })
+  } else {
+    if (overflowLocked) document.body.style.overflow = previousOverflow
+    overflowLocked = false
+    await nextTick()
+    if (returnFocusTo?.isConnected) returnFocusTo.focus({ preventScroll: true })
+    returnFocusTo = null
+  }
+}, { immediate: true })
 
 const baseEntries = [
   { label: 'nav.expenses', sub: 'moreSheet.expensesSub', icon: PhWallet, action: () => navigate('/expenses'), disabled: false, highlight: true },
@@ -80,9 +126,10 @@ watch(() => props.open, (isOpen) => {
         @click.self="emit('close')"
       >
         <Transition name="sheet" appear>
-          <div class="more-sheet" role="dialog" aria-modal="true" :aria-label="t('moreSheet.title')">
+          <div ref="panelRef" tabindex="-1" class="more-sheet" role="dialog" aria-modal="true" :aria-label="t('moreSheet.title')">
             <div class="more-sheet__handle" />
             <h2 class="more-sheet__title">{{ t('moreSheet.title') }}</h2>
+            <ConnectionStatus class="more-sheet__status" />
             <ul class="more-sheet__list">
               <li
                 v-for="entry in entries"
@@ -159,6 +206,8 @@ watch(() => props.open, (isOpen) => {
   flex-direction: column;
   gap: var(--space-1);
 }
+
+.more-sheet__status { padding-bottom: var(--space-3); margin-bottom: var(--space-2); border-bottom: 1px solid var(--line); }
 
 .more-sheet__item {
   display: flex;

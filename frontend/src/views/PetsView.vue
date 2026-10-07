@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { usePetsStore } from '../stores/pets'
+import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
 import { useAsyncAction } from '../composables/useAsyncAction'
@@ -21,6 +22,7 @@ import BaseErrorState from '../components/ui/BaseErrorState.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 
 const petsStore = usePetsStore()
+const authStore = useAuthStore()
 const router = useRouter()
 const { on, off, onReconnect, offReconnect } = useSocket()
 const { notifyInfo } = useToast()

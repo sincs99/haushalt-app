@@ -10,6 +10,8 @@ export function useProtectedImage(
   const objectUrl = ref<string | null>(null)
   const loading = ref(false)
   const error = ref(false)
+  let requestVersion = 0
+  let disposed = false
 
   function cleanup() {
     if (objectUrl.value) {
@@ -19,8 +21,10 @@ export function useProtectedImage(
   }
 
   async function load() {
+    const version = ++requestVersion
     cleanup()
     error.value = false
+    loading.value = false
 
     const hid = householdId.value
     const fid = fileId.value
@@ -28,18 +32,27 @@ export function useProtectedImage(
 
     loading.value = true
     try {
-      objectUrl.value = await filesRepo.fetchFileAsObjectUrl(hid, fid)
+      const url = await filesRepo.fetchFileAsObjectUrl(hid, fid)
+      if (disposed || version !== requestVersion) {
+        filesRepo.revokeObjectUrl(url)
+        return
+      }
+      objectUrl.value = url
     } catch {
-      error.value = true
+      if (!disposed && version === requestVersion) error.value = true
     } finally {
-      loading.value = false
+      if (!disposed && version === requestVersion) loading.value = false
     }
   }
 
   // Watch für reaktive Änderungen
-  watch([householdId, fileId], () => load(), { immediate: true })
+  watch([householdId, fileId], () => load(), { immediate: true, flush: 'sync' })
 
-  onUnmounted(() => cleanup())
+  onUnmounted(() => {
+    disposed = true
+    requestVersion++
+    cleanup()
+  })
 
   return { objectUrl, loading, error }
 }

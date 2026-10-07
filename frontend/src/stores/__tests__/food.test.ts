@@ -18,7 +18,7 @@ vi.mock('../auth', () => ({ useAuthStore: () => auth }))
 
 import { useFoodStore } from '../food'
 
-const recipe = (id = 'r1', o: Record<string, unknown> = {}) => ({ id, title: 'Pasta', is_favorite: false, ...o }) as any
+const recipe = (id = 'r1', o: Record<string, unknown> = {}) => ({ id, name: 'Pasta', is_favorite: false, ...o }) as any
 const entry = (date: string, o: Record<string, unknown> = {}) => ({ id: `e-${date}`, date, recipe_id: 'r1', recipe: recipe(), ...o }) as any
 
 beforeEach(() => {
@@ -36,7 +36,7 @@ describe('Rezepte', () => {
 
     repo.createRecipe.mockResolvedValue(recipe('b'))
     store.handleRecipeCreated(recipe('b')) // Socket zuerst
-    const created = await store.createRecipe({ title: 'Pasta' } as any)
+    const created = await store.createRecipe({ name: 'Pasta' } as any)
     expect(created?.id).toBe('b')
     expect(store.recipes.map(r => r.id)).toEqual(['a', 'b'])
   })
@@ -52,11 +52,11 @@ describe('Rezepte', () => {
     const store = useFoodStore()
     store.recipes = [recipe()]
     store.weekPlan = [entry('2026-03-02'), entry('2026-03-03', { recipe_id: 'other', recipe: recipe('other') })]
-    repo.updateRecipe.mockResolvedValue(recipe('r1', { title: 'Neu' }))
-    await store.updateRecipe('r1', { title: 'Neu' })
-    expect(store.recipes[0].title).toBe('Neu')
-    expect(store.weekPlan[0].recipe!.title).toBe('Neu')
-    expect(store.weekPlan[1].recipe!.title).toBe('Pasta')
+    repo.updateRecipe.mockResolvedValue(recipe('r1', { name: 'Neu' }))
+    await store.updateRecipe('r1', { name: 'Neu' })
+    expect(store.recipes[0].name).toBe('Neu')
+    expect(store.weekPlan[0].recipe!.name).toBe('Neu')
+    expect(store.weekPlan[1].recipe!.name).toBe('Pasta')
   })
 
   test('toggleFavorite kippt das Flag; unbekanntes Rezept ist No-Op', async () => {
@@ -209,13 +209,13 @@ describe('Socket-Handler', () => {
   test('Recipe created/updated/deleted', () => {
     const store = useFoodStore()
     store.handleRecipeCreated(recipe())
-    store.handleRecipeCreated(recipe('r1', { title: 'B' }))
+    store.handleRecipeCreated(recipe('r1', { name: 'B' }))
     expect(store.recipes).toHaveLength(1)
     store.weekPlan = [entry('2026-03-02')]
-    store.handleRecipeUpdated(recipe('r1', { title: 'C' }))
+    store.handleRecipeUpdated(recipe('r1', { name: 'C' }))
     store.handleRecipeUpdated(recipe('unknown'))
-    expect(store.recipes.map(r => r.title)).toEqual(['C'])
-    expect(store.weekPlan[0].recipe!.title).toBe('C')
+    expect(store.recipes.map(r => r.name)).toEqual(['C'])
+    expect(store.weekPlan[0].recipe!.name).toBe('C')
     store.handleRecipeDeleted({ id: 'r1' })
     expect(store.recipes).toEqual([])
   })

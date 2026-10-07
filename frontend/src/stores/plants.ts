@@ -56,6 +56,21 @@ export const usePlantsStore = defineStore('plants', () => {
 
   // Mutex gegen Doppel-Taps auf "Erledigt"
   const pendingCompletions = new Set<string>()
+  let stateVersion = 0
+  let requestVersion = 0
+  const latestRequests = new Map<string, number>()
+
+  function captureHousehold(householdId: string) {
+    const version = stateVersion
+    return () => version === stateVersion && useAuthStore().currentHouseholdId === householdId
+  }
+
+  function captureRequest(householdId: string, key: string) {
+    const active = captureHousehold(householdId)
+    const version = ++requestVersion
+    latestRequests.set(key, version)
+    return () => active() && latestRequests.get(key) === version
+  }
 
   // ── Helpers ──
 
@@ -97,12 +112,14 @@ export const usePlantsStore = defineStore('plants', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'plants')
 
     loading.value = true
     try {
-      plants.value = await repo.fetchAll(householdId)
+      const result = await repo.fetchAll(householdId)
+      if (active()) plants.value = result
     } finally {
-      loading.value = false
+      if (active()) loading.value = false
     }
   }
 
@@ -110,14 +127,18 @@ export const usePlantsStore = defineStore('plants', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'careStatus')
 
     try {
-      careStatus.value = await repo.fetchCareStatus(householdId)
-      careStatusError.value = false
+      const result = await repo.fetchCareStatus(householdId)
+      if (active()) {
+        careStatus.value = result
+        careStatusError.value = false
+      }
     } catch {
       // Kein Throw (viele Aufrufer, u. a. Socket-Events); bisheriger Status bleibt stehen,
       // die Ansicht zeigt über careStatusError einen Hinweis mit „Erneut versuchen“.
-      careStatusError.value = true
+      if (active()) careStatusError.value = true
     }
   }
 
@@ -125,16 +146,20 @@ export const usePlantsStore = defineStore('plants', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'members')
 
-    members.value = await householdRepo.fetchMembers(householdId)
+    const result = await householdRepo.fetchMembers(householdId)
+    if (active()) members.value = result
   }
 
   async function createPlant(payload: PlantCreatePayload) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     const created = await repo.create(householdId, payload)
+    if (!active()) return created
     // Dedupe: falls Socket schneller war
     const idx = plants.value.findIndex(p => p.id === created.id)
     if (idx === -1) {
@@ -147,13 +172,14 @@ export const usePlantsStore = defineStore('plants', () => {
     return created
   }
 
-  async function updatePlant(plantId: string, payload: PlantUpdatePayload) {
+  async function updatePlant(plantId: string, payload: PlantUpdatePayload, targetHouseholdId?: string) {
     const authStore = useAuthStore()
-    const householdId = authStore.currentHouseholdId
+    const householdId = targetHouseholdId ?? authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     const updated = await repo.update(householdId, plantId, payload)
-    handlePlantUpdated(updated)
+    if (active()) handlePlantUpdated(updated)
     return updated
   }
 
@@ -161,11 +187,13 @@ export const usePlantsStore = defineStore('plants', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     // Optimistic Delete
     const idx = plants.value.findIndex(p => p.id === plantId)
     const removed = idx !== -1 ? plants.value[idx] : null
-    const statusSnapshot = careStatus.value
+    const statusIndex = careStatus.value.findIndex(item => item.plant_id === plantId)
+    const removedStatus = careStatus.value[statusIndex]
     if (idx !== -1) plants.value.splice(idx, 1)
     careStatus.value = careStatus.value.filter(s => s.plant_id !== plantId)
 
@@ -173,8 +201,10 @@ export const usePlantsStore = defineStore('plants', () => {
       await repo.remove(householdId, plantId)
     } catch (error) {
       // Rollback
-      if (removed && idx !== -1) plants.value.splice(idx, 0, removed)
-      careStatus.value = statusSnapshot
+      if (active()) {
+        if (removed && idx !== -1 && !plants.value.some(plant => plant.id === plantId)) plants.value.splice(idx, 0, removed)
+        if (removedStatus && !careStatus.value.some(item => item.plant_id === plantId)) careStatus.value.splice(statusIndex, 0, removedStatus)
+      }
       throw error
     }
   }
@@ -185,22 +215,26 @@ export const usePlantsStore = defineStore('plants', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'careTasks')
 
     if (careTasksPlantId.value !== plantId) careTasks.value = []
     careTasksPlantId.value = plantId
     const tasks = await repo.fetchCareTasks(householdId, plantId)
     // Antwort einer inzwischen verlassenen Pflanze verwerfen
-    if (careTasksPlantId.value === plantId) careTasks.value = tasks
+    if (active() && careTasksPlantId.value === plantId) careTasks.value = tasks
   }
 
   async function createCareTask(plantId: string, payload: PlantCareTaskCreatePayload) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     const created = await repo.createCareTask(householdId, plantId, payload)
-    upsertCareTask(created)
-    upsertStatusTask(created)
+    if (active()) {
+      upsertCareTask(created)
+      upsertStatusTask(created)
+    }
     return created
   }
 
@@ -208,10 +242,13 @@ export const usePlantsStore = defineStore('plants', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     const updated = await repo.updateCareTask(householdId, plantId, taskId, payload)
-    upsertCareTask(updated)
-    upsertStatusTask(updated)
+    if (active()) {
+      upsertCareTask(updated)
+      upsertStatusTask(updated)
+    }
     return updated
   }
 
@@ -220,19 +257,20 @@ export const usePlantsStore = defineStore('plants', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     if (pendingCompletions.has(taskId)) return
     pendingCompletions.add(taskId)
 
     // Snapshots für Rollback
-    const tasksSnapshot = careTasks.value.map(t => ({ ...t }))
-    const statusSnapshot = careStatus.value.map(s => ({ ...s, tasks: s.tasks.map(t => ({ ...t })) }))
+    const previousTask = careTasks.value.find(task => task.id === taskId)
 
     // Optimistic: nächste Fälligkeit sofort berechnen
     const today = localDateString()
     const existing = careTasks.value.find(t => t.id === taskId)
     const statusTask = careStatus.value
       .find(s => s.plant_id === plantId)?.tasks.find(t => t.task_id === taskId)
+    const previousStatusTask = statusTask ? { ...statusTask } : null
     const intervalDays = existing?.interval_days ?? statusTask?.interval_days
     if (intervalDays !== undefined) {
       const nextDue = addDays(today, intervalDays)
@@ -248,17 +286,28 @@ export const usePlantsStore = defineStore('plants', () => {
         if (item) refreshFlags(item)
       }
     }
+    const optimisticTask = careTasks.value.find(task => task.id === taskId)
 
     try {
       const { task, log } = await repo.completeCareTask(householdId, plantId, taskId, note)
       // Server-Wahrheit übernehmen
-      upsertCareTask(task)
-      upsertStatusTask(task)
-      prependLog(log)
+      if (active()) {
+        upsertCareTask(task)
+        upsertStatusTask(task)
+        prependLog(log)
+      }
       return log
     } catch (error) {
-      careTasks.value = tasksSnapshot
-      careStatus.value = statusSnapshot
+      if (active()) {
+        const current = careTasks.value.find(task => task.id === taskId)
+        if (previousTask && current === optimisticTask) upsertCareTask(previousTask)
+        const item = careStatus.value.find(item => item.plant_id === plantId)
+        const currentStatus = item?.tasks.find(task => task.task_id === taskId)
+        if (item && previousStatusTask && currentStatus === statusTask) {
+          Object.assign(currentStatus!, previousStatusTask)
+          refreshFlags(item)
+        }
+      }
       throw error
     } finally {
       pendingCompletions.delete(taskId)
@@ -324,18 +373,25 @@ export const usePlantsStore = defineStore('plants', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     // Optimistic Delete
-    const tasksSnapshot = careTasks.value.map(t => ({ ...t }))
-    const statusSnapshot = careStatus.value.map(s => ({ ...s, tasks: s.tasks.map(t => ({ ...t })) }))
+    const removed = careTasks.value.find(task => task.id === taskId)
+    const removedStatus = careStatus.value.find(item => item.plant_id === plantId)?.tasks.find(task => task.task_id === taskId)
     careTasks.value = careTasks.value.filter(t => t.id !== taskId)
     removeStatusTask(taskId, plantId)
 
     try {
       await repo.removeCareTask(householdId, plantId, taskId)
     } catch (error) {
-      careTasks.value = tasksSnapshot
-      careStatus.value = statusSnapshot
+      if (active()) {
+        if (removed && !careTasks.value.some(task => task.id === taskId)) upsertCareTask(removed)
+        const item = careStatus.value.find(item => item.plant_id === plantId)
+        if (item && removedStatus && !item.tasks.some(task => task.task_id === taskId)) {
+          item.tasks.push(removedStatus)
+          refreshFlags(item)
+        }
+      }
       throw error
     }
   }
@@ -344,11 +400,12 @@ export const usePlantsStore = defineStore('plants', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'careLog')
 
     if (careLogPlantId.value !== plantId) careLog.value = []
     careLogPlantId.value = plantId
     const log = await repo.fetchCareLog(householdId, plantId)
-    if (careLogPlantId.value === plantId) careLog.value = log.slice(0, CARE_LOG_LIMIT)
+    if (active() && careLogPlantId.value === plantId) careLog.value = log.slice(0, CARE_LOG_LIMIT)
   }
 
   // ── Socket-Handler — Idempotent (Server gewinnt) ──
@@ -403,6 +460,10 @@ export const usePlantsStore = defineStore('plants', () => {
 
   /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
   function reset() {
+    stateVersion++
+    latestRequests.clear()
+    loading.value = false
+    careStatusError.value = false
     plants.value = []
     careStatus.value = []
     members.value = []

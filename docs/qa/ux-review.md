@@ -1,5 +1,7 @@
 # UX-Review (Stand 2026-10-06)
 
+**Nachtrag vom 7. Oktober 2026:** Q-18 ist im aktuellen Reparaturstand behoben: `npm run typecheck` prüft `tsconfig.app.json`, der Build führt dieselbe Prüfung aus, und die Vue-Augmentation ist ein eigenes TypeScript-Modul. App-Typprüfung und Produktionsbuild bestehen. Die Tabellen unten dokumentieren den ursprünglichen Review-Stand; weitere Korrekturen und aktuelle lokale Prüfnachweise stehen in [current-audit-fixes.md](current-audit-fixes.md). Produktion und ein echtes iPhone sind damit nicht verifiziert.
+
 Review aus Sicht UX-Design über alle Module, durchgeführt am Code (Vue-Views, Stores, Locales) entlang der acht Prüfpunkte: Feedback nach Aktionen, Lade-/Leer-/Fehlerzustände, Offline, destruktive Aktionen, Formulare, Navigation, UX-Copy, Erreichbarkeit (grob).
 
 **Schwere**

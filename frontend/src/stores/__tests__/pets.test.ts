@@ -26,7 +26,7 @@ vi.mock('../auth', () => ({ useAuthStore: () => auth }))
 import { usePetsStore } from '../pets'
 
 const pet = (id = 'p1', o: Record<string, unknown> = {}) => ({ id, name: 'Bello', ...o }) as any
-const feeding = (id: string, slot = 'morning', petId = 'p1') => ({ id, pet_id: petId, slot }) as any
+const feeding = (id: string, slot = 'morning', petId = 'p1') => ({ id, household_id: HOUSEHOLD_ID, pet_id: petId, slot }) as any
 const status = (petId = 'p1', o: Record<string, unknown> = {}) => ({ pet_id: petId, morning: null, evening: null, ...o }) as any
 const med = (id = 'm1', o: Record<string, unknown> = {}) => ({ id, pet_id: 'p1', name: 'Pille', ...o }) as any
 const task = (id = 't1', o: Record<string, unknown> = {}) => ({
@@ -107,7 +107,7 @@ describe('toggleFeeding', () => {
     expect(store.feedingStatus[0].morning).toMatchObject({ id: 'temp', fed_by_user_id: USER_ID })
     pending.resolve(feeding('real'))
     await p
-    expect(store.feedingStatus[0].morning.id).toBe('real')
+    expect(store.feedingStatus[0].morning?.id).toBe('real')
   })
 
   test('Füttern: Rollback + Fehler weiterreichen; bei 409 Status neu laden und „duplicate“', async () => {
@@ -121,7 +121,7 @@ describe('toggleFeeding', () => {
     repo.createFeeding.mockRejectedValue(axios409)
     repo.fetchFeedingStatus.mockResolvedValue([status('p1', { morning: feeding('srv') })])
     await expect(store.toggleFeeding('p1', 'morning')).resolves.toBe('duplicate')
-    expect(store.feedingStatus[0].morning.id).toBe('srv')
+    expect(store.feedingStatus[0].morning?.id).toBe('srv')
   })
 
   test('Füttern liefert „fed“, Entfernen „unfed“; Datum ist lokal', async () => {
@@ -133,7 +133,7 @@ describe('toggleFeeding', () => {
       const pending = deferred<any>()
       repo.createFeeding.mockReturnValue(pending.promise)
       const p = store.toggleFeeding('p1', 'morning')
-      expect(store.feedingStatus[0].morning.date).toBe('2024-03-10')
+      expect(store.feedingStatus[0].morning?.date).toBe('2024-03-10')
       pending.resolve(feeding('real'))
       await expect(p).resolves.toBe('fed')
       repo.deleteFeeding.mockResolvedValue(undefined)
@@ -363,7 +363,7 @@ describe('Socket-Handler', () => {
     store.feedingStatus = [status()]
     store.handleFeedingCreated(feeding('f1', 'evening'))
     store.handleFeedingCreated(feeding('fx', 'morning', 'unknown'))
-    expect(store.feedingStatus[0].evening.id).toBe('f1')
+    expect(store.feedingStatus[0].evening?.id).toBe('f1')
     expect(store.feedingStatus[0].morning).toBeNull()
     store.handleFeedingDeleted({ id: 'other', pet_id: 'p1' })
     expect(store.feedingStatus[0].evening).not.toBeNull()
@@ -409,4 +409,130 @@ test('ohne Haushalt: alle Aktionen sind No-Ops', async () => {
   await s.fetchCareTasks('p'); await s.createCareTask('p', {} as any)
   await s.updateCareTask('p', 't', {} as any); await s.completeCareTask('p', 't'); await s.removeCareTask('p', 't')
   for (const fn of [...Object.values(repo), householdRepo.fetchMembers]) expect(fn).not.toHaveBeenCalled()
+})
+
+describe('regressions: late responses and medication logs', () => {
+  test('a medication GET preserves newer socket doses, deduplicates and sorts by time', async () => {
+    const store = usePetsStore()
+    const response = deferred<any>()
+    repo.fetchMedicationLog.mockReturnValue(response.promise)
+    const loading = store.fetchMedicationLog('p1', 'm1')
+    const recent = { id: 'recent', medication_id: 'm1', given_at: '2026-10-07T10:00:00Z' } as any
+    store.handleMedicationGiven(recent)
+    store.handleMedicationGiven({ id: 'socket-only', medication_id: 'm1', given_at: '2026-10-07T11:00:00Z' } as any)
+    response.resolve([
+      { id: 'older', medication_id: 'm1', given_at: '2026-10-07T09:00:00Z' },
+      recent,
+    ])
+    await loading
+    expect(store.medicationLogs.m1.map(entry => entry.id)).toEqual(['socket-only', 'recent', 'older'])
+  })
+
+  test.each(['switch', 'socket'])('care deletion rollback preserves a concurrent %s change', async change => {
+    const store = usePetsStore()
+    repo.fetchCareTasks.mockResolvedValueOnce([task()])
+    await store.fetchCareTasks('p1')
+    const response = deferred<void>()
+    repo.removeCareTask.mockReturnValue(response.promise)
+    const removal = store.removeCareTask('p1', 't1')
+    if (change === 'switch') {
+      repo.fetchCareTasks.mockResolvedValueOnce([task('b', { pet_id: 'p2' })])
+      await store.fetchCareTasks('p2')
+    } else store.handleCareTaskCreated(task('new'))
+    const rejected = expect(removal).rejects.toThrow('late failure')
+    response.reject(new Error('late failure'))
+    await rejected
+    expect(store.careTasks.map(item => item.id)).toEqual(change === 'switch' ? ['b'] : ['t1', 'new'])
+  })
+
+  test.each(['socket-first', 'http-first'])('one dose remains one entry (%s)', async (order) => {
+    const store = usePetsStore()
+    repo.fetchMedications.mockResolvedValue([med()])
+    await store.fetchMedications('p1')
+    const log = { id: 'dose', medication_id: 'm1', household_id: HOUSEHOLD_ID } as any
+    const response = deferred<any>()
+    repo.giveMedication.mockReturnValue(response.promise)
+    const giving = store.giveMedication('p1', 'm1')
+    if (order === 'socket-first') store.handleMedicationGiven(log)
+    response.resolve(log)
+    await giving
+    store.handleMedicationGiven(log)
+    expect(store.medicationLogs.m1.map(entry => entry.id)).toEqual(['dose'])
+  })
+
+  test('reset prevents an old household request from repopulating care tasks', async () => {
+    const store = usePetsStore()
+    const response = deferred<any>()
+    repo.fetchCareTasks.mockReturnValueOnce(response.promise)
+    const loading = store.fetchCareTasks('p1')
+    store.reset()
+    auth.currentHouseholdId = 'household-b'
+    response.resolve([task()])
+    await loading
+    expect(store.careTasks).toEqual([])
+    store.handleCareTaskCreated(task())
+    expect(store.careTasks).toEqual([])
+  })
+
+  test('a failed completion for cat A does not restore its tasks over cat B', async () => {
+    const store = usePetsStore()
+    repo.fetchCareTasks.mockResolvedValueOnce([task()])
+    await store.fetchCareTasks('p1')
+    const response = deferred<any>()
+    repo.completeCareTask.mockReturnValueOnce(response.promise)
+    const completion = store.completeCareTask('p1', 't1')
+    repo.fetchCareTasks.mockResolvedValueOnce([task('b', { pet_id: 'p2' })])
+    await store.fetchCareTasks('p2')
+    const rejected = expect(completion).rejects.toThrow('late failure')
+    response.reject(new Error('late failure'))
+    await rejected
+    expect(store.careTasks.map(item => item.id)).toEqual(['b'])
+  })
+
+  test('rollback restores only the failed task and keeps concurrent socket additions', async () => {
+    const store = usePetsStore()
+    repo.fetchCareTasks.mockResolvedValueOnce([task()])
+    await store.fetchCareTasks('p1')
+    const response = deferred<any>()
+    repo.completeCareTask.mockReturnValueOnce(response.promise)
+    const completion = store.completeCareTask('p1', 't1')
+    store.handleCareTaskCreated(task('new'))
+    const rejected = expect(completion).rejects.toThrow('failure')
+    response.reject(new Error('failure'))
+    await rejected
+    expect(store.careTasks.map(item => item.id)).toEqual(['t1', 'new'])
+    expect(store.careTasks[0].last_done_at).toBeNull()
+  })
+
+  test('latest list request wins, even when the previous request finishes last', async () => {
+    const store = usePetsStore()
+    const old = deferred<any>()
+    repo.fetchAll.mockReturnValueOnce(old.promise).mockResolvedValueOnce([pet('new')])
+    const previous = store.fetchPets()
+    await store.fetchPets()
+    old.resolve([pet('old')])
+    await previous
+    expect(store.pets.map(item => item.id)).toEqual(['new'])
+  })
+
+  test('late medication responses cannot repopulate another household', async () => {
+    const store = usePetsStore()
+    const response = deferred<any>()
+    repo.giveMedication.mockReturnValueOnce(response.promise)
+    const giving = store.giveMedication('p1', 'm1')
+    store.reset()
+    auth.currentHouseholdId = 'household-b'
+    response.resolve({ id: 'dose', medication_id: 'm1' })
+    await giving
+    expect(store.medicationLogs).toEqual({})
+  })
+
+  test('undo stays bound to the household of the original feedings', async () => {
+    const store = usePetsStore()
+    auth.currentHouseholdId = 'household-b'
+    repo.deleteFeeding.mockResolvedValue(undefined)
+    await store.undoFeedings([feeding('original')])
+    expect(repo.deleteFeeding).toHaveBeenCalledWith(HOUSEHOLD_ID, 'p1', 'original')
+    expect(repo.fetchFeedingStatus).not.toHaveBeenCalled()
+  })
 })

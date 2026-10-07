@@ -259,7 +259,7 @@ onMounted(async () => {
         <div class="dialog-actions dialog-actions--split">
           <button
             type="button"
-            class="btn-danger-text"
+            class="btn-danger-text tap-target"
             :disabled="isPending('editList')"
             @click="handleDeleteList"
           >

@@ -928,7 +928,8 @@ async function doCreateMealPoll() {
   font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
   color: var(--sub);
-  width: 24px;
+  /* 3 Grossbuchstaben (EN „WED“, „THU“) brauchen ~29 px */
+  width: var(--space-8);
   flex-shrink: 0;
   text-transform: uppercase;
 }

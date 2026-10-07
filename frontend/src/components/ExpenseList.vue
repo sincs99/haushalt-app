@@ -92,7 +92,7 @@ async function handleDelete(expenseId: string) {
     <!-- Skeleton Loading -->
     <div v-if="expensesStore.loading && expensesStore.expenses.length === 0" class="skeleton-list">
       <div class="skeleton-row" v-for="n in 3" :key="n">
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-1);">
           <div style="display: flex; justify-content: space-between;">
             <BaseSkeleton :width="['60%', '50%', '70%'][n - 1]" height="16px" />
             <BaseSkeleton width="80px" height="16px" />
@@ -169,7 +169,7 @@ async function handleDelete(expenseId: string) {
 .quick-add {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: var(--z-sticky);
   background: var(--color-bg);
   padding-bottom: var(--space-2);
 }
@@ -207,7 +207,7 @@ async function handleDelete(expenseId: string) {
   align-items: flex-start;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-2);
-  border-bottom: 1px solid var(--color-neutral-200);
+  border-bottom: 1px solid var(--line);
 }
 
 .expense-row__main {
@@ -223,7 +223,7 @@ async function handleDelete(expenseId: string) {
 .expense-row__content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   flex: 1;
   min-width: 0;
 }
@@ -260,7 +260,7 @@ async function handleDelete(expenseId: string) {
   gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--color-text-muted);
-  margin-top: 2px;
+  margin-top: var(--space-0-5);
 }
 
 .expense-row__date {
@@ -297,7 +297,7 @@ async function handleDelete(expenseId: string) {
 }
 
 .action-btn:hover {
-  background: var(--color-neutral-100);
+  background: var(--chip);
   color: var(--color-primary);
 }
 
@@ -308,7 +308,7 @@ async function handleDelete(expenseId: string) {
 
 @media (hover: hover) {
   .expense-row__main:hover {
-    background: var(--color-neutral-50);
+    background: var(--color-surface-subtle);
     border-radius: var(--radius-sm);
   }
 }

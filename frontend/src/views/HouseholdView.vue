@@ -20,6 +20,7 @@ import { PhUserMinus, PhSignOut, PhPlus, PhShareNetwork, PhQrCode } from '@phosp
 import PageHeader from '../components/ui/PageHeader.vue'
 import PushSettings from '../components/PushSettings.vue'
 import AiSettingsCard from '../components/AiSettingsCard.vue'
+import WidgetSettingsCard from '../components/WidgetSettingsCard.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -388,7 +389,7 @@ watch(() => authStore.currentHouseholdId, () => {
             :aria-label="$t('household.removeMemberButton')"
             @click="openRemoveMemberDialog(member)"
           >
-            <PhUserMinus :size="18" />
+            <PhUserMinus :size="20" />
           </button>
         </div>
       </div>
@@ -495,6 +496,9 @@ watch(() => authStore.currentHouseholdId, () => {
         {{ $t('tags.manage') }}
       </BaseButton>
     </BaseCard>
+
+    <!-- ══ Sektion: Homescreen-Widget (Scriptable) ══ -->
+    <WidgetSettingsCard />
 
     <!-- ══ Sektion: KI-Assistent (nur wenn auf dem Server eingerichtet) ══ -->
     <AiSettingsCard />
@@ -618,7 +622,7 @@ watch(() => authStore.currentHouseholdId, () => {
 .section-title {
   margin: 0 0 var(--space-3);
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }
@@ -668,7 +672,7 @@ watch(() => authStore.currentHouseholdId, () => {
 .leave-section {
   margin-top: var(--space-4);
   padding-top: var(--space-4);
-  border-top: 1px solid var(--color-neutral-200);
+  border-top: 1px solid var(--line);
 }
 
 /* ── Mitglieder ── */
@@ -684,7 +688,7 @@ watch(() => authStore.currentHouseholdId, () => {
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
-  background: var(--color-neutral-50);
+  background: var(--color-surface-subtle);
 }
 
 .member-info {
@@ -707,10 +711,10 @@ watch(() => authStore.currentHouseholdId, () => {
 .admin-badge {
   display: inline-flex;
   align-items: center;
-  padding: var(--space-1) var(--space-2); /* --space-0-5 existiert nicht */
+  padding: var(--badge-padding);
   background: var(--color-primary-light);
-  color: var(--color-primary);
-  font-size: var(--text-xs);
+  color: var(--color-primary-strong);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-bold);
   border-radius: var(--radius-full);
   white-space: nowrap;
@@ -730,7 +734,7 @@ watch(() => authStore.currentHouseholdId, () => {
 
 .member-remove-btn:hover {
   color: var(--color-danger);
-  background: var(--color-neutral-100);
+  background: var(--chip);
 }
 
 /* ── Invite-Code ── */
@@ -748,7 +752,7 @@ watch(() => authStore.currentHouseholdId, () => {
 }
 
 .invite-expired {
-  color: var(--color-danger, #c0392b);
+  color: var(--color-danger);
 }
 
 .invite-expired-link {
@@ -771,8 +775,8 @@ watch(() => authStore.currentHouseholdId, () => {
 .invite-code {
   flex: 1;
   padding: var(--space-3) var(--space-4);
-  background: var(--color-neutral-50);
-  border: 1px solid var(--color-neutral-200);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
   font-size: var(--text-lg);
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
@@ -796,7 +800,7 @@ watch(() => authStore.currentHouseholdId, () => {
 .join-form__input {
   flex: 1;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   font-size: var(--text-base);
   font-family: var(--font-family);
@@ -815,7 +819,7 @@ watch(() => authStore.currentHouseholdId, () => {
 .create-new-section {
   margin-top: var(--space-3);
   padding-top: var(--space-3);
-  border-top: 1px solid var(--color-neutral-200);
+  border-top: 1px solid var(--line);
 }
 
 .create-new-form {
@@ -840,7 +844,7 @@ watch(() => authStore.currentHouseholdId, () => {
 
 .settings-select {
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-neutral-200);
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
   font-size: var(--text-base);
   color: var(--color-text);
@@ -860,7 +864,7 @@ watch(() => authStore.currentHouseholdId, () => {
   justify-content: center;
   margin-top: var(--space-3);
   padding-top: var(--space-3);
-  border-top: 1px solid var(--color-neutral-200);
+  border-top: 1px solid var(--line);
 }
 
 @media (min-width: 768px) {

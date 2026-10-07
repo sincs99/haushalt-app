@@ -11,7 +11,7 @@ import json
 import logging
 import uuid
 import zoneinfo
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Callable
 from urllib.parse import urlparse
 
@@ -22,6 +22,9 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.database import SessionLocal
 from app.models import (
+    Chore,
+    ChoreAssignment,
+    Document,
     Household,
     HouseholdMember,
     Pet,
@@ -32,6 +35,8 @@ from app.models import (
     Todo,
     TodoReminder,
 )
+from app.services.attention import attention_count
+from app.services.chore_scheduler import materialize_due_assignments
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -42,6 +47,11 @@ STALE_AFTER = timedelta(hours=12)
 # Tier- und Pflanzenpflege-Aufgaben (Datum ohne Uhrzeit) ab dieser lokalen Stunde melden.
 PET_CARE_NOTIFY_HOUR = 8
 PLANT_CARE_NOTIFY_HOUR = 8
+# Putzplan "Du bist dran" und Dokument-Ablauf ebenfalls am Morgen
+CHORE_NOTIFY_HOUR = 8
+DOCUMENT_NOTIFY_HOUR = 8
+# Vorwarnung für Ablaufdaten (Garantieende, Kündigungsfrist)
+DOCUMENT_EXPIRY_LEAD_DAYS = 30
 
 # SSRF-Schutz: Der Server POSTet an die vom Client gelieferte Endpoint-URL.
 # Nur bekannte Push-Services der Browser-Hersteller zulassen.
@@ -66,6 +76,11 @@ _TEXTS = {
         "plant_care_repot": "Umtopfen",
         "plant_care_mist": "Besprühen",
         "plant_care_other": "Pflege",
+        "chore_title_mine": "Du bist dran",
+        "chore_title_open": "Ämtli heute fällig",
+        "doc_soon_title": "Dokument läuft bald ab",
+        "doc_due_title": "Dokument läuft heute ab",
+        "doc_body": "{title} · {date}",
         "test_title": "Benachrichtigungen aktiv",
         "test_body": "So sehen Erinnerungen der Haushalt App aus.",
     },
@@ -80,6 +95,11 @@ _TEXTS = {
         "plant_care_repot": "Repot",
         "plant_care_mist": "Mist",
         "plant_care_other": "Care",
+        "chore_title_mine": "It's your turn",
+        "chore_title_open": "Chore due today",
+        "doc_soon_title": "Document expires soon",
+        "doc_due_title": "Document expires today",
+        "doc_body": "{title} · {date}",
         "test_title": "Notifications enabled",
         "test_body": "This is how Haushalt App reminders look.",
     },
@@ -131,12 +151,35 @@ def _send_one(db: Session, sub: PushSubscription, payload: dict) -> bool:
         return False
 
 
-def send_to_users(db: Session, user_ids: list[uuid.UUID], build_payload: PayloadBuilder) -> int:
-    """Sendet an alle Subscriptions der User; Payload wird pro Locale gebaut."""
+def _format_date(locale: str, d: date) -> str:
+    return d.strftime("%d.%m.%Y") if locale == "de" else d.isoformat()
+
+
+def send_to_users(
+    db: Session,
+    user_ids: list[uuid.UUID],
+    build_payload: PayloadBuilder,
+    household_id: uuid.UUID | None = None,
+) -> int:
+    """Sendet an alle Subscriptions der User; Payload wird pro Locale gebaut.
+
+    Mit household_id bekommt jede Payload die Zahl fürs App-Icon (`badge`,
+    siehe services/attention.py), damit der Service Worker sie setzen kann.
+    """
     if not user_ids:
         return 0
     subs = db.query(PushSubscription).filter(PushSubscription.user_id.in_(user_ids)).all()
-    return sum(_send_one(db, sub, build_payload(sub.locale)) for sub in subs)
+    household = db.get(Household, household_id) if household_id else None
+    badges: dict[uuid.UUID, int] = {}
+    sent = 0
+    for sub in subs:
+        payload = build_payload(sub.locale)
+        if household is not None:
+            if sub.user_id not in badges:
+                badges[sub.user_id] = attention_count(db, household, sub.user_id)
+            payload = {**payload, "badge": badges[sub.user_id]}
+        sent += _send_one(db, sub, payload)
+    return sent
 
 
 def _household_member_ids(db: Session, household_id: uuid.UUID) -> list[uuid.UUID]:
@@ -144,12 +187,13 @@ def _household_member_ids(db: Session, household_id: uuid.UUID) -> list[uuid.UUI
     return [r[0] for r in rows]
 
 
-def _claim(db: Session, model, row_id: uuid.UUID, now: datetime) -> bool:
-    """Setzt notified_at atomar; False wenn schon ein anderer Lauf geclaimt hat."""
+def _claim(db: Session, model, row_id: uuid.UUID, now: datetime, column: str = "notified_at") -> bool:
+    """Setzt den Merker atomar; False wenn schon ein anderer Lauf geclaimt hat."""
+    col = getattr(model, column)
     result = db.execute(
         update(model)
-        .where(model.id == row_id, model.notified_at.is_(None))
-        .values(notified_at=now)
+        .where(model.id == row_id, col.is_(None))
+        .values({column: now})
     )
     db.commit()
     return result.rowcount == 1
@@ -187,7 +231,7 @@ def process_todo_reminders(db: Session, now: datetime) -> int:
             "body": title,
             "url": "/todos",
             "tag": tag,
-        })
+        }, household_id=reminder.household_id)
     return sent
 
 
@@ -217,7 +261,7 @@ def process_pet_care_tasks(db: Session, now: datetime) -> int:
             "body": _text(loc, "pet_body", pet=pet_name, task=task_name),
             "url": url,
             "tag": tag,
-        })
+        }, household_id=task.household_id)
     return sent
 
 
@@ -248,7 +292,117 @@ def process_plant_care_tasks(db: Session, now: datetime) -> int:
             "body": _text(loc, "plant_body", plant=plant_name, task=label or _text(loc, f"plant_care_{care_type}")),
             "url": url,
             "tag": tag,
-        })
+        }, household_id=task.household_id)
+    return sent
+
+
+# Haushalt → lokales Datum der letzten Materialisierung durch den Scheduler.
+# Nur ein Worker (uvicorn --workers 1); nach Neustart wird einmal neu materialisiert.
+_chores_materialized: dict[uuid.UUID, date] = {}
+
+
+def _ensure_chore_assignments(db: Session, now: datetime) -> None:
+    """Legt die heutigen Ämtli an, auch wenn heute noch niemand die App geöffnet hat.
+
+    Assignments entstehen sonst erst beim Laden des Putzplans (Lazy-Materialisierung).
+    Einmal pro Haushalt und lokalem Tag, ab CHORE_NOTIFY_HOUR.
+    """
+    households = (
+        db.query(Household)
+        .join(Chore, Chore.household_id == Household.id)
+        .filter(Chore.active == True)  # noqa: E712
+        .distinct()
+        .all()
+    )
+    for household in households:
+        local_now = now.astimezone(zoneinfo.ZoneInfo(household.timezone or "Europe/Zurich"))
+        if local_now.hour < CHORE_NOTIFY_HOUR or _chores_materialized.get(household.id) == local_now.date():
+            continue
+        try:
+            materialize_due_assignments(db, household)
+            _chores_materialized[household.id] = local_now.date()
+        except Exception:
+            db.rollback()
+            logger.exception("Chore materialization for household %s failed", household.id)
+
+
+def process_chore_assignments(db: Session, now: datetime) -> int:
+    """'Du bist dran': am Fälligkeitstag an die zugewiesene Person (sonst an alle)."""
+    _ensure_chore_assignments(db, now)
+    due = (
+        db.query(ChoreAssignment, Chore.title, Household.timezone)
+        .join(Chore, ChoreAssignment.chore_id == Chore.id)
+        .join(Household, ChoreAssignment.household_id == Household.id)
+        .filter(
+            ChoreAssignment.notified_at.is_(None),
+            ChoreAssignment.completed_at.is_(None),
+            # Grobfilter (±1 Tag für Zeitzonen), exakt pro Household unten
+            ChoreAssignment.due_date >= (now - timedelta(days=1)).date(),
+            ChoreAssignment.due_date <= (now + timedelta(days=1)).date(),
+        )
+        .all()
+    )
+    sent = 0
+    for assignment, chore_title, tz_name in due:
+        local_now = now.astimezone(zoneinfo.ZoneInfo(tz_name or "Europe/Zurich"))
+        # Nur am Fälligkeitstag selbst; ältere offene Ämtli nicht nachträglich melden
+        if assignment.due_date != local_now.date() or local_now.hour < CHORE_NOTIFY_HOUR:
+            continue
+        if not _claim(db, ChoreAssignment, assignment.id, now):
+            continue
+
+        members = _household_member_ids(db, assignment.household_id)
+        mine = assignment.assigned_user_id in members
+        recipients = [assignment.assigned_user_id] if mine else members
+        title_key = "chore_title_mine" if mine else "chore_title_open"
+        tag = f"chore-{assignment.id}"
+        sent += send_to_users(db, recipients, lambda loc: {
+            "title": _text(loc, title_key),
+            "body": chore_title,
+            "url": "/chores",
+            "tag": tag,
+        }, household_id=assignment.household_id)
+    return sent
+
+
+def process_document_expiry(db: Session, now: datetime) -> int:
+    """Ablaufdaten (Garantieende, Kündigungsfrist): Vorwarnung und am Tag selbst."""
+    lead = timedelta(days=DOCUMENT_EXPIRY_LEAD_DAYS)
+    due = (
+        db.query(Document, Household.timezone)
+        .join(Household, Document.household_id == Household.id)
+        .filter(
+            Document.expiry_date.isnot(None),
+            Document.expiry_notified_at.is_(None),
+            # Grobfilter: ab gestern bis Ende der Vorwarnzeit (+1 Tag Zeitzonen)
+            Document.expiry_date >= (now - timedelta(days=1)).date(),
+            Document.expiry_date <= (now + lead + timedelta(days=1)).date(),
+        )
+        .all()
+    )
+    sent = 0
+    for doc, tz_name in due:
+        local_now = now.astimezone(zoneinfo.ZoneInfo(tz_name or "Europe/Zurich"))
+        today = local_now.date()
+        if local_now.hour < DOCUMENT_NOTIFY_HOUR or doc.expiry_date < today:
+            continue
+
+        if doc.expiry_date == today:
+            column, title_key = "expiry_notified_at", "doc_due_title"
+        elif doc.expiry_date <= today + lead and doc.expiry_soon_notified_at is None:
+            column, title_key = "expiry_soon_notified_at", "doc_soon_title"
+        else:
+            continue
+        if not _claim(db, Document, doc.id, now, column=column):
+            continue
+
+        doc_title, expiry, tag = doc.title, doc.expiry_date, f"document-expiry-{doc.id}"
+        sent += send_to_users(db, _household_member_ids(db, doc.household_id), lambda loc: {
+            "title": _text(loc, title_key),
+            "body": _text(loc, "doc_body", title=doc_title, date=_format_date(loc, expiry)),
+            "url": "/documents",
+            "tag": tag,
+        }, household_id=doc.household_id)
     return sent
 
 
@@ -269,6 +423,8 @@ def run_once() -> None:
             process_todo_reminders(db, now)
             + process_pet_care_tasks(db, now)
             + process_plant_care_tasks(db, now)
+            + process_chore_assignments(db, now)
+            + process_document_expiry(db, now)
         )
         if sent:
             logger.info("Push scheduler: %d notification(s) sent", sent)

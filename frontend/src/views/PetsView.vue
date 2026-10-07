@@ -267,7 +267,7 @@ function navigateToPet(petId: string) {
     <div v-if="petsStore.loading && petsStore.pets.length === 0" class="skeleton-list">
       <div class="skeleton-row" v-for="n in 3" :key="n">
         <BaseSkeleton width="40px" height="40px" rounded />
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-1);">
           <BaseSkeleton :width="['75%', '60%', '85%'][n - 1]" height="16px" />
           <BaseSkeleton width="40%" height="12px" />
         </div>
@@ -460,7 +460,7 @@ function navigateToPet(petId: string) {
 /* ── Card Title ── */
 .card-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   margin: 0 0 var(--space-3) 0;
   color: var(--ink);
@@ -492,7 +492,7 @@ function navigateToPet(petId: string) {
 .feeding-row__info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
   flex: 1;
 }
@@ -539,7 +539,7 @@ function navigateToPet(petId: string) {
 
 .feed-toggle--fed {
   background: var(--ok);
-  color: #fff;
+  color: var(--color-on-success);
 }
 
 /* ── Feed All Button ── */
@@ -577,9 +577,10 @@ function navigateToPet(petId: string) {
 }
 
 .pet-card__name {
-  font-size: var(--text-lg);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
+  font-family: var(--font-display);
 }
 
 .pet-card__details {
@@ -627,14 +628,14 @@ function navigateToPet(petId: string) {
   height: var(--fab-size);
   border-radius: var(--radius-full);
   background: var(--acc);
-  color: #fff;
+  color: var(--color-on-accent);
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow-overlay);
   cursor: pointer;
-  z-index: 50;
+  z-index: var(--z-fab);
   transition: transform var(--transition-fast);
 }
 

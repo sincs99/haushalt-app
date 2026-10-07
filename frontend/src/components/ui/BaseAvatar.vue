@@ -28,7 +28,7 @@ const sizeClass = computed(() => `base-avatar--${props.size}`)
     :class="sizeClass"
     :style="{
       backgroundColor: getMemberColor(props.userId),
-      color: '#fff',
+      color: 'var(--color-on-member)',
     }"
     aria-hidden="true"
     :title="name"
@@ -45,19 +45,19 @@ const sizeClass = computed(() => `base-avatar--${props.size}`)
   border-radius: var(--radius-full);
   font-weight: var(--font-weight-semibold);
   flex-shrink: 0;
-  line-height: 1;
+  line-height: var(--line-height-none);
   user-select: none;
 }
 
 .base-avatar--sm {
-  width: 22px;
-  height: 22px;
-  font-size: 10px;
+  width: var(--avatar-sm);
+  height: var(--avatar-sm);
+  font-size: var(--text-2xs);
 }
 
 .base-avatar--md {
-  width: 32px;
-  height: 32px;
-  font-size: 13px;
+  width: var(--avatar-md);
+  height: var(--avatar-md);
+  font-size: var(--text-xs);
 }
 </style>

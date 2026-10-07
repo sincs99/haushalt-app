@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlineDocumentsRepository } from '../repositories/documentsRepository'
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
+import { prepareImageForUpload } from '../utils/imageUpload'
 import type { DocumentCategory, DocumentItem, DocumentMeta, StorageUsage } from '../types'
 
 const PAGE_SIZE = 30
@@ -109,7 +110,9 @@ export const useDocumentsStore = defineStore('documents', () => {
     try {
       for (const [index, file] of files.entries()) {
         onProgress?.(index + 1, files.length)
-        ids.push((await filesRepo.uploadFile(householdId, file)).id)
+        // Fotos verkleinern (Handy-Kamera, HEIC); PDFs unverändert
+        const upload = file.type.startsWith('image/') ? await prepareImageForUpload(file) : file
+        ids.push((await filesRepo.uploadFile(householdId, upload)).id)
       }
       return ids
     } catch (error) {

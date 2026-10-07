@@ -390,8 +390,8 @@ async function handleSubmit() {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
-  background: rgba(0, 0, 0, 0.5);
+  z-index: var(--z-dialog);
+  background: var(--color-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -400,7 +400,7 @@ async function handleSubmit() {
 
 .dialog-content {
   background: var(--color-surface);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-dialog);
   padding: var(--space-6);
   width: 100%;
   max-width: 480px;
@@ -411,9 +411,10 @@ async function handleSubmit() {
 
 .dialog-title {
   margin: 0 0 var(--space-4) 0;
-  font-size: var(--text-lg);
-  font-weight: var(--font-weight-bold);
+  font-size: var(--text-title-dialog);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
+  font-family: var(--font-display);
 }
 
 .dialog-form {
@@ -438,7 +439,7 @@ async function handleSubmit() {
 .form-field__input {
   width: 100%;
   padding: var(--space-3);
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   font-family: var(--font-family);
   font-size: var(--text-base);
@@ -457,7 +458,7 @@ async function handleSubmit() {
 /* Split-Toggle (Segmented) */
 .split-toggle {
   display: flex;
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
@@ -477,12 +478,12 @@ async function handleSubmit() {
 }
 
 .split-toggle__btn:not(:last-child) {
-  border-right: 1px solid var(--color-neutral-300);
+  border-right: 1px solid var(--line-strong);
 }
 
 .split-toggle__btn--active {
   background: var(--color-primary);
-  color: var(--color-surface);
+  color: var(--color-on-primary);
 }
 
 /* Teilnehmer-Checkboxen */
@@ -540,7 +541,7 @@ async function handleSubmit() {
 .custom-share-row__input {
   width: 100px;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   font-family: var(--font-family);
   font-size: var(--text-base);
@@ -615,7 +616,7 @@ async function handleSubmit() {
 
 .category-chip--active {
   background: var(--p1);
-  color: white;
+  color: var(--color-on-primary);
   border-color: var(--p1);
 }
 </style>

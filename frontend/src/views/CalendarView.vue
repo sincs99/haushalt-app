@@ -1252,7 +1252,7 @@ watch(
 .filter-chip {
   display: inline-flex;
   align-items: center;
-  padding: 4px 14px;
+  padding: var(--chip-padding-sm);
   border: 2px solid;
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
@@ -1315,7 +1315,7 @@ watch(
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-0-5);
   padding: var(--space-2) 0;
   border: none;
   background: none;
@@ -1363,7 +1363,7 @@ watch(
 
 .week-strip__dots {
   display: flex;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-height: 6px;
   align-items: center;
 }
@@ -1443,10 +1443,10 @@ watch(
 }
 
 .event-card__date-badge {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   color: var(--sub);
   background: var(--chip);
-  padding: 1px 6px;
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
 }
 
@@ -1480,10 +1480,10 @@ watch(
 }
 
 .event-card__everyone-chip {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   color: var(--sub);
   background: var(--chip);
-  padding: 2px 8px;
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   white-space: nowrap;
 }
@@ -1499,18 +1499,18 @@ watch(
   position: fixed;
   right: var(--space-4);
   bottom: var(--fab-bottom);
-  width: 52px;
-  height: 52px;
+  width: var(--fab-size);
+  height: var(--fab-size);
   border-radius: var(--radius-full);
   background: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow-overlay);
-  z-index: 100;
+  z-index: var(--z-fab);
   transition: transform var(--transition-fast), filter var(--transition-fast);
 }
 
@@ -1654,7 +1654,7 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 4px 12px;
+  padding: var(--chip-padding-sm);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-full);
   background: var(--card);
@@ -1689,7 +1689,7 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 4px 12px 4px 4px;
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-full);
   background: var(--card);
@@ -1777,7 +1777,7 @@ watch(
 .poll-option__votes {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .poll-option__votes > *:not(:first-child) {
@@ -1802,17 +1802,17 @@ watch(
 }
 
 .form-error {
-  margin: 2px 0 0;
+  margin: var(--space-0-5) 0 0;
   font-size: var(--text-sm);
   color: var(--color-danger);
 }
 
 /* ── Span Badge ── */
 .event-card__span-badge {
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   color: var(--acc);
   background: var(--acc-soft);
-  padding: 1px 6px;
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;
@@ -1833,8 +1833,8 @@ watch(
 }
 
 .color-picker {
-  width: var(--tap-min);
-  height: var(--tap-min);
+  width: var(--touch-target);
+  height: var(--touch-target);
   padding: 0;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
@@ -1844,7 +1844,7 @@ watch(
 }
 
 .color-picker::-webkit-color-swatch-wrapper {
-  padding: 2px;
+  padding: var(--space-0-5);
 }
 
 .color-picker::-webkit-color-swatch {

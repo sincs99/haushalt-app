@@ -186,7 +186,7 @@ function discard() {
           {{ t('ai.recipe.addedMissing', { n: missingAdded }, missingAdded) }}
         </p>
         <BaseButton v-else variant="secondary" size="sm" :loading="addingMissing" @click="addMissing">
-          <PhShoppingBagOpen :size="16" style="margin-right: 6px" />
+          <PhShoppingBagOpen :size="16" style="margin-right: var(--space-1-5)" />
           {{ t('ai.recipe.addMissing') }}
         </BaseButton>
       </div>
@@ -235,11 +235,11 @@ function discard() {
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
-  border-radius: var(--radius-btn, 12px);
+  border-radius: var(--radius-btn);
   background: var(--card);
   color: var(--ink);
   font: inherit;
-  font-size: 16px; /* iOS-Zoom vermeiden */
+  font-size: var(--text-base); /* iOS-Zoom vermeiden */
   box-sizing: border-box;
 }
 
@@ -253,7 +253,7 @@ function discard() {
 
 .ai-form__hint {
   margin: calc(-1 * var(--space-2)) 0 0;
-  font-size: var(--text-xs, 12px);
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
 
@@ -289,13 +289,13 @@ function discard() {
 
 .ai-error {
   margin: 0;
-  color: var(--color-danger, #c0392b);
+  color: var(--color-danger);
   font-size: var(--text-sm);
 }
 
 .ai-success {
   margin: 0;
-  color: var(--ok, var(--color-primary));
+  color: var(--ok);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
 }
@@ -309,7 +309,7 @@ function discard() {
 .ai-result__review {
   margin: 0;
   padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-btn, 12px);
+  border-radius: var(--radius-btn);
   background: var(--chip);
   font-size: var(--text-sm);
   color: var(--ink);
@@ -341,7 +341,7 @@ function discard() {
   padding-left: var(--space-4);
   color: var(--ink);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--line-height-normal);
 }
 
 .ai-result__steps li + li {
@@ -361,10 +361,10 @@ function discard() {
 }
 
 .ai-tag {
-  padding: 2px var(--space-2);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
   background: var(--chip);
-  font-size: var(--text-xs, 12px);
+  font-size: var(--text-badge);
   color: var(--ink);
 }
 
@@ -377,7 +377,7 @@ function discard() {
 
 .ai-disclaimer {
   margin: var(--space-2) 0 0;
-  font-size: var(--text-xs, 12px);
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
 

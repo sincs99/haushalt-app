@@ -72,7 +72,7 @@ Screenshots und `summary.tsv`/`findings.json` landen unter
 | # | Route | Viewport | Beschreibung | Ursache | Fix |
 |---|---|---|---|---|---|
 | 1 | `/expenses` | alle, v. a. 360×780 | Seite 531 px breit, horizontaler Scroll; Bottom-Nav und Dialoge wurden mitverbreitert (Ausgabe-Dialog rechts abgeschnitten) | Ausgleichszahlung-Zeile: Namen, Betrag, Datum/Notiz und Löschen in einer Flex-Zeile ohne `min-width: 0`/`flex-wrap` | `2410f67` |
-| 2 | `/shopping`, `/todos`, `/chores`, `/expenses`, `/household`, `/dashboard` | 390×844, 430×932 | Letzter Eintrag liegt ans Ende gescrollt halb unter der Bottom-Nav | Nav wächst um `env(safe-area-inset-bottom)`, `.app-content` reserviert nur 64 px | `cfebb74` (Tokens `--safe-bottom`, `--bottom-nav-space`) |
+| 2 | `/shopping`, `/todos`, `/chores`, `/expenses`, `/household`, `/dashboard` | 390×844, 430×932 | Letzter Eintrag liegt ans Ende gescrollt halb unter der Bottom-Nav | Nav wächst um `env(safe-area-inset-bottom)`, `.app-content` reserviert nur 64 px | `cfebb74` (Tokens `--safe-bottom`, `--bottom-nav-height`) |
 | 3 | `/calendar` | 390×844, 430×932 | „Neuer Termin“-FAB 13 px über der Bottom-Nav | `bottom: 80px` ohne Safe-Area | `64caccc` (`--fab-bottom`) |
 | 4 | `/pets`, `/plants` | alle | FAB verdeckt am Seitenende den Löschen-Button der letzten Karte | kein Platz unter der letzten Karte | `64caccc` |
 | 5 | `/todos` | alle | „Überfällig“-Badge quetscht lange Titel auf ~12 Zeichen pro Zeile | Titelzeile ohne `flex-wrap` | `789ee2c` |
@@ -80,7 +80,7 @@ Screenshots und `summary.tsv`/`findings.json` landen unter
 | 7 | Mehr-Menü | 360×560 / 390×500 | Sheet oben abgeschnitten (Oberkante −26 px), Titel und erster Eintrag unerreichbar | kein `max-height`/Scroll | `c4e5fd2` |
 | 8 | `/expenses` → „Als bezahlt markieren“ | alle, 390×500 | Dialog ohne Innenabstand; mit Abstand bei offener Tastatur höher als der Viewport | Token `--space-5` existiert nicht; kein `max-height` | `3ea6a17` |
 | 9 | `/household` | alle | „Admin“-Badge ohne Innenabstand | Token `--space-0-5` existiert nicht | `b8dfcca` |
-| 10 | alle | alle | Abhak-Kreis 22 px, Dialog-Schliessen 26 px, Pill-Tabs 31 px, kleine Buttons 36 px | Basis-Komponenten unter 44 px | `089896f` (Utility `.tap-target`, Token `--tap-min`) |
+| 10 | alle | alle | Abhak-Kreis 22 px, Dialog-Schliessen 26 px, Pill-Tabs 31 px, kleine Buttons 36 px | Basis-Komponenten unter 44 px | `089896f` (Utility `.tap-target`, Token `--touch-target`) |
 | 11 | `/shopping` | 360×780, 390×844 | „+“ für neue Liste bei langem Listennamen ausserhalb der Pill-Leiste | Button am Ende eines horizontalen Scroll-Containers | `f6cd713` (sticky) |
 | 12 | `/shopping`, `/notes`, `/pets`, `/plants`, Detailseiten, `/calendar`, `/food`, `/expenses`, `/household`, `/tags`, `/register`, `/t/…` | alle | Icon-Buttons, Löschen-Links, Chips, Wochen-Pfeile 22–38 px | Einzelkomponenten unter 44 px | `afbed1f` |
 | 13 | `/todos`, `/chores`, `/documents`, Katze/Pflanze Detail, `/food` | alle | Vergrösserte Tap-Flächen benachbarter Buttons überlappen 2–6 px (Tipp auf den Rand löst Nachbaraktion aus) | Abstand 4 px zwischen Icon-Buttons | `8e11fb3` |

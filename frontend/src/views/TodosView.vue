@@ -131,7 +131,7 @@ onUnmounted(() => {
   background: var(--chip);
   border-radius: var(--radius-btn);
   padding: 3px;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .segment-control a {

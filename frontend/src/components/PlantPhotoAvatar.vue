@@ -78,7 +78,7 @@ const iconSize = computed(() => {
   width: 100%;
   height: 100%;
   background: var(--chip);
-  animation: plant-avatar-pulse 1.5s ease-in-out infinite;
+  animation: plant-avatar-pulse var(--duration-pulse) ease-in-out infinite;
 }
 
 .plant-avatar__icon {

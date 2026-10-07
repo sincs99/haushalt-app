@@ -76,5 +76,7 @@ backups/
 # Frontend coverage
 frontend/coverage/
 
-# Mobile-Layout-QA: Screenshots/Befunde (lokal, nicht einchecken)
-frontend/qa/mobile/
+# UI-/Mobile-Screenshots (lokal, Playwright); die Audit-Skripte bleiben versioniert
+frontend/qa/*
+!frontend/qa/mobile-audit.cjs
+!frontend/qa/seed-testdata.py

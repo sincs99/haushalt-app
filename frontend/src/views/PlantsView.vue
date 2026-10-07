@@ -219,7 +219,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
     <div v-if="plantsStore.loading && plantsStore.plants.length === 0" class="skeleton-list">
       <div class="skeleton-row" v-for="n in 3" :key="n">
         <BaseSkeleton width="40px" height="40px" rounded />
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-1);">
           <BaseSkeleton :width="['75%', '60%', '85%'][n - 1]" height="16px" />
           <BaseSkeleton width="40%" height="12px" />
         </div>
@@ -253,7 +253,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
             :disabled="wateringAll"
             @click="handleWaterAll"
           >
-            <PhDrop :size="18" weight="bold" />
+            <PhDrop :size="20" weight="bold" />
             {{ $t('plants.waterAll') }}
           </BaseButton>
         </BaseCard>
@@ -308,7 +308,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
               :disabled="wateringIds.has(plant.id)"
               @click.stop="handleWater(plant.id)"
             >
-              <PhDrop :size="18" weight="bold" />
+              <PhDrop :size="20" weight="bold" />
               {{ $t('plants.watered') }}
             </BaseButton>
           </div>
@@ -382,7 +382,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
 
 .card-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   margin: 0 0 var(--space-3) 0;
   color: var(--ink);
@@ -423,12 +423,13 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
 }
 
 .plant-card__name {
-  font-size: var(--text-lg);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-display);
 }
 
 .plant-card__details {
@@ -474,20 +475,20 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
 /* ── Due Badges ── */
 .due-badge {
   flex-shrink: 0;
-  font-size: var(--text-xs);
+  font-size: var(--text-badge);
   font-weight: var(--font-weight-semibold);
-  padding: 2px var(--space-2);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
 }
 
 .due-badge--overdue {
   background: var(--color-danger);
-  color: #fff;
+  color: var(--color-on-danger);
 }
 
 .due-badge--today {
-  background: var(--color-warning);
-  color: #fff;
+  background: var(--color-warning-soft);
+  color: var(--color-warning-strong);
 }
 
 /* ── FAB ── */
@@ -504,14 +505,14 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
   height: var(--fab-size);
   border-radius: var(--radius-full);
   background: var(--acc);
-  color: #fff;
+  color: var(--color-on-accent);
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow-overlay);
   cursor: pointer;
-  z-index: 50;
+  z-index: var(--z-fab);
   transition: transform var(--transition-fast);
 }
 
@@ -535,7 +536,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
 .checkbox-row {
   display: flex;
   align-items: center;
-  min-height: var(--tap-min); /* ganze Zeile ist Tap-Ziel der Checkbox */
+  min-height: var(--touch-target); /* ganze Zeile ist Tap-Ziel der Checkbox */
   gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--ink);

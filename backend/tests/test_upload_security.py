@@ -104,7 +104,8 @@ def test_upload_image_over_pixel_limit_rejected(client, household_a, token_a, mo
     # 40x40 = 1600 Pixel: zwischen 1x und 2x Limit → Pillow würde nur warnen
     resp = _upload(client, household_a.id, token_a, "bomb.png", _png_bytes(40, 40), "image/png")
     assert resp.status_code == 422
-    assert resp.json()["detail"]["code"] == "FILE_TYPE_NOT_ALLOWED"
+    # Eigener Code, damit die App „zu viele Pixel“ statt „falsches Format“ anzeigt
+    assert resp.json()["detail"]["code"] == "IMAGE_TOO_MANY_PIXELS"
 
 
 def test_upload_image_under_pixel_limit_ok(client, household_a, token_a):

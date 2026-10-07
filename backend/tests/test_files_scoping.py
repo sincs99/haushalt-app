@@ -123,6 +123,32 @@ def test_upload_wrong_mime_type(client, household_a, token_a):
 # ---------------------------------------------------------------------------
 
 
+def test_upload_image_too_many_pixels(client, household_a, token_a):
+    """Sehr grosse Fotos (z.B. 48 MP) bekommen einen eigenen, verständlichen Code."""
+    img = Image.new("1", (6000, 5000))  # 30 MP, als 1-Bit-PNG nur wenige KB
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    resp = client.post(
+        f"/api/households/{household_a.id}/files/",
+        headers={"Authorization": f"Bearer {token_a}"},
+        files={"file": ("big.png", buf, "image/png")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "IMAGE_TOO_MANY_PIXELS"
+
+
+def test_upload_corrupt_image(client, household_a, token_a):
+    """Kaputte Bilddaten bleiben FILE_TYPE_NOT_ALLOWED."""
+    resp = client.post(
+        f"/api/households/{household_a.id}/files/",
+        headers={"Authorization": f"Bearer {token_a}"},
+        files={"file": ("cat.jpg", io.BytesIO(b"not really a jpeg"), "image/jpeg")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "FILE_TYPE_NOT_ALLOWED"
+
+
 def test_download_own_file(client, household_a, token_a, stored_file_a):
     """GET eigene Datei → 200."""
     with patch("app.routers.files._storage") as mock_storage:

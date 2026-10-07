@@ -7,7 +7,7 @@ import { useAuthStore } from '../stores/auth'
 import { useToast } from '../composables/useToast'
 import { formatDateShort } from '../utils/dates'
 import type { ChoreInfo, ChoreAssignmentInfo, ChoreCreatePayload, ChoreUpdatePayload } from '../types'
-import { PhBroom, PhCalendarCheck, PhPencilSimple, PhX } from '@phosphor-icons/vue'
+import { PhBroom, PhCalendarCheck, PhPencilSimple, PhUserSwitch, PhX } from '@phosphor-icons/vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
@@ -328,7 +328,7 @@ const weekdayOptions = computed(() =>
     <div v-if="choresStore.loading" class="skeleton-list">
       <div class="skeleton-row" v-for="n in 3" :key="n">
         <BaseSkeleton width="22px" height="22px" rounded />
-        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-1);">
           <BaseSkeleton :width="['75%', '60%', '85%'][n - 1]" height="16px" />
           <BaseSkeleton width="40%" height="12px" />
         </div>
@@ -414,7 +414,7 @@ const weekdayOptions = computed(() =>
                   :aria-label="$t('chores.reassignTo')"
                   @click="openReassignDialog(assignment.id)"
                 >
-                  👤
+                  <PhUserSwitch :size="20" />
                 </button>
               </div>
 
@@ -672,7 +672,7 @@ const weekdayOptions = computed(() =>
 .section__title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }
@@ -704,8 +704,8 @@ const weekdayOptions = computed(() =>
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  background: var(--color-neutral-50);
-  border-bottom: 1px solid var(--color-neutral-200);
+  background: var(--color-surface-subtle);
+  border-bottom: 1px solid var(--line);
 }
 
 .day-group__label {
@@ -740,7 +740,7 @@ const weekdayOptions = computed(() =>
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-neutral-200);
+  border-bottom: 1px solid var(--line);
   position: relative;
 }
 
@@ -783,7 +783,7 @@ const weekdayOptions = computed(() =>
 .assignment-row__content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -813,7 +813,7 @@ const weekdayOptions = computed(() =>
 .reassign-dropdown {
   width: 100%;
   background: var(--color-surface);
-  border: 1px solid var(--color-neutral-200);
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
   padding: var(--space-2);
   margin-top: var(--space-1);
@@ -828,7 +828,7 @@ const weekdayOptions = computed(() =>
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-secondary);
-  border-bottom: 1px solid var(--color-neutral-200);
+  border-bottom: 1px solid var(--line);
   margin-bottom: var(--space-1);
 }
 
@@ -849,7 +849,7 @@ const weekdayOptions = computed(() =>
 }
 
 .reassign-dropdown__option:hover {
-  background: var(--color-neutral-100);
+  background: var(--chip);
 }
 
 .reassign-dropdown__option--active {
@@ -877,7 +877,7 @@ const weekdayOptions = computed(() =>
 }
 
 .action-btn:hover {
-  background: var(--color-neutral-100);
+  background: var(--chip);
   color: var(--color-text);
 }
 
@@ -887,7 +887,7 @@ const weekdayOptions = computed(() =>
 }
 
 .action-btn--danger:hover {
-  background: var(--color-danger-light);
+  background: var(--color-danger-soft);
   color: var(--color-danger);
 }
 
@@ -931,7 +931,7 @@ const weekdayOptions = computed(() =>
 }
 
 .form-field--row .form-label {
-  min-height: var(--tap-min); /* ganze Zeile ist Tap-Ziel der Checkbox */
+  min-height: var(--touch-target); /* ganze Zeile ist Tap-Ziel der Checkbox */
 }
 
 .form-label {
@@ -952,7 +952,7 @@ const weekdayOptions = computed(() =>
 .form-input {
   width: 100%;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   font-size: var(--text-base);
   font-family: var(--font-family);
@@ -970,7 +970,7 @@ const weekdayOptions = computed(() =>
 .form-textarea {
   width: 100%;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-neutral-300);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   font-family: var(--font-family);
@@ -1008,7 +1008,7 @@ const weekdayOptions = computed(() =>
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2);
-  background: var(--color-neutral-50);
+  background: var(--color-surface-subtle);
   border-radius: var(--radius-sm);
 }
 
@@ -1036,7 +1036,7 @@ const weekdayOptions = computed(() =>
 
 .chore-card {
   background: var(--color-surface);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-item);
   box-shadow: var(--shadow-card);
   padding: var(--space-3) var(--space-4);
   display: flex;
@@ -1054,7 +1054,7 @@ const weekdayOptions = computed(() =>
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .chore-card__title-line {
@@ -1064,23 +1064,23 @@ const weekdayOptions = computed(() =>
 }
 
 .chore-card__title {
-  font-size: var(--text-base);
-  font-weight: var(--font-weight-medium);
+  font-size: var(--text-title-item);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
 }
 
 .inactive-badge {
-  font-size: var(--text-xs);
-  padding: 2px var(--space-2);
+  font-size: var(--text-badge);
+  padding: var(--badge-padding);
   border-radius: var(--radius-full);
-  background: var(--color-neutral-200);
+  background: var(--line);
   color: var(--color-text-muted);
 }
 
 .chore-card__meta {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
@@ -1107,7 +1107,7 @@ const weekdayOptions = computed(() =>
   width: 100%;
   padding: var(--space-3);
   margin-top: var(--space-2);
-  background: var(--color-danger-light);
+  background: var(--color-danger-soft);
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-danger);
 }
@@ -1126,7 +1126,7 @@ const weekdayOptions = computed(() =>
 .filter-toggle {
   display: flex;
   gap: var(--space-1);
-  background: var(--color-neutral-100);
+  background: var(--chip);
   border-radius: var(--radius-md);
   padding: var(--space-1);
   margin-bottom: var(--space-3);
@@ -1143,7 +1143,7 @@ const weekdayOptions = computed(() =>
   color: var(--color-text-secondary);
   cursor: pointer;
   font-family: var(--font-family);
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
 }
 
 .filter-chip--active {
@@ -1158,7 +1158,7 @@ const weekdayOptions = computed(() =>
   background: var(--chip);
   border-radius: var(--radius-btn);
   padding: 3px;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .segment-control a {

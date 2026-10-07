@@ -388,7 +388,7 @@ async function doCreateMealPoll() {
               :aria-label="t('food.favorite')"
             >
               <PhStar
-                :size="18"
+                :size="20"
                 :weight="getEntryForDate(date)?.recipe?.is_favorite ? 'fill' : 'regular'"
               />
             </button>
@@ -639,7 +639,7 @@ async function doCreateMealPoll() {
             :loading="addToShoppingLoading"
             @click="doAddToShopping"
           >
-            <PhShoppingBagOpen :size="18" style="margin-right: 6px" />
+            <PhShoppingBagOpen :size="20" style="margin-right: var(--space-1-5)" />
             {{ t('food.addToShopping') }}
           </BaseButton>
 
@@ -716,7 +716,7 @@ async function doCreateMealPoll() {
 .card-section-title {
   margin: 0 0 var(--space-3);
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }
@@ -802,7 +802,7 @@ async function doCreateMealPoll() {
 .week-row__name--empty {
   color: var(--sub);
   font-style: italic;
-  font-weight: normal;
+  font-weight: var(--font-weight-normal);
 }
 
 .week-row__meta {
@@ -930,7 +930,7 @@ async function doCreateMealPoll() {
   margin: 0;
   padding-left: var(--space-4);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--line-height-normal);
   color: var(--ink);
 }
 
@@ -951,7 +951,7 @@ async function doCreateMealPoll() {
 .detail-shopping__added {
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
-  color: var(--green, #22c55e);
+  color: var(--ok);
 }
 
 .detail-shopping__skipped {
@@ -965,7 +965,7 @@ async function doCreateMealPoll() {
   align-items: center;
   gap: var(--space-2);
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   color: var(--ink);
 }
@@ -1009,12 +1009,12 @@ async function doCreateMealPoll() {
 
 .meal-poll__option:hover {
   border-color: var(--acc);
-  background: var(--acc-soft, rgba(99, 102, 241, 0.06));
+  background: var(--acc-soft);
 }
 
 .meal-poll__option--voted {
   border-color: var(--acc);
-  background: var(--acc-soft, rgba(99, 102, 241, 0.1));
+  background: var(--acc-soft);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -1042,7 +1042,7 @@ async function doCreateMealPoll() {
 
 .meal-poll__option--voted .meal-poll__option-count {
   background: var(--acc);
-  color: #fff;
+  color: var(--color-on-accent);
 }
 
 .meal-poll__decide {

@@ -54,7 +54,7 @@ async function fetchAdvice() {
       :disabled="!plantName.trim() || aiStore.plantLoading"
       @click="fetchAdvice"
     >
-      <PhSparkle :size="18" />
+      <PhSparkle :size="20" />
       {{ t('ai.plant.fetchForPlant') }}
     </BaseButton>
     <p v-if="!plantName.trim()" class="ai-plant__hint">{{ t('ai.plant.needName') }}</p>

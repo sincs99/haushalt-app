@@ -1,108 +1,196 @@
 /* ============================================
    Design Tokens — Haushalt-App
    Mobile-First, keine externen Frameworks
+   Referenz: docs/design/design-tokens.md
    ============================================ */
 
 :root {
-  /* --- Neue Design-Token (Light) --- */
-  --bg: #DDE8E4;
-  --card: #FBF8F3;
-  --ink: #3A423F;
-  --sub: #5F6D69;
-  --line: rgba(58,66,63,.10);
-  --line-strong: rgba(58,66,63,.22);
-  --chip: #EAF1EE;
-  --acc: #A0714A;
-  --acc-soft: #F2E8DC;
-  --nav: #E8F0EC;
-  --p1: #3F827A;
-  --p2: #9C6E79;
-  --ok: #6E9273;
+  color-scheme: light;
 
-  /* --- Alias-Mapping (alt → neu) --- */
+  /* --- 1. Palette (Light) ---
+     Nur hier stehen Hex-Werte. Komponenten nutzen die Palette
+     oder die semantischen Aliase darunter. */
+  --bg: #DDE8E4;          /* App-Hintergrund */
+  --card: #FBF8F3;        /* Karten, Sheets, Dialoge */
+  --ink: #3A423F;         /* Primärtext */
+  --sub: #5D6A66;         /* Sekundärtext (AA auf bg, chip, card) */
+  --line: rgba(58,66,63,.10);        /* Trennlinien */
+  --line-strong: rgba(58,66,63,.22); /* Rahmen von Eingaben/Checkboxen */
+  --chip: #EAF1EE;        /* Chips, Pills, sekundäre Flächen */
+  --acc: #896140;         /* Akzent: Primär-Buttons, aktive Zustände (AA) */
+  --acc-soft: #F2E8DC;    /* Akzent-Fläche: Hover, Fokus-Halo */
+  --nav: #E8F0EC;         /* Navigationsleiste */
+  --p1: #3D7D75;          /* Teal: Info, Mitglied 1 */
+  --p2: #936570;          /* Rosa: Mitglied 2 */
+  --ok: #5B795F;          /* Erfolg/erledigt */
+  --member-3: #7F6577;    /* Mauve: Mitglied 3 */
+  --member-4: #77705F;    /* Olive: Mitglied 4 */
+
+  /* --- 2. Semantische Farben --- */
   --color-primary: var(--p1);
   --color-primary-hover: var(--p1);
   --color-primary-dark: var(--p1);
   --color-primary-light: var(--chip);
+  --color-primary-strong: #3A766F;  /* Teal-Text auf --chip (Badges) */
   --color-bg: var(--bg);
   --color-surface: var(--card);
+  --color-surface-subtle: var(--chip);
   --color-text: var(--ink);
   --color-text-secondary: var(--sub);
   --color-text-muted: var(--sub);
+  --color-border: var(--line);
+  --color-border-strong: var(--line-strong);
+
   --color-success: var(--ok);
+  --color-success-strong: #526D56;  /* Erfolgs-Text auf --chip/--bg */
   --color-danger: #DC2626;
   --color-danger-hover: #B91C1C;
-  --color-danger-light: var(--acc-soft);
-  --color-warning: #C09A62;
+  --color-danger-soft: #FDECEC;     /* Fehler-Flächen, Hover destruktiver Aktionen */
+  --color-danger-strong: #B91C1C;   /* Text auf --color-danger-soft */
+  --color-danger-border: #FECACA;
+  --color-danger-light: var(--color-danger-soft); /* Alt-Alias */
+  --color-warning: #C09A62;         /* nur Flächen/Punkte, nie Text auf card */
+  --color-warning-soft: #F7EEDF;
+  --color-warning-strong: #7A5A2A;  /* Text auf --color-warning-soft oder card */
 
-  /* --- Typografie --- */
+  /* Vordergrund auf farbigen Flächen */
+  --color-on-accent: var(--card);
+  --color-on-primary: var(--card);
+  --color-on-success: var(--card);
+  --color-on-danger: #FFFFFF;
+  --color-on-warning: #26302D;
+  --color-on-member: #FFFFFF;
+
+  --color-scrim: rgba(0, 0, 0, 0.4);  /* Overlay hinter Dialogen/Sheets */
+  --color-fallback: #8B8B8B;          /* neutrale Ersatzfarbe (Kategorie, Kalender) */
+
+  /* --- 3. Typografie ---
+     Quicksand (--font-display): Seiten-, Karten-, Abschnitts-, Dialogtitel.
+     Nunito (--font-family): alles andere. */
   --font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: 'Quicksand', 'Nunito', sans-serif;
-  --text-xs: 0.75rem;     /* 12px */
-  --text-sm: 0.875rem;    /* 14px */
-  --text-base: 1rem;      /* 16px */
-  --text-lg: 1.25rem;     /* 20px */
-  --text-xl: 1.5rem;      /* 24px */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; /* Code, Schlüssel */
+  --text-2xs: 0.625rem;   /* 10px  Zähler in Mini-Badges, Avatar sm */
+  --text-xs: 0.75rem;     /* 12px  Badges, Meta */
+  --text-sm: 0.875rem;    /* 14px  Sekundärtext, Labels */
+  --text-base: 1rem;      /* 16px  Body, Listentitel, Inputs */
+  --text-md: 1.125rem;    /* 18px  Karten-/Abschnittstitel */
+  --text-lg: 1.25rem;     /* 20px  Karten-/Dialogtitel */
+  --text-xl: 1.5rem;      /* 24px  Seitentitel */
+  --text-2xl: 2rem;       /* 32px  Kennzahlen, Hero-Emoji */
+  --line-height-none: 1;
   --line-height-tight: 1.25;
+  --line-height-snug: 1.35;
   --line-height-normal: 1.5;
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
 
-  /* --- Spacing (4px-Basis) --- */
+  /* Semantische Rollen */
+  --text-title-page: var(--text-xl);    /* PageHeader, Auth */
+  --text-title-dialog: var(--text-lg);  /* Dialoge, Sheets, leere Zustände */
+  --text-title-card: var(--text-md);    /* Karten- und Abschnittstitel */
+  --text-title-item: var(--text-base);  /* Einträge in Listen-Karten */
+  --text-secondary: var(--text-sm);     /* Sekundärzeile */
+  --text-badge: var(--text-xs);         /* Badges, Zähler */
+
+  /* --- 4. Abstände (4px-Basis, 2px/6px nur für Feinheiten) --- */
+  --space-0-5: 2px;
   --space-1: 4px;
+  --space-1-5: 6px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
 
-  /* --- Border Radius --- */
-  --radius-sm: 6px;       /* Kleine Elemente */
-  --radius-md: 8px;       /* Allgemein */
+  /* --- 5. Radien --- */
+  --radius-xs: 4px;       /* Mini-Elemente (Balken, Rasterzellen) */
+  --radius-sm: 6px;       /* Kleine Elemente, Icon-Buttons */
+  --radius-md: 8px;       /* Allgemein, Toasts */
   --radius-lg: 12px;      /* Modals */
-  --radius-full: 999px;   /* Pills / Avatare */
-  --radius-card: 20px;    /* Karten */
+  --radius-xl: 16px;      /* Bottom-Sheets oben */
   --radius-btn: 12px;     /* Buttons & Inputs */
+  --radius-item: 12px;    /* Listen-Karten (Notizen, Tags, Dokumente, Ämtli) */
+  --radius-card: 20px;    /* Karten */
   --radius-dialog: 24px;  /* Dialoge/Sheets */
+  --radius-full: 999px;   /* Pills / Avatare */
 
-  /* --- Schatten --- */
+  /* --- 6. Schatten & Fokus --- */
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-sm: var(--shadow-card);
   --shadow-overlay: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --focus-ring: 0 0 0 3px var(--acc-soft);  /* Inputs: Halo */
+  --focus-outline: 2px solid var(--acc);   /* Buttons, Links: Outline */
 
-  /* --- Übergänge --- */
-  --transition-fast: 150ms ease;
-  --transition-normal: 200ms ease;
-
-  /* --- Icon-Grössen --- */
-  --icon-size-sm: 16px;
-  --icon-size-md: 20px;
-  --icon-size-lg: 24px;
-
-  /* --- Toast --- */
+  /* --- 7. Bewegung --- */
+  --duration-fast: 150ms;    /* Hover, Farbwechsel, Press */
+  --duration-normal: 200ms;  /* Ein-/Ausblenden, Dialoge */
+  --duration-slow: 300ms;    /* Sheets, Toasts */
+  --ease-standard: ease;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);  /* Eintritt */
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);   /* Austritt */
+  --transition-fast: var(--duration-fast) var(--ease-standard);
+  --transition-normal: var(--duration-normal) var(--ease-standard);
+  --transition-slow: var(--duration-slow) var(--ease-out);
+  --duration-pulse: 1.5s;    /* Endlos-Puls (Skeleton, Sync-Punkt) */
+  --duration-spin: 0.6s;     /* Spinner-Umdrehung */
   --toast-duration: 4000ms;
 
-  /* --- Erweiterte Radien --- */
-  --radius-xl: 16px;
+  /* --- 8. Icons (Phosphor-Props folgen derselben Skala) --- */
+  --icon-size-xs: 12px;      /* Badges, Check-Circle */
+  --icon-size-sm: 16px;      /* Buttons sm, Meta-Zeilen, Listen-Aktionen */
+  --icon-size-md: 20px;      /* Buttons md, Icon-Buttons, Listen-Icons */
+  --icon-size-lg: 24px;      /* Navigation, FAB */
+  --icon-size-xl: 32px;      /* Karten-Hero */
+  --icon-size-display: 48px; /* Leere Zustände */
 
-  /* --- App-Shell (Mobile) --- */
-  --safe-bottom: env(safe-area-inset-bottom, 0px);  /* iOS Home-Indicator */
-  --bottom-nav-space: 64px;                          /* Platz für die Bottom-Nav (ohne Safe-Area) */
+  /* --- 9. Grössen --- */
+  --touch-target: 44px;
+  --avatar-sm: 22px;
+  --avatar-md: 32px;
+  --avatar-lg: 48px;
   --fab-size: 56px;
-  --tap-min: 44px;                                   /* Mindestgrösse Tap-Ziel (Apple HIG) */
-  --fab-bottom: calc(var(--bottom-nav-space) + var(--safe-bottom) + var(--space-4));
+  --bottom-nav-height: 64px;
+  --check-size: 22px;
+  --badge-padding: var(--space-0-5) var(--space-2);  /* Status-Badges, Zähler */
+  --chip-padding: var(--space-1-5) var(--space-4);   /* Pill-Tabs, Filter-Chips */
+  --chip-padding-sm: var(--space-1) var(--space-3);  /* kleine Auswahl-Chips */
+
+  /* --- 10. Ebenen (z-index) --- */
+  --z-raised: 1;      /* über Geschwistern */
+  --z-sticky: 10;     /* Sticky-Elemente in Listen */
+  --z-dropdown: 20;   /* Menüs innerhalb von Listen */
+  --z-fab: 50;
+  --z-nav: 100;       /* Bottom-Nav, Top-Bar */
+  --z-sheet: 200;     /* Bottom-Sheets */
+  --z-dialog: 1000;
+  --z-popover: 9000;  /* Popover über Dialogen */
+  --z-banner: 9999;   /* Offline-Banner */
+  --z-toast: 10000;
+
+  /* --- 11. App-Shell (Mobile) --- */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);  /* iOS Home-Indicator */
+  --fab-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + var(--space-4));
 }
 
 /* ============================================
    Dark Theme
+   Überschreibt nur Palette und Werte, die sich
+   nicht aus der Palette ableiten lassen.
    ============================================ */
 
 html[data-theme="dark"] {
+  color-scheme: dark;
+
   --bg: #182220;
   --card: #22302D;
   --ink: #E8EFEC;
-  --sub: #93A29E;
+  --sub: #96A4A0;
   --line: rgba(255,255,255,.10);
   --line-strong: rgba(255,255,255,.26);
   --chip: #2C3B38;
@@ -112,11 +200,23 @@ html[data-theme="dark"] {
   --p1: #5FA79E;
   --p2: #C1919B;
   --ok: #8AB08F;
+  --member-3: #B49AAC;
+  --member-4: #ABA390;
 
-  /* Dark-Aliases (Danger bleibt gleich, Warning leicht heller) */
-  --color-danger: #DC2626;
-  --color-danger-hover: #B91C1C;
+  --color-primary-strong: #6BADA5;
+  --color-success-strong: var(--ok);
+  --color-danger: #E86E6E;
+  --color-danger-hover: #F08A8A;
+  --color-danger-soft: #3A2424;
+  --color-danger-strong: #F0A3A3;
+  --color-danger-border: #6B3434;
   --color-warning: #C09A62;
+  --color-warning-soft: #3A3020;
+  --color-warning-strong: #E5C79A;
+
+  --color-on-danger: var(--card);
+  --color-on-member: var(--bg);
+  --color-scrim: rgba(0, 0, 0, 0.6);
 
   /* Schatten im Dark-Mode weicher/dunkler */
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.20);
@@ -146,7 +246,7 @@ body {
 
 /* ============================================
    Tap-Ziele
-   Vergrössert die Tap-Fläche kleiner Bedienelemente auf --tap-min, ohne die
+   Vergrössert die Tap-Fläche kleiner Bedienelemente auf --touch-target, ohne die
    Optik zu ändern (unsichtbares ::after). Das Element braucht position:
    relative/absolute; Komponenten mit eigener Positionierung behalten sie
    (scoped-Selektoren sind spezifischer).
@@ -159,13 +259,13 @@ body {
 .tap-target::after {
   content: '';
   position: absolute;
-  inset: min(0px, calc((100% - var(--tap-min)) / 2));
+  inset: min(0px, calc((100% - var(--touch-target)) / 2));
 }
 
 /* Eingabefelder und Auswahllisten mindestens so hoch wie ein Tap-Ziel */
 input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=range]):not([type=file]):not([type=hidden]),
 select {
-  min-height: var(--tap-min);
+  min-height: var(--touch-target);
 }
 
 /* iOS Tap-Highlight neutralisieren */
@@ -183,12 +283,22 @@ select {
   outline-offset: 2px;
 }
 
-/* Für Elemente die bereits einen eigenen Focus-Style haben (Inputs), keinen Doppel-Ring */
+/* Eingabefelder: Halo statt Outline. Basis für native Felder ohne eigenen
+   Fokus-Style; Komponenten-Styles (höhere Spezifität) überschreiben ihn. */
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
   outline: none;
-  /* Diese haben bereits box-shadow / border-color Änderungen in ihren Komponenten */
+  border-color: var(--acc);
+  box-shadow: var(--focus-ring);
+}
+
+/* Checkboxen/Radios behalten den Outline-Ring */
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 /* ============================================

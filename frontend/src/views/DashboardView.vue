@@ -219,7 +219,7 @@ function formatReminderDate(isoString: string): string {
       <!-- Karte: Heute (Events) -->
       <BaseCard class="clickable-card" @click="router.push('/calendar')">
         <h2 class="card-title">
-          <PhCalendarDots :size="18" style="vertical-align: -2px; margin-right: 4px" />
+          <PhCalendarDots :size="20" style="vertical-align: -0.125em; margin-right: var(--space-1)" />
           {{ t('calendar.today') }}
         </h2>
         <ul v-if="todayEvents.length > 0" class="event-list">
@@ -259,7 +259,7 @@ function formatReminderDate(isoString: string): string {
             />
             <component
               :is="item.type === 'chore' ? PhBroom : PhListChecks"
-              :size="14"
+              :size="16"
               class="task-item__type-icon"
             />
             <span
@@ -285,7 +285,7 @@ function formatReminderDate(isoString: string): string {
       <!-- Karte: Katzen-Fütterung -->
       <BaseCard v-if="petsStore.feedingStatus.length > 0" class="clickable-card" @click="router.push('/pets')">
         <h2 class="card-title">
-          <PhCat :size="18" style="vertical-align: -2px; margin-right: 4px" />
+          <PhCat :size="20" style="vertical-align: -0.125em; margin-right: var(--space-1)" />
           {{ t('pets.title') }}
         </h2>
         <p class="card-stat">{{ t('pets.feedingWidget', { fed: petsFedCount, total: petsTotalSlots }) }}</p>
@@ -294,7 +294,7 @@ function formatReminderDate(isoString: string): string {
       <!-- Karte: Katzen-Pflegetermine -->
       <BaseCard v-if="petCareDue.length > 0">
         <h2 class="card-title">
-           <PhPawPrint :size="18" style="vertical-align: -2px; margin-right: 4px" />
+           <PhPawPrint :size="20" style="vertical-align: -0.125em; margin-right: var(--space-1)" />
            {{ t('dashboard.petCareTitle') }}
         </h2>
         <ul class="pet-care-list">
@@ -325,7 +325,7 @@ function formatReminderDate(isoString: string): string {
       <!-- Karte: Pflanzen brauchen Wasser -->
       <BaseCard v-if="plantsWater.due_count > 0" class="clickable-card" @click="router.push('/plants')">
         <h2 class="card-title">
-          <PhPlant :size="18" style="vertical-align: -2px; margin-right: 4px" />
+          <PhPlant :size="20" style="vertical-align: -0.125em; margin-right: var(--space-1)" />
           {{ t('dashboard.plantsWaterTitle') }} ({{ plantsWater.due_count }})
         </h2>
         <ul class="pet-care-list">
@@ -430,7 +430,7 @@ function formatReminderDate(isoString: string): string {
 
 .greeting__title {
   font-family: var(--font-display);
-  font-size: var(--text-xl);
+  font-size: var(--text-title-page);
   color: var(--ink);
   margin: 0;
   overflow: hidden;
@@ -447,7 +447,7 @@ function formatReminderDate(isoString: string): string {
 /* ── Card Titles ── */
 .card-title {
   font-family: var(--font-display);
-  font-size: var(--text-base);
+  font-size: var(--text-title-card);
   font-weight: var(--font-weight-semibold);
   margin: 0 0 var(--space-3) 0;
   color: var(--ink);
@@ -632,7 +632,7 @@ function formatReminderDate(isoString: string): string {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .dash-card__label {
@@ -720,7 +720,7 @@ function formatReminderDate(isoString: string): string {
 }
 
 .pet-care-item__due--today {
-  color: var(--color-warning);
+  color: var(--color-warning-strong);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -745,7 +745,7 @@ function formatReminderDate(isoString: string): string {
 .reminder-item__content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 

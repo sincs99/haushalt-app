@@ -363,7 +363,7 @@ async function confirmDissolve() {
             class="group-header__kebab"
             @click.stop="kebabOpen = kebabOpen === groupName ? null : groupName"
           >
-            <PhDotsThreeVertical :size="18" />
+            <PhDotsThreeVertical :size="20" />
           </button>
           <!-- Kebab-Dropdown -->
           <div v-if="kebabOpen === groupName" class="kebab-menu" @click.stop>
@@ -412,7 +412,7 @@ async function confirmDissolve() {
       <div class="done-section__header">
         <button type="button" class="done-section__toggle" @click="showDone = !showDone">
           <PhCaretDown
-            :size="18"
+            :size="20"
             class="done-section__chevron"
             :class="{ 'done-section__chevron--open': showDone }"
           />
@@ -513,7 +513,7 @@ async function confirmDissolve() {
   align-items: center;
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: var(--z-sticky);
   background: var(--bg);
   padding-bottom: var(--space-2);
 }
@@ -554,7 +554,7 @@ async function confirmDissolve() {
   border-radius: var(--radius-full);
   border: none;
   background: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -582,7 +582,7 @@ async function confirmDissolve() {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 6px 14px;
+  padding: var(--chip-padding);
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
@@ -592,7 +592,7 @@ async function confirmDissolve() {
   font-family: var(--font-family);
   background: var(--chip);
   color: var(--ink);
-  transition: all 150ms;
+  transition: all var(--transition-fast);
   min-height: 44px;
 }
 
@@ -602,16 +602,16 @@ async function confirmDissolve() {
 }
 
 .store-chip__badge {
-  font-size: var(--text-xs);
-  background: rgba(0,0,0,0.1);
+  font-size: var(--text-badge);
+  background: var(--line);
   border-radius: var(--radius-full);
-  padding: 1px 6px;
+  padding: var(--badge-padding);
   min-width: 20px;
   text-align: center;
 }
 
 .store-chip--active .store-chip__badge {
-  background: rgba(255,255,255,0.2);
+  background: color-mix(in srgb, var(--card) 20%, transparent);
 }
 
 /* Skeleton Loading */
@@ -672,7 +672,7 @@ async function confirmDissolve() {
   position: absolute;
   right: 0;
   top: 100%;
-  z-index: 20;
+  z-index: var(--z-dropdown);
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius-btn);
@@ -684,7 +684,7 @@ async function confirmDissolve() {
 .kebab-menu button {
   display: block;
   width: 100%;
-  min-height: var(--tap-min);
+  min-height: var(--touch-target);
   text-align: left;
   padding: var(--space-3) var(--space-4);
   border: none;
@@ -845,7 +845,7 @@ async function confirmDissolve() {
 /* Dialog-Styles */
 .dialog-input {
   width: 100%;
-  padding: 10px 12px;
+  padding: var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
   font-size: var(--text-base);
@@ -873,7 +873,7 @@ async function confirmDissolve() {
   border-radius: var(--radius-btn);
   border: none;
   background: var(--acc);
-  color: var(--card);
+  color: var(--color-on-accent);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
   font-family: var(--font-family);
@@ -910,7 +910,7 @@ async function confirmDissolve() {
   border-radius: var(--radius-btn);
   border: none;
   background: var(--color-danger);
-  color: var(--card);
+  color: var(--color-on-danger);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
   font-family: var(--font-family);

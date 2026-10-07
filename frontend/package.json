@@ -4,9 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run check:locales && vue-tsc --noEmit && vite build",
+    "build": "npm run check:locales && npm run typecheck && vite build",
     "preview": "vite preview",
-    "typecheck": "vue-tsc --noEmit",
+    "typecheck": "vue-tsc -p tsconfig.app.json --noEmit",
     "check:locales": "node scripts/check-locales.js",
     "pwa:icons": "pwa-assets-generator",
     "test": "vitest run --config vitest.config.ts",

@@ -7,7 +7,8 @@ import { translateApiError } from './apiErrors'
  * Der Server verkleinert ohnehin auf 1600 px, lehnt aber Dateien über 10 MB
  * und Bilder über 25 Megapixel ab. Handy-Fotos (z.B. 48 MP auf dem iPhone)
  * scheitern sonst, obwohl am Ende nur 1600 px gespeichert werden. Nebeneffekt:
- * iPhone-Fotos im HEIC-Format werden zu JPEG, weil Safari HEIC dekodieren kann.
+ * HEIC wird im Browser zu JPEG; fehlt der Decoder, konvertiert der Server
+ * die Originaldatei unter seinen Upload- und Pixel-Limits.
  */
 
 export const MAX_IMAGE_EDGE = 1600
@@ -23,19 +24,47 @@ export class ImageUnreadableError extends Error {
   }
 }
 
+export class ImageTooLargeError extends Error {}
+
+/** HEIC often arrives without a MIME type from a photo picker. */
+export function isHeic(file: File): boolean {
+  return ['image/heic', 'image/heif'].includes(file.type.toLowerCase()) ||
+    (!file.type || file.type === 'application/octet-stream') && /\.(heic|heif)$/i.test(file.name)
+}
+
+function serverFile(file: File): File {
+  return isHeic(file) ? new File([file], file.name, { type: 'image/heic', lastModified: file.lastModified }) : file
+}
+
 /** Ziel-Grösse bei längster Kante maxEdge (nie vergrössern). */
 export function scaledSize(width: number, height: number, maxEdge = MAX_IMAGE_EDGE) {
   const longest = Math.max(width, height)
   if (longest <= maxEdge) return { width, height }
   const ratio = maxEdge / longest
-  return { width: Math.round(width * ratio), height: Math.round(height * ratio) }
+  return { width: Math.max(1, Math.round(width * ratio)), height: Math.max(1, Math.round(height * ratio)) }
 }
 
-async function decode(file: File): Promise<ImageBitmap> {
+type DecodedImage = { source: CanvasImageSource; width: number; height: number; close: () => void }
+
+async function decode(file: File): Promise<DecodedImage> {
   try {
-    // EXIF-Drehung übernehmen, damit Hochformat-Fotos nicht liegen
-    return await createImageBitmap(file, { imageOrientation: 'from-image' })
+    if (typeof createImageBitmap === 'function') {
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+      return { source: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() }
+    }
+  } catch { /* Safari's image element can support formats its bitmap decoder cannot. */ }
+
+  const url = URL.createObjectURL(file)
+  try {
+    const img = new Image()
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new ImageUnreadableError())
+      img.src = url
+    })
+    return { source: img, width: img.naturalWidth, height: img.naturalHeight, close: () => URL.revokeObjectURL(url) }
   } catch {
+    URL.revokeObjectURL(url)
     throw new ImageUnreadableError()
   }
 }
@@ -46,9 +75,17 @@ async function decode(file: File): Promise<ImageBitmap> {
  * Browser das Bild nicht öffnen kann.
  */
 export async function prepareImageForUpload(file: File): Promise<File> {
-  if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return file
+  if (typeof document === 'undefined') return file
 
-  const bitmap = await decode(file)
+  let bitmap: DecodedImage
+  try {
+    bitmap = await decode(file)
+  } catch (error) {
+    if (!isHeic(file)) throw error
+    // Server validates the bytes and converts HEIC when neither browser decoder can.
+    if (file.size > MAX_UPLOAD_BYTES) throw new ImageTooLargeError()
+    return serverFile(file)
+  }
   try {
     const target = scaledSize(bitmap.width, bitmap.height)
     const fits =
@@ -62,13 +99,13 @@ export async function prepareImageForUpload(file: File): Promise<File> {
     canvas.width = target.width
     canvas.height = target.height
     const ctx = canvas.getContext('2d')
-    if (!ctx) return file
-    ctx.drawImage(bitmap, 0, 0, target.width, target.height)
+    if (!ctx) return serverFile(file)
+    ctx.drawImage(bitmap.source, 0, 0, target.width, target.height)
 
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY),
     )
-    if (!blob) return file
+    if (!blob) return serverFile(file)
     const name = file.name.replace(/\.[^.]+$/, '') + '.jpg'
     return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() })
   } finally {
@@ -78,6 +115,7 @@ export async function prepareImageForUpload(file: File): Promise<File> {
 
 /** Lesbarer Grund für einen fehlgeschlagenen Foto-Upload (für Toasts). */
 export function imageUploadErrorReason(error: unknown): string {
+  if (error instanceof ImageTooLargeError) return i18n.global.t('errors.FILE_TOO_LARGE')
   if (error instanceof ImageUnreadableError) return i18n.global.t('errors.imageUnreadable')
   return translateApiError(error)
 }

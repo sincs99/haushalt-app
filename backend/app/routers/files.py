@@ -1,7 +1,7 @@
 """
 Files Router — Upload, Download, Delete von Dateien pro Household.
 
-MIME-Whitelist: image/jpeg, image/png, image/webp, application/pdf
+MIME-Whitelist: JPEG, PNG, WebP, HEIC/HEIF, PDF.
 Max 10 MB. Bilder werden mit Pillow validiert und auf max 1600px verkleinert.
 """
 
@@ -15,6 +15,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from PIL import Image, ImageOps
+from pillow_heif import register_heif_opener
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -30,14 +31,15 @@ from app.socket_manager import emit_to_household_sync
 
 # Decompression Bomb Schutz: max 25 Megapixel
 Image.MAX_IMAGE_PIXELS = 25_000_000
+register_heif_opener(thumbnails=False)
 
 # ---------------------------------------------------------------------------
 # Konstanten
 # ---------------------------------------------------------------------------
 
-ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
-IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
-PILLOW_FORMATS = ["JPEG", "PNG", "WEBP"]
+IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
+ALLOWED_MIME_TYPES = IMAGE_MIME_TYPES | {"application/pdf"}
+PILLOW_FORMATS = ["JPEG", "PNG", "WEBP", "HEIF"]
 PDF_MAGIC = b"%PDF-"
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 CHUNK_SIZE = 64 * 1024  # 64 KB
@@ -155,7 +157,7 @@ def _process_image(data: bytes, content_type: str) -> tuple[bytes, str, str]:
     max_dim = max(img.size)
     if max_dim > MAX_IMAGE_DIMENSION:
         ratio = MAX_IMAGE_DIMENSION / max_dim
-        new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+        new_size = (max(1, int(img.size[0] * ratio)), max(1, int(img.size[1] * ratio)))
         img = img.resize(new_size, Image.LANCZOS)
 
     buf = io.BytesIO()
@@ -196,7 +198,7 @@ def validate_upload(raw_data: bytes, content_type: str) -> tuple[bytes, str, str
     if content_type in IMAGE_MIME_TYPES:
         try:
             return _process_image(raw_data, content_type)
-        except ImageTooManyPixels:
+        except (ImageTooManyPixels, Image.DecompressionBombError):
             # Eigener Code: sonst sieht ein grosses Foto aus wie ein falsches Format
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

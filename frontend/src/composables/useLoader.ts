@@ -9,16 +9,31 @@ import { ref } from 'vue'
 export function useLoader(load: () => Promise<unknown>) {
   const loadError = ref(false)
   const reloading = ref(false)
+  let pending: Promise<void> | null = null
+  let requested = false
 
-  async function reload() {
-    if (reloading.value) return
+  function reload(): Promise<void> {
+    requested = true
+    if (pending) return pending
     reloading.value = true
+    pending = Promise.resolve().then(drain)
+    return pending
+  }
+
+  async function drain() {
     try {
-      await load()
-      loadError.value = false
-    } catch {
-      loadError.value = true
+      while (requested) {
+        requested = false
+        try {
+          await load()
+          loadError.value = false
+        } catch {
+          loadError.value = true
+        }
+      }
     } finally {
+      requested = false
+      pending = null
       reloading.value = false
     }
   }

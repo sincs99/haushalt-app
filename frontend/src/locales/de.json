@@ -513,7 +513,11 @@
     "rotateCodeHint": "Beim Entfernen eines Mitglieds wird der Code automatisch erneuert.",
     "leaveBalanceOwe": "Du schuldest noch {amount}. Die Daten bleiben erhalten, aber du kannst den Saldo nach dem Verlassen nicht mehr selbst ausgleichen.",
     "leaveBalanceOwed": "Dir stehen noch {amount} zu. Die Daten bleiben erhalten, aber du kannst den Saldo nach dem Verlassen nicht mehr selbst ausgleichen.",
-    "createError": "Haushalt konnte nicht erstellt werden"
+    "createError": "Haushalt konnte nicht erstellt werden",
+    "deviceSettings": "App & Gerät",
+    "additionalFunctions": "Zusatzfunktionen",
+    "accountActions": "Konto & Mitgliedschaft",
+    "settingsSections": "Bereiche der Einstellungen"
   },
   "noHousehold": {
     "title": "Willkommen zurück",
@@ -942,7 +946,10 @@
   "sync": {
     "connected": "Verbunden",
     "reconnecting": "Verbindung wird wiederhergestellt…",
-    "offline": "Offline"
+    "offline": "Offline",
+    "connectedHint": "Der Punkt bei „Mehr“ ist grün: Änderungen werden live übertragen.",
+    "reconnectingHint": "Der Punkt bei „Mehr“ ist gelb: Die Live-Verbindung wird wieder aufgebaut. Daten können verzögert sein.",
+    "offlineHint": "Der Punkt bei „Mehr“ ist rot: Dein Gerät ist offline. Änderungen können gerade nicht übertragen werden."
   },
   "documents": {
     "title": "Ablage",

@@ -44,18 +44,40 @@ export const usePetsStore = defineStore('pets', () => {
 
   // Mutex für Toggle-Operationen
   const pendingToggles = new Set<string>()
+  let stateVersion = 0
+  let requestVersion = 0
+  const latestRequests = new Map<string, number>()
+
+  function captureHousehold(householdId: string) {
+    const version = stateVersion
+    return () => version === stateVersion && useAuthStore().currentHouseholdId === householdId
+  }
+
+  function captureRequest(householdId: string, key: string) {
+    const active = captureHousehold(householdId)
+    const version = ++requestVersion
+    latestRequests.set(key, version)
+    return () => active() && latestRequests.get(key) === version
+  }
+
+  function upsertMedicationLog(log: MedicationLog) {
+    const logs = medicationLogs.value[log.medication_id] ?? []
+    medicationLogs.value[log.medication_id] = [log, ...logs.filter(item => item.id !== log.id)].slice(0, 10)
+  }
 
   // Actions
   async function fetchPets() {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'pets')
 
     loading.value = true
     try {
-      pets.value = await repo.fetchAll(householdId)
+      const result = await repo.fetchAll(householdId)
+      if (active()) pets.value = result
     } finally {
-      loading.value = false
+      if (active()) loading.value = false
     }
   }
 
@@ -63,9 +85,11 @@ export const usePetsStore = defineStore('pets', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'feeding')
 
     try {
-      feedingStatus.value = await repo.fetchFeedingStatus(householdId)
+      const result = await repo.fetchFeedingStatus(householdId)
+      if (active()) feedingStatus.value = result
     } catch {
       // Silently fail — feeding status is non-critical
     }
@@ -75,16 +99,20 @@ export const usePetsStore = defineStore('pets', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'members')
 
-    members.value = await householdRepo.fetchMembers(householdId)
+    const result = await householdRepo.fetchMembers(householdId)
+    if (active()) members.value = result
   }
 
   async function createPet(payload: PetCreatePayload) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     const created = await repo.create(householdId, payload)
+    if (!active()) return created
     // Dedupe: falls Socket schneller war
     const idx = pets.value.findIndex(p => p.id === created.id)
     if (idx === -1) {
@@ -97,15 +125,16 @@ export const usePetsStore = defineStore('pets', () => {
     return created
   }
 
-  async function updatePet(petId: string, payload: Clearable<PetUpdatePayload>) {
+  async function updatePet(petId: string, payload: Clearable<PetUpdatePayload>, targetHouseholdId?: string) {
     const authStore = useAuthStore()
-    const householdId = authStore.currentHouseholdId
+    const householdId = targetHouseholdId ?? authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     // null = Feld leeren (Backend: exclude_unset, null wird gespeichert)
     const updated = await repo.update(householdId, petId, payload as PetUpdatePayload)
     const idx = pets.value.findIndex(p => p.id === petId)
-    if (idx !== -1) {
+    if (active() && idx !== -1) {
       pets.value[idx] = updated
     }
     return updated
@@ -115,6 +144,7 @@ export const usePetsStore = defineStore('pets', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     // Optimistic Delete
     const idx = pets.value.findIndex(p => p.id === petId)
@@ -127,8 +157,10 @@ export const usePetsStore = defineStore('pets', () => {
       await repo.remove(householdId, petId)
     } catch (error) {
       // Rollback
-      if (removed && idx !== -1) pets.value.splice(idx, 0, removed)
-      await fetchFeedingStatus()
+      if (active()) {
+        if (removed && idx !== -1 && !pets.value.some(pet => pet.id === petId)) pets.value.splice(idx, 0, removed)
+        await fetchFeedingStatus()
+      }
       throw error
     }
   }
@@ -211,14 +243,13 @@ export const usePetsStore = defineStore('pets', () => {
 
   /** Undo für „Alle gefüttert“: die eben angelegten Fütterungen wieder löschen. */
   async function undoFeedings(feedings: FeedingLog[]) {
-    const authStore = useAuthStore()
-    const householdId = authStore.currentHouseholdId
-    if (!householdId) return
+    const householdId = feedings[0]?.household_id
+    if (!householdId || feedings.some(f => f.household_id !== householdId)) return
 
     try {
       await Promise.all(feedings.map(f => repo.deleteFeeding(householdId, f.pet_id, f.id)))
     } finally {
-      await fetchFeedingStatus()
+      if (useAuthStore().currentHouseholdId === householdId) await fetchFeedingStatus()
     }
   }
 
@@ -228,6 +259,7 @@ export const usePetsStore = defineStore('pets', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'medications')
 
     // Tierwechsel: Daten des vorherigen Tiers nicht stehen lassen
     if (medicationsPetId.value !== petId) {
@@ -237,15 +269,17 @@ export const usePetsStore = defineStore('pets', () => {
     medicationsPetId.value = petId
     const meds = await repo.fetchMedications(householdId, petId)
     // Antwort eines inzwischen verlassenen Tiers verwerfen
-    if (medicationsPetId.value === petId) medications.value = meds
+    if (active() && medicationsPetId.value === petId) medications.value = meds
   }
 
   async function createMedication(petId: string, payload: MedicationCreatePayload) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     const created = await repo.createMedication(householdId, petId, payload)
+    if (!active() || (medicationsPetId.value && medicationsPetId.value !== petId)) return created
     const idx = medications.value.findIndex(m => m.id === created.id)
     if (idx === -1) {
       medications.value.push(created)
@@ -259,10 +293,11 @@ export const usePetsStore = defineStore('pets', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     const updated = await repo.updateMedication(householdId, petId, medicationId, payload as MedicationUpdatePayload)
     const idx = medications.value.findIndex(m => m.id === medicationId)
-    if (idx !== -1) {
+    if (active() && idx !== -1) {
       medications.value[idx] = updated
     }
     return updated
@@ -272,8 +307,10 @@ export const usePetsStore = defineStore('pets', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     await repo.removeMedication(householdId, petId, medicationId)
+    if (!active()) return
     medications.value = medications.value.filter(m => m.id !== medicationId)
     delete medicationLogs.value[medicationId]
   }
@@ -282,10 +319,10 @@ export const usePetsStore = defineStore('pets', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     const log = await repo.giveMedication(householdId, petId, medicationId)
-    const logs = medicationLogs.value[medicationId] ?? []
-    medicationLogs.value[medicationId] = [log, ...logs].slice(0, 10)
+    if (active() && (!medicationsPetId.value || medicationsPetId.value === petId)) upsertMedicationLog(log)
     return log
   }
 
@@ -293,10 +330,15 @@ export const usePetsStore = defineStore('pets', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, `logs:${medicationId}`)
 
     try {
       const logs = await repo.fetchMedicationLog(householdId, petId, medicationId)
-      medicationLogs.value[medicationId] = logs.slice(0, 10)
+      if (active() && (!medicationsPetId.value || medicationsPetId.value === petId)) {
+        const combined = [...logs, ...(medicationLogs.value[medicationId] ?? [])]
+        medicationLogs.value[medicationId] = combined.filter((log, index) => combined.findIndex(item => item.id === log.id) === index)
+          .sort((a, b) => (b.given_at ?? '').localeCompare(a.given_at ?? '')).slice(0, 10)
+      }
     } catch {
       // Silently fail
     }
@@ -360,8 +402,8 @@ export const usePetsStore = defineStore('pets', () => {
   }
 
   function handleMedicationGiven(log: MedicationLog) {
-    const logs = medicationLogs.value[log.medication_id] ?? []
-    medicationLogs.value[log.medication_id] = [log, ...logs].slice(0, 10)
+    if (medicationsPetId.value && !medications.value.some(med => med.id === log.medication_id)) return
+    upsertMedicationLog(log)
   }
 
   // ── Care Task Actions ──
@@ -370,19 +412,22 @@ export const usePetsStore = defineStore('pets', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'careTasks')
 
     if (careTasksPetId.value !== petId) careTasks.value = []
     careTasksPetId.value = petId
     const tasks = await repo.fetchCareTasks(householdId, petId)
-    if (careTasksPetId.value === petId) careTasks.value = tasks
+    if (active() && careTasksPetId.value === petId) careTasks.value = tasks
   }
 
   async function createCareTask(petId: string, payload: PetCareTaskCreatePayload) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     const created = await repo.createCareTask(householdId, petId, payload)
+    if (!active() || (careTasksPetId.value && careTasksPetId.value !== petId)) return created
     const idx = careTasks.value.findIndex(t => t.id === created.id)
     if (idx === -1) {
       careTasks.value.push(created)
@@ -396,10 +441,11 @@ export const usePetsStore = defineStore('pets', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureHousehold(householdId)
 
     const updated = await repo.updateCareTask(householdId, petId, taskId, payload)
     const idx = careTasks.value.findIndex(t => t.id === taskId)
-    if (idx !== -1) {
+    if (active() && idx !== -1) {
       careTasks.value[idx] = updated
     }
     return updated
@@ -409,9 +455,10 @@ export const usePetsStore = defineStore('pets', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const inHousehold = captureHousehold(householdId)
+    const active = () => inHousehold() && (!careTasksPetId.value || careTasksPetId.value === petId)
 
-    // Vollständiger Snapshot für Rollback
-    const snapshot = careTasks.value.map(t => ({ ...t }))
+    const previous = careTasks.value.find(task => task.id === taskId)
 
     // Optimistic: Datum sofort berechnen
     const idx = careTasks.value.findIndex(t => t.id === taskId)
@@ -424,16 +471,17 @@ export const usePetsStore = defineStore('pets', () => {
         notified_at: null,
       }
     }
+    const optimistic = careTasks.value[idx]
 
     try {
       const updated = await repo.completeCareTask(householdId, petId, taskId)
       // Server-Wahrheit übernehmen
       const i = careTasks.value.findIndex(t => t.id === taskId)
-      if (i !== -1) careTasks.value[i] = updated
+      if (active() && i !== -1) careTasks.value[i] = updated
       return updated
     } catch (error) {
-      // Vollständiger Rollback
-      careTasks.value = snapshot
+      const i = careTasks.value.findIndex(task => task.id === taskId)
+      if (active() && i !== -1 && previous && careTasks.value[i] === optimistic) careTasks.value[i] = previous
       throw error
     }
   }
@@ -442,16 +490,19 @@ export const usePetsStore = defineStore('pets', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const inHousehold = captureHousehold(householdId)
+    const active = () => inHousehold() && (!careTasksPetId.value || careTasksPetId.value === petId)
 
     // Optimistic Delete
-    const snapshot = careTasks.value.map(t => ({ ...t }))
+    const idx = careTasks.value.findIndex(task => task.id === taskId)
+    const removed = careTasks.value[idx]
     careTasks.value = careTasks.value.filter(t => t.id !== taskId)
 
     try {
       await repo.removeCareTask(householdId, petId, taskId)
     } catch (error) {
       // Rollback
-      careTasks.value = snapshot
+      if (active() && removed && !careTasks.value.some(task => task.id === taskId)) careTasks.value.splice(idx, 0, removed)
       throw error
     }
   }
@@ -477,6 +528,11 @@ export const usePetsStore = defineStore('pets', () => {
 
   /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
   function reset() {
+    stateVersion++
+    latestRequests.clear()
+    loading.value = false
+    medicationsPetId.value = null
+    careTasksPetId.value = null
     pets.value = []
     feedingStatus.value = []
     members.value = []

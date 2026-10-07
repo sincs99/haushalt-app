@@ -9,15 +9,14 @@ import { useToast } from '../composables/useToast'
 import { useAsyncAction } from '../composables/useAsyncAction'
 import { useLoader } from '../composables/useLoader'
 import { localDateString } from '../utils/dates'
-import { MAX_UPLOAD_BYTES, imageUploadErrorReason, prepareImageForUpload } from '../utils/imageUpload'
+import { imageUploadErrorReason } from '../utils/imageUpload'
 import { parseWeightKgToGrams } from '../utils/money'
 import { useProtectedImage } from '../composables/useProtectedImage'
-import { createOnlineFilesRepository } from '../repositories/filesRepository'
+import { usePhotoUpload } from '../composables/usePhotoUpload'
 import type {
   Pet, FeedingLog, FeedingSlot, Medication, MedicationCreatePayload,
   MedicationUpdatePayload, MedicationLog, PetUpdatePayload, HealthEntry,
   PetCareTask, PetCareTaskCreatePayload, PetCareTaskUpdatePayload,
-  StoredFile,
 } from '../types'
 import {
   PhArrowLeft, PhPencilSimple, PhSun, PhMoon, PhPlus, PhPill,
@@ -52,61 +51,32 @@ const pet = computed<Pet | undefined>(() =>
 
 // ── Photo Upload ──
 
-const filesRepo = createOnlineFilesRepository()
 const fileInputRef = ref<HTMLInputElement | null>(null)
-const photoUploading = ref(false)
+
 
 const householdId = computed(() => authStore.currentHouseholdId)
 const photoFileId = computed(() => pet.value?.photo_file_id ?? null)
 const { objectUrl: photoObjectUrl } = useProtectedImage(householdId, photoFileId)
 
+const { uploading: photoUploading, upload: uploadPhoto } = usePhotoUpload({
+  householdId,
+  entityId: petId,
+  fileId: photoFileId,
+  update: (hid, id, fileId) => petsStore.updatePet(id, { photo_file_id: fileId }, hid),
+})
+
 async function handlePhotoUpload(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
-  if (!file || !householdId.value) return
-
-  // Reset input damit dasselbe Bild erneut gewählt werden kann
   input.value = ''
-
-
-  photoUploading.value = true
-  const oldFileId = pet.value?.photo_file_id ?? null
-  let uploadedFile: StoredFile | null = null
-
+  if (!file) return
   try {
-    // 1. Verkleinern (Handy-Fotos, HEIC) und hochladen
-    const prepared = await prepareImageForUpload(file)
-    if (prepared.size > MAX_UPLOAD_BYTES) {
-      showToast(t('pets.photoUploadErrorReason', { reason: t('errors.FILE_TOO_LARGE') }), 'error')
-      return
-    }
-    uploadedFile = await filesRepo.uploadFile(householdId.value, prepared)
-
-    // 2. Pet aktualisieren
-    await petsStore.updatePet(petId.value, { photo_file_id: uploadedFile.id })
-
-    // 3. Altes Foto aufräumen (best-effort)
-    if (oldFileId) {
-      try {
-        await filesRepo.deleteFile(householdId.value, oldFileId)
-      } catch {
-        // Ignorieren – kann FILE_IN_USE sein
-      }
-    }
-
-    showToast(t('pets.photoUploadSuccess'), 'success')
+    if (await uploadPhoto(file)) showToast(t('pets.photoUploadSuccess'), 'success')
   } catch (error) {
-    // PATCH fehlgeschlagen → hochgeladene Datei aufräumen (best-effort)
-    if (uploadedFile) {
-      try {
-        await filesRepo.deleteFile(householdId.value, uploadedFile.id)
-      } catch { /* best effort */ }
-    }
     notifyError(t('pets.photoUploadErrorReason', { reason: imageUploadErrorReason(error) }))
-  } finally {
-    photoUploading.value = false
   }
 }
+
 
 const feedingStatus = computed(() =>
   petsStore.feedingStatus.find(s => s.pet_id === petId.value),
@@ -127,15 +97,17 @@ const sortedCareTasks = computed(() =>
 // ── Lifecycle ──
 
 async function loadAll() {
+  const id = petId.value
+  const hid = householdId.value
   await Promise.all([
     petsStore.fetchPets(),
     petsStore.fetchFeedingStatus(),
     petsStore.fetchMembers(),
-    petsStore.fetchMedications(petId.value),
-    petsStore.fetchCareTasks(petId.value),
+    petsStore.fetchMedications(id),
+    petsStore.fetchCareTasks(id),
   ])
   // Load medication logs for all medications
-  await loadAllMedicationLogs()
+  if (petId.value === id && householdId.value === hid) await loadAllMedicationLogs(id)
 }
 
 // Ladefehler → Fehlerzustand mit „Erneut versuchen“ (statt „nicht gefunden“)
@@ -176,14 +148,14 @@ onUnmounted(() => {
 })
 
 // Wechsel zu einem anderen Tier (z. B. über Push-Link): Listen leert der Store, hier neu laden
-watch(petId, () => {
+watch([petId, householdId], () => {
   reload()
 })
 
-async function loadAllMedicationLogs() {
+async function loadAllMedicationLogs(id = petId.value) {
   const meds = petsStore.medications
   await Promise.all(
-    meds.map(m => petsStore.fetchMedicationLog(petId.value, m.id)),
+    meds.map(m => petsStore.fetchMedicationLog(id, m.id)),
   )
 }
 

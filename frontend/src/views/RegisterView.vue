@@ -2,11 +2,11 @@
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useAuthStore } from '../stores/auth'
+import { isValidEmail, PASSWORD_MIN_LENGTH, useAuthStore } from '../stores/auth'
 import { useI18n } from 'vue-i18n'
-import { translateApiError } from '../utils/apiErrors'
+import { errorText } from '../composables/useToast'
 import { PhHouse } from '@phosphor-icons/vue'
 
 const router = useRouter()
@@ -24,8 +24,47 @@ const householdName = ref('')
 const inviteCode = ref('')
 const error = ref('')
 const isLoading = ref(false)
+const submitted = ref(false)
+const formRef = ref<HTMLFormElement | null>(null)
+
+/** Nur interne Pfade als Weiterleitung akzeptieren (kein Open Redirect) */
+const redirect = computed(() => {
+  const value = route.query.redirect
+  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : undefined
+})
+// ?redirect beim Wechsel zum Login mitnehmen (z. B. Tag-Scan)
+const loginLink = computed(() => ({ path: '/login', query: redirect.value ? { redirect: redirect.value } : {} }))
+
+// Inline-Validierung (erst nach dem ersten Absenden), statt englischer Backend-Meldungen
+const emailError = computed(() => {
+  if (!submitted.value) return undefined
+  if (!email.value.trim()) return t('auth.emailRequired')
+  if (!isValidEmail(email.value)) return t('auth.emailInvalid')
+  return undefined
+})
+const passwordError = computed(() => {
+  if (!submitted.value) return undefined
+  if (!password.value) return t('auth.passwordRequired')
+  if (password.value.length < PASSWORD_MIN_LENGTH) return t('auth.passwordTooShort')
+  return undefined
+})
+const displayNameError = computed(() =>
+  submitted.value && !displayName.value.trim() ? t('auth.displayNameRequired') : undefined,
+)
+const householdNameError = computed(() =>
+  submitted.value && mode.value === 'create' && !householdName.value.trim() ? t('auth.householdNameRequired') : undefined,
+)
+const inviteCodeError = computed(() =>
+  submitted.value && mode.value === 'join' && !inviteCode.value.trim() ? t('auth.inviteCodeRequired') : undefined,
+)
+const hasErrors = computed(() =>
+  !!(emailError.value || passwordError.value || displayNameError.value || householdNameError.value || inviteCodeError.value),
+)
 
 onMounted(() => {
+  // Autofokus auf das erste Feld (E-Mail)
+  formRef.value?.querySelector('input')?.focus()
+
   // Query-Parameter ?code=XYZ → automatisch Beitreten-Modus
   const code = route.query.code
   if (typeof code === 'string' && code.trim()) {
@@ -36,16 +75,20 @@ onMounted(() => {
 
 async function handleRegister() {
   error.value = ''
+  submitted.value = true
+  if (hasErrors.value) return
   isLoading.value = true
+  const mail = email.value.trim()
+  const name = displayName.value.trim()
   try {
     if (mode.value === 'create') {
-      await authStore.register(email.value, password.value, displayName.value, { householdName: householdName.value })
+      await authStore.register(mail, password.value, name, { householdName: householdName.value.trim() })
     } else {
-      await authStore.register(email.value, password.value, displayName.value, { inviteCode: inviteCode.value.toUpperCase() })
+      await authStore.register(mail, password.value, name, { inviteCode: inviteCode.value.trim().toUpperCase() })
     }
-    router.push('/shopping')
+    router.push(redirect.value || '/dashboard')
   } catch (err: any) {
-    error.value = translateApiError(err)
+    error.value = errorText(t('auth.registerFailed'), err)
   } finally {
     isLoading.value = false
   }
@@ -61,14 +104,18 @@ async function handleRegister() {
       <!-- Tab-Umschalter -->
       <div class="register-tabs">
         <button
+          type="button"
           class="register-tab tap-target"
+          :aria-pressed="mode === 'create'"
           :class="{ 'register-tab--active': mode === 'create' }"
           @click="mode = 'create'"
         >
           {{ $t('auth.tabCreate') }}
         </button>
         <button
+          type="button"
           class="register-tab tap-target"
+          :aria-pressed="mode === 'join'"
           :class="{ 'register-tab--active': mode === 'join' }"
           @click="mode = 'join'"
         >
@@ -76,10 +123,34 @@ async function handleRegister() {
         </button>
       </div>
 
-      <form @submit.prevent="handleRegister" class="auth-form">
-        <BaseInput v-model="email" :label="$t('auth.email')" type="email" :placeholder="$t('auth.emailPlaceholder')" autocomplete="email" />
-        <BaseInput v-model="password" :label="$t('auth.password')" type="password" :placeholder="$t('auth.passwordMinLength')" autocomplete="new-password" />
-        <BaseInput v-model="displayName" :label="$t('auth.displayName')" type="text" :placeholder="$t('auth.namePlaceholder')" autocomplete="name" />
+      <form ref="formRef" novalidate @submit.prevent="handleRegister" class="auth-form">
+        <BaseInput
+          v-model="email"
+          :label="$t('auth.email')"
+          type="email"
+          :placeholder="$t('auth.emailPlaceholder')"
+          autocomplete="email"
+          inputmode="email"
+          autocapitalize="off"
+          :error="emailError"
+        />
+        <BaseInput
+          v-model="password"
+          :label="$t('auth.password')"
+          type="password"
+          :placeholder="$t('auth.passwordMinLength')"
+          autocomplete="new-password"
+          :error="passwordError"
+        />
+        <BaseInput
+          v-model="displayName"
+          :label="$t('auth.displayName')"
+          type="text"
+          :placeholder="$t('auth.namePlaceholder')"
+          autocomplete="name"
+          maxlength="100"
+          :error="displayNameError"
+        />
 
         <!-- Modus-spezifische Felder -->
         <BaseInput
@@ -88,6 +159,8 @@ async function handleRegister() {
           :label="$t('auth.householdName')"
           type="text"
           :placeholder="$t('auth.householdPlaceholder')"
+          maxlength="100"
+          :error="householdNameError"
         />
         <BaseInput
           v-if="mode === 'join'"
@@ -95,17 +168,20 @@ async function handleRegister() {
           :label="$t('auth.inviteCodeLabel')"
           type="text"
           :placeholder="$t('auth.inviteCodePlaceholder')"
+          autocapitalize="characters"
+          autocomplete="off"
           style="text-transform: uppercase"
+          :error="inviteCodeError"
         />
 
-        <p v-if="error" class="auth-error">{{ error }}</p>
+        <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
 
         <BaseButton type="submit" variant="primary" :loading="isLoading" :disabled="isLoading" class="auth-submit">
           {{ $t('auth.register') }}
         </BaseButton>
 
         <p class="auth-link">
-          {{ $t('auth.hasAccount') }} <router-link to="/login">{{ $t('auth.loginHere') }}</router-link>
+          {{ $t('auth.hasAccount') }} <router-link :to="loginLink">{{ $t('auth.loginHere') }}</router-link>
         </p>
       </form>
     </BaseCard>

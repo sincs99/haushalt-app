@@ -103,3 +103,14 @@ export function eventTime(iso: string): string {
 export function eventDate(iso: string): string {
   return iso.substring(0, 10)
 }
+
+/**
+ * Lokales Kalenderdatum als YYYY-MM-DD. Nicht `toISOString()` verwenden:
+ * das liefert UTC, in der Schweiz zwischen 00:00 und 01:00/02:00 also gestern.
+ */
+export function localDateString(date: Date = new Date()): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}

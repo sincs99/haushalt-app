@@ -1,7 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { waitForOverlayBack } from '../composables/useBackClose'
 
 const router = createRouter({
   history: createWebHistory(),
+  // Zurück stellt die Scroll-Position wieder her, neue Seiten starten oben
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) return savedPosition
+    if (to.path === from.path) return false
+    return { top: 0 }
+  },
   routes: [
     {
       path: '/dashboard',
@@ -127,11 +134,32 @@ const router = createRouter({
       path: '/',
       redirect: '/dashboard',
     },
+    // Unbekannte Adressen (alte Links, Tippfehler) → Start statt leerer Seite
+    {
+      path: '/:pathMatch(.*)*',
+      redirect: '/dashboard',
+    },
   ],
 })
 
+// Ein gerade geschlossener Dialog nimmt seinen History-Eintrag zurück –
+// erst danach navigieren, sonst würde die neue Seite gleich wieder verlassen.
+router.beforeEach(() => waitForOverlayBack())
+
 // Navigation Guard: authReady abwarten, dann prüfen
 router.beforeEach(async (to) => {
+  // Bereits angemeldet: Login-/Registrierungsformular nicht erneut zeigen
+  // (Registrierung mit Einladungscode bleibt erreichbar)
+  if (to.name === 'login' || (to.name === 'Register' && !to.query.code)) {
+    const { useAuthStore } = await import('../stores/auth')
+    const authStore = useAuthStore()
+    await authStore.authReady
+    if (authStore.isAuthenticated) {
+      const redirect = typeof to.query.redirect === 'string' && to.query.redirect.startsWith('/') ? to.query.redirect : '/dashboard'
+      return { path: redirect }
+    }
+  }
+
   if (to.meta.requiresAuth) {
     const { useAuthStore } = await import('../stores/auth')
     const authStore = useAuthStore()

@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { createOnlineHouseholdsRepository, type InviteCodeInfo } from '../repositories/householdsRepository'
 import { createOnlineExpensesRepository } from '../repositories/expensesRepository'
 import { useToast } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
+import { useLoader } from '../composables/useLoader'
 import { useSocket } from '../composables/useSocket'
 import { useI18n } from 'vue-i18n'
-import { translateApiError } from '../utils/apiErrors'
 import { formatRappen } from '../utils/money'
 import type { HouseholdMemberInfo } from '../types'
 import BaseCard from '../components/ui/BaseCard.vue'
@@ -16,6 +17,8 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
+import BaseErrorState from '../components/ui/BaseErrorState.vue'
+import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import { PhUserMinus, PhSignOut, PhPlus, PhShareNetwork, PhQrCode } from '@phosphor-icons/vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 import PushSettings from '../components/PushSettings.vue'
@@ -26,7 +29,8 @@ const router = useRouter()
 const authStore = useAuthStore()
 const repo = createOnlineHouseholdsRepository()
 const expensesRepo = createOnlineExpensesRepository()
-const { showToast } = useToast()
+const { notifySuccess, notifyError } = useToast()
+const { run, isPending } = useAsyncAction()
 const { t, locale } = useI18n()
 const { on, off } = useSocket()
 
@@ -52,25 +56,33 @@ const nameChanged = computed(() => {
 })
 
 async function saveHouseholdName() {
-  if (!authStore.currentHouseholdId || !nameChanged.value) return
+  const householdId = authStore.currentHouseholdId
+  const name = householdName.value.trim()
+  if (!householdId || !nameChanged.value || !name) return
   renameSaving.value = true
-  try {
-    await repo.rename(authStore.currentHouseholdId, householdName.value.trim())
-    showToast(t('household.renameSuccess'), 'success')
-  } catch {
-    showToast(t('household.renameError'), 'error')
-  } finally {
-    renameSaving.value = false
-  }
+  await run(() => repo.rename(householdId, name), {
+    key: 'rename',
+    success: t('household.renameSuccess'),
+    error: t('household.renameError'),
+  })
+  renameSaving.value = false
 }
 
 // ── Mitglieder ──
 const members = ref<HouseholdMemberInfo[]>([])
 
-async function loadMembers() {
+async function fetchMembers() {
   if (!authStore.currentHouseholdId) return
+  members.value = await repo.fetchMembers(authStore.currentHouseholdId)
+}
+
+// Erstes Laden mit Lade-/Fehlerzustand (statt „Keine Mitglieder geladen.“)
+const { loadError: membersLoadError, reloading: membersLoading, reload: reloadMembers } = useLoader(fetchMembers)
+
+/** Nachladen nach Socket-Events/Entfernen: Fehler still, die Liste bleibt stehen */
+async function loadMembers() {
   try {
-    members.value = await repo.fetchMembers(authStore.currentHouseholdId)
+    await fetchMembers()
   } catch {
     // Silent fail
   }
@@ -87,63 +99,71 @@ function openRemoveMemberDialog(member: HouseholdMemberInfo) {
 }
 
 async function confirmRemoveMember() {
-  if (!authStore.currentHouseholdId || !memberToRemove.value) return
+  const householdId = authStore.currentHouseholdId
+  const member = memberToRemove.value
+  if (!householdId || !member) return
   removeMemberLoading.value = true
-  try {
-    await repo.removeMember(authStore.currentHouseholdId, memberToRemove.value.id)
-    showToast(t('household.removeMemberSuccess', { name: memberToRemove.value.display_name }), 'success')
+  const ok = await run(() => repo.removeMember(householdId, member.id), {
+    key: 'removeMember',
+    error: t('household.removeMemberError'),
+  })
+  if (ok) {
     removeMemberDialogOpen.value = false
     memberToRemove.value = null
     await loadMembers()
     // Backend erneuert beim Entfernen den Einladungscode
     loadInviteCode()
-  } catch (error: unknown) {
-    showToast(translateApiError(error), 'error')
-  } finally {
-    removeMemberLoading.value = false
   }
+  removeMemberLoading.value = false
 }
 
 // ── Haushalt verlassen ──
 const leaveDialogOpen = ref(false)
 const leaveLoading = ref(false)
-const leaveBalanceAmount = ref<string | null>(null)
+/** Offener Saldo beim Verlassen: Betrag + Richtung (positiv = dir steht etwas zu) */
+const leaveBalance = ref<{ amount: string; owed: boolean } | null>(null)
+const leaveChecking = ref(false)
 
 async function openLeaveDialog() {
-  if (!authStore.currentHouseholdId || !authStore.user) return
-  leaveBalanceAmount.value = null
+  if (!authStore.currentHouseholdId || !authStore.user || leaveChecking.value) return
+  leaveBalance.value = null
+  leaveChecking.value = true
 
   try {
     const balances = await expensesRepo.getBalances(authStore.currentHouseholdId)
     const myBalance = balances.balances.find(b => b.user_id === authStore.user!.id)
     if (myBalance && myBalance.saldo_rappen !== 0) {
       const currency = authStore.currentHousehold?.currency ?? 'CHF'
-      leaveBalanceAmount.value = formatRappen(Math.abs(myBalance.saldo_rappen), currency)
+      leaveBalance.value = {
+        amount: formatRappen(Math.abs(myBalance.saldo_rappen), currency),
+        owed: myBalance.saldo_rappen > 0,
+      }
     }
   } catch {
     // Balances nicht ladbar — Dialog trotzdem zeigen
+  } finally {
+    leaveChecking.value = false
   }
 
   leaveDialogOpen.value = true
 }
 
 async function confirmLeave() {
-  if (!authStore.currentHouseholdId) return
+  const householdId = authStore.currentHouseholdId
+  if (!householdId) return
   leaveLoading.value = true
-  try {
-    await repo.leave(authStore.currentHouseholdId)
-    showToast(t('household.leaveSuccess'), 'success')
+  let target = null as string | null
+  // Store markiert den eigenen Austritt: das Socket-Event meldet dann kein „Du wurdest entfernt“
+  const ok = await run(
+    async () => { target = await authStore.leaveHousehold(householdId, () => repo.leave(householdId)) },
+    { key: 'leave', success: t('household.leaveSuccess'), error: t('household.leaveError') },
+  )
+  leaveLoading.value = false
+  if (ok && target) {
     leaveDialogOpen.value = false
-    // authStore _handleRemoval wird über Socket-Event ausgelöst
-    // Falls kein Socket: manuell fetchMe
-    await authStore.fetchMe()
-    if (authStore.households.length > 0) {
-      router.push('/shopping')
-    }
-  } catch (error: unknown) {
-    showToast(translateApiError(error), 'error')
-  } finally {
-    leaveLoading.value = false
+    // Dialog nimmt erst seinen History-Eintrag zurück, dann navigieren
+    await nextTick()
+    router.replace(target)
   }
 }
 
@@ -172,42 +192,40 @@ async function loadInviteCode() {
   inviteCodeLoading.value = true
   try {
     applyInviteInfo(await repo.fetchInviteCode(authStore.currentHouseholdId))
-  } catch {
-    showToast(t('household.inviteLoadError'), 'error')
+  } catch (error: unknown) {
+    notifyError(t('household.inviteLoadError'), error)
   } finally {
     inviteCodeLoading.value = false
   }
 }
 
-const rotateLoading = ref(false)
+const rotateDialogOpen = ref(false)
+const rotateLoading = computed(() => isPending('rotate'))
 
-async function rotateInviteCode() {
-  if (!authStore.currentHouseholdId) return
-  if (!confirm(t('household.rotateCodeConfirm'))) return
-  rotateLoading.value = true
-  try {
-    applyInviteInfo(await repo.rotateInviteCode(authStore.currentHouseholdId))
-    showToast(t('household.rotateCodeSuccess'), 'success')
-  } catch (error: unknown) {
-    showToast(translateApiError(error), 'error')
-  } finally {
-    rotateLoading.value = false
-  }
+async function confirmRotateInviteCode() {
+  const householdId = authStore.currentHouseholdId
+  if (!householdId) return
+  const ok = await run(async () => applyInviteInfo(await repo.rotateInviteCode(householdId)), {
+    key: 'rotate',
+    success: t('household.rotateCodeSuccess'),
+  })
+  if (ok) rotateDialogOpen.value = false
 }
 
 async function copyInviteCode() {
   try {
     await navigator.clipboard.writeText(inviteCode.value)
-    showToast(t('household.codeCopied'), 'success')
+    notifySuccess(t('household.codeCopied'))
   } catch {
-    showToast(t('household.copyFailed'), 'error')
+    notifyError(t('household.copyFailed'))
   }
 }
 
 async function shareInvite() {
   const householdName = authStore.currentHousehold?.name ?? ''
-  // TODO: Add join URL when public URL is available
-  const shareText = t('household.shareText', { name: householdName, code: inviteCode.value })
+  // Link auf die Registrierung mit vorausgefülltem Code (RegisterView liest ?code)
+  const link = `${window.location.origin}/register?code=${encodeURIComponent(inviteCode.value)}`
+  const shareText = t('household.shareText', { name: householdName, code: inviteCode.value, link })
 
   if (navigator.share) {
     try {
@@ -231,9 +249,9 @@ async function shareInvite() {
 async function copyShareText(text: string) {
   try {
     await navigator.clipboard.writeText(text)
-    showToast(t('household.shareCopied'), 'success')
+    notifySuccess(t('household.shareCopied'))
   } catch {
-    showToast(t('household.copyFailed'), 'error')
+    notifyError(t('household.copyFailed'))
   }
 }
 
@@ -243,20 +261,25 @@ const newHouseholdName = ref('')
 const createNewLoading = ref(false)
 
 async function createNewHousehold() {
-  if (!newHouseholdName.value.trim()) return
+  const name = newHouseholdName.value.trim()
+  if (!name) return
   createNewLoading.value = true
-  try {
-    const result = await repo.create(newHouseholdName.value.trim())
-    showToast(t('household.createNewSuccess', { name: result.name }), 'success')
+  const ok = await run(async () => {
+    const result = await repo.create(name)
     await authStore.fetchMe()
     authStore.switchHousehold(result.id)
+    return result
+  }, {
+    key: 'create',
+    success: (result) => t('household.createNewSuccess', { name: result.name }),
+    error: t('household.createError'),
+  })
+  createNewLoading.value = false
+  if (ok) {
     createDialogOpen.value = false
     newHouseholdName.value = ''
-    router.push('/shopping')
-  } catch (error: unknown) {
-    showToast(translateApiError(error), 'error')
-  } finally {
-    createNewLoading.value = false
+    await nextTick()
+    router.push('/dashboard')
   }
 }
 
@@ -265,20 +288,40 @@ const joinCode = ref('')
 const joinLoading = ref(false)
 
 async function joinHousehold() {
-  if (!joinCode.value.trim()) return
+  const code = joinCode.value.trim().toUpperCase()
+  if (!code) return
   joinLoading.value = true
-  try {
-    const result = await repo.join(joinCode.value.trim().toUpperCase())
-    showToast(t('household.joinSuccess', { name: result.name }), 'success')
+  const ok = await run(async () => {
+    const result = await repo.join(code)
     await authStore.fetchMe()
     authStore.switchHousehold(result.id)
+    return result
+  }, {
+    key: 'join',
+    success: (result) => t('household.joinSuccess', { name: result.name }),
+    error: t('household.joinFailed'),
+  })
+  joinLoading.value = false
+  if (ok) {
     joinCode.value = ''
-    router.push('/shopping')
-  } catch (error: unknown) {
-    showToast(translateApiError(error), 'error')
-  } finally {
-    joinLoading.value = false
+    router.push('/dashboard')
   }
+}
+
+// ── Abmelden: offline nachfragen (ohne Netz ist eine erneute Anmeldung nicht möglich) ──
+const logoutDialogOpen = ref(false)
+
+function requestLogout() {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    logoutDialogOpen.value = true
+    return
+  }
+  authStore.logout({ reason: 'user' })
+}
+
+function confirmLogout() {
+  logoutDialogOpen.value = false
+  authStore.logout({ reason: 'user' })
 }
 
 // ── Socket-Events: Members nachladen bei Änderungen ──
@@ -301,7 +344,8 @@ function onHouseholdUpdated(data: { id: string; name: string }) {
 function initData() {
   householdName.value = authStore.currentHousehold?.name ?? ''
   loadInviteCode()
-  loadMembers()
+  members.value = []
+  reloadMembers()
 }
 
 onMounted(() => {
@@ -312,7 +356,6 @@ onMounted(() => {
   on('household_updated', onHouseholdUpdated)
 })
 
-import { onUnmounted } from 'vue'
 onUnmounted(() => {
   off('household_member_joined', onMemberJoined)
   off('household_member_left', onMemberLeft)
@@ -320,8 +363,9 @@ onUnmounted(() => {
   off('household_updated', onHouseholdUpdated)
 })
 
-watch(() => authStore.currentHouseholdId, () => {
-  initData()
+watch(() => authStore.currentHouseholdId, (id) => {
+  // Nach Verlassen des letzten Haushalts nichts mehr laden
+  if (id) initData()
 })
 </script>
 
@@ -334,22 +378,23 @@ watch(() => authStore.currentHouseholdId, () => {
       <h2 class="section-title">{{ $t('household.title') }}</h2>
 
       <!-- Admin: Editierbarer Name -->
-      <div v-if="isAdmin" class="rename-row">
+      <form v-if="isAdmin" class="rename-row" @submit.prevent="saveHouseholdName">
         <BaseInput
           v-model="householdName"
           :label="$t('household.nameLabel')"
           :placeholder="$t('household.nameLabel')"
+          maxlength="100"
         />
         <BaseButton
+          type="submit"
           variant="primary"
           size="sm"
-          :disabled="!nameChanged || renameSaving"
+          :disabled="!nameChanged || !householdName.trim() || renameSaving"
           :loading="renameSaving"
-          @click="saveHouseholdName"
         >
           {{ $t('household.saveName') }}
         </BaseButton>
-      </div>
+      </form>
 
       <!-- Member: Nur Name anzeigen -->
       <div v-else class="household-name-display">
@@ -359,7 +404,7 @@ watch(() => authStore.currentHouseholdId, () => {
 
       <!-- Haushalt verlassen -->
       <div class="leave-section">
-        <BaseButton variant="danger" size="sm" @click="openLeaveDialog">
+        <BaseButton variant="danger" size="sm" :loading="leaveChecking" @click="openLeaveDialog">
           <PhSignOut :size="16" />
           {{ $t('household.leaveTitle') }}
         </BaseButton>
@@ -369,7 +414,15 @@ watch(() => authStore.currentHouseholdId, () => {
     <!-- ══ Sektion: Mitglieder ══ -->
     <BaseCard>
       <h2 class="section-title">{{ $t('household.members') }}</h2>
-      <div v-if="members.length > 0" class="member-list">
+      <div v-if="membersLoading && members.length === 0" class="member-list">
+        <BaseSkeleton v-for="i in 2" :key="i" width="100%" height="48px" />
+      </div>
+      <BaseErrorState
+        v-else-if="membersLoadError && members.length === 0"
+        :retrying="membersLoading"
+        @retry="reloadMembers"
+      />
+      <div v-else-if="members.length > 0" class="member-list">
         <div
           v-for="member in members"
           :key="member.id"
@@ -414,7 +467,7 @@ watch(() => authStore.currentHouseholdId, () => {
             type="button"
             class="invite-expired-link"
             :disabled="rotateLoading"
-            @click="rotateInviteCode"
+            @click="rotateDialogOpen = true"
           >
             {{ $t('household.inviteExpiredAction') }}
           </button>
@@ -445,9 +498,8 @@ watch(() => authStore.currentHouseholdId, () => {
             v-if="isAdmin"
             variant="ghost"
             size="sm"
-            :loading="rotateLoading"
             :disabled="!inviteCode"
-            @click="rotateInviteCode"
+            @click="rotateDialogOpen = true"
           >
             {{ $t('household.rotateCode') }}
           </BaseButton>
@@ -463,7 +515,10 @@ watch(() => authStore.currentHouseholdId, () => {
             v-model="joinCode"
             type="text"
             :placeholder="$t('household.joinPlaceholder')"
+            :aria-label="$t('auth.inviteCodeLabel')"
             class="join-form__input"
+            autocapitalize="characters"
+            autocomplete="off"
             :disabled="joinLoading"
           />
           <BaseButton
@@ -523,7 +578,7 @@ watch(() => authStore.currentHouseholdId, () => {
 
       <!-- Logout-Button für Mobile -->
       <div class="mobile-logout">
-        <BaseButton variant="ghost" @click="authStore.logout({ reason: 'user' })" class="mobile-logout__btn">
+        <BaseButton variant="ghost" @click="requestLogout" class="mobile-logout__btn">
           {{ $t('auth.logout') }}
         </BaseButton>
       </div>
@@ -536,8 +591,8 @@ watch(() => authStore.currentHouseholdId, () => {
       danger
       @close="leaveDialogOpen = false"
     >
-      <p v-if="leaveBalanceAmount" class="dialog-warning-text">
-        {{ $t('household.leaveBalanceWarning', { amount: leaveBalanceAmount }) }}
+      <p v-if="leaveBalance" class="dialog-warning-text">
+        {{ $t(leaveBalance.owed ? 'household.leaveBalanceOwed' : 'household.leaveBalanceOwe', { amount: leaveBalance.amount }) }}
       </p>
       <p v-else>{{ $t('household.leaveConfirm') }}</p>
 
@@ -580,17 +635,61 @@ watch(() => authStore.currentHouseholdId, () => {
       </template>
     </BaseDialog>
 
+    <!-- ══ Dialog: Einladungscode erneuern ══ -->
+    <BaseDialog
+      :open="rotateDialogOpen"
+      :title="$t('household.rotateCode')"
+      danger
+      @close="rotateDialogOpen = false"
+    >
+      <p>{{ $t('household.rotateCodeConfirm') }}</p>
+
+      <template #footer>
+        <BaseButton variant="ghost" size="sm" @click="rotateDialogOpen = false">
+          {{ $t('common.cancel') }}
+        </BaseButton>
+        <BaseButton
+          variant="danger"
+          size="sm"
+          :loading="rotateLoading"
+          @click="confirmRotateInviteCode"
+        >
+          {{ $t('household.rotateCode') }}
+        </BaseButton>
+      </template>
+    </BaseDialog>
+
+    <!-- ══ Dialog: Offline abmelden ══ -->
+    <BaseDialog
+      :open="logoutDialogOpen"
+      :title="$t('auth.logoutOfflineTitle')"
+      danger
+      @close="logoutDialogOpen = false"
+    >
+      <p>{{ $t('auth.logoutOfflineConfirm') }}</p>
+
+      <template #footer>
+        <BaseButton variant="ghost" size="sm" @click="logoutDialogOpen = false">
+          {{ $t('common.cancel') }}
+        </BaseButton>
+        <BaseButton variant="danger" size="sm" @click="confirmLogout">
+          {{ $t('auth.logout') }}
+        </BaseButton>
+      </template>
+    </BaseDialog>
+
     <!-- ══ Dialog: Neuen Haushalt erstellen ══ -->
     <BaseDialog
       :open="createDialogOpen"
       :title="$t('household.createNewTitle')"
       @close="createDialogOpen = false"
     >
-      <form @submit.prevent="createNewHousehold" class="create-new-form">
+      <form id="create-household-form" @submit.prevent="createNewHousehold" class="create-new-form">
         <BaseInput
           v-model="newHouseholdName"
           :label="$t('auth.householdName')"
           :placeholder="$t('auth.householdPlaceholder')"
+          maxlength="100"
         />
       </form>
 
@@ -603,7 +702,8 @@ watch(() => authStore.currentHouseholdId, () => {
           size="sm"
           :loading="createNewLoading"
           :disabled="createNewLoading || !newHouseholdName.trim()"
-          @click="createNewHousehold"
+          type="submit"
+          form="create-household-form"
         >
           {{ $t('household.createNewButton') }}
         </BaseButton>

@@ -48,10 +48,11 @@ describe('Laden', () => {
     expect(store.loading).toBe(false)
   })
 
-  test('fetchSummary-Fehler landet in error statt zu werfen', async () => {
+  test('fetchSummary-Fehler landet in error und wird weitergeworfen (Fehlerzustand)', async () => {
     const store = useFinanceStore()
-    repo.getSummary.mockRejectedValue(apiError('boom'))
-    await store.fetchSummary()
+    const err = apiError('boom')
+    repo.getSummary.mockRejectedValue(err)
+    await expect(store.fetchSummary()).rejects.toBe(err)
     expect(store.error).toBeTruthy()
     expect(store.loading).toBe(false)
     repo.getSummary.mockResolvedValue(summary())
@@ -129,6 +130,15 @@ describe('Mutationen', () => {
     repo.removeBill.mockResolvedValue(undefined)
     await store.removeBill('b1')
     expect(store.bills).toEqual([])
+  })
+
+  test('upsertBudget/bookBill gelten als erfolgreich, auch wenn das Nachladen der Summary scheitert', async () => {
+    const store = useFinanceStore()
+    repo.upsertBudget.mockResolvedValue(budget(2000))
+    repo.bookBill.mockResolvedValue({ id: 'exp' })
+    repo.getSummary.mockRejectedValue(new Error('offline'))
+    await expect(store.upsertBudget({ amount_rappen: 2000 } as any)).resolves.toEqual(budget(2000))
+    await expect(store.bookBill('b1')).resolves.toEqual({ id: 'exp' })
   })
 
   test('bookBill lädt die Summary nach und liefert die Ausgabe', async () => {

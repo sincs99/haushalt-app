@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
+import { useFinanceStore } from './finance'
 import { createOnlineExpensesRepository } from '../repositories/expensesRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import { translateApiError } from '../utils/apiErrors'
@@ -16,16 +17,24 @@ export const useExpensesStore = defineStore('expenses', () => {
   const members = ref<HouseholdMemberInfo[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  /** Salden konnten nicht geladen werden (Karte zeigt dann einen Fehlerzustand) */
+  const balancesError = ref(false)
 
   // Debounce-Timer für Balances-Refetch
   let balancesTimer: ReturnType<typeof setTimeout> | null = null
 
+  /**
+   * Nach Änderungen an Ausgaben: Salden und Budget-Übersicht („Noch verfügbar“,
+   * Kategorien, gebuchte Rechnungen) gebündelt neu laden.
+   */
   function debouncedFetchBalances() {
     if (balancesTimer) clearTimeout(balancesTimer)
     balancesTimer = setTimeout(() => {
       const authStore = useAuthStore()
       const householdId = authStore.currentHouseholdId
-      if (householdId) fetchBalances(householdId)
+      if (!householdId) return
+      fetchBalances(householdId)
+      useFinanceStore().fetchSummary(householdId).catch(() => {})
     }, 300)
   }
 
@@ -54,8 +63,11 @@ export const useExpensesStore = defineStore('expenses', () => {
 
     try {
       balances.value = await repo.getBalances(hid)
+      balancesError.value = false
     } catch (e: any) {
-      // Balances-Fehler nicht als Store-Error propagieren (nicht-kritisch)
+      // Balances-Fehler nicht als Store-Error propagieren (nicht-kritisch),
+      // aber merken, damit die Karte nicht still verschwindet
+      balancesError.value = true
       console.error('Failed to fetch balances:', e)
     }
   }
@@ -170,6 +182,7 @@ export const useExpensesStore = defineStore('expenses', () => {
     members,
     loading,
     error,
+    balancesError,
     // Actions
     fetchExpenses,
     fetchBalances,

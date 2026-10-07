@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useFoodStore } from '../stores/food'
 import { usePollsStore } from '../stores/polls'
 import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
+import { useToast } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
+import { useLoader } from '../composables/useLoader'
+import { waitForOverlayBack } from '../composables/useBackClose'
 import { formatRappen } from '../utils/money'
-import type { Recipe, MealPlanEntry, AddToShoppingResponse, EventPoll } from '../types'
+import type { Recipe, MealPlanEntry, EventPoll, PollOption } from '../types'
 import {
   PhCaretLeft, PhCaretRight, PhStar, PhShoppingBagOpen, PhForkKnife, PhPlus, PhTrash,
 } from '@phosphor-icons/vue'
@@ -15,6 +20,7 @@ import BaseButton from '../components/ui/BaseButton.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
+import BaseErrorState from '../components/ui/BaseErrorState.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 import AiRecipeCard from '../components/AiRecipeCard.vue'
 import { useAiStore } from '../stores/ai'
@@ -23,18 +29,42 @@ const foodStore = useFoodStore()
 const pollsStore = usePollsStore()
 const authStore = useAuthStore()
 const aiStore = useAiStore()
+const router = useRouter()
 const { on, off, onReconnect, offReconnect } = useSocket()
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const { showToast, notifyError } = useToast()
+const { run, isPending } = useAsyncAction()
 
-// ── Wochentag-Kürzel ──
-const weekdayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+const dateLocale = computed(() => (locale.value === 'en' ? 'en-GB' : 'de-CH'))
+
+// ── Laden ──
+const { loadError, reloading, reload } = useLoader(() => Promise.all([
+  foodStore.fetchRecipes(),
+  foodStore.fetchWeekPlan(),
+  pollsStore.fetchPolls('offen'),
+]))
+/** Laden einer anderen Woche gescheitert (Wochenplan zeigt sonst die alte Woche als leer) */
+const weekError = ref(false)
+const showWeekError = computed(() => weekError.value || (loadError.value && foodStore.weekPlan.length === 0))
+
+async function goWeek(direction: -1 | 1) {
+  try {
+    await foodStore.navigateWeek(direction)
+    weekError.value = false
+  } catch {
+    weekError.value = true
+  }
+}
+
+async function retryLoad() {
+  await reload()
+  if (!loadError.value) weekError.value = false
+}
 
 // ── Lifecycle ──
 onMounted(() => {
   aiStore.fetchStatus()
-  foodStore.fetchRecipes()
-  foodStore.fetchWeekPlan()
-  pollsStore.fetchPolls('offen')
+  reload()
 
   on('recipe_created', handleRecipeCreated)
   on('recipe_updated', handleRecipeUpdated)
@@ -60,9 +90,7 @@ function handleRecipeDeleted(data: { id: string }) { foodStore.handleRecipeDelet
 function handleMealPlanUpdated(data: MealPlanEntry) { foodStore.handleMealPlanUpdated(data) }
 function handleMealPlanDeleted(data: { date: string }) { foodStore.handleMealPlanDeleted(data) }
 function handleReconnect() {
-  foodStore.fetchRecipes()
-  foodStore.fetchWeekPlan()
-  pollsStore.fetchPolls('offen')
+  retryLoad()
 }
 
 // ── Kalenderwoche berechnen ──
@@ -91,6 +119,13 @@ const weekDates = computed(() => {
   }
   return dates
 })
+
+// ── Wochentag-Kürzel (sprachabhängig) ──
+function getWeekdayLabel(dateStr: string): string {
+  return new Date(dateStr + 'T00:00:00')
+    .toLocaleDateString(dateLocale.value, { weekday: 'short' })
+    .replace('.', '')
+}
 
 // ── Heute (YYYY-MM-DD) ──
 const todayStr = computed(() => {
@@ -130,7 +165,7 @@ const showAssignDialog = ref(false)
 const assignDate = ref('')
 const assignRecipeId = ref<string | null>(null)
 const assignFreeText = ref('')
-const assignSaving = ref(false)
+const assignSaving = computed(() => isPending('assign') || isPending('removeMeal'))
 
 function openAssignDialog(date: string) {
   const entry = getEntryForDate(date)
@@ -141,75 +176,84 @@ function openAssignDialog(date: string) {
 }
 
 async function doAssign() {
-  if (assignSaving.value) return
-  assignSaving.value = true
-  try {
-    if (assignRecipeId.value) {
-      await foodStore.assignMeal(assignDate.value, { recipe_id: assignRecipeId.value, free_text: null })
-    } else if (assignFreeText.value.trim()) {
-      await foodStore.assignMeal(assignDate.value, { recipe_id: null, free_text: assignFreeText.value.trim() })
-    }
-    showAssignDialog.value = false
-  } finally {
-    assignSaving.value = false
-  }
+  const date = assignDate.value
+  const payload = assignRecipeId.value
+    ? { recipe_id: assignRecipeId.value, free_text: null }
+    : { recipe_id: null, free_text: assignFreeText.value.trim() }
+  if (!payload.recipe_id && !payload.free_text) return
+  const ok = await run(() => foodStore.assignMeal(date, payload), {
+    key: 'assign',
+    error: t('food.assignError'),
+  })
+  if (ok) showAssignDialog.value = false
 }
 
 async function doRemoveMeal() {
-  if (assignSaving.value) return
-  assignSaving.value = true
-  try {
-    await foodStore.removeMeal(assignDate.value)
-    showAssignDialog.value = false
-  } finally {
-    assignSaving.value = false
-  }
+  const date = assignDate.value
+  const ok = await run(() => foodStore.removeMeal(date), {
+    key: 'removeMeal',
+    success: t('food.mealRemoved'),
+    undo: (removed) => (removed ? foodStore.restoreMeal(removed) : undefined),
+    error: t('food.removeError'),
+  })
+  if (ok) showAssignDialog.value = false
 }
 
 // ── Rezept-Detail-Dialog (bei Tap auf Tag mit Rezept) ──
 const showDetailDialog = ref(false)
 const detailEntry = ref<MealPlanEntry | null>(null)
-const addToShoppingLoading = ref(false)
-const addToShoppingResult = ref<AddToShoppingResponse | null>(null)
-const addToShoppingTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
 function openDetailDialog(entry: MealPlanEntry) {
   detailEntry.value = entry
-  addToShoppingResult.value = null
   showDetailDialog.value = true
 }
 
 function closeDetailDialog() {
   showDetailDialog.value = false
   detailEntry.value = null
-  if (addToShoppingTimer.value) {
-    clearTimeout(addToShoppingTimer.value)
-    addToShoppingTimer.value = null
-  }
+}
+
+/** Aus dem Detail-Dialog umbuchen: erst Detail schliessen, dann Zuweisen öffnen (kein Dialog über Dialog). */
+async function switchToAssign() {
+  const date = detailEntry.value?.date
+  closeDetailDialog()
+  if (!date) return
+  await nextTick()
+  await waitForOverlayBack()
+  openAssignDialog(date)
 }
 
 async function doAddToShopping() {
-  if (!detailEntry.value || addToShoppingLoading.value) return
-  addToShoppingLoading.value = true
-  try {
-    const result = await foodStore.addMissingToShopping(detailEntry.value.id)
-    if (result) {
-      addToShoppingResult.value = result
-      // Nach 3 Sekunden zurücksetzen
-      addToShoppingTimer.value = setTimeout(() => {
-        addToShoppingResult.value = null
-        addToShoppingTimer.value = null
-      }, 3000)
+  const entry = detailEntry.value
+  if (!entry) return
+  let addedText = ''
+  const ok = await run(async () => {
+    const result = await foodStore.addMissingToShopping(entry.id)
+    if (!result) return
+    addedText = t('ai.recipe.addedMissing', { n: result.added.length }, result.added.length)
+    if (result.skipped.length > 0) {
+      addedText += ` · ${t('food.skippedItems', { n: result.skipped.length })}`
     }
-  } finally {
-    addToShoppingLoading.value = false
+  }, { key: `shopping:${entry.id}`, error: t('food.addToShoppingError') })
+  if (ok && addedText) {
+    // Ergebnis liegt auf einer anderen Seite → Toast mit Link dorthin
+    showToast(addedText, 'success', undefined, {
+      label: t('food.goToShopping'),
+      onAction: async () => {
+        closeDetailDialog()
+        await nextTick()
+        router.push('/shopping')
+      },
+    })
   }
 }
 
 // ── Favoriten-Toggle ──
-async function toggleFavorite(recipeId: string, event: Event) {
-  event.stopPropagation()
-  await foodStore.toggleFavorite(recipeId)
+async function toggleFavorite(recipeId: string) {
+  await run(() => foodStore.toggleFavorite(recipeId), {
+    key: `fav:${recipeId}`,
+    error: t('food.favoriteError'),
+  })
 }
 
 // ── Zeile antippen: Assign oder Detail ──
@@ -241,7 +285,7 @@ const assignHasEntry = computed(() => {
 const assignDateFormatted = computed(() => {
   if (!assignDate.value) return ''
   const d = new Date(assignDate.value + 'T00:00:00')
-  return d.toLocaleDateString('de-CH', { weekday: 'long', day: 'numeric', month: 'long' })
+  return d.toLocaleDateString(dateLocale.value, { weekday: 'long', day: 'numeric', month: 'long' })
 })
 
 // ── Meal-Polls ──
@@ -256,18 +300,56 @@ function hasVoted(poll: EventPoll, optionId: string): boolean {
   return option?.votes.some(v => v.user_id === userId) ?? false
 }
 
-async function decideMealPoll(poll: EventPoll) {
-  // Finde die Option mit den meisten Stimmen
-  let winner = poll.options[0]
-  for (const opt of poll.options) {
-    if (opt.votes.length > winner.votes.length) {
-      winner = opt
-    }
-  }
-  if (!winner) return
-  await pollsStore.mealDecidePoll(poll.id, winner.id)
-  // Wochenplan neu laden
-  foodStore.fetchWeekPlan()
+async function vote(poll: EventPoll, optionId: string) {
+  await run(() => pollsStore.votePoll(poll.id, optionId), {
+    key: `vote:${poll.id}`,
+    error: t('polls.voteError'),
+  })
+}
+
+// ── Abstimmung entscheiden (mit Bestätigung) ──
+const decidePollId = ref<string | null>(null)
+// Immer die aktuelle Fassung aus dem Store (Stimmen können per Socket nachkommen);
+// entscheidet jemand anderes zuerst, verschwindet die Abstimmung und der Dialog schliesst.
+const decidePoll = computed(() => todaysMealPolls.value.find(p => p.id === decidePollId.value) ?? null)
+const decideOptionId = ref<string | null>(null)
+
+/** Optionen mit den meisten Stimmen (bei Gleichstand mehrere) */
+const decideLeaders = computed<PollOption[]>(() => {
+  const poll = decidePoll.value
+  if (!poll || poll.options.length === 0) return []
+  const max = Math.max(...poll.options.map(o => o.votes.length))
+  return poll.options.filter(o => o.votes.length === max)
+})
+const decideIsTie = computed(() => decideLeaders.value.length > 1)
+const decideOption = computed(() =>
+  decidePoll.value?.options.find(o => o.id === decideOptionId.value) ?? null,
+)
+
+function openDecideDialog(poll: EventPoll) {
+  decidePollId.value = poll.id
+  // Bei eindeutigem Gewinner vorauswählen, bei Gleichstand wählt man selbst
+  decideOptionId.value = decideLeaders.value.length === 1 ? decideLeaders.value[0].id : null
+}
+
+function closeDecideDialog() {
+  decidePollId.value = null
+  decideOptionId.value = null
+}
+
+async function confirmDecide() {
+  const poll = decidePoll.value
+  const option = decideOption.value
+  if (!poll || !option) return
+  const ok = await run(() => pollsStore.mealDecidePoll(poll.id, option.id), {
+    key: `decide:${poll.id}`,
+    success: t('food.pollDecidedToast', { option: option.label }),
+    error: t('polls.decideError'),
+  })
+  if (!ok) return
+  closeDecideDialog()
+  // Wochenplan neu laden (Ergebnis erscheint dort)
+  foodStore.fetchWeekPlan().catch((err) => notifyError(t('common.loadError'), err))
 }
 
 // ── Create Meal Poll Dialog ──
@@ -311,12 +393,12 @@ const canCreatePoll = computed(() => {
 async function doCreateMealPoll() {
   if (!canCreatePoll.value) return
   const validOptions = newPollOptions.value.filter(o => o.label.trim())
-  await pollsStore.createMealPoll(
+  const ok = await run(() => pollsStore.createMealPoll(
     newPollQuestion.value.trim(),
     newPollDate.value,
     validOptions,
-  )
-  showCreateMealPoll.value = false
+  ), { key: 'createPoll', error: t('food.createPollError') })
+  if (ok) showCreateMealPoll.value = false
 }
 </script>
 
@@ -326,11 +408,11 @@ async function doCreateMealPoll() {
     <PageHeader :title="t('food.title')">
       <template #actions>
         <div class="week-nav">
-          <button class="week-nav__btn tap-target" @click="foodStore.navigateWeek(-1)" :aria-label="t('common.back')">
+          <button type="button" class="week-nav__btn tap-target" @click="goWeek(-1)" :aria-label="t('food.prevWeek')">
             <PhCaretLeft :size="20" weight="bold" />
           </button>
           <span class="week-nav__label">{{ t('food.kwLabel', { week: currentWeekNumber }) }}</span>
-          <button class="week-nav__btn tap-target" @click="foodStore.navigateWeek(1)" aria-label="Next week">
+          <button type="button" class="week-nav__btn tap-target" @click="goWeek(1)" :aria-label="t('food.nextWeek')">
             <PhCaretRight :size="20" weight="bold" />
           </button>
         </div>
@@ -343,17 +425,24 @@ async function doCreateMealPoll() {
         <h3 class="card-section-title">{{ t('food.weekMenu') }}</h3>
 
         <!-- Skeleton während Laden -->
-        <div v-if="foodStore.loading" class="week-skeleton">
+        <div v-if="foodStore.loading || (reloading && foodStore.weekPlan.length === 0)" class="week-skeleton">
           <BaseSkeleton v-for="i in 7" :key="i" height="48px" style="margin-bottom: var(--space-2)" />
         </div>
+
+        <!-- Ladefehler (sonst sähe die Woche leer aus) -->
+        <BaseErrorState v-else-if="showWeekError" :retrying="reloading" @retry="retryLoad" />
 
         <!-- Wochentage -->
         <ul v-else class="week-list">
           <li
-            v-for="(date, idx) in weekDates"
+            v-for="date in weekDates"
             :key="date"
             class="week-row"
+            role="button"
+            tabindex="0"
             @click="onRowClick(date)"
+            @keydown.enter.self.prevent="onRowClick(date)"
+            @keydown.space.self.prevent="onRowClick(date)"
           >
             <!-- Tageszahl mit Ring wenn heute -->
             <span
@@ -364,7 +453,7 @@ async function doCreateMealPoll() {
             </span>
 
             <!-- Wochentag-Kürzel -->
-            <span class="week-row__weekday">{{ weekdayLabels[idx] }}</span>
+            <span class="week-row__weekday">{{ getWeekdayLabel(date) }}</span>
 
             <!-- Gerichtsinfo -->
             <div class="week-row__meal">
@@ -382,10 +471,14 @@ async function doCreateMealPoll() {
             <!-- Favoriten-Stern -->
             <button
               v-if="getEntryForDate(date)?.recipe"
+              type="button"
               class="week-row__fav tap-target"
               :class="{ 'week-row__fav--active': getEntryForDate(date)?.recipe?.is_favorite }"
-              @click.stop="toggleFavorite(getEntryForDate(date)!.recipe!.id, $event)"
+              @click.stop="toggleFavorite(getEntryForDate(date)!.recipe!.id)"
+              @keydown.enter.stop
+              @keydown.space.stop
               :aria-label="t('food.favorite')"
+              :aria-pressed="!!getEntryForDate(date)?.recipe?.is_favorite"
             >
               <PhStar
                 :size="20"
@@ -414,9 +507,12 @@ async function doCreateMealPoll() {
           <button
             v-for="option in poll.options"
             :key="option.id"
+            type="button"
             class="meal-poll__option"
             :class="{ 'meal-poll__option--voted': hasVoted(poll, option.id) }"
-            @click="pollsStore.votePoll(poll.id, option.id)"
+            :aria-pressed="hasVoted(poll, option.id)"
+            :disabled="isPending(`vote:${poll.id}`)"
+            @click="vote(poll, option.id)"
           >
             <span class="meal-poll__option-label">{{ option.label }}</span>
             <span class="meal-poll__option-count">{{ option.votes.length }}</span>
@@ -427,7 +523,8 @@ async function doCreateMealPoll() {
           v-if="poll.options.some(o => o.votes.length > 0)"
           size="sm"
           variant="primary"
-          @click="decideMealPoll(poll)"
+          :loading="isPending(`decide:${poll.id}`)"
+          @click="openDecideDialog(poll)"
           class="meal-poll__decide"
         >
           {{ t('food.decidePoll') }}
@@ -464,9 +561,10 @@ async function doCreateMealPoll() {
       :title="t('food.whatToEat')"
       @close="showCreateMealPoll = false"
     >
-      <div class="poll-form">
-        <label class="poll-form__label">{{ t('food.pollQuestion') }}</label>
+      <form id="meal-poll-form" class="poll-form" @submit.prevent="doCreateMealPoll">
+        <label class="poll-form__label" for="meal-poll-question">{{ t('food.pollQuestion') }}</label>
         <BaseInput
+          id="meal-poll-question"
           v-model="newPollQuestion"
           :placeholder="t('food.pollQuestionDefault')"
         />
@@ -484,6 +582,7 @@ async function doCreateMealPoll() {
           />
           <select
             class="poll-form__recipe-select"
+            :aria-label="t('food.selectRecipe')"
             @change="(e: Event) => { const val = (e.target as HTMLSelectElement).value; if (val) setOptionFromRecipe(idx, val) }"
           >
             <option value="">{{ t('food.selectRecipe') }}</option>
@@ -497,14 +596,16 @@ async function doCreateMealPoll() {
           </select>
           <button
             v-if="newPollOptions.length > 2"
+            type="button"
             class="poll-form__remove-btn"
+            :aria-label="t('food.removeOption')"
             @click="removePollOption(idx)"
           >
             <PhTrash :size="16" />
           </button>
         </div>
 
-        <button class="poll-form__add-btn tap-target" @click="addPollOption">
+        <button type="button" class="poll-form__add-btn tap-target" @click="addPollOption">
           <PhPlus :size="16" />
           {{ t('food.addOption') }}
         </button>
@@ -512,7 +613,7 @@ async function doCreateMealPoll() {
         <p v-if="!canCreatePoll" class="poll-form__hint">
           {{ t('food.minTwoOptions') }}
         </p>
-      </div>
+      </form>
 
       <template #footer>
         <div class="dialog-actions">
@@ -523,8 +624,10 @@ async function doCreateMealPoll() {
           <BaseButton
             variant="primary"
             size="sm"
+            type="submit"
+            form="meal-poll-form"
             :disabled="!canCreatePoll"
-            @click="doCreateMealPoll"
+            :loading="isPending('createPoll')"
           >
             {{ t('food.startPoll') }}
           </BaseButton>
@@ -538,10 +641,11 @@ async function doCreateMealPoll() {
       :title="`${t('food.assignTitle')} — ${assignDateFormatted}`"
       @close="showAssignDialog = false"
     >
-      <div class="assign-form">
+      <form id="meal-assign-form" class="assign-form" @submit.prevent="doAssign">
         <!-- Rezept-Auswahl -->
-        <label class="assign-form__label">{{ t('food.selectRecipe') }}</label>
+        <label class="assign-form__label" for="meal-assign-recipe">{{ t('food.selectRecipe') }}</label>
         <select
+          id="meal-assign-recipe"
           v-model="assignRecipeId"
           class="assign-form__select"
         >
@@ -557,13 +661,14 @@ async function doCreateMealPoll() {
         </select>
 
         <!-- Freitext-Alternative -->
-        <label class="assign-form__label assign-form__label--or">{{ t('food.freeText') }}</label>
+        <label class="assign-form__label assign-form__label--or" for="meal-assign-free">{{ t('food.freeText') }}</label>
         <BaseInput
+          id="meal-assign-free"
           v-model="assignFreeText"
           :placeholder="t('food.freeText')"
           :disabled="!!assignRecipeId"
         />
-      </div>
+      </form>
 
       <template #footer>
         <div class="dialog-actions">
@@ -571,7 +676,8 @@ async function doCreateMealPoll() {
             v-if="assignHasEntry"
             variant="danger"
             size="sm"
-            :loading="assignSaving"
+            :loading="isPending('removeMeal')"
+            :disabled="assignSaving"
             @click="doRemoveMeal"
           >
             {{ t('food.remove') }}
@@ -587,9 +693,10 @@ async function doCreateMealPoll() {
           <BaseButton
             variant="primary"
             size="sm"
-            :loading="assignSaving"
-            :disabled="!assignRecipeId && !assignFreeText.trim()"
-            @click="doAssign"
+            type="submit"
+            form="meal-assign-form"
+            :loading="isPending('assign')"
+            :disabled="assignSaving || (!assignRecipeId && !assignFreeText.trim())"
           >
             {{ t('food.assign') }}
           </BaseButton>
@@ -634,35 +741,75 @@ async function doCreateMealPoll() {
         <!-- Zur Einkaufsliste hinzufügen -->
         <div class="detail-shopping">
           <BaseButton
-            v-if="!addToShoppingResult"
             variant="secondary"
-            :loading="addToShoppingLoading"
+            :loading="isPending(`shopping:${detailEntry.id}`)"
             @click="doAddToShopping"
           >
             <PhShoppingBagOpen :size="20" style="margin-right: var(--space-1-5)" />
             {{ t('food.addToShopping') }}
           </BaseButton>
-
-          <!-- Erfolgs-Feedback -->
-          <div v-else class="detail-shopping__result">
-            <span class="detail-shopping__added">
-              {{ t('food.addedToShopping', { n: addToShoppingResult.added.length }) }}
-            </span>
-            <span v-if="addToShoppingResult.skipped.length > 0" class="detail-shopping__skipped">
-              {{ t('food.skippedItems', { n: addToShoppingResult.skipped.length }) }}
-            </span>
-          </div>
         </div>
       </div>
 
       <template #footer>
         <div class="dialog-actions">
-          <BaseButton variant="secondary" size="sm" @click="openAssignDialog(detailEntry?.date ?? '')">
+          <BaseButton variant="secondary" size="sm" @click="switchToAssign">
             {{ t('food.assignTitle') }}
           </BaseButton>
           <div class="dialog-actions__spacer" />
           <BaseButton variant="ghost" size="sm" @click="closeDetailDialog">
             {{ t('common.close') }}
+          </BaseButton>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- ── Abstimmung entscheiden: Bestätigung mit Gewinner ── -->
+    <BaseDialog
+      :open="!!decidePoll"
+      :title="t('food.decideTitle')"
+      @close="closeDecideDialog"
+    >
+      <div v-if="decidePoll" class="decide-content">
+        <p class="decide-content__question">{{ decidePoll.question }}</p>
+
+        <!-- Gleichstand: selbst wählen -->
+        <template v-if="decideIsTie">
+          <p class="decide-content__text">{{ t('food.decideTie') }}</p>
+          <div class="decide-content__options" role="radiogroup" :aria-label="t('food.decideTitle')">
+            <label
+              v-for="option in decideLeaders"
+              :key="option.id"
+              class="decide-content__option"
+            >
+              <input v-model="decideOptionId" type="radio" name="decide-option" :value="option.id" />
+              <span>{{ option.label }}</span>
+              <span class="decide-content__votes">{{ t('food.voteCount', { n: option.votes.length }, option.votes.length) }}</span>
+            </label>
+          </div>
+        </template>
+
+        <p v-else-if="decideOption" class="decide-content__text">
+          {{ t('food.decideWinner', { option: decideOption.label, n: decideOption.votes.length }, decideOption.votes.length) }}
+        </p>
+
+        <p class="decide-content__hint">{{ t('food.decideHint') }}</p>
+      </div>
+
+      <template #footer>
+        <div class="dialog-actions">
+          <div class="dialog-actions__spacer" />
+          <BaseButton variant="secondary" size="sm" @click="closeDecideDialog">
+            {{ t('food.cancel') }}
+          </BaseButton>
+          <BaseButton
+            variant="primary"
+            size="sm"
+            :disabled="!decideOption"
+            :loading="!!decidePoll && isPending(`decide:${decidePoll.id}`)"
+            @click="confirmDecide"
+          >
+            {{ t('food.decidePoll') }}
           </BaseButton>
         </div>
       </template>
@@ -728,6 +875,11 @@ async function doCreateMealPoll() {
   padding: 0;
   display: flex;
   flex-direction: column;
+}
+
+.week-row:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
 }
 
 .week-row {
@@ -865,7 +1017,7 @@ async function doCreateMealPoll() {
 .assign-form__select {
   width: 100%;
   padding: var(--space-2) var(--space-3);
-  font-size: var(--text-sm);
+  font-size: var(--text-base); /* 16px — verhindert iOS-Zoom */
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--bg);
@@ -942,19 +1094,51 @@ async function doCreateMealPoll() {
   margin-top: var(--space-2);
 }
 
-.detail-shopping__result {
+/* ── Abstimmung entscheiden ── */
+.decide-content {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-3);
 }
 
-.detail-shopping__added {
-  font-size: var(--text-sm);
+.decide-content__question {
+  margin: 0;
   font-weight: var(--font-weight-semibold);
-  color: var(--ok);
+  color: var(--ink);
 }
 
-.detail-shopping__skipped {
+.decide-content__text {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+.decide-content__hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--sub);
+}
+
+.decide-content__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.decide-content__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.decide-content__votes {
+  margin-left: auto;
   font-size: var(--text-xs);
   color: var(--sub);
 }
@@ -1083,7 +1267,7 @@ async function doCreateMealPoll() {
 .poll-form__recipe-select {
   width: 140px;
   padding: var(--space-2);
-  font-size: var(--text-xs);
+  font-size: var(--text-base); /* 16px — verhindert iOS-Zoom */
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--bg);

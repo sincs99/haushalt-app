@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useChoresStore } from '../stores/chores'
 import { useAuthStore } from '../stores/auth'
-import { useToast } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
+import { useLoader } from '../composables/useLoader'
 import { formatDateShort } from '../utils/dates'
 import type { ChoreInfo, ChoreAssignmentInfo, ChoreCreatePayload, ChoreUpdatePayload } from '../types'
 import { PhBroom, PhCalendarCheck, PhPencilSimple, PhUserSwitch, PhX } from '@phosphor-icons/vue'
@@ -12,20 +13,37 @@ import BaseButton from '../components/ui/BaseButton.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
+import BaseErrorState from '../components/ui/BaseErrorState.vue'
 import BasePillTabs from '../components/ui/BasePillTabs.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 
 const route = useRoute()
 const choresStore = useChoresStore()
 const authStore = useAuthStore()
-const { showToast } = useToast()
+const { run, isPending } = useAsyncAction()
 const { t, locale } = useI18n()
+
+// ── Laden mit Fehlerzustand ──
+const { loadError, reloading, reload } = useLoader(() =>
+  Promise.all([
+    choresStore.fetchChores(),
+    choresStore.fetchAssignments(),
+    choresStore.fetchMembers(),
+  ]),
+)
+
+// Skeleton nur beim ersten Laden ohne Daten, nicht über bestehendem Inhalt
+const showSkeleton = computed(() =>
+  choresStore.loading && choresStore.chores.length === 0 && choresStore.assignments.length === 0,
+)
+const showLoadError = computed(() =>
+  loadError.value && !choresStore.loading
+  && choresStore.chores.length === 0 && choresStore.assignments.length === 0,
+)
 
 // ── Lifecycle ──
 onMounted(() => {
-  choresStore.fetchChores()
-  choresStore.fetchAssignments()
-  choresStore.fetchMembers()
+  reload()
 })
 
 // ── Date Helpers ──
@@ -108,15 +126,20 @@ const assignmentsByDay = computed<DayGroup[]>(() => {
 
 // ── Assignment Actions ──
 async function handleToggleAssignment(assignment: ChoreAssignmentInfo) {
-  try {
-    if (assignment.completed_at) {
-      await choresStore.uncompleteAssignment(assignment.id)
-    } else {
-      await choresStore.completeAssignment(assignment.id)
-    }
-  } catch {
-    showToast(t('chores.completeError'))
+  const id = assignment.id
+  if (assignment.completed_at) {
+    await run(() => choresStore.uncompleteAssignment(id), {
+      key: `toggle:${id}`,
+      error: t('chores.completeError'),
+    })
+    return
   }
+  await run(() => choresStore.completeAssignment(id), {
+    key: `toggle:${id}`,
+    success: t('chores.assignmentDone'),
+    undo: () => choresStore.uncompleteAssignment(id),
+    error: t('chores.completeError'),
+  })
 }
 
 // Reassign-Dialog
@@ -131,12 +154,11 @@ function closeReassignDialog() {
 }
 
 async function handleReassign(assignmentId: string, userId: string) {
-  try {
-    await choresStore.reassignAssignment(assignmentId, userId)
-    closeReassignDialog()
-  } catch {
-    showToast(t('chores.updateError'))
-  }
+  const ok = await run(() => choresStore.reassignAssignment(assignmentId, userId), {
+    key: `reassign:${assignmentId}`,
+    error: t('chores.updateError'),
+  })
+  if (ok) closeReassignDialog()
 }
 
 // ── Sektion B: Chores CRUD ──
@@ -152,6 +174,9 @@ const formDayOfMonth = ref('1')
 const formRotationOrder = ref<string[]>([])
 const formActive = ref(true)
 const formSaving = ref(false)
+const dayOfMonthError = ref('')
+const choreFormRef = ref<HTMLElement | null>(null)
+const formTitleRef = ref<HTMLInputElement | null>(null)
 
 function resetForm() {
   formTitle.value = ''
@@ -161,12 +186,22 @@ function resetForm() {
   formDayOfMonth.value = '1'
   formRotationOrder.value = choresStore.members.map(m => m.id)
   formActive.value = true
+  dayOfMonthError.value = ''
   editingChoreId.value = null
+}
+
+// Formular liegt weiter unten → hinscrollen und Titel fokussieren
+function revealForm() {
+  nextTick(() => {
+    choreFormRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    formTitleRef.value?.focus({ preventScroll: true })
+  })
 }
 
 function openCreateForm() {
   resetForm()
   showChoreForm.value = true
+  revealForm()
 }
 
 function openEditForm(chore: ChoreInfo) {
@@ -178,7 +213,9 @@ function openEditForm(chore: ChoreInfo) {
   formDayOfMonth.value = String(chore.day_of_month ?? 1)
   formRotationOrder.value = [...chore.rotation_order]
   formActive.value = chore.active
+  dayOfMonthError.value = ''
   showChoreForm.value = true
+  revealForm()
 }
 
 function cancelForm() {
@@ -195,14 +232,17 @@ async function handleSaveChore() {
   if (formRecurrence.value === 'monthly') {
     const day = parseInt(formDayOfMonth.value, 10)
     if (isNaN(day) || day < 1 || day > 31) {
-      showToast(t('chores.dayOfMonthError'))
+      // Inline-Fehler am Feld statt Toast
+      dayOfMonthError.value = t('chores.dayOfMonthError')
       return
     }
+    dayOfMonthError.value = ''
     parsedDayOfMonth = day
   }
 
   formSaving.value = true
-  try {
+  const isEdit = !!editingChoreId.value
+  const ok = await run(async () => {
     if (editingChoreId.value) {
       // Update
       const payload: ChoreUpdatePayload = {
@@ -228,12 +268,11 @@ async function handleSaveChore() {
       }
       await choresStore.createChore(payload)
     }
+  }, { key: 'saveChore', error: isEdit ? t('chores.updateError') : t('chores.createError') })
+  formSaving.value = false
+  if (ok) {
     showChoreForm.value = false
     editingChoreId.value = null
-  } catch {
-    showToast(editingChoreId.value ? t('chores.updateError') : t('chores.createError'))
-  } finally {
-    formSaving.value = false
   }
 }
 
@@ -249,13 +288,13 @@ function cancelDelete() {
 }
 
 async function handleDelete() {
-  if (!deletingChoreId.value) return
-  try {
-    await choresStore.removeChore(deletingChoreId.value)
-    deletingChoreId.value = null
-  } catch {
-    showToast(t('chores.deleteError'))
-  }
+  const choreId = deletingChoreId.value
+  if (!choreId) return
+  const ok = await run(() => choresStore.removeChore(choreId), {
+    key: `delete:${choreId}`,
+    error: t('chores.deleteError'),
+  })
+  if (ok && deletingChoreId.value === choreId) deletingChoreId.value = null
 }
 
 // ── Rotation-Order Umsortieren ──
@@ -322,10 +361,10 @@ const weekdayOptions = computed(() =>
       </router-link>
     </div>
 
-    <PageHeader :title="$t('chores.title')" />
+    <PageHeader :title="$t('tasks.segmentChores')" />
 
-    <!-- Loading -->
-    <div v-if="choresStore.loading" class="skeleton-list">
+    <!-- Loading (nur ohne Daten) -->
+    <div v-if="showSkeleton" class="skeleton-list">
       <div class="skeleton-row" v-for="n in 3" :key="n">
         <BaseSkeleton width="22px" height="22px" rounded />
         <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-1);">
@@ -335,8 +374,15 @@ const weekdayOptions = computed(() =>
       </div>
     </div>
 
+    <!-- Fehlerzustand: Laden gescheitert -->
+    <BaseErrorState
+      v-else-if="showLoadError"
+      :retrying="reloading"
+      @retry="reload"
+    />
+
     <!-- ═══ Sektion A: Diese Woche ═══ -->
-    <section class="section">
+    <section v-if="!showLoadError" class="section">
       <h2 class="section__title">{{ $t('chores.thisWeek') }}</h2>
 
       <!-- Filter-Toggle -->
@@ -348,9 +394,9 @@ const weekdayOptions = computed(() =>
       <BaseEmptyState
         v-if="!choresStore.loading && assignmentsByDay.length === 0"
         :icon="PhCalendarCheck"
-        :title="$t('chores.noAssignments')"
+        :title="$t('chores.noAssignmentsWeek')"
       >
-        <template #action>
+        <template v-if="choresStore.chores.length === 0" #action>
           <BaseButton variant="primary" size="sm" @click="openCreateForm">
             {{ $t('chores.createFirst') }}
           </BaseButton>
@@ -385,6 +431,7 @@ const weekdayOptions = computed(() =>
                   <input
                     type="checkbox"
                     :checked="!!assignment.completed_at"
+                    :aria-label="getChoreName(assignment.chore_id)"
                     @click.stop
                     @change="handleToggleAssignment(assignment)"
                     class="assignment-row__checkbox"
@@ -414,7 +461,7 @@ const weekdayOptions = computed(() =>
                   :aria-label="$t('chores.reassignTo')"
                   @click="openReassignDialog(assignment.id)"
                 >
-                  <PhUserSwitch :size="20" />
+                  <PhUserSwitch :size="20" aria-hidden="true" />
                 </button>
               </div>
 
@@ -422,13 +469,19 @@ const weekdayOptions = computed(() =>
               <div v-if="reassignDialogId === assignment.id" class="reassign-dropdown">
                 <div class="reassign-dropdown__header">
                   <span>{{ $t('chores.reassignTo') }}</span>
-                  <button class="action-btn tap-target" @click="closeReassignDialog"><PhX :size="16" /></button>
+                  <button
+                    class="action-btn tap-target"
+                    :aria-label="$t('common.close')"
+                    :title="$t('common.close')"
+                    @click="closeReassignDialog"
+                  ><PhX :size="16" /></button>
                 </div>
                 <button
                   v-for="member in choresStore.members"
                   :key="member.id"
                   class="reassign-dropdown__option"
                   :class="{ 'reassign-dropdown__option--active': member.id === assignment.assigned_user_id }"
+                  :disabled="isPending(`reassign:${assignment.id}`)"
                   @click="handleReassign(assignment.id, member.id)"
                 >
                   <BaseAvatar :name="member.display_name" :userId="member.id" size="sm" />
@@ -442,16 +495,16 @@ const weekdayOptions = computed(() =>
     </section>
 
     <!-- ═══ Sektion B: Ämtli verwalten ═══ -->
-    <section class="section">
+    <section v-if="!showLoadError" class="section">
       <div class="section__header">
         <h2 class="section__title">{{ $t('chores.manageTitle') }}</h2>
         <BaseButton v-if="!showChoreForm" size="sm" @click="openCreateForm">
-          {{ $t('chores.addChore') }}
+          {{ $t('chores.addChoreLabel') }}
         </BaseButton>
       </div>
 
       <!-- Erstellen/Bearbeiten-Formular -->
-      <div v-if="showChoreForm" class="chore-form">
+      <div v-if="showChoreForm" ref="choreFormRef" class="chore-form">
         <h3 class="chore-form__title">
           {{ editingChoreId ? $t('chores.editChore') : $t('chores.newChore') }}
         </h3>
@@ -461,6 +514,7 @@ const weekdayOptions = computed(() =>
           <div class="form-field">
             <label class="form-label">{{ $t('chores.choreTitleLabel') }}</label>
             <input
+              ref="formTitleRef"
               v-model="formTitle"
               type="text"
               class="form-input"
@@ -508,8 +562,13 @@ const weekdayOptions = computed(() =>
               type="text"
               inputmode="numeric"
               class="form-input"
+              :class="{ 'form-input--error': dayOfMonthError }"
               :placeholder="$t('chores.dayOfMonthPlaceholder')"
+              :aria-label="$t('chores.dayOfMonthLabel')"
+              :aria-invalid="!!dayOfMonthError"
+              @input="dayOfMonthError = ''"
             />
+            <p v-if="dayOfMonthError" class="form-error" role="alert">{{ dayOfMonthError }}</p>
           </div>
 
           <!-- Rotations-Reihenfolge -->
@@ -530,14 +589,16 @@ const weekdayOptions = computed(() =>
                     class="action-btn tap-target"
                     :disabled="index === 0"
                     @click="moveUp(index)"
-                    :aria-label="$t('chores.moveUp')"
+                    :aria-label="$t('chores.moveUpLabel')"
+                    :title="$t('chores.moveUpLabel')"
                   >↑</button>
                   <button
                     type="button"
                     class="action-btn tap-target"
                     :disabled="index === formRotationOrder.length - 1"
                     @click="moveDown(index)"
-                    :aria-label="$t('chores.moveDown')"
+                    :aria-label="$t('chores.moveDownLabel')"
+                    :title="$t('chores.moveDownLabel')"
                   >↓</button>
                 </div>
               </li>
@@ -616,7 +677,12 @@ const weekdayOptions = computed(() =>
           <div v-if="deletingChoreId === chore.id" class="delete-confirm">
             <p class="delete-confirm__text">{{ $t('chores.deleteConfirm') }}</p>
             <div class="delete-confirm__actions">
-              <BaseButton variant="danger" size="sm" @click="handleDelete">
+              <BaseButton
+                variant="danger"
+                size="sm"
+                :loading="isPending(`delete:${chore.id}`)"
+                @click="handleDelete"
+              >
                 {{ $t('common.delete') }}
               </BaseButton>
               <BaseButton variant="secondary" size="sm" @click="cancelDelete">
@@ -961,6 +1027,16 @@ const weekdayOptions = computed(() =>
   transition: border-color var(--transition-fast);
 }
 
+.form-input--error {
+  border-color: var(--color-danger);
+}
+
+.form-error {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+}
+
 .form-input:focus {
   outline: none;
   border-color: var(--color-primary);
@@ -972,7 +1048,7 @@ const weekdayOptions = computed(() =>
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
+  font-size: var(--text-base); /* 16px — iOS-Zoom-Prevention */
   font-family: var(--font-family);
   background: var(--color-surface);
   color: var(--color-text);

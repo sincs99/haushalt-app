@@ -47,7 +47,7 @@ export const useTodosStore = defineStore('todos', () => {
     assignedToUserId?: string,
     dueDate?: string,
     tags?: string[],
-  ) {
+  ): Promise<string | undefined> {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -89,6 +89,8 @@ export const useTodosStore = defineStore('todos', () => {
       //    Socket-Event → egal wer zuerst kommt, es entsteht kein Duplikat.
       //    Kein Insert, falls das Todo inzwischen gelöscht wurde.
       upsertVersioned(items.value, serverItem, false)
+      // ID zurückgeben, damit Aufrufer (z. B. Erinnerungen) nicht raten müssen
+      return todoId
     } catch (error) {
       // 4. Rollback bei Fehler
       items.value = items.value.filter(i => i.id !== todoId)
@@ -97,35 +99,42 @@ export const useTodosStore = defineStore('todos', () => {
   }
 
   async function toggleDone(todoId: string) {
+    const item = items.value.find(i => i.id === todoId)
+    if (!item) return
+    await setDone(todoId, !item.is_done)
+  }
+
+  /**
+   * Setzt den Erledigt-Status explizit (statt zu kippen) — ein Doppeltipp öffnet
+   * die Aufgabe so nicht wieder. Funktioniert auch, wenn die Aufgabe (noch) nicht
+   * lokal geladen ist (z. B. Abhaken im Dashboard).
+   */
+  async function setDone(todoId: string, isDone: boolean) {
     if (pendingToggles.has(todoId)) return // Bereits in Flight → ignorieren
-    pendingToggles.add(todoId)
 
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
-    if (!householdId) {
-      pendingToggles.delete(todoId)
-      return
-    }
+    if (!householdId) return
 
+    pendingToggles.add(todoId)
+
+    // 1. Optimistic (nur falls lokal vorhanden)
     const item = items.value.find(i => i.id === todoId)
-    if (!item) {
-      pendingToggles.delete(todoId)
-      return
+    const previousIsDone = item?.is_done
+    const previousDoneAt = item?.done_at ?? null
+    if (item) {
+      item.is_done = isDone
+      item.done_at = isDone ? new Date().toISOString() : null
     }
-
-    // 1. Optimistic Toggle
-    const previousIsDone = item.is_done
-    const previousDoneAt = item.done_at
-    item.is_done = !item.is_done
-    item.done_at = item.is_done ? new Date().toISOString() : null
 
     try {
       // 2. Server-Call
-      await repo.update(householdId, todoId, { is_done: item.is_done })
+      const serverItem = await repo.update(householdId, todoId, { is_done: isDone })
+      if (serverItem) upsertVersioned(items.value, serverItem, false)
     } catch (error) {
       // 3. Rollback — frisch nachschlagen, da Socket-Events das Objekt ersetzt haben könnten
       const currentItem = items.value.find(i => i.id === todoId)
-      if (currentItem) {
+      if (currentItem && previousIsDone !== undefined) {
         currentItem.is_done = previousIsDone
         currentItem.done_at = previousDoneAt
       }
@@ -133,6 +142,30 @@ export const useTodosStore = defineStore('todos', () => {
     } finally {
       pendingToggles.delete(todoId)
     }
+  }
+
+  /**
+   * Stellt eine gelöschte Aufgabe vollständig wieder her (Undo): Titel, Details,
+   * Tags, Erledigt-Status und noch ausstehende Erinnerungen. Neue ID, damit ein
+   * verspätetes Lösch-Event der alten ID die Wiederherstellung nicht entfernt.
+   */
+  async function restoreTodo(snapshot: TodoItem): Promise<string | undefined> {
+    const newId = await addTodo(
+      snapshot.title,
+      snapshot.description ?? undefined,
+      snapshot.assigned_to_user_id ?? undefined,
+      snapshot.due_date ?? undefined,
+      snapshot.tags?.length ? [...snapshot.tags] : undefined,
+    )
+    if (!newId) return newId
+    if (snapshot.is_done) {
+      await setDone(newId, true)
+    }
+    // Erinnerungen: nur zukünftige, best effort (Aufgabe ist bereits zurück)
+    const now = Date.now()
+    const future = (snapshot.reminders ?? []).filter(r => new Date(r.remind_at).getTime() > now)
+    await Promise.allSettled(future.map(r => addReminder(newId, r.remind_at)))
+    return newId
   }
 
   async function updateTodo(todoId: string, data: Partial<TodoItem>) {
@@ -276,6 +309,8 @@ export const useTodosStore = defineStore('todos', () => {
     fetchMembers,
     addTodo,
     toggleDone,
+    setDone,
+    restoreTodo,
     updateTodo,
     deleteTodo,
     addReminder,

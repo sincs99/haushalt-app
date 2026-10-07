@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useExpensesStore } from '../stores/expenses'
 import { useFinanceStore } from '../stores/finance'
 import { useSettlementsStore } from '../stores/settlements'
-import { useToast } from '../composables/useToast'
+import { errorText } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
+import { useLoader } from '../composables/useLoader'
 import { useI18n } from 'vue-i18n'
 import { formatRappen, parseAmountToRappen } from '../utils/money'
 import { formatDate } from '../utils/dates'
-import { translateApiError } from '../utils/apiErrors'
 import { useAuthStore } from '../stores/auth'
 import { PhCheck, PhX } from '@phosphor-icons/vue'
 import type { Expense, PendingBillInfo } from '../types'
@@ -19,12 +20,13 @@ import BaseDialog from '../components/ui/BaseDialog.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
+import BaseErrorState from '../components/ui/BaseErrorState.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 
 const expensesStore = useExpensesStore()
 const financeStore = useFinanceStore()
 const settlementsStore = useSettlementsStore()
-const { showToast } = useToast()
+const { run, isPending } = useAsyncAction()
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
@@ -71,7 +73,9 @@ const daysElapsed = computed(() => financeStore.summary?.days_elapsed ?? 0)
 // ── Budget Inline Edit ──
 const editingBudget = ref(false)
 const budgetInput = ref('')
+const budgetError = ref('')
 const savingBudget = ref(false)
+const budgetInputRef = ref<HTMLInputElement | null>(null)
 
 function startBudgetEdit() {
   if (budgetExists.value) {
@@ -79,29 +83,38 @@ function startBudgetEdit() {
   } else {
     budgetInput.value = ''
   }
+  budgetError.value = ''
   editingBudget.value = true
+  // Fokus direkt ins Betragsfeld
+  nextTick(() => {
+    budgetInputRef.value?.focus()
+    budgetInputRef.value?.select()
+  })
 }
 
 function cancelBudgetEdit() {
   editingBudget.value = false
   budgetInput.value = ''
+  budgetError.value = ''
 }
 
 async function saveBudget() {
+  // Doppelt-Senden (Enter + Klick) verhindern
+  if (savingBudget.value) return
   const rappen = parseAmountToRappen(budgetInput.value)
   if (!rappen) {
-    showToast(t('expenses.invalidAmount'), 'error')
+    budgetError.value = t('expenses.invalidAmount')
     return
   }
+  budgetError.value = ''
   savingBudget.value = true
   try {
     const now = new Date()
     const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
     await financeStore.upsertBudget({ month, amount_rappen: rappen })
-    showToast(t('finance.budgetSaved'), 'success')
     editingBudget.value = false
-  } catch {
-    showToast(t('common.error'), 'error')
+  } catch (e) {
+    budgetError.value = errorText(t('finance.budgetSaveError'), e)
   } finally {
     savingBudget.value = false
   }
@@ -138,8 +151,6 @@ const nextBillId = computed(() => {
   return unbooked.sort((a, b) => a.day_of_month - b.day_of_month)[0].id
 })
 
-const bookingBillId = ref<string | null>(null)
-
 // Buchen-Dialog: Zahler bestätigen oder ändern (Standard-Zahler der Rechnung vorausgewählt)
 const authStore = useAuthStore()
 const bookDialogBill = ref<PendingBillInfo | null>(null)
@@ -156,18 +167,19 @@ function openBookDialog(bill: PendingBillInfo) {
 async function confirmBookBill() {
   const bill = bookDialogBill.value
   if (!bill || !bookPayerId.value) return
-  bookingBillId.value = bill.id
-  try {
-    await financeStore.bookBill(bill.id, bookPayerId.value)
-    bookDialogBill.value = null
-    showToast(t('finance.billBooked'), 'success')
-    // Refresh expenses too
-    expensesStore.fetchExpenses()
-  } catch (e: any) {
-    showToast(translateApiError(e), 'error')
-  } finally {
-    bookingBillId.value = null
-  }
+  const payerId = bookPayerId.value
+  const ok = await run(() => financeStore.bookBill(bill.id, payerId), {
+    key: `bill-${bill.id}`,
+    success: t('finance.billBooked'),
+    // Rückgängig = gebuchte Ausgabe löschen; das Backend leitet „gebucht“ aus der
+    // Ausgabe ab, danach kann die Rechnung wieder gebucht werden
+    undo: (expense: Expense | undefined) => expense ? expensesStore.removeExpense(expense.id) : undefined,
+    error: t('finance.bookError'),
+  })
+  if (!ok) return
+  bookDialogBill.value = null
+  // Neue Ausgabe in der Liste anzeigen
+  expensesStore.fetchExpenses().catch(() => {})
 }
 
 // ── Expense Dialog ──
@@ -190,29 +202,24 @@ async function handleDeleteExpense(expenseId: string) {
   const expense = expensesStore.expenses.find(e => e.id === expenseId)
   if (!expense) return
 
-  try {
-    await expensesStore.removeExpense(expenseId)
-    showToast(t('common.deleted'), 'success', undefined, {
-      label: t('common.undo'),
-      onAction: () => {
-        expensesStore.addExpense({
-          description: expense.description,
-          amount_rappen: expense.amount_rappen,
-          currency: expense.currency,
-          paid_by_user_id: expense.paid_by_user_id!,
-          expense_date: expense.expense_date,
-          split_type: expense.split_type,
-          category: expense.category ?? undefined,
-          shares: expense.split_type === 'custom' ? expense.shares : undefined,
-          participant_ids: expense.split_type === 'even' ? expense.shares.map(s => s.user_id) : undefined,
-        }).catch(() => {
-          showToast(t('expenses.submitError'), 'error')
-        })
-      },
-    })
-  } catch {
-    showToast(t('expenses.deleteError'), 'error')
-  }
+  // Rückgängig legt die Ausgabe neu an (mit Kategorie und Aufteilung);
+  // der Bezug zu einer gebuchten Rechnung lässt sich ohne Backend nicht wiederherstellen
+  await run(() => expensesStore.removeExpense(expenseId), {
+    key: `expense-${expenseId}`,
+    success: t('common.deleted'),
+    undo: () => expensesStore.addExpense({
+      description: expense.description,
+      amount_rappen: expense.amount_rappen,
+      currency: expense.currency,
+      paid_by_user_id: expense.paid_by_user_id!,
+      expense_date: expense.expense_date,
+      split_type: expense.split_type,
+      category: expense.category ?? undefined,
+      shares: expense.split_type === 'custom' ? expense.shares : undefined,
+      participant_ids: expense.split_type === 'even' ? expense.shares.map(s => s.user_id) : undefined,
+    }),
+    error: t('expenses.deleteError'),
+  })
 }
 
 // ── Delete Settlement ──
@@ -220,26 +227,19 @@ async function handleDeleteSettlement(settlementId: string) {
   const settlement = settlementsStore.settlements.find(s => s.id === settlementId)
   if (!settlement) return
 
-  try {
-    await settlementsStore.remove(settlementId)
-    showToast(t('common.deleted'), 'success', undefined, {
-      label: t('common.undo'),
-      onAction: () => {
-        settlementsStore.create({
-          from_user_id: settlement.from_user_id,
-          to_user_id: settlement.to_user_id,
-          amount_rappen: settlement.amount_rappen,
-          currency: settlement.currency,
-          settled_date: settlement.settled_date,
-          note: settlement.note ?? undefined,
-        }).catch(() => {
-          showToast(t('settlements.saveError'), 'error')
-        })
-      },
-    })
-  } catch {
-    showToast(t('settlements.deleteError'), 'error')
-  }
+  await run(() => settlementsStore.remove(settlementId), {
+    key: `settlement-${settlementId}`,
+    success: t('common.deleted'),
+    undo: () => settlementsStore.create({
+      from_user_id: settlement.from_user_id,
+      to_user_id: settlement.to_user_id,
+      amount_rappen: settlement.amount_rappen,
+      currency: settlement.currency,
+      settled_date: settlement.settled_date,
+      note: settlement.note ?? undefined,
+    }),
+    error: t('settlements.deleteError'),
+  })
 }
 
 // ── Split-Type Label ──
@@ -247,15 +247,21 @@ function splitLabel(expense: Expense): string {
   return expense.split_type === 'even' ? t('expenses.splitEven') : t('expenses.splitCustom')
 }
 
+// ── Laden ──
+// Salden (eigener Fehlerzustand in BalanceSummary) und Mitglieder laufen nebenher
+const { loadError, reloading, reload } = useLoader(() => Promise.all([
+  financeStore.fetchSummary(),
+  expensesStore.fetchExpenses(),
+  settlementsStore.fetchAll(),
+]))
+
 // ── Init ──
 onMounted(() => {
-  financeStore.fetchSummary()
+  reload()
   financeStore.fetchBills()
   financeStore.fetchBudget()
-  expensesStore.fetchExpenses()
   expensesStore.fetchBalances()
   expensesStore.fetchMembers()
-  settlementsStore.fetchAll()
 
   if (route.query.new === '1') {
     router.replace({ query: {} })
@@ -274,11 +280,18 @@ onMounted(() => {
     <BaseCard padding="lg">
       <div class="budget-card">
         <!-- Budget wird geladen -->
-        <template v-if="financeStore.loading && !financeStore.summary">
+        <template v-if="(financeStore.loading || reloading) && !financeStore.summary">
           <BaseSkeleton width="50%" height="28px" />
           <BaseSkeleton width="100%" height="8px" style="margin-top: var(--space-3)" />
           <BaseSkeleton width="60%" height="14px" style="margin-top: var(--space-2)" />
         </template>
+
+        <!-- Budget konnte nicht geladen werden -->
+        <BaseErrorState
+          v-else-if="loadError && !financeStore.summary"
+          :retrying="reloading"
+          @retry="reload"
+        />
 
         <!-- Budget vorhanden -->
         <template v-else-if="budgetExists && !editingBudget">
@@ -310,7 +323,7 @@ onMounted(() => {
 
         <!-- Kein Budget -->
         <template v-else-if="!budgetExists && !editingBudget">
-          <span class="budget-card__label">{{ $t('finance.noBudget') }}</span>
+          <span class="budget-card__label">{{ $t('finance.spentThisMonth') }}</span>
           <span class="budget-card__amount budget-card__amount--muted">
             {{ formatRappen(totalSpent) }}
           </span>
@@ -325,11 +338,15 @@ onMounted(() => {
           <span class="budget-card__label">{{ $t('finance.budgetAmount') }}</span>
           <div class="budget-edit">
             <input
+              ref="budgetInputRef"
               v-model="budgetInput"
               type="text"
               inputmode="decimal"
               class="budget-edit__input"
+              :class="{ 'budget-edit__input--error': !!budgetError }"
               :placeholder="$t('expenses.amountPlaceholder')"
+              :aria-label="$t('finance.budgetAmount')"
+              :aria-invalid="!!budgetError"
               @keyup.enter="saveBudget"
               @keyup.escape="cancelBudgetEdit"
             />
@@ -340,6 +357,7 @@ onMounted(() => {
               {{ $t('common.cancel') }}
             </BaseButton>
           </div>
+          <p v-if="budgetError" class="budget-edit__error" role="alert">{{ budgetError }}</p>
         </template>
       </div>
     </BaseCard>
@@ -382,7 +400,7 @@ onMounted(() => {
               v-else
               variant="primary"
               size="sm"
-              :loading="bookingBillId === bill.id"
+              :loading="isPending(`bill-${bill.id}`)"
               @click="openBookDialog(bill)"
             >
               {{ $t('finance.book') }}
@@ -395,7 +413,7 @@ onMounted(() => {
         v-if="pendingBills.every(b => b.is_booked_this_month)"
         class="section-sub"
       >
-        {{ $t('finance.noPendingBills') }}
+        {{ $t('finance.allBooked') }}
       </p>
     </BaseCard>
 
@@ -420,6 +438,13 @@ onMounted(() => {
         </div>
       </div>
 
+      <!-- Ladefehler: nicht fälschlich den Leerzustand zeigen -->
+      <BaseErrorState
+        v-else-if="loadError && expensesStore.expenses.length === 0"
+        :retrying="reloading"
+        @retry="reload"
+      />
+
       <!-- Expense-Einträge -->
       <ul v-if="expensesStore.expenses.length > 0" class="expense-items">
         <li
@@ -427,7 +452,14 @@ onMounted(() => {
           :key="expense.id"
           class="expense-item"
         >
-          <div class="expense-item__main" @click="openEditDialog(expense)">
+          <div
+            class="expense-item__main"
+            role="button"
+            tabindex="0"
+            @click="openEditDialog(expense)"
+            @keydown.enter.prevent="openEditDialog(expense)"
+            @keydown.space.prevent="openEditDialog(expense)"
+          >
             <span class="expense-item__emoji">{{ categoryEmoji(expense.category) }}</span>
             <div class="expense-item__body">
               <div class="expense-item__title-line">
@@ -448,9 +480,10 @@ onMounted(() => {
           </div>
           <button
             class="action-btn action-btn--danger tap-target"
+            :disabled="isPending(`expense-${expense.id}`)"
             @click.stop="handleDeleteExpense(expense.id)"
             :title="$t('common.delete')"
-            :aria-label="$t('common.delete')"
+            :aria-label="$t('expenses.deleteLabel', { name: expense.description })"
           >
             <PhX :size="16" />
           </button>
@@ -458,12 +491,15 @@ onMounted(() => {
       </ul>
 
       <!-- Empty State -->
-      <p
-        v-if="!expensesStore.loading && expensesStore.expenses.length === 0"
-        class="section-sub"
+      <div
+        v-if="!expensesStore.loading && !reloading && !loadError && expensesStore.expenses.length === 0"
+        class="expenses-empty"
       >
-        {{ $t('expenses.emptySubtitle') }}
-      </p>
+        <p class="section-sub">{{ $t('expenses.emptyTitle') }}</p>
+        <BaseButton variant="secondary" size="sm" @click="openAddDialog">
+          {{ $t('expenses.addExpense') }}
+        </BaseButton>
+      </div>
     </BaseCard>
 
     <!-- ══════════════ 5. Salden & Ausgleich ══════════════ -->
@@ -504,9 +540,10 @@ onMounted(() => {
           </div>
           <button
             class="action-btn action-btn--danger tap-target"
+            :disabled="isPending(`settlement-${s.id}`)"
             @click="handleDeleteSettlement(s.id)"
             :title="$t('common.delete')"
-            :aria-label="$t('settlements.deleteConfirm')"
+            :aria-label="$t('settlements.deleteLabel')"
           >
             <PhX :size="16" />
           </button>
@@ -541,7 +578,7 @@ onMounted(() => {
         <BaseButton variant="secondary" @click="bookDialogBill = null">{{ $t('common.cancel') }}</BaseButton>
         <BaseButton
           :disabled="!bookPayerId"
-          :loading="!!bookDialogBill && bookingBillId === bookDialogBill.id"
+          :loading="!!bookDialogBill && isPending(`bill-${bookDialogBill.id}`)"
           @click="confirmBookBill"
         >
           {{ $t('finance.book') }}
@@ -656,6 +693,16 @@ onMounted(() => {
   background: var(--card);
 }
 
+.budget-edit__input--error {
+  border-color: var(--color-danger);
+}
+
+.budget-edit__error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+}
+
 .budget-edit__input:focus {
   outline: none;
   border-color: var(--p1);
@@ -708,6 +755,14 @@ onMounted(() => {
   margin: var(--space-2) 0 0 0;
   font-size: var(--text-sm);
   color: var(--sub);
+}
+
+/* Leerzustand mit Aktion */
+.expenses-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
 }
 
 /* ── Bills ── */

@@ -7,6 +7,8 @@ __pycache__/
 *.egg-info/
 *.egg
 backend/venv/
+# Lokale Uploads (Dev-Server ohne Docker, UPLOAD_DIR=data/uploads)
+backend/data/
 backend/.venv/
 backend/.env
 backend/.env.*

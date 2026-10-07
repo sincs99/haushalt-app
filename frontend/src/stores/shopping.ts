@@ -88,6 +88,7 @@ export const useShoppingStore = defineStore('shopping', () => {
     // Socket-Event kann schneller gewesen sein → Upsert statt push
     upsertVersioned(lists.value, newList, true)
     lists.value.sort((a, b) => a.position - b.position)
+    return newList
   }
 
   async function updateList(listId: string, data: ShoppingListUpdatePayload) {
@@ -205,7 +206,12 @@ export const useShoppingStore = defineStore('shopping', () => {
     }
   }
 
-  async function addItem(name: string, quantity?: string, category?: string, store?: string) {
+  async function addItem(
+    name: string,
+    quantity?: string,
+    category?: string,
+    store?: string,
+  ): Promise<string | undefined> {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -248,11 +254,86 @@ export const useShoppingStore = defineStore('shopping', () => {
       //    Socket-Event → egal wer zuerst kommt, es entsteht kein Duplikat.
       //    Kein Insert, falls das Item inzwischen gelöscht wurde.
       upsertVersioned(items.value, serverItem, false)
+      return itemId
     } catch (error) {
       // 4. Rollback bei Fehler
       items.value = items.value.filter(i => i.id !== itemId)
       throw error
     }
+  }
+
+  /**
+   * Stellt gelöschte Artikel vollständig wieder her (Undo): in ihrer ursprünglichen
+   * Liste, mit Menge, Abteilung, Geschäft, Zuweisung und Abgehakt-Status.
+   * Neue IDs, damit verspätete Lösch-Events der alten IDs nichts entfernen.
+   * Scheitern einzelne Artikel, bleiben die übrigen erhalten und der erste Fehler
+   * wird weitergereicht.
+   */
+  async function restoreItems(snapshots: ShoppingItem[]) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId || snapshots.length === 0) return
+
+    const results = await Promise.allSettled(snapshots.map(async (snap) => {
+      const itemId = crypto.randomUUID()
+      const now = new Date().toISOString()
+      items.value.push({
+        ...snap,
+        id: itemId,
+        household_id: householdId,
+        checked_at: snap.is_checked ? (snap.checked_at ?? now) : null,
+        created_at: now,
+        updated_at: now,
+        version: 0, // noch nicht vom Server bestätigt
+      })
+      try {
+        let serverItem = await repo.create(householdId, {
+          id: itemId,
+          name: snap.name,
+          list_id: snap.list_id,
+          quantity: snap.quantity ?? undefined,
+          category: snap.category ?? undefined,
+          store: snap.store ?? undefined,
+          assigned_to_user_id: snap.assigned_to_user_id ?? undefined,
+        })
+        // Create kennt is_checked nicht → abgehakte Artikel nachträglich abhaken
+        if (snap.is_checked) {
+          serverItem = await repo.update(householdId, itemId, { is_checked: true })
+        }
+        if (serverItem) upsertVersioned(items.value, serverItem, false)
+      } catch (error) {
+        items.value = items.value.filter(i => i.id !== itemId)
+        throw error
+      }
+    }))
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (failed) throw failed.reason
+  }
+
+  /**
+   * Löscht mehrere Artikel (z. B. „Erledigte entfernen“). Scheitert ein Artikel,
+   * bleibt er in der Liste; zurück kommen die tatsächlich gelöschten Artikel
+   * (Snapshots fürs Undo) und die Anzahl der Fehlschläge.
+   */
+  async function deleteItems(itemIds: string[]) {
+    const snapshots = new Map<string, ShoppingItem>()
+    for (const i of items.value) {
+      if (itemIds.includes(i.id)) snapshots.set(i.id, { ...i })
+    }
+    const results = await Promise.allSettled(itemIds.map(id => deleteItem(id).then(() => id)))
+    const removed: ShoppingItem[] = []
+    let failed = 0
+    let firstError: unknown
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        const snap = snapshots.get(r.value)
+        if (snap) removed.push(snap)
+      } else {
+        failed++
+        if (firstError === undefined) firstError = r.reason
+      }
+    }
+    return { removed, failed, error: firstError }
   }
 
   async function toggleChecked(itemId: string) {
@@ -417,6 +498,8 @@ export const useShoppingStore = defineStore('shopping', () => {
     addItem,
     toggleChecked,
     deleteItem,
+    deleteItems,
+    restoreItems,
     toggleAssigned,
     updateItem,
     // Actions (Stores)

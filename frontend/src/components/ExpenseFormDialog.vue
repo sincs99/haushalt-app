@@ -2,12 +2,14 @@
 import { ref, computed, watch } from 'vue'
 import { useExpensesStore } from '../stores/expenses'
 import { useAuthStore } from '../stores/auth'
-import { useToast } from '../composables/useToast'
+import { useToast, errorText } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatRappen, parseAmountToRappen } from '../utils/money'
+import { localDateString } from '../utils/dates'
 import type { Expense, SplitType, ExpenseShare } from '../types'
 import BaseButton from './ui/BaseButton.vue'
 import BaseInput from './ui/BaseInput.vue'
+import BaseDialog from './ui/BaseDialog.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -20,7 +22,8 @@ const emit = defineEmits<{
 
 const expensesStore = useExpensesStore()
 const authStore = useAuthStore()
-const { showToast } = useToast()
+const { notifySuccess } = useToast()
+const formId = `expense-form-${Math.random().toString(36).slice(2, 9)}`
 const { t } = useI18n()
 
 // Kategorie-Konstanten
@@ -88,6 +91,32 @@ const canSubmit = computed(() => {
   return true
 })
 
+// Teilnehmer/Individuell-Felder mit allen Mitgliedern vorbelegen (neue Ausgabe)
+function initMemberDefaults() {
+  participantIds.value = expensesStore.members.map(m => m.id)
+  customShares.value = {}
+  for (const m of expensesStore.members) {
+    customShares.value[m.id] = ''
+  }
+  if (!paidByUserId.value && expensesStore.members[0]) {
+    paidByUserId.value = expensesStore.members[0].id
+  }
+}
+
+// Betrag beim Verlassen des Feldes prüfen (nicht erst beim Absenden)
+function validateAmount() {
+  if (amountText.value.trim() && parsedAmountRappen.value === null) {
+    amountError.value = t('expenses.invalidAmount')
+  } else {
+    amountError.value = ''
+  }
+}
+
+// Fehler verschwindet, sobald der Betrag wieder gültig ist
+watch(amountText, () => {
+  if (amountError.value) validateAmount()
+})
+
 // Formular initialisieren/zurücksetzen
 function initForm() {
   serverError.value = ''
@@ -112,14 +141,19 @@ function initForm() {
     // Neuer Eintrag: Defaults
     description.value = ''
     amountText.value = ''
-    expenseDate.value = new Date().toISOString().slice(0, 10)
+    // Lokales Datum: toISOString() wäre nachts noch „gestern“ (UTC)
+    expenseDate.value = localDateString()
     paidByUserId.value = authStore.user?.id ?? ''
     splitType.value = 'even'
     selectedCategory.value = null
-    participantIds.value = expensesStore.members.map(m => m.id)
-    customShares.value = {}
-    for (const m of expensesStore.members) {
-      customShares.value[m.id] = ''
+    initMemberDefaults()
+    // Direkt per ?new=1 geöffnet: Mitglieder evtl. noch nicht geladen → nachziehen
+    if (expensesStore.members.length === 0) {
+      expensesStore.fetchMembers().then(() => {
+        if (props.modelValue && !isEditMode.value && participantIds.value.length === 0) {
+          initMemberDefaults()
+        }
+      })
     }
   }
 }
@@ -131,10 +165,6 @@ watch(() => props.modelValue, (open) => {
 
 function close() {
   emit('update:modelValue', false)
-}
-
-function handleOverlayClick(e: MouseEvent) {
-  if (e.target === e.currentTarget) close()
 }
 
 function toggleParticipant(memberId: string) {
@@ -155,12 +185,21 @@ function resolveUserName(userId: string): string {
 }
 
 async function handleSubmit() {
+  // Doppelt-Senden verhindern (Enter + Klick)
+  if (submitting.value) return
   // Betrag validieren
   amountError.value = ''
   serverError.value = ''
 
   if (parsedAmountRappen.value === null) {
     amountError.value = t('expenses.invalidAmount')
+    return
+  }
+  if (!canSubmit.value) return
+
+  // Ohne Netz gar nicht erst senden — Eingaben bleiben erhalten
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    serverError.value = t('offline.actionBlocked')
     return
   }
 
@@ -215,15 +254,11 @@ async function handleSubmit() {
       })
     }
     close()
+    // Neue Ausgabe liegt auf dem Handy oft unter dem Falz → kurze Bestätigung
+    notifySuccess(t('expenses.saved'))
   } catch (e: any) {
-    const detail = e.response?.data?.detail
-    if (typeof detail === 'string') {
-      serverError.value = detail
-    } else if (Array.isArray(detail)) {
-      serverError.value = detail.map((d: any) => d.msg ?? d).join(', ')
-    } else {
-      serverError.value = e.message || t('expenses.submitError')
-    }
+    // Übersetzter Fehlercode statt rohem (oft englischem) detail
+    serverError.value = errorText(t('expenses.submitError'), e)
   } finally {
     submitting.value = false
   }
@@ -231,192 +266,157 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="modelValue" class="dialog-overlay" @click="handleOverlayClick">
-      <div class="dialog-content" role="dialog" aria-modal="true">
-        <h2 class="dialog-title">{{ dialogTitle }}</h2>
+  <BaseDialog :open="modelValue" :title="dialogTitle" @close="close">
+    <form :id="formId" class="dialog-form" novalidate @submit.prevent="handleSubmit">
+      <!-- Beschreibung -->
+      <BaseInput
+        v-model="description"
+        :label="$t('expenses.description')"
+        :placeholder="$t('expenses.descriptionPlaceholder')"
+        :error="description.trim().length === 0 && description.length > 0 ? $t('expenses.descriptionRequired') : undefined"
+      />
 
-        <form class="dialog-form" @submit.prevent="handleSubmit">
-          <!-- Beschreibung -->
-          <BaseInput
-            v-model="description"
-            :label="$t('expenses.description')"
-            :placeholder="$t('expenses.descriptionPlaceholder')"
-            :error="description.trim().length === 0 && description.length > 0 ? $t('expenses.descriptionRequired') : undefined"
-          />
+      <!-- Betrag -->
+      <BaseInput
+        v-model="amountText"
+        :label="$t('expenses.amount')"
+        :placeholder="$t('expenses.amountPlaceholder')"
+        inputmode="decimal"
+        :error="amountError || undefined"
+        @blur="validateAmount"
+      />
 
-          <!-- Betrag -->
-          <BaseInput
-            v-model="amountText"
-            :label="$t('expenses.amount')"
-            :placeholder="$t('expenses.amountPlaceholder')"
-            inputmode="decimal"
-            :error="amountError || undefined"
-          />
-
-          <!-- Datum -->
-          <div class="form-field">
-            <label class="form-field__label" for="expense-date">{{ $t('expenses.date') }}</label>
-            <input
-              id="expense-date"
-              v-model="expenseDate"
-              type="date"
-              class="form-field__input"
-            />
-          </div>
-
-          <!-- Kategorie -->
-          <div class="form-field">
-            <label class="form-field__label">{{ $t('expenses.category') }}</label>
-            <div class="category-chips">
-              <button
-                v-for="cat in categories"
-                :key="cat.key"
-                type="button"
-                class="category-chip tap-target"
-                :class="{ 'category-chip--active': selectedCategory === cat.key }"
-                @click="selectedCategory = selectedCategory === cat.key ? null : cat.key"
-              >
-                {{ cat.emoji }} {{ cat.label }}
-              </button>
-            </div>
-          </div>
-
-          <!-- Bezahlt von -->
-          <div class="form-field">
-            <label class="form-field__label" for="expense-paid-by">{{ $t('expenses.payer') }}</label>
-            <select
-              id="expense-paid-by"
-              v-model="paidByUserId"
-              class="form-field__input"
-            >
-              <option v-for="member in expensesStore.members" :key="member.id" :value="member.id">
-                {{ member.display_name }}
-              </option>
-            </select>
-          </div>
-
-          <!-- Split-Typ Auswahl -->
-          <div class="form-field">
-            <label class="form-field__label">{{ $t('expenses.splitType') }}</label>
-            <div class="split-toggle">
-              <button
-                type="button"
-                class="split-toggle__btn"
-                :class="{ 'split-toggle__btn--active': splitType === 'even' }"
-                @click="splitType = 'even'"
-              >
-                {{ $t('expenses.splitEven') }}
-              </button>
-              <button
-                type="button"
-                class="split-toggle__btn"
-                :class="{ 'split-toggle__btn--active': splitType === 'custom' }"
-                @click="splitType = 'custom'"
-              >
-                {{ $t('expenses.splitCustom') }}
-              </button>
-            </div>
-          </div>
-
-          <!-- Gleichmässig: Teilnehmer-Checkboxen -->
-          <div v-if="splitType === 'even'" class="participants">
-            <label
-              v-for="member in expensesStore.members"
-              :key="member.id"
-              class="participant-check"
-            >
-              <input
-                type="checkbox"
-                :checked="participantIds.includes(member.id)"
-                @change="toggleParticipant(member.id)"
-                class="participant-check__input"
-              />
-              <span class="participant-check__name">{{ member.display_name }}</span>
-            </label>
-          </div>
-
-          <!-- Individuell: Betrags-Felder pro Mitglied -->
-          <div v-if="splitType === 'custom'" class="custom-shares">
-            <div
-              v-for="member in expensesStore.members"
-              :key="member.id"
-              class="custom-share-row"
-            >
-              <span class="custom-share-row__name">{{ member.display_name }}</span>
-              <input
-                v-model="customShares[member.id]"
-                class="custom-share-row__input"
-                inputmode="decimal"
-                placeholder="0.00"
-              />
-            </div>
-            <div class="custom-shares__summary">
-              <span>{{ $t('expenses.customSplit.allocated') }}: {{ formatRappen(customSharesSum) }}</span>
-              <span v-if="parsedAmountRappen !== null"> / {{ formatRappen(parsedAmountRappen) }}</span>
-              <span
-                v-if="parsedAmountRappen !== null && customSharesSum !== parsedAmountRappen"
-                class="custom-shares__warning"
-              >
-                ≠ {{ $t('expenses.customSplit.mismatch') }}
-              </span>
-            </div>
-          </div>
-
-          <!-- Server-Fehler -->
-          <p v-if="serverError" class="server-error">{{ serverError }}</p>
-
-          <!-- Aktionen -->
-          <div class="dialog-actions">
-            <BaseButton
-              type="submit"
-              variant="primary"
-              :disabled="!canSubmit"
-              :loading="submitting"
-            >
-              {{ isEditMode ? $t('expenses.saveExpense') : $t('common.add') }}
-            </BaseButton>
-            <BaseButton type="button" variant="secondary" @click="close">
-              {{ $t('common.cancel') }}
-            </BaseButton>
-          </div>
-        </form>
+      <!-- Datum -->
+      <div class="form-field">
+        <label class="form-field__label" for="expense-date">{{ $t('expenses.date') }}</label>
+        <input
+          id="expense-date"
+          v-model="expenseDate"
+          type="date"
+          class="form-field__input"
+        />
       </div>
-    </div>
-  </Teleport>
+
+      <!-- Kategorie -->
+      <div class="form-field">
+        <label class="form-field__label">{{ $t('expenses.category') }}</label>
+        <div class="category-chips">
+          <button
+            v-for="cat in categories"
+            :key="cat.key"
+            type="button"
+            class="category-chip tap-target"
+            :class="{ 'category-chip--active': selectedCategory === cat.key }"
+            @click="selectedCategory = selectedCategory === cat.key ? null : cat.key"
+          >
+            {{ cat.emoji }} {{ cat.label }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Bezahlt von -->
+      <div class="form-field">
+        <label class="form-field__label" for="expense-paid-by">{{ $t('expenses.payer') }}</label>
+        <select
+          id="expense-paid-by"
+          v-model="paidByUserId"
+          class="form-field__input"
+        >
+          <option v-for="member in expensesStore.members" :key="member.id" :value="member.id">
+            {{ member.display_name }}
+          </option>
+        </select>
+      </div>
+
+      <!-- Split-Typ Auswahl -->
+      <div class="form-field">
+        <label class="form-field__label">{{ $t('expenses.splitType') }}</label>
+        <div class="split-toggle">
+          <button
+            type="button"
+            class="split-toggle__btn"
+            :class="{ 'split-toggle__btn--active': splitType === 'even' }"
+            @click="splitType = 'even'"
+          >
+            {{ $t('expenses.splitEven') }}
+          </button>
+          <button
+            type="button"
+            class="split-toggle__btn"
+            :class="{ 'split-toggle__btn--active': splitType === 'custom' }"
+            @click="splitType = 'custom'"
+          >
+            {{ $t('expenses.splitCustom') }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Gleichmässig: Teilnehmer-Checkboxen -->
+      <div v-if="splitType === 'even'" class="participants">
+        <label
+          v-for="member in expensesStore.members"
+          :key="member.id"
+          class="participant-check"
+        >
+          <input
+            type="checkbox"
+            :checked="participantIds.includes(member.id)"
+            @change="toggleParticipant(member.id)"
+            class="participant-check__input"
+          />
+          <span class="participant-check__name">{{ member.display_name }}</span>
+        </label>
+      </div>
+
+      <!-- Individuell: Betrags-Felder pro Mitglied -->
+      <div v-if="splitType === 'custom'" class="custom-shares">
+        <div
+          v-for="member in expensesStore.members"
+          :key="member.id"
+          class="custom-share-row"
+        >
+          <span class="custom-share-row__name">{{ member.display_name }}</span>
+          <input
+            v-model="customShares[member.id]"
+            class="custom-share-row__input"
+            inputmode="decimal"
+            placeholder="0.00"
+          />
+        </div>
+        <div class="custom-shares__summary">
+          <span>{{ $t('expenses.customSplit.allocated') }}: {{ formatRappen(customSharesSum) }}</span>
+          <span v-if="parsedAmountRappen !== null"> / {{ formatRappen(parsedAmountRappen) }}</span>
+          <span
+            v-if="parsedAmountRappen !== null && customSharesSum !== parsedAmountRappen"
+            class="custom-shares__warning"
+          >
+            ≠ {{ $t('expenses.customSplit.mismatch') }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Server-Fehler -->
+      <p v-if="serverError" class="server-error" role="alert">{{ serverError }}</p>
+    </form>
+
+    <template #footer>
+      <BaseButton type="button" variant="secondary" @click="close">
+        {{ $t('common.cancel') }}
+      </BaseButton>
+      <BaseButton
+        type="submit"
+        :form="formId"
+        variant="primary"
+        :disabled="!canSubmit"
+        :loading="submitting"
+      >
+        {{ isEditMode ? $t('expenses.saveExpense') : $t('common.add') }}
+      </BaseButton>
+    </template>
+  </BaseDialog>
 </template>
 
 <style scoped>
-.dialog-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-dialog);
-  background: var(--color-scrim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-4);
-}
-
-.dialog-content {
-  background: var(--color-surface);
-  border-radius: var(--radius-dialog);
-  padding: var(--space-6);
-  width: 100%;
-  max-width: 480px;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: var(--shadow-overlay);
-}
-
-.dialog-title {
-  margin: 0 0 var(--space-4) 0;
-  font-size: var(--text-title-dialog);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text);
-  font-family: var(--font-display);
-}
-
 .dialog-form {
   display: flex;
   flex-direction: column;
@@ -578,15 +578,6 @@ async function handleSubmit() {
   font-size: var(--text-sm);
 }
 
-/* Aktionen */
-.dialog-actions {
-  display: flex;
-  gap: var(--space-3);
-}
-
-.dialog-actions > * {
-  flex: 1;
-}
 
 /* ── Kategorie-Chips ── */
 .category-chips {

@@ -10,10 +10,13 @@ const props = defineProps<{
   stores: string[]
   categories: string[]
   open: boolean
+  /** Speichern läuft → Doppelklick-Schutz */
+  saving?: boolean
 }>()
 
 const emit = defineEmits<{
   close: []
+  delete: []
   save: [data: { name: string; quantity: string | null; store: string | null; category: string | null }]
 }>()
 
@@ -61,7 +64,7 @@ function handleNewStoreInput() {
 }
 
 function handleSubmit() {
-  if (!canSave.value) return
+  if (!canSave.value || props.saving) return
   emit('save', {
     name: name.value.trim(),
     quantity: quantity.value.trim() || null,
@@ -146,10 +149,14 @@ function handleSubmit() {
 
       <!-- Actions -->
       <div class="edit-actions">
+        <!-- Löschen auch für offene Artikel (mit Rückgängig im Toast) -->
+        <button type="button" class="btn-delete tap-target" :disabled="saving" @click="emit('delete')">
+          {{ t('common.delete') }}
+        </button>
         <button type="button" class="btn-secondary tap-target" @click="emit('close')">
           {{ t('common.cancel') }}
         </button>
-        <button type="submit" class="btn-primary tap-target" :disabled="!canSave">
+        <button type="submit" class="btn-primary tap-target" :disabled="!canSave || saving">
           {{ t('common.save') }}
         </button>
       </div>
@@ -230,7 +237,7 @@ function handleSubmit() {
   padding: var(--space-1-5) var(--space-3);
   border: 1px dashed var(--line-strong);
   border-radius: var(--radius-full);
-  font-size: var(--text-sm);
+  font-size: var(--text-base); /* 16px — iOS-Zoom-Prevention */
   font-family: var(--font-family);
   background: var(--card);
   color: var(--ink);
@@ -286,5 +293,23 @@ function handleSubmit() {
 
 .btn-secondary:hover {
   background: var(--chip);
+}
+
+.btn-delete {
+  margin-right: auto;
+  padding: var(--space-2) 0;
+  border: none;
+  background: transparent;
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  font-family: var(--font-family);
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.btn-delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 </style>

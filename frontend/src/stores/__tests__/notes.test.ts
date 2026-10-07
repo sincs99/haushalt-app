@@ -106,6 +106,31 @@ describe('addNote', () => {
   })
 })
 
+describe('restoreNote', () => {
+  test('legt die gelöschte Notiz mit Titel, Text, Tag und Pin neu an', async () => {
+    const store = useNotesStore()
+    const old = note({ id: 'old', title: 'T', body: 'B', tag: 'x', pinned: true })
+    const pending = deferred<NoteItem>()
+    repo.create.mockReturnValue(pending.promise)
+    const p = store.restoreNote(old)
+    expect(store.items).toHaveLength(1)
+    expect(store.items[0]).toMatchObject({ title: 'T', body: 'B', tag: 'x', pinned: true })
+    expect(store.items[0].id).not.toBe('old')
+    expect(repo.create).toHaveBeenCalledWith(HOUSEHOLD_ID, { title: 'T', body: 'B', tag: 'x', pinned: true })
+    const server = note({ id: 'new', title: 'T', body: 'B', tag: 'x', pinned: true })
+    pending.resolve(server)
+    expect(await p).toEqual(server)
+    expect(store.items).toEqual([server])
+  })
+
+  test('Rollback bei Fehler', async () => {
+    const store = useNotesStore()
+    repo.create.mockRejectedValue(new Error('x'))
+    await expect(store.restoreNote(note())).rejects.toThrow('x')
+    expect(store.items).toEqual([])
+  })
+})
+
 describe('update / pin / delete', () => {
   test('updateNote: optimistisch, Rollback bei Fehler', async () => {
     const store = useNotesStore()

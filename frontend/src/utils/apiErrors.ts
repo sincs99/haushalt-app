@@ -5,9 +5,10 @@ import i18n from '../i18n'
  *
  * Priorität:
  * 1. detail.code → errors.<CODE> i18n-Key
- * 2. detail.message → englischer Fallback
- * 3. error.message → generischer Fehler
- * 4. errors.unknown → letzter Fallback
+ * 2. detail.message (unbekannter Code)
+ * 3. kein Response → errors.network
+ * 4. nach HTTP-Status: 404 → errors.notFound, 400/422 → errors.validation, 5xx → errors.server
+ * 5. errors.unknown
  */
 export function translateApiError(error: any): string {
   const t = i18n.global.t
@@ -29,25 +30,17 @@ export function translateApiError(error: any): string {
     }
   }
 
-  // Legacy: detail ist ein String (Pydantic-Validierung oder alte API)
-  if (detail && typeof detail === 'string') {
-    return detail
-  }
-
-  // Pydantic-Validierung: detail ist ein Array
-  if (detail && Array.isArray(detail)) {
-    return detail.map((e: any) => e.msg || JSON.stringify(e)).join(', ')
-  }
-
   // Netzwerk-Fehler (kein Response)
   if (error?.message && !error?.response) {
     return t('errors.network')
   }
 
-  // Generischer Fehler
-  if (error?.message) {
-    return error.message
-  }
+  // Alles Weitere (Text-Details aus älteren Endpunkten, Pydantic-Arrays, leere
+  // Antworten) ist englisch oder technisch – nie roh anzeigen, sondern nach Status.
+  const status: number | undefined = error?.response?.status
+  if (status === 404) return t('errors.notFound')
+  if (status === 400 || status === 422 || Array.isArray(detail)) return t('errors.validation')
+  if (status !== undefined && status >= 500) return t('errors.server')
 
   return t('errors.unknown')
 }

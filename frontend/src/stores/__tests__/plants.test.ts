@@ -141,6 +141,28 @@ describe('plants store', () => {
     expect(s.careStatus).toEqual([])
   })
 
+  it('fetchCareStatus keeps the previous status on failure and flags the error', async () => {
+    repo.fetchCareStatus.mockResolvedValueOnce([status()])
+    const s = usePlantsStore()
+    await s.fetchCareStatus()
+    expect(s.careStatusError).toBe(false)
+    repo.fetchCareStatus.mockRejectedValueOnce(new Error('x'))
+    await s.fetchCareStatus()
+    expect(s.careStatus).toHaveLength(1)
+    expect(s.careStatusError).toBe(true)
+    repo.fetchCareStatus.mockResolvedValueOnce([status()])
+    await s.fetchCareStatus()
+    expect(s.careStatusError).toBe(false)
+  })
+
+  it('fetchCareTasks / fetchCareLog pass load errors on (for the error state)', async () => {
+    repo.fetchCareTasks.mockRejectedValueOnce(new Error('tasks'))
+    repo.fetchCareLog.mockRejectedValueOnce(new Error('log'))
+    const s = usePlantsStore()
+    await expect(s.fetchCareTasks('p1')).rejects.toThrow('tasks')
+    await expect(s.fetchCareLog('p1')).rejects.toThrow('log')
+  })
+
   it('createPlant dedupes when the socket event was faster and refreshes status', async () => {
     const created = plant({ id: 'p2', name: 'Aloe' })
     repo.create.mockResolvedValue(created)

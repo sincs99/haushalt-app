@@ -69,6 +69,30 @@ describe('Rezepte', () => {
     expect(await store.toggleFavorite('nope')).toBeUndefined()
   })
 
+  test('toggleFavorite ist optimistisch (auch im Wochenplan) und rollt bei Fehler zurück', async () => {
+    const store = useFoodStore()
+    store.recipes = [recipe()]
+    store.weekPlan = [entry('2026-03-02')]
+    const pending = deferred<any>()
+    repo.updateRecipe.mockReturnValue(pending.promise)
+    const p = store.toggleFavorite('r1')
+    expect(store.recipes[0].is_favorite).toBe(true)
+    expect(store.weekPlan[0].recipe!.is_favorite).toBe(true)
+    pending.reject(new Error('x'))
+    await expect(p).rejects.toThrow('x')
+    expect(store.recipes[0].is_favorite).toBe(false)
+    expect(store.weekPlan[0].recipe!.is_favorite).toBe(false)
+  })
+
+  test('toggleFavorite findet das Rezept auch nur im Wochenplan', async () => {
+    const store = useFoodStore()
+    store.weekPlan = [entry('2026-03-02')]
+    repo.updateRecipe.mockResolvedValue(recipe('r1', { is_favorite: true }))
+    await store.toggleFavorite('r1')
+    expect(repo.updateRecipe).toHaveBeenCalledWith(HOUSEHOLD_ID, 'r1', { is_favorite: true })
+    expect(store.weekPlan[0].recipe!.is_favorite).toBe(true)
+  })
+
   test('deleteRecipe entfernt erst nach Erfolg', async () => {
     const store = useFoodStore()
     store.recipes = [recipe()]
@@ -108,6 +132,46 @@ describe('Wochenplan', () => {
     repo.removeMeal.mockResolvedValue(undefined)
     await store.removeMeal('2026-03-02')
     expect(store.weekPlan).toEqual([])
+  })
+
+  test('fetchWeekPlan: veraltete Antwort nach Wochenwechsel wird verworfen', async () => {
+    const store = useFoodStore()
+    store.currentWeekStart = '2026-03-02'
+    const slow = deferred<any[]>()
+    const fast = deferred<any[]>()
+    repo.fetchWeekPlan.mockReturnValueOnce(slow.promise).mockReturnValueOnce(fast.promise)
+    const p1 = store.fetchWeekPlan()
+    const p2 = store.navigateWeek(1)
+    fast.resolve([entry('2026-03-09')])
+    await p2
+    expect(store.loading).toBe(false)
+    slow.resolve([entry('2026-03-02')])
+    await p1
+    expect(store.weekPlan.map(e => e.date)).toEqual(['2026-03-09'])
+  })
+
+  test('fetchWeekPlan: Fehler einer überholten Anfrage wird ignoriert', async () => {
+    const store = useFoodStore()
+    const slow = deferred<any[]>()
+    repo.fetchWeekPlan.mockReturnValueOnce(slow.promise).mockResolvedValueOnce([])
+    const p1 = store.fetchWeekPlan()
+    await store.fetchWeekPlan()
+    slow.reject(new Error('x'))
+    await expect(p1).resolves.toBeUndefined()
+  })
+
+  test('removeMeal liefert den entfernten Eintrag; restoreMeal belegt den Tag wieder', async () => {
+    const store = useFoodStore()
+    const e = entry('2026-03-02', { free_text: null })
+    store.weekPlan = [e]
+    repo.removeMeal.mockResolvedValue(undefined)
+    const removed = await store.removeMeal('2026-03-02')
+    expect(removed).toEqual(e)
+    expect(store.weekPlan).toEqual([])
+    repo.assignMeal.mockResolvedValue(e)
+    await store.restoreMeal(removed!)
+    expect(repo.assignMeal).toHaveBeenCalledWith(HOUSEHOLD_ID, '2026-03-02', { recipe_id: 'r1', free_text: null })
+    expect(store.weekPlan).toEqual([e])
   })
 
   test('addMissingToShopping reicht die Antwort durch', async () => {

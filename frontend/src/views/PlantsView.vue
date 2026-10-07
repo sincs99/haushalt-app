@@ -5,6 +5,8 @@ import { useRouter } from 'vue-router'
 import { usePlantsStore } from '../stores/plants'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
+import { useLoader } from '../composables/useLoader'
 import { careTaskName, dueText, isWaterDue, mergeCareNotes } from '../utils/plantCare'
 import type { AiPlantCareAdvice, Plant, PlantCareLog, PlantCareStatus, PlantCareStatusTask } from '../types'
 import { PhPlant, PhPlus, PhDrop } from '@phosphor-icons/vue'
@@ -16,18 +18,25 @@ import BaseDialog from '../components/ui/BaseDialog.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
+import BaseErrorState from '../components/ui/BaseErrorState.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 
 const plantsStore = usePlantsStore()
 const router = useRouter()
 const { on, off, onReconnect, offReconnect } = useSocket()
-const { showToast } = useToast()
+const { notifyError } = useToast()
+const { run, isPending } = useAsyncAction()
 const { t } = useI18n()
+
+// Pflanzen + Pflegestatus; scheitert das Laden der Pflanzen → Fehlerzustand statt Leerzustand
+const { loadError, reloading, reload } = useLoader(() => Promise.all([
+  plantsStore.fetchPlants(),
+  plantsStore.fetchCareStatus(),
+]))
 
 // ── Lifecycle ──
 onMounted(() => {
-  plantsStore.fetchPlants()
-  plantsStore.fetchCareStatus()
+  reload()
 
   on('plant_created', handleSocketPlantCreated)
   on('plant_updated', handleSocketPlantUpdated)
@@ -65,8 +74,19 @@ function handleSocketCareLogged(_data: PlantCareLog) {
 }
 
 function handleReconnect() {
-  plantsStore.fetchPlants()
-  plantsStore.fetchCareStatus()
+  reload()
+}
+
+// Pflegestatus gescheitert: alter Status bleibt, Hinweis mit „Erneut versuchen“
+const statusRetrying = ref(false)
+async function retryCareStatus() {
+  if (statusRetrying.value) return
+  statusRetrying.value = true
+  try {
+    await plantsStore.fetchCareStatus()
+  } finally {
+    statusRetrying.value = false
+  }
 }
 
 // ── Status-Helpers ──
@@ -97,33 +117,21 @@ function badgeState(plantId: string): 'overdue' | 'today' | 'ok' | 'none' {
 const anyWaterDue = computed(() => plantsStore.careStatus.some(isWaterDue))
 
 // ── Aktionen ──
-const wateringIds = ref(new Set<string>())
-
-async function handleWater(plantId: string) {
-  if (wateringIds.value.has(plantId)) return
-  wateringIds.value.add(plantId)
-  try {
-    await plantsStore.waterPlant(plantId)
-  } catch {
-    showToast(t('plants.careError'), 'error')
-  } finally {
-    wateringIds.value.delete(plantId)
-  }
+// Kein Undo: das Backend kann Pflege-Log-Einträge nicht löschen.
+function handleWater(plant: Plant) {
+  return run(() => plantsStore.waterPlant(plant.id), {
+    key: `water-${plant.id}`,
+    success: t('plants.wateredToast', { name: plant.name }),
+    error: t('plants.careError'),
+  })
 }
 
-const wateringAll = ref(false)
-
-async function handleWaterAll() {
-  if (wateringAll.value) return
-  wateringAll.value = true
-  try {
-    await plantsStore.waterAll()
-    showToast(t('plants.waterAllDone'), 'success')
-  } catch {
-    showToast(t('plants.careError'), 'error')
-  } finally {
-    wateringAll.value = false
-  }
+function handleWaterAll() {
+  return run<PlantCareLog[] | undefined>(() => plantsStore.waterAll(), {
+    key: 'water-all',
+    success: (logs) => (logs && logs.length > 0 ? t('plants.waterAllDone') : t('plants.waterAllNone')),
+    error: t('plants.careError'),
+  })
 }
 
 // ── Add Plant Dialog ──
@@ -133,7 +141,7 @@ const formSpecies = ref('')
 const formLocation = ref('')
 const formNotes = ref('')
 const formAddWaterTask = ref(true)
-const formSaving = ref(false)
+const formSaving = computed(() => isPending('create'))
 // Übernommener KI-Vorschlag: wird erst beim Speichern der Pflanze angelegt
 const formAdvice = ref<AiPlantCareAdvice | null>(null)
 
@@ -158,10 +166,9 @@ function closeAddDialog() {
 
 async function handleCreatePlant() {
   const name = formName.value.trim()
-  if (!name || formSaving.value) return
+  if (!name) return
 
-  formSaving.value = true
-  try {
+  const ok = await run(async () => {
     const created = await plantsStore.createPlant({
       name,
       species: formSpecies.value.trim() || undefined,
@@ -169,40 +176,40 @@ async function handleCreatePlant() {
       notes: formNotes.value.trim() || undefined,
       care_notes: formAdvice.value ? mergeCareNotes(null, formAdvice.value.care_notes) || undefined : undefined,
     })
+    // Folgeschritte: Pflanze ist angelegt, Fehler hier nur melden
     if (created && formAdvice.value) {
       try {
         await plantsStore.applyAdviceTasks(created.id, formAdvice.value)
-      } catch {
-        showToast(t('ai.plant.applyError'), 'error')
+      } catch (err) {
+        notifyError(t('ai.plant.applyError'), err)
       }
     } else if (created && formAddWaterTask.value) {
       try {
         await plantsStore.createCareTask(created.id, { care_type: 'water' })
-      } catch {
-        showToast(t('plants.careError'), 'error')
+      } catch (err) {
+        notifyError(t('plants.careError'), err)
       }
     }
-    showAddDialog.value = false
-    showToast(t('plants.created'), 'success')
-  } catch {
-    showToast(t('plants.createError'), 'error')
-  } finally {
-    formSaving.value = false
-  }
+  }, { key: 'create', success: t('plants.created'), error: t('plants.createError') })
+  if (ok) showAddDialog.value = false
 }
 
 // ── Delete Plant ──
 const deletingPlantId = ref<string | null>(null)
 
 async function handleDelete() {
-  if (!deletingPlantId.value) return
-  try {
-    await plantsStore.removePlant(deletingPlantId.value)
-    deletingPlantId.value = null
-    showToast(t('plants.deleted'), 'success')
-  } catch {
-    showToast(t('plants.deleteError'), 'error')
-  }
+  const id = deletingPlantId.value
+  if (!id) return
+  const ok = await run(() => plantsStore.removePlant(id), {
+    key: 'delete',
+    success: t('plants.deleted'),
+    error: t('plants.deleteError'),
+  })
+  if (ok) deletingPlantId.value = null
+}
+
+function openPlant(plantId: string) {
+  router.push(`/plants/${plantId}`)
 }
 
 function summaryTask(plantId: string): PlantCareStatusTask | undefined {
@@ -226,6 +233,13 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
       </div>
     </div>
 
+    <!-- Ladefehler (vor dem Leerzustand, sonst wirkt es wie Datenverlust) -->
+    <BaseErrorState
+      v-else-if="loadError && plantsStore.plants.length === 0"
+      :retrying="reloading"
+      @retry="reload"
+    />
+
     <!-- Empty State -->
     <BaseEmptyState
       v-else-if="plantsStore.plants.length === 0"
@@ -241,7 +255,15 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
     </BaseEmptyState>
 
     <template v-else>
-      <!-- ═══ Alle fälligen gießen ═══ -->
+      <!-- Pflegestatus nicht geladen: bisherigen Stand behalten, Hinweis zeigen -->
+      <BaseErrorState
+        v-if="plantsStore.careStatusError"
+        :message="$t('plants.statusLoadError')"
+        :retrying="statusRetrying"
+        @retry="retryCareStatus"
+      />
+
+      <!-- ═══ Alle fälligen giessen ═══ -->
       <section v-if="anyWaterDue" class="section">
         <BaseCard>
           <h2 class="card-title">{{ $t('plants.overviewToday') }}</h2>
@@ -249,8 +271,8 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
             variant="primary"
             size="sm"
             class="water-all-btn"
-            :loading="wateringAll"
-            :disabled="wateringAll"
+            :loading="isPending('water-all')"
+            :disabled="isPending('water-all')"
             @click="handleWaterAll"
           >
             <PhDrop :size="20" weight="bold" />
@@ -265,7 +287,11 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
           v-for="plant in plantsStore.plants"
           :key="plant.id"
           class="plant-card"
-          @click="router.push(`/plants/${plant.id}`)"
+          role="button"
+          tabindex="0"
+          @click="openPlant(plant.id)"
+          @keydown.enter.self="openPlant(plant.id)"
+          @keydown.space.self.prevent="openPlant(plant.id)"
         >
           <div class="plant-card__header">
             <PlantPhotoAvatar :photo-file-id="plant.photo_file_id" :plant-name="plant.name" size="sm" />
@@ -305,8 +331,9 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
               v-if="hasWaterTask(plant.id)"
               :variant="badgeState(plant.id) === 'overdue' || badgeState(plant.id) === 'today' ? 'primary' : 'secondary'"
               size="sm"
-              :disabled="wateringIds.has(plant.id)"
-              @click.stop="handleWater(plant.id)"
+              :loading="isPending(`water-${plant.id}`)"
+              :disabled="isPending(`water-${plant.id}`)"
+              @click.stop="handleWater(plant)"
             >
               <PhDrop :size="20" weight="bold" />
               {{ $t('plants.watered') }}
@@ -323,7 +350,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
 
     <!-- Add Plant Dialog -->
     <BaseDialog :open="showAddDialog" :title="$t('plants.addPlant')" @close="closeAddDialog">
-      <form class="dialog-form" @submit.prevent="handleCreatePlant">
+      <form id="plant-add-form" class="dialog-form" @submit.prevent="handleCreatePlant">
         <BaseInput v-model="formName" :label="$t('plants.name')" :placeholder="$t('plants.name')" />
         <BaseInput v-model="formSpecies" :label="$t('plants.species')" :placeholder="$t('plants.speciesPlaceholder')" />
         <BaseInput v-model="formLocation" :label="$t('plants.location')" :placeholder="$t('plants.locationPlaceholder')" />
@@ -349,8 +376,10 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
           </BaseButton>
           <BaseButton
             variant="primary"
+            type="submit"
+            form="plant-add-form"
             :disabled="!formName.trim() || formSaving"
-            @click="handleCreatePlant"
+            :loading="formSaving"
           >
             {{ $t('common.save') }}
           </BaseButton>
@@ -366,7 +395,12 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
           <BaseButton variant="ghost" @click="deletingPlantId = null">
             {{ $t('common.cancel') }}
           </BaseButton>
-          <BaseButton variant="danger" @click="handleDelete">
+          <BaseButton
+            variant="danger"
+            :loading="isPending('delete')"
+            :disabled="isPending('delete')"
+            @click="handleDelete"
+          >
             {{ $t('common.delete') }}
           </BaseButton>
         </div>
@@ -401,6 +435,11 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
   box-shadow: var(--shadow-card);
   cursor: pointer;
   transition: transform var(--transition-fast);
+}
+
+.plant-card:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
 }
 
 @media (hover: hover) {

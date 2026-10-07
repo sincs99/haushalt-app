@@ -54,7 +54,8 @@ export const useTasksStore = defineStore('tasks', () => {
 
   // Socket-Invalidierung: bei todo_* oder chore_assignment_* Events → refetch
   function invalidate() {
-    fetchTasks()
+    // Ungewartet aufgerufen → Fehler hier abfangen (kein Unhandled Rejection)
+    fetchTasks().catch((e) => console.error('Failed to refetch tasks:', e))
   }
 
   return { items, members, loading, fetchTasks, fetchMembers, claimTask, completeChoreAssignment, invalidate }

@@ -6,11 +6,12 @@ import { usePlantsStore } from '../stores/plants'
 import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
+import { useLoader } from '../composables/useLoader'
 import { MAX_UPLOAD_BYTES, imageUploadErrorReason, prepareImageForUpload } from '../utils/imageUpload'
 import { useProtectedImage } from '../composables/useProtectedImage'
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
 import { formatDate } from '../utils/dates'
-import { translateApiError } from '../utils/apiErrors'
 import { careTaskName, daysUntil, dueText } from '../utils/plantCare'
 import type { AiPlantCareAdvice, Plant, PlantCareLog, PlantCareTask, PlantCareType, StoredFile } from '../types'
 import {
@@ -22,17 +23,20 @@ import BaseButton from '../components/ui/BaseButton.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
+import BaseErrorState from '../components/ui/BaseErrorState.vue'
 
 const route = useRoute()
 const router = useRouter()
 const plantsStore = usePlantsStore()
 const authStore = useAuthStore()
 const { on, off, onReconnect, offReconnect } = useSocket()
-const { showToast } = useToast()
+const { showToast, notifyError } = useToast()
+const { run, isPending } = useAsyncAction()
 const { t } = useI18n()
 
 const plantId = computed(() => route.params.id as string)
-const loading = ref(true)
+// Erst nach dem ersten Ladeversuch „nicht gefunden“ oder Fehler zeigen
+const loaded = ref(false)
 
 const plant = computed<Plant | undefined>(() =>
   plantsStore.plants.find(p => p.id === plantId.value),
@@ -94,7 +98,7 @@ async function handlePhotoUpload(event: Event) {
         await filesRepo.deleteFile(householdId.value, uploadedFile.id)
       } catch { /* best effort */ }
     }
-    showToast(t('plants.photoUploadErrorReason', { reason: imageUploadErrorReason(error) }), 'error')
+    notifyError(t('plants.photoUploadErrorReason', { reason: imageUploadErrorReason(error) }))
   } finally {
     photoUploading.value = false
   }
@@ -112,13 +116,12 @@ async function loadAll() {
   ])
 }
 
+// Ladefehler → Fehlerzustand mit „Erneut versuchen“ (statt „Pflanze nicht gefunden“)
+const { loadError, reloading, reload } = useLoader(loadAll)
+
 onMounted(async () => {
-  loading.value = true
-  try {
-    await loadAll()
-  } finally {
-    loading.value = false
-  }
+  await reload()
+  loaded.value = true
 
   on('plant_updated', handleSocketPlantUpdated)
   on('plant_deleted', handleSocketPlantDeleted)
@@ -135,7 +138,7 @@ onUnmounted(() => {
 
 // Navigation zwischen zwei Pflanzen (z.B. über Push-Link) lädt neu
 watch(plantId, () => {
-  loadAll()
+  reload()
 })
 
 // ── Socket Handlers ──
@@ -157,7 +160,7 @@ function handleSocketCareLogged(data: PlantCareLog) {
 }
 
 function handleReconnect() {
-  loadAll()
+  reload()
 }
 
 // ── Helpers ──
@@ -187,7 +190,7 @@ const editSpecies = ref('')
 const editLocation = ref('')
 const editNotes = ref('')
 const editCareNotes = ref('')
-const editSaving = ref(false)
+const editSaving = computed(() => isPending('edit'))
 
 function openEditDialog() {
   if (!plant.value) return
@@ -201,24 +204,16 @@ function openEditDialog() {
 
 async function handleSaveEdit() {
   const name = editName.value.trim()
-  if (!name || editSaving.value) return
+  if (!name) return
 
-  editSaving.value = true
-  try {
-    await plantsStore.updatePlant(plantId.value, {
-      name,
-      species: editSpecies.value.trim() || null,
-      location: editLocation.value.trim() || null,
-      notes: editNotes.value.trim() || null,
-      care_notes: editCareNotes.value.trim() || null,
-    })
-    showEditDialog.value = false
-    showToast(t('plants.updated'), 'success')
-  } catch {
-    showToast(t('plants.updateError'), 'error')
-  } finally {
-    editSaving.value = false
-  }
+  const ok = await run(() => plantsStore.updatePlant(plantId.value, {
+    name,
+    species: editSpecies.value.trim() || null,
+    location: editLocation.value.trim() || null,
+    notes: editNotes.value.trim() || null,
+    care_notes: editCareNotes.value.trim() || null,
+  }), { key: 'edit', success: t('plants.updated'), error: t('plants.updateError') })
+  if (ok) showEditDialog.value = false
 }
 
 // ── KI-Pflegehinweise ──
@@ -236,8 +231,8 @@ async function handleApplyAdvice(advice: AiPlantCareAdvice) {
     await plantsStore.applyCareAdvice(plant.value, advice)
     adviceApplied.value = true
     showToast(t('ai.plant.applied'), 'success')
-  } catch {
-    showToast(t('ai.plant.applyError'), 'error')
+  } catch (err) {
+    notifyError(t('ai.plant.applyError'), err)
   } finally {
     adviceApplying.value = false
   }
@@ -255,13 +250,18 @@ const taskType = ref<PlantCareType>('water')
 const taskLabel = ref('')
 const taskInterval = ref('7')
 const taskDueDate = ref('')
-const taskSaving = ref(false)
+const taskSaving = computed(() => isPending('task'))
+// Inline-Fehler am Intervall-Feld (statt nur Toast)
+const taskIntervalError = ref('')
+
+watch(taskInterval, () => { taskIntervalError.value = '' })
 
 function openAddTaskDialog() {
   taskType.value = 'water'
   taskLabel.value = ''
   taskInterval.value = String(DEFAULT_INTERVALS.water)
   taskDueDate.value = ''
+  taskIntervalError.value = ''
   showTaskDialog.value = true
 }
 
@@ -271,65 +271,67 @@ function selectTaskType(type: PlantCareType) {
 }
 
 async function handleSaveTask() {
-  const interval = parseInt(taskInterval.value, 10)
-  if (!interval || interval < 1 || interval > 3650) {
-    showToast(t('plants.invalidInterval'), 'error')
+  const raw = taskInterval.value.trim()
+  const interval = Number(raw)
+  if (!/^\d+$/.test(raw) || interval < 1 || interval > 3650) {
+    taskIntervalError.value = t('plants.invalidInterval')
     return
   }
-  if (taskSaving.value) return
 
-  taskSaving.value = true
-  try {
-    await plantsStore.createCareTask(plantId.value, {
-      care_type: taskType.value,
-      label: taskLabel.value.trim() || undefined,
-      interval_days: interval,
-      next_due_at: taskDueDate.value || undefined,
-    })
-    showTaskDialog.value = false
-    showToast(t('plants.taskCreated'), 'success')
-  } catch (error) {
-    showToast(translateApiError(error), 'error')
-  } finally {
-    taskSaving.value = false
-  }
+  const ok = await run(() => plantsStore.createCareTask(plantId.value, {
+    care_type: taskType.value,
+    label: taskLabel.value.trim() || undefined,
+    interval_days: interval,
+    next_due_at: taskDueDate.value || undefined,
+  }), { key: 'task', success: t('plants.taskCreated'), error: t('plants.taskCreateError') })
+  if (ok) showTaskDialog.value = false
 }
 
 // ── Complete / Delete Care Task ──
 
-async function handleComplete(taskId: string) {
-  try {
-    await plantsStore.completeCareTask(plantId.value, taskId)
-    const task = plantsStore.careTasks.find(c => c.id === taskId)
-    if (task) {
-      showToast(t('plants.completed', { date: formatDate(task.next_due_at) }), 'success')
-    }
-  } catch {
-    showToast(t('plants.careError'), 'error')
-  }
+// Kein Undo: das Backend kann Pflege-Log-Einträge nicht löschen.
+function handleComplete(taskId: string) {
+  return run(() => plantsStore.completeCareTask(plantId.value, taskId), {
+    key: `complete-${taskId}`,
+    success: () => {
+      const task = plantsStore.careTasks.find(c => c.id === taskId)
+      return task ? t('plants.completed', { date: formatDate(task.next_due_at) }) : undefined
+    },
+    error: t('plants.careError'),
+  })
 }
 
 const deletingTaskId = ref<string | null>(null)
 
 async function handleDeleteTask() {
-  if (!deletingTaskId.value) return
-  try {
-    await plantsStore.removeCareTask(plantId.value, deletingTaskId.value)
-    deletingTaskId.value = null
-    showToast(t('plants.taskDeleted'), 'success')
-  } catch {
-    showToast(t('common.error'), 'error')
-  }
+  const taskId = deletingTaskId.value
+  if (!taskId) return
+  const ok = await run(() => plantsStore.removeCareTask(plantId.value, taskId), {
+    key: 'delete-task',
+    success: t('plants.taskDeleted'),
+    error: t('plants.taskDeleteError'),
+  })
+  if (ok) deletingTaskId.value = null
 }
 </script>
 
 <template>
   <div class="view-page">
     <!-- ═══ Loading State ═══ -->
-    <div v-if="loading" class="skeleton-list">
+    <div v-if="!loaded || (reloading && !plant)" class="skeleton-list">
       <BaseSkeleton width="120px" height="28px" />
       <BaseSkeleton width="100%" height="120px" />
       <BaseSkeleton width="100%" height="180px" />
+    </div>
+
+    <!-- ═══ Ladefehler ═══ -->
+    <div v-else-if="loadError && !plant">
+      <BaseErrorState :retrying="reloading" @retry="reload" />
+      <div class="not-found__back">
+        <BaseButton variant="ghost" size="sm" @click="router.push('/plants')">
+          {{ $t('common.back') }}
+        </BaseButton>
+      </div>
     </div>
 
     <!-- ═══ Not found ═══ -->
@@ -351,7 +353,7 @@ async function handleDeleteTask() {
           <button
             class="plant-photo__camera-btn"
             :disabled="photoUploading"
-            :aria-label="$t('plants.photoUploading')"
+            :aria-label="$t('plants.changePhoto')"
             @click="fileInputRef?.click()"
           >
             <PhCamera :size="16" />
@@ -384,6 +386,9 @@ async function handleDeleteTask() {
           <PhPencilSimple :size="20" weight="bold" />
         </button>
       </div>
+
+      <!-- Teilweise nicht geladen (z. B. Aufgaben/Verlauf): Hinweis statt leerer Listen -->
+      <BaseErrorState v-if="loadError" :retrying="reloading" @retry="reload" />
 
       <!-- ═══ Notizen / Pflegehinweise ═══ -->
       <BaseCard v-if="plant.notes || plant.care_notes" class="info-card">
@@ -443,7 +448,12 @@ async function handleDeleteTask() {
               </span>
             </div>
             <div class="care-task-card__actions">
-              <BaseButton variant="primary" size="sm" @click="handleComplete(task.id)">
+              <BaseButton
+                variant="primary"
+                size="sm"
+                :loading="isPending(`complete-${task.id}`)"
+                @click="handleComplete(task.id)"
+              >
                 <PhCheck :size="20" weight="bold" />
                 {{ $t('plants.complete') }}
               </BaseButton>
@@ -481,17 +491,33 @@ async function handleDeleteTask() {
 
     <!-- ═══ Edit Plant Dialog ═══ -->
     <BaseDialog :open="showEditDialog" :title="$t('plants.editPlant')" @close="showEditDialog = false">
-      <form class="dialog-form" @submit.prevent="handleSaveEdit">
+      <form id="plant-edit-form" class="dialog-form" @submit.prevent="handleSaveEdit">
         <BaseInput v-model="editName" :label="$t('plants.name')" :placeholder="$t('plants.name')" />
         <BaseInput v-model="editSpecies" :label="$t('plants.species')" :placeholder="$t('plants.speciesPlaceholder')" />
         <BaseInput v-model="editLocation" :label="$t('plants.location')" :placeholder="$t('plants.locationPlaceholder')" />
         <BaseInput v-model="editNotes" :label="$t('plants.notes')" :placeholder="$t('plants.notes')" />
-        <BaseInput v-model="editCareNotes" :label="$t('plants.careNotes')" :placeholder="$t('plants.careNotes')" />
+        <div class="textarea-field">
+          <label for="plant-edit-care-notes" class="textarea-field__label">{{ $t('plants.careNotes') }}</label>
+          <textarea
+            id="plant-edit-care-notes"
+            v-model="editCareNotes"
+            class="textarea-field__input"
+            rows="4"
+            maxlength="2000"
+            :placeholder="$t('plants.careNotes')"
+          />
+        </div>
       </form>
       <template #footer>
         <div class="dialog-actions">
           <BaseButton variant="ghost" @click="showEditDialog = false">{{ $t('common.cancel') }}</BaseButton>
-          <BaseButton variant="primary" :disabled="!editName.trim() || editSaving" @click="handleSaveEdit">
+          <BaseButton
+            variant="primary"
+            type="submit"
+            form="plant-edit-form"
+            :disabled="!editName.trim() || editSaving"
+            :loading="editSaving"
+          >
             {{ $t('common.save') }}
           </BaseButton>
         </div>
@@ -500,7 +526,7 @@ async function handleDeleteTask() {
 
     <!-- ═══ Add Care Task Dialog ═══ -->
     <BaseDialog :open="showTaskDialog" :title="$t('plants.addTask')" @close="showTaskDialog = false">
-      <form class="dialog-form" @submit.prevent="handleSaveTask">
+      <form id="plant-task-form" class="dialog-form" @submit.prevent="handleSaveTask">
         <div class="type-picker">
           <span class="type-picker__label">{{ $t('plants.careType') }}</span>
           <div class="type-picker__chips">
@@ -517,13 +543,24 @@ async function handleDeleteTask() {
           </div>
         </div>
         <BaseInput v-model="taskLabel" :label="$t('plants.taskLabel')" :placeholder="$t('plants.taskLabel')" />
-        <BaseInput v-model="taskInterval" :label="$t('plants.intervalDays')" inputmode="numeric" />
+        <BaseInput
+          v-model="taskInterval"
+          :label="$t('plants.intervalDays')"
+          :error="taskIntervalError || undefined"
+          inputmode="numeric"
+        />
         <BaseInput v-model="taskDueDate" :label="$t('plants.nextDueDate')" type="date" />
       </form>
       <template #footer>
         <div class="dialog-actions">
           <BaseButton variant="ghost" @click="showTaskDialog = false">{{ $t('common.cancel') }}</BaseButton>
-          <BaseButton variant="primary" :disabled="!taskInterval || taskSaving" :loading="taskSaving" @click="handleSaveTask">
+          <BaseButton
+            variant="primary"
+            type="submit"
+            form="plant-task-form"
+            :disabled="!taskInterval || taskSaving"
+            :loading="taskSaving"
+          >
             {{ $t('common.save') }}
           </BaseButton>
         </div>
@@ -532,10 +569,17 @@ async function handleDeleteTask() {
 
     <!-- ═══ Delete Care Task Confirm ═══ -->
     <BaseDialog :open="!!deletingTaskId" :title="$t('plants.deleteTaskConfirm')" danger @close="deletingTaskId = null">
+      <p class="delete-hint">{{ $t('plants.deleteTaskHint') }}</p>
       <template #footer>
         <div class="dialog-actions">
           <BaseButton variant="ghost" @click="deletingTaskId = null">{{ $t('common.cancel') }}</BaseButton>
-          <BaseButton variant="danger" @click="handleDeleteTask">{{ $t('common.delete') }}</BaseButton>
+          <BaseButton
+            variant="danger"
+            :loading="isPending('delete-task')"
+            @click="handleDeleteTask"
+          >
+            {{ $t('common.delete') }}
+          </BaseButton>
         </div>
       </template>
     </BaseDialog>
@@ -553,6 +597,53 @@ async function handleDeleteTask() {
   text-align: center;
   padding: var(--space-8) 0;
   color: var(--sub);
+}
+
+.not-found__back {
+  display: flex;
+  justify-content: center;
+}
+
+.delete-hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--sub);
+}
+
+/* ── Mehrzeiliges Feld (Pflegehinweise) ── */
+.textarea-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.textarea-field__label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--ink);
+}
+
+.textarea-field__input {
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-btn);
+  font-family: var(--font-family);
+  font-size: var(--text-base); /* 16px — verhindert iOS-Zoom */
+  line-height: var(--line-height-normal);
+  color: var(--ink);
+  background-color: var(--card);
+  resize: vertical;
+}
+
+.textarea-field__input::placeholder {
+  color: var(--sub);
+}
+
+.textarea-field__input:focus {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px var(--acc-soft);
 }
 
 /* ── Photo ── */

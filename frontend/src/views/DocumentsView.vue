@@ -5,6 +5,8 @@ import { useAuthStore } from '../stores/auth'
 import { MAX_DOCUMENT_FILES, useDocumentsStore } from '../stores/documents'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
+import { useAsyncAction } from '../composables/useAsyncAction'
+import { useLoader } from '../composables/useLoader'
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
 import { imageUploadErrorReason } from '../utils/imageUpload'
 import { formatDate } from '../utils/dates'
@@ -17,15 +19,17 @@ import BaseButton from '../components/ui/BaseButton.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
 import BasePillTabs from '../components/ui/BasePillTabs.vue'
 import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
+import BaseErrorState from '../components/ui/BaseErrorState.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import {
   PhPlus, PhTrash, PhFolderOpen, PhFilePdf, PhFileImage, PhDownloadSimple, PhEye, PhMagnifyingGlass,
-  PhCamera, PhCaretUp, PhCaretDown, PhCaretLeft, PhCaretRight, PhX,
+  PhCamera, PhCaretUp, PhCaretDown, PhCaretLeft, PhCaretRight, PhX, PhWarningCircle,
 } from '@phosphor-icons/vue'
 
 const { t } = useI18n()
-const { showToast } = useToast()
+const { showToast, notifyError, notifyInfo, notifySuccess } = useToast()
+const { run, isPending } = useAsyncAction()
 const socket = useSocket()
 const authStore = useAuthStore()
 const store = useDocumentsStore()
@@ -42,9 +46,9 @@ const categoryTabs = computed(() => [
 const activeTab = computed(() => store.category ?? 'all')
 
 function handleTabChange(key: string) {
-  store.setCategory(key === 'all' ? null : (key as DocumentCategory)).catch(() => {
-    showToast(t('documents.loadError'), 'error')
-  })
+  store.setCategory(key === 'all' ? null : (key as DocumentCategory))
+    .then(() => { loadError.value = false })
+    .catch((err) => notifyError(t('documents.loadError'), err))
 }
 
 const searchInput = ref(store.query)
@@ -52,12 +56,14 @@ let searchTimer: ReturnType<typeof setTimeout> | undefined
 watch(searchInput, (value) => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
-    store.setQuery(value).catch(() => showToast(t('documents.loadError'), 'error'))
+    store.setQuery(value)
+      .then(() => { loadError.value = false })
+      .catch((err) => notifyError(t('documents.loadError'), err))
   }, 300)
 })
 
 function handleLoadMore() {
-  store.loadMore().catch(() => showToast(t('documents.loadError'), 'error'))
+  store.loadMore().catch((err) => notifyError(t('documents.loadError'), err))
 }
 
 const isFiltered = computed(() => !!store.category || !!store.query.trim())
@@ -101,6 +107,17 @@ const formExpiryDate = ref('')
 const formLoading = ref(false)
 const pagesBusy = ref(false)
 const uploadProgress = ref<{ current: number; total: number } | null>(null)
+/** Bestätigung im Bearbeiten-Dialog (statt confirm(); ein zweiter Dialog darüber würde mit Escape beide schliessen) */
+type PendingConfirm = { kind: 'delete' } | { kind: 'removePage'; file: StoredFile }
+const pendingConfirm = ref<PendingConfirm | null>(null)
+const confirmText = computed(() => {
+  const c = pendingConfirm.value
+  const doc = editingDoc.value
+  if (!c || !doc) return ''
+  return c.kind === 'delete'
+    ? t('documents.deleteConfirm', { title: doc.title, n: doc.files.length }, doc.files.length)
+    : t('documents.removePageConfirm', { name: c.file.original_name })
+})
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const cameraInputRef = ref<HTMLInputElement | null>(null)
 
@@ -130,12 +147,14 @@ function resetForm() {
 
 function openUploadDialog() {
   editingDocId.value = null
+  pendingConfirm.value = null
   resetForm()
   showFormDialog.value = true
 }
 
 function openEditDialog(doc: DocumentItem) {
   editingDocId.value = doc.id
+  pendingConfirm.value = null
   pendingFiles.value = []
   formTitle.value = doc.title
   formCategory.value = doc.category
@@ -150,6 +169,16 @@ function closeFormDialog() {
   if (formLoading.value || pagesBusy.value) return
   showFormDialog.value = false
   editingDocId.value = null
+  pendingConfirm.value = null
+}
+
+/** Ohne Netz kein Upload starten (Hinweis statt fehlschlagendem Request) */
+function blockedOffline(): boolean {
+  if (navigator.onLine === false) {
+    notifyInfo(t('offline.actionBlocked'))
+    return true
+  }
+  return false
 }
 
 function onProgress(current: number, total: number) {
@@ -189,11 +218,13 @@ async function handleFilesSelected(event: Event) {
   }
 
   // Bestehendes Dokument: Seiten direkt hochladen und anhängen
+  if (blockedOffline()) return
   pagesBusy.value = true
   try {
     await store.addPages(editingDoc.value.id, selected, onProgress)
+    notifySuccess(t('documents.pagesAdded', { n: selected.length }, selected.length))
   } catch (error) {
-    showToast(imageUploadErrorReason(error), 'error')
+    notifyError(imageUploadErrorReason(error))
   } finally {
     pagesBusy.value = false
     uploadProgress.value = null
@@ -213,27 +244,31 @@ function removePendingFile(index: number) {
 }
 
 async function moveStoredPage(fileId: string, direction: -1 | 1) {
-  if (!editingDoc.value) return
-  try {
-    await store.movePage(editingDoc.value.id, fileId, direction)
-  } catch (error) {
-    showToast(imageUploadErrorReason(error), 'error')
-  }
+  const doc = editingDoc.value
+  if (!doc) return
+  await run(() => store.movePage(doc.id, fileId, direction), {
+    key: `move-${fileId}`,
+    error: (err) => imageUploadErrorReason(err),
+  })
+}
+
+function requestRemovePage(file: StoredFile) {
+  const doc = editingDoc.value
+  if (!doc || doc.files.length <= 1) return
+  pendingConfirm.value = { kind: 'removePage', file }
 }
 
 async function removeStoredPage(file: StoredFile) {
   const doc = editingDoc.value
   if (!doc || doc.files.length <= 1) return
-  if (!confirm(t('documents.removePageConfirm', { name: file.original_name }))) return
 
   pagesBusy.value = true
-  try {
-    await store.removePage(doc.id, file.id)
-  } catch (error) {
-    showToast(imageUploadErrorReason(error), 'error')
-  } finally {
-    pagesBusy.value = false
-  }
+  const ok = await run(() => store.removePage(doc.id, file.id), {
+    key: 'removePage',
+    error: (err) => imageUploadErrorReason(err),
+  })
+  pagesBusy.value = false
+  if (ok) pendingConfirm.value = null
 }
 
 function formMeta() {
@@ -249,35 +284,34 @@ function formMeta() {
 async function handleSave() {
   if (!canSave.value || formLoading.value || pagesBusy.value) return
 
+  const doc = editingDoc.value
   formLoading.value = true
-  try {
-    if (editingDoc.value) {
-      await store.updateDocument(editingDoc.value.id, formMeta())
-    } else {
-      await store.uploadDocument(pendingFiles.value, formMeta(), onProgress)
-      showToast(t('documents.uploadSuccess'), 'success')
-    }
-    formLoading.value = false
-    closeFormDialog()
-  } catch (error) {
-    showToast(imageUploadErrorReason(error), 'error')
-  } finally {
-    formLoading.value = false
-    uploadProgress.value = null
-  }
+  const ok = await run(
+    () => doc
+      ? store.updateDocument(doc.id, formMeta())
+      : store.uploadDocument(pendingFiles.value, formMeta(), onProgress),
+    {
+      key: 'save',
+      success: doc ? t('documents.saveSuccess') : t('documents.uploadSuccess'),
+      error: (err) => imageUploadErrorReason(err),
+    },
+  )
+  formLoading.value = false
+  uploadProgress.value = null
+  if (ok) closeFormDialog()
 }
 
 async function handleDelete() {
   const doc = editingDoc.value
   if (!doc) return
-  if (!confirm(t('documents.deleteConfirm', { title: doc.title, n: doc.files.length }, doc.files.length))) return
 
-  closeFormDialog()
-  try {
-    await store.deleteDocument(doc.id)
-  } catch {
-    showToast(t('documents.deleteError'), 'error')
-  }
+  // Löschen ist endgültig (Dateien werden entfernt) → Bestätigung, danach Toast
+  const ok = await run(() => store.deleteDocument(doc.id), {
+    key: 'delete',
+    success: t('documents.deleted'),
+    error: t('documents.deleteError'),
+  })
+  if (ok) closeFormDialog()
 }
 
 // ── Download & Vorschau (Blob mit JWT, siehe useProtectedImage) ──
@@ -288,6 +322,7 @@ const previewIndex = ref(0)
 const previewFile = computed(() => previewDoc.value?.files[previewIndex.value] ?? null)
 const previewUrl = ref<string | null>(null)
 const previewLoading = ref(false)
+const previewError = ref(false)
 
 async function fetchBlob(file: StoredFile): Promise<Blob | null> {
   const householdId = authStore.currentHouseholdId
@@ -296,6 +331,7 @@ async function fetchBlob(file: StoredFile): Promise<Blob | null> {
 }
 
 async function handleDownload(file: StoredFile) {
+  if (blockedOffline()) return
   try {
     const blob = await fetchBlob(file)
     if (!blob) return
@@ -308,8 +344,8 @@ async function handleDownload(file: StoredFile) {
     link.remove()
     // Kurz warten, damit der Browser den Download starten kann
     setTimeout(() => URL.revokeObjectURL(url), 10_000)
-  } catch {
-    showToast(t('documents.downloadError'), 'error')
+  } catch (error) {
+    notifyError(t('documents.downloadError'), error)
   }
 }
 
@@ -322,6 +358,7 @@ function revokePreview() {
 
 async function loadPreview() {
   revokePreview()
+  previewError.value = false
   const file = previewFile.value
   if (!file) return
   if (!isPreviewable(file.mime_type)) return
@@ -334,7 +371,8 @@ async function loadPreview() {
       previewUrl.value = URL.createObjectURL(blob)
     }
   } catch {
-    showToast(t('documents.downloadError'), 'error')
+    // Fehlertext im Dialog statt leerer Vorschau
+    if (showPreview.value && previewFile.value?.id === file.id) previewError.value = true
   } finally {
     previewLoading.value = false
   }
@@ -376,8 +414,11 @@ function refreshStorage() {
   store.fetchStorage().catch(() => {})
 }
 
+// Laden mit Fehlerzustand (statt „Noch keine Dokumente“ nach einem Ladefehler)
+const { loadError, reloading, reload } = useLoader(() => store.fetchDocuments())
+
 function loadAll() {
-  store.fetchDocuments().catch(() => showToast(t('documents.loadError'), 'error'))
+  reload()
   refreshStorage()
 }
 
@@ -454,13 +495,28 @@ onUnmounted(() => {
       <BaseSkeleton v-for="i in 3" :key="i" width="100%" height="72px" />
     </div>
 
+    <!-- Ladefehler -->
+    <BaseErrorState
+      v-else-if="loadError && store.items.length === 0"
+      :message="$t('documents.loadError')"
+      :retrying="reloading"
+      @retry="reload"
+    />
+
     <!-- Empty State -->
     <BaseEmptyState
       v-else-if="store.items.length === 0"
       :icon="PhFolderOpen"
       :title="isFiltered ? $t('common.noResults') : $t('documents.emptyTitle')"
       :subtitle="isFiltered ? $t('documents.emptyFilteredSubtitle') : $t('documents.emptySubtitle')"
-    />
+    >
+      <template v-if="!isFiltered" #action>
+        <BaseButton variant="primary" size="sm" @click="openUploadDialog">
+          <PhPlus :size="16" weight="bold" />
+          {{ $t('documents.upload') }}
+        </BaseButton>
+      </template>
+    </BaseEmptyState>
 
     <!-- Liste -->
     <ul v-else class="doc-list">
@@ -528,7 +584,7 @@ onUnmounted(() => {
       :title="editingDoc ? $t('documents.editTitle') : $t('documents.uploadTitle')"
       @close="closeFormDialog"
     >
-      <form class="doc-form" @submit.prevent="handleSave">
+      <form id="doc-form" class="doc-form" @submit.prevent="handleSave">
         <!-- Seiten -->
         <div class="form-field">
           <span class="form-field__label">
@@ -577,7 +633,7 @@ onUnmounted(() => {
                 class="icon-btn"
                 :disabled="editingDoc.files.length <= 1 || pagesBusy"
                 :aria-label="$t('documents.removePage')"
-                @click="removeStoredPage(file)"
+                @click="requestRemovePage(file)"
               >
                 <PhX :size="16" />
               </button>
@@ -653,13 +709,40 @@ onUnmounted(() => {
       </form>
 
       <template #footer>
-        <div class="dialog-actions">
-          <BaseButton v-if="editingDoc" variant="danger" :disabled="pagesBusy" @click="handleDelete">
+        <!-- Bestätigung: Dokument löschen / Seite entfernen -->
+        <div v-if="pendingConfirm && editingDoc" class="confirm-bar" role="alertdialog" aria-live="assertive">
+          <p class="confirm-bar__text">
+            <PhWarningCircle :size="18" aria-hidden="true" />
+            {{ confirmText }}
+          </p>
+          <div class="dialog-actions">
+            <BaseButton variant="ghost" @click="pendingConfirm = null">{{ $t('common.cancel') }}</BaseButton>
+            <BaseButton
+              v-if="pendingConfirm.kind === 'delete'"
+              variant="danger"
+              :loading="isPending('delete')"
+              @click="handleDelete"
+            >
+              <PhTrash :size="16" />
+              {{ $t('documents.deleteTitle') }}
+            </BaseButton>
+            <BaseButton
+              v-else
+              variant="danger"
+              :loading="isPending('removePage')"
+              @click="removeStoredPage(pendingConfirm.file)"
+            >
+              {{ $t('documents.removePage') }}
+            </BaseButton>
+          </div>
+        </div>
+        <div v-else class="dialog-actions">
+          <BaseButton v-if="editingDoc" variant="danger" :disabled="pagesBusy" @click="pendingConfirm = { kind: 'delete' }">
             <PhTrash :size="16" />
             {{ $t('common.delete') }}
           </BaseButton>
           <span v-else />
-          <BaseButton :disabled="!canSave || pagesBusy" :loading="formLoading" @click="handleSave">
+          <BaseButton type="submit" form="doc-form" :disabled="!canSave || pagesBusy" :loading="formLoading">
             {{ editingDoc ? $t('common.save') : $t('documents.upload') }}
           </BaseButton>
         </div>
@@ -674,6 +757,11 @@ onUnmounted(() => {
     >
       <div class="preview">
         <BaseSpinner v-if="previewLoading" />
+        <BaseErrorState
+          v-else-if="previewError"
+          :message="$t('documents.previewError')"
+          @retry="loadPreview"
+        />
         <template v-else-if="previewUrl && previewFile">
           <img
             v-if="previewFile.mime_type.startsWith('image/')"
@@ -735,6 +823,23 @@ onUnmounted(() => {
 
 .category-tabs {
   margin-bottom: var(--space-4);
+}
+
+.confirm-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.confirm-bar__text {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
 }
 
 .skeleton-list {

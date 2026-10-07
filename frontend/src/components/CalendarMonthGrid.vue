@@ -319,7 +319,7 @@ function handleDayClick(day: GridDay) {
       <div v-if="expandedDayEvents.length === 0 && !loading" class="month-grid__detail-empty">
         <BaseEmptyState
           :icon="PhCalendarBlank"
-          :title="t('calendar.noEventsToday')"
+          :title="t('calendar.noEventsDay')"
           subtitle=""
         />
       </div>
@@ -330,7 +330,11 @@ function handleDayClick(day: GridDay) {
           :key="event.id"
           padding="sm"
           class="month-event-card"
+          role="button"
+          tabindex="0"
           @click="emit('edit-event', event)"
+          @keydown.enter.prevent="emit('edit-event', event)"
+          @keydown.space.prevent="emit('edit-event', event)"
         >
           <span
             class="month-event-card__bar"

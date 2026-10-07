@@ -37,6 +37,8 @@ export const useAiStore = defineStore('ai', () => {
   /** Schlüssel auf dem Server gesetzt? null = noch nicht geladen */
   const available = ref<boolean | null>(null)
   const settings = ref<AiSettings | null>(null)
+  /** Status konnte nicht geladen werden (offline/Netz-/Serverfehler) – nicht dasselbe wie „nicht eingerichtet“. */
+  const statusError = ref(false)
 
   const recipeSuggestion = ref<AiRecipeSuggestion | null>(null)
   const recipeLoading = ref(false)
@@ -57,13 +59,17 @@ export const useAiStore = defineStore('ai', () => {
 
   let statusPromise: Promise<void> | null = null
 
-  /** Einmal pro Sitzung laden; Fehler → KI gilt als nicht verfügbar. */
+  /**
+   * Einmal pro Sitzung laden. Bei einem Fehler bleibt `available` unbekannt (null),
+   * `statusError` wird gesetzt und ein späterer Aufruf versucht es erneut.
+   */
   function fetchStatus(force = false): Promise<void> {
     if (statusPromise && !force) return statusPromise
+    statusError.value = false
     statusPromise = repo.fetchStatus()
       .then((status) => { available.value = status.enabled })
       .catch(() => {
-        available.value = false
+        statusError.value = true
         statusPromise = null
       })
     return statusPromise
@@ -79,6 +85,7 @@ export const useAiStore = defineStore('ai', () => {
     if (!householdId) return
     settings.value = await repo.fetchSettings(householdId)
     available.value = settings.value.available
+    statusError.value = false
     applyHouseholdFlag(householdId, settings.value.ai_enabled)
   }
 
@@ -199,6 +206,7 @@ export const useAiStore = defineStore('ai', () => {
   return {
     // State
     available,
+    statusError,
     settings,
     recipeSuggestion,
     recipeLoading,

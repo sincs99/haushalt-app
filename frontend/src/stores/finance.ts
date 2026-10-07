@@ -27,6 +27,8 @@ export const useFinanceStore = defineStore('finance', () => {
       summary.value = await repo.getSummary(hid)
     } catch (e: any) {
       error.value = translateApiError(e)
+      // Weiterwerfen, damit die Ansicht einen Fehlerzustand zeigen kann
+      throw e
     } finally {
       loading.value = false
     }
@@ -52,8 +54,8 @@ export const useFinanceStore = defineStore('finance', () => {
     error.value = null
     try {
       budget.value = await repo.upsertBudget(hid, payload)
-      // Refetch summary to update remaining etc.
-      await fetchSummary(hid)
+      // Summary nachladen (Rest etc.) — scheitert das, ist das Budget trotzdem gespeichert
+      await fetchSummary(hid).catch(() => {})
       return budget.value
     } catch (e: any) {
       error.value = translateApiError(e)
@@ -128,8 +130,8 @@ export const useFinanceStore = defineStore('finance', () => {
     error.value = null
     try {
       const expense = await repo.bookBill(hid, billId, paidByUserId)
-      // Refetch summary to update pending_bills status
-      await fetchSummary(hid)
+      // Summary nachladen (pending_bills) — scheitert das, ist die Rechnung trotzdem gebucht
+      await fetchSummary(hid).catch(() => {})
       return expense
     } catch (e: any) {
       error.value = translateApiError(e)

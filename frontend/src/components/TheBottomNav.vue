@@ -27,7 +27,7 @@ const isTabActive = (to: string) => route.path === to
 </script>
 
 <template>
-  <nav class="bottom-nav" aria-label="Navigation">
+  <nav class="bottom-nav" :aria-label="t('nav.mainNav')">
     <router-link
       v-for="tab in tabs"
       :key="tab.key"

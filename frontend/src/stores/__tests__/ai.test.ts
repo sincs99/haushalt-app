@@ -110,16 +110,19 @@ describe('ai store', () => {
     expect(repo.fetchStatus).toHaveBeenCalledTimes(1)
   })
 
-  it('fetchStatus failure hides AI and allows a retry', async () => {
+  it('fetchStatus failure hides AI, marks a status error (not "not configured") and allows a retry', async () => {
     repo.fetchStatus.mockRejectedValueOnce(new Error('offline'))
     repo.fetchStatus.mockResolvedValueOnce({ enabled: true, daily_limit: 50 })
     const store = useAiStore()
 
     await store.fetchStatus()
-    expect(store.available).toBe(false)
+    expect(store.available).toBeNull()
+    expect(store.statusError).toBe(true)
+    expect(store.enabledForHousehold).toBe(false)
 
     await store.fetchStatus()
     expect(store.available).toBe(true)
+    expect(store.statusError).toBe(false)
   })
 
   it('enabledForHousehold needs server key AND household opt-in', async () => {

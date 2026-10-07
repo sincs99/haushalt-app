@@ -24,6 +24,7 @@ import PageHeader from '../components/ui/PageHeader.vue'
 import PushSettings from '../components/PushSettings.vue'
 import AiSettingsCard from '../components/AiSettingsCard.vue'
 import WidgetSettingsCard from '../components/WidgetSettingsCard.vue'
+import ConnectionStatus from '../components/ConnectionStatus.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -33,6 +34,15 @@ const { notifySuccess, notifyError } = useToast()
 const { run, isPending } = useAsyncAction()
 const { t, locale } = useI18n()
 const { on, off } = useSocket()
+let contextVersion = 0
+let disposed = false
+let membersRequest = 0
+let inviteRequest = 0
+
+function captureContext(householdId: string) {
+  const version = contextVersion
+  return () => !disposed && contextVersion === version && authStore.currentHouseholdId === householdId
+}
 
 // ── Locale ──
 const currentLocale = ref(locale.value)
@@ -72,8 +82,12 @@ async function saveHouseholdName() {
 const members = ref<HouseholdMemberInfo[]>([])
 
 async function fetchMembers() {
-  if (!authStore.currentHouseholdId) return
-  members.value = await repo.fetchMembers(authStore.currentHouseholdId)
+  const householdId = authStore.currentHouseholdId
+  if (!householdId) return
+  const active = captureContext(householdId)
+  const request = ++membersRequest
+  const result = await repo.fetchMembers(householdId)
+  if (active() && request === membersRequest) members.value = result
 }
 
 // Erstes Laden mit Lade-/Fehlerzustand (statt „Keine Mitglieder geladen.“)
@@ -126,12 +140,16 @@ const leaveChecking = ref(false)
 
 async function openLeaveDialog() {
   if (!authStore.currentHouseholdId || !authStore.user || leaveChecking.value) return
+  const householdId = authStore.currentHouseholdId
+  const userId = authStore.user.id
+  const active = captureContext(householdId)
   leaveBalance.value = null
   leaveChecking.value = true
 
   try {
-    const balances = await expensesRepo.getBalances(authStore.currentHouseholdId)
-    const myBalance = balances.balances.find(b => b.user_id === authStore.user!.id)
+    const balances = await expensesRepo.getBalances(householdId)
+    if (!active()) return
+    const myBalance = balances.balances.find(b => b.user_id === userId)
     if (myBalance && myBalance.saldo_rappen !== 0) {
       const currency = authStore.currentHousehold?.currency ?? 'CHF'
       leaveBalance.value = {
@@ -145,7 +163,7 @@ async function openLeaveDialog() {
     leaveChecking.value = false
   }
 
-  leaveDialogOpen.value = true
+  if (active()) leaveDialogOpen.value = true
 }
 
 async function confirmLeave() {
@@ -171,6 +189,7 @@ async function confirmLeave() {
 const inviteCode = ref('')
 const inviteExpiresAt = ref<string | null>(null)
 const inviteExpired = ref(false)
+const inviteHouseholdId = ref<string | null>(null)
 
 const inviteExpiryLabel = computed(() => {
   if (!inviteExpiresAt.value) return ''
@@ -180,7 +199,8 @@ const inviteExpiryLabel = computed(() => {
   )
 })
 
-function applyInviteInfo(info: InviteCodeInfo) {
+function applyInviteInfo(info: InviteCodeInfo, householdId: string) {
+  inviteHouseholdId.value = householdId
   inviteCode.value = info.inviteCode
   inviteExpiresAt.value = info.expiresAt
   inviteExpired.value = info.expired
@@ -188,14 +208,18 @@ function applyInviteInfo(info: InviteCodeInfo) {
 const inviteCodeLoading = ref(false)
 
 async function loadInviteCode() {
-  if (!authStore.currentHouseholdId) return
+  const householdId = authStore.currentHouseholdId
+  if (!householdId) return
+  const active = captureContext(householdId)
+  const request = ++inviteRequest
   inviteCodeLoading.value = true
   try {
-    applyInviteInfo(await repo.fetchInviteCode(authStore.currentHouseholdId))
+    const info = await repo.fetchInviteCode(householdId)
+    if (active() && request === inviteRequest) applyInviteInfo(info, householdId)
   } catch (error: unknown) {
-    notifyError(t('household.inviteLoadError'), error)
+    if (active() && request === inviteRequest) notifyError(t('household.inviteLoadError'), error)
   } finally {
-    inviteCodeLoading.value = false
+    if (active() && request === inviteRequest) inviteCodeLoading.value = false
   }
 }
 
@@ -205,14 +229,24 @@ const rotateLoading = computed(() => isPending('rotate'))
 async function confirmRotateInviteCode() {
   const householdId = authStore.currentHouseholdId
   if (!householdId) return
-  const ok = await run(async () => applyInviteInfo(await repo.rotateInviteCode(householdId)), {
+  const active = captureContext(householdId)
+  const request = ++inviteRequest
+  const ok = await run(async () => {
+    try {
+      const info = await repo.rotateInviteCode(householdId)
+      if (active() && request === inviteRequest) applyInviteInfo(info, householdId)
+    } finally {
+      if (active() && request === inviteRequest) inviteCodeLoading.value = false
+    }
+  }, {
     key: 'rotate',
     success: t('household.rotateCodeSuccess'),
   })
-  if (ok) rotateDialogOpen.value = false
+  if (ok && active()) rotateDialogOpen.value = false
 }
 
 async function copyInviteCode() {
+  if (!inviteCode.value || inviteExpired.value || inviteHouseholdId.value !== authStore.currentHouseholdId) return
   try {
     await navigator.clipboard.writeText(inviteCode.value)
     notifySuccess(t('household.codeCopied'))
@@ -222,6 +256,7 @@ async function copyInviteCode() {
 }
 
 async function shareInvite() {
+  if (!inviteCode.value || inviteExpired.value || inviteHouseholdId.value !== authStore.currentHouseholdId) return
   const householdName = authStore.currentHousehold?.name ?? ''
   // Link auf die Registrierung mit vorausgefülltem Code (RegisterView liest ?code)
   const link = `${window.location.origin}/register?code=${encodeURIComponent(inviteCode.value)}`
@@ -342,6 +377,16 @@ function onHouseholdUpdated(data: { id: string; name: string }) {
 
 // ── Init + Watch ──
 function initData() {
+  contextVersion++
+  inviteRequest++
+  inviteHouseholdId.value = null
+  inviteCode.value = ''
+  inviteExpiresAt.value = null
+  inviteExpired.value = false
+  inviteCodeLoading.value = false
+  leaveDialogOpen.value = false
+  rotateDialogOpen.value = false
+  removeMemberDialogOpen.value = false
   householdName.value = authStore.currentHousehold?.name ?? ''
   loadInviteCode()
   members.value = []
@@ -357,6 +402,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  disposed = true
+  contextVersion++
   off('household_member_joined', onMemberJoined)
   off('household_member_left', onMemberLeft)
   off('household_member_removed', onMemberRemoved)
@@ -365,16 +412,44 @@ onUnmounted(() => {
 
 watch(() => authStore.currentHouseholdId, (id) => {
   // Nach Verlassen des letzten Haushalts nichts mehr laden
-  if (id) initData()
-})
+  initData()
+}, { flush: 'sync' })
 </script>
 
 <template>
   <div class="view-page">
     <PageHeader :title="$t('household.title')" />
+    <nav class="settings-sections" :aria-label="$t('household.settingsSections')">
+      <a href="#device-settings">{{ $t('household.deviceSettings') }}</a>
+      <a href="#household-management">{{ $t('household.title') }}</a>
+      <a href="#additional-functions">{{ $t('household.additionalFunctions') }}</a>
+    </nav>
+
+    <!-- ══ Sektion: App ══ -->
+    <BaseCard id="device-settings">
+      <h2 class="section-title">{{ $t('household.deviceSettings') }}</h2>
+      <div class="settings-row">
+        <label class="settings-label" for="locale-select">{{ $t('household.language') }}</label>
+        <select
+          id="locale-select"
+          :value="currentLocale"
+          @change="changeLocale(($event.target as HTMLSelectElement).value)"
+          class="settings-select"
+        >
+          <option value="de">{{ $t('household.languageDe') }}</option>
+          <option value="en">{{ $t('household.languageEn') }}</option>
+        </select>
+      </div>
+
+      <ConnectionStatus class="settings-connection" />
+      <PushSettings />
+
+    </BaseCard>
+
+
 
     <!-- ══ Sektion: Haushalt ══ -->
-    <BaseCard>
+    <BaseCard id="household-management">
       <h2 class="section-title">{{ $t('household.title') }}</h2>
 
       <!-- Admin: Editierbarer Name -->
@@ -402,13 +477,6 @@ watch(() => authStore.currentHouseholdId, (id) => {
         <span class="household-name-value">{{ authStore.currentHousehold?.name }}</span>
       </div>
 
-      <!-- Haushalt verlassen -->
-      <div class="leave-section">
-        <BaseButton variant="danger" size="sm" :loading="leaveChecking" @click="openLeaveDialog">
-          <PhSignOut :size="16" />
-          {{ $t('household.leaveTitle') }}
-        </BaseButton>
-      </div>
     </BaseCard>
 
     <!-- ══ Sektion: Mitglieder ══ -->
@@ -481,7 +549,7 @@ watch(() => authStore.currentHouseholdId, (id) => {
             variant="primary"
             size="sm"
             @click="shareInvite"
-            :disabled="!inviteCode"
+            :disabled="!inviteCode || inviteExpired"
           >
             <PhShareNetwork :size="16" />
             {{ $t('household.shareInvite') }}
@@ -490,7 +558,7 @@ watch(() => authStore.currentHouseholdId, (id) => {
             variant="secondary"
             size="sm"
             @click="copyInviteCode"
-            :disabled="!inviteCode"
+            :disabled="!inviteCode || inviteExpired"
           >
             {{ $t('household.copyCode') }}
           </BaseButton>
@@ -542,6 +610,8 @@ watch(() => authStore.currentHouseholdId, (id) => {
       </div>
     </BaseCard>
 
+    <h2 id="additional-functions" class="section-title">{{ $t('household.additionalFunctions') }}</h2>
+
     <!-- ══ Sektion: Tags (NFC/QR) ══ -->
     <BaseCard>
       <h2 class="section-title">{{ $t('tags.title') }}</h2>
@@ -558,28 +628,12 @@ watch(() => authStore.currentHouseholdId, (id) => {
     <!-- ══ Sektion: KI-Assistent (nur wenn auf dem Server eingerichtet) ══ -->
     <AiSettingsCard />
 
-    <!-- ══ Sektion: App ══ -->
     <BaseCard>
-      <h2 class="section-title">{{ $t('household.settings') }}</h2>
-      <div class="settings-row">
-        <label class="settings-label" for="locale-select">{{ $t('household.language') }}</label>
-        <select
-          id="locale-select"
-          :value="currentLocale"
-          @change="changeLocale(($event.target as HTMLSelectElement).value)"
-          class="settings-select"
-        >
-          <option value="de">{{ $t('household.languageDe') }}</option>
-          <option value="en">{{ $t('household.languageEn') }}</option>
-        </select>
-      </div>
-
-      <PushSettings />
-
-      <!-- Logout-Button für Mobile -->
-      <div class="mobile-logout">
-        <BaseButton variant="ghost" @click="requestLogout" class="mobile-logout__btn">
-          {{ $t('auth.logout') }}
+      <h2 class="section-title">{{ $t('household.accountActions') }}</h2>
+      <div class="account-actions">
+        <BaseButton variant="ghost" @click="requestLogout">{{ $t('auth.logout') }}</BaseButton>
+        <BaseButton variant="ghost" size="sm" class="leave-action" :loading="leaveChecking" @click="openLeaveDialog">
+          <PhSignOut :size="16" /> {{ $t('household.leaveTitle') }}
         </BaseButton>
       </div>
     </BaseCard>
@@ -713,6 +767,12 @@ watch(() => authStore.currentHouseholdId, (id) => {
 </template>
 
 <style scoped>
+.settings-sections { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.settings-sections a { padding: var(--space-2) var(--space-3); min-height: 44px; display: inline-flex; align-items: center; border-radius: var(--radius-full); background: var(--chip); color: var(--ink); font-size: var(--text-sm); text-decoration: none; }
+#device-settings, #household-management, #additional-functions { scroll-margin-top: var(--space-4); }
+.settings-connection { margin: var(--space-3) 0; padding: var(--space-3) 0; border-bottom: 1px solid var(--line); }
+.account-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2); }
+.account-actions .leave-action { color: var(--color-danger); }
 .view-page {
   display: flex;
   flex-direction: column;
@@ -749,6 +809,7 @@ watch(() => authStore.currentHouseholdId, (id) => {
 
 .rename-row .base-input {
   flex: 1;
+  min-width: 0;
 }
 
 .household-name-display {
@@ -899,6 +960,7 @@ watch(() => authStore.currentHouseholdId, (id) => {
 
 .join-form__input {
   flex: 1;
+  min-width: 0;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);

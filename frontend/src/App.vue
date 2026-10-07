@@ -74,9 +74,9 @@ watch(
 
 // Sync-Status für Indikator
 const syncStatus = computed(() => {
+  if (!isOnline.value) return 'offline'
   if (isConnected.value) return 'connected'
-  if (isOnline.value) return 'reconnecting'
-  return 'offline'
+  return 'reconnecting'
 })
 
 // Socket-Event-Binding: Watch auf Token + HouseholdId

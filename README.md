@@ -95,6 +95,8 @@ pip install pip-audit && pip-audit -r backend/requirements.txt
 cd frontend && npm audit --omit=dev --audit-level=high
 ```
 
+`npm run typecheck` prüft die Anwendung mit `vue-tsc -p tsconfig.app.json --noEmit`; `npm run build` führt diese Prüfung ebenfalls aus.
+
 Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` selbst und brauchen keine laufende Datenbank. Die Tests des KI-Assistenten mocken den Anthropic-Client und brauchen keinen API-Schlüssel. Wer `DATABASE_URL` in der Shell gesetzt hat, sollte sie vor `pytest` entfernen, sonst laufen die Tests gegen diese Datenbank.
 
 ## Produktion
@@ -103,6 +105,7 @@ Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` sel
 - [`docs/DEPLOYMENT-WINDOWS-SERVER.md`](docs/DEPLOYMENT-WINDOWS-SERVER.md): Einrichtung auf einem Windows-Server
 - [`docs/security/`](docs/security/): Sicherheits-Reviews (zuletzt `ai-assistant-review.md`)
 - [`docs/qa/logic-review.md`](docs/qa/logic-review.md): Logik-Review der Geschäftsregeln (Szenarien pro Modul, behobene Fehler, offene Produktentscheidungen)
+- [`docs/qa/current-audit-fixes.md`](docs/qa/current-audit-fixes.md): Korrekturen vom 7. Oktober 2026, lokale Prüfnachweise und Hinweise zum gemeinsamen Frontend-/Backend-Deployment
 - [`docs/ai-assistant.md`](docs/ai-assistant.md): KI-Assistent (Architektur, Datenschutz, Kosten, Erweiterung)
 - [`docs/offline-first-phase2.md`](docs/offline-first-phase2.md): Konzept für Offline-Betrieb (Meilenstein M0 ist umgesetzt)
 

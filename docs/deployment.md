@@ -146,6 +146,8 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 Alembic-Migrationen laufen **automatisch** beim Container-Start (`alembic upgrade head` im CMD des Backend-Dockerfile).
 
+Für die [Audit-Korrekturen vom 7. Oktober 2026](qa/current-audit-fixes.md) Frontend und Backend aus demselben Stand gemeinsam neu bauen. Der Backend-Build installiert `pillow-heif==1.8.0` für die HEIC/HEIF-Konvertierung, falls der Browser das Foto nicht dekodieren kann. Dabei gelten weiterhin 10 MB pro Upload und 25 Megapixel vor dem serverseitigen Decode. Diese Korrekturen benötigen keine neue Datenbankmigration; ihre lokale Prüfung bestätigt kein Produktions-Deployment oder einen Test auf einem echten iPhone.
+
 **Logs nach Update prüfen:**
 
 ```powershell
@@ -187,7 +189,7 @@ auf eine echte Kontaktadresse setzen (`mailto:…`) und das Backend neu starten.
   alle Haushaltsmitglieder) und fällige **Tierpflege-Aufgaben** (ab 08:00 Haushalts-Zeitzone, an alle).
   Erinnerungen, die älter als 12 h sind (z.B. nach Server-Downtime), werden nicht nachgeschickt.
 - Das Backend sendet ausgehend an die Push-Dienste von Google, Mozilla, Apple und Microsoft (HTTPS/443).
-- Nutzer aktivieren Push pro Gerät unter **Haushalt → Einstellungen → Benachrichtigungen**.
+- Nutzer aktivieren Push pro Gerät unter **Einstellungen → App & Gerät → Benachrichtigungen**.
   Auf iPhone/iPad (ab iOS 16.4) nur, wenn die App zum Home-Bildschirm hinzugefügt wurde.
 
 ---

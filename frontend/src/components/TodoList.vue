@@ -595,7 +595,8 @@ async function saveEdit(todoId: string) {
 }
 
 .todo-row--overdue {
-  background: #FFF5F5;
+  /* Theme-Token statt #FFF5F5: im Dark Mode stand heller Text auf hellem Rosa */
+  background: var(--color-danger-light);
 }
 
 .todo-row__main {

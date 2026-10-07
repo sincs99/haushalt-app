@@ -92,6 +92,13 @@ Screenshots und `summary.tsv`/`findings.json` landen unter
 | 18 | `/chores` | alle | Ämtli-Checkbox 17×20 px | — | kein Fix nötig: die ganze Zeile (`.assignment-row__main`) ist klickbar; das Skript kennt Klick-Handler nicht |
 | 19 | `/calendar` | alle | Avatare in Terminkarten überlappen 4 px | — | kein Befund: gewollter Avatar-Stapel (negativer Margin) |
 
+**Nachtrag (auf Wunsch des Betreibers in diesem Branch behoben):**
+überfällige Aufgaben (`/todos`) und die Ämtli-Löschbestätigung (`/chores`)
+hatten im Dark Mode hellen Text auf hartkodiertem `#FFF5F5` (praktisch
+unlesbar, Kontrast ≈ 1:1). Jetzt `var(--color-danger-light)` (Theme-Token,
+Light `#F2E8DC`, Dark `#3A2F23`); Titel 11,2:1 im Dark Mode. Screenshots
+`qa/mobile/before-12-overdue-dark/` → `qa/mobile/after-14-overdue-dark/`.
+
 **Summe:** 20 gemeldete Punkte, davon 16 behoben, 2 offen (16, 17) und 2 ohne
 Handlungsbedarf (18, 19). Sprache: EN wurde in allen Zuständen bei 360 px
 geprüft (Grundzustände zusätzlich bei 390/430); kein eigener EN-Befund, keine
@@ -115,10 +122,11 @@ Texte, die nur auf Englisch überlaufen.
   `App.vue`, `ChoresView`, `HouseholdView`, `PetDetailView`,
   `ExpenseFormDialog`, `BalanceSummary`, `ShoppingView`). Folge: Eingabefelder
   im Ausgleichs-Dialog und im Neue-Liste-Dialog haben keinen sichtbaren Rand.
-- **Dringend:** hartkodierte Farbe `#FFF5F5` für überfällige Aufgaben
-  (`TodoList.vue`, `.todo-row--overdue`). Im Dark Mode steht heller Text auf
-  hellem Rosa, die Titel sind praktisch unlesbar
-  (`qa/mobile/final/todos__390x844_dark_de.png`).
+- Kontrast von `--color-danger` (#DC2626): im Dark Mode nur 2,7–2,8:1 auf
+  Karten und auf dem Überfällig-Hintergrund („Überfällig“, Fälligkeitsdatum,
+  Fehlertexte). Im Light Mode auf `--color-danger-light` 4,0:1 (seit dem
+  Dark-Mode-Fix unten, vorher 4,5:1 auf `#FFF5F5`). Braucht eine
+  theme-abhängige Danger-Textfarbe.
 - Kalender: Pill-Tabs und Kalender-Chips sind gegenüber dem Seitentitel um
   16 px eingerückt, Monatsraster ebenso (andere Seiten bündig).
 - Schweregrad-Auswahl im Gesundheitseditor (siehe Befund 17).

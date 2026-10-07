@@ -887,7 +887,7 @@ const weekdayOptions = computed(() =>
 }
 
 .action-btn--danger:hover {
-  background: #FFF5F5;
+  background: var(--color-danger-light);
   color: var(--color-danger);
 }
 
@@ -1107,7 +1107,7 @@ const weekdayOptions = computed(() =>
   width: 100%;
   padding: var(--space-3);
   margin-top: var(--space-2);
-  background: #FFF5F5;
+  background: var(--color-danger-light);
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-danger);
 }

@@ -78,7 +78,7 @@ Screenshots und `summary.tsv`/`findings.json` landen unter
 | 5 | `/todos` | alle | „Überfällig“-Badge quetscht lange Titel auf ~12 Zeichen pro Zeile | Titelzeile ohne `flex-wrap` | `789ee2c` |
 | 6 | `/food`, `/assistant` | alle | Inhalt 32 px schmaler als auf anderen Seiten, Rezeptnamen früh abgeschnitten, Titel nicht bündig | View setzt zusätzlich zu `.app-content` eigenes Padding | `9c47d92` |
 | 7 | Mehr-Menü | 360×560 / 390×500 | Sheet oben abgeschnitten (Oberkante −26 px), Titel und erster Eintrag unerreichbar | kein `max-height`/Scroll | `c4e5fd2` |
-| 8 | `/expenses` → „Als bezahlt markieren“ | alle, 390×500 | Dialog ohne Innenabstand; mit Abstand bei offener Tastatur höher als der Viewport | Token `--space-5` existiert nicht; kein `max-height` | `3ea6a17` |
+| 8 | `/expenses` → „Als bezahlt markieren“ | alle, 390×500 | Dialog ohne Innenabstand; mit Abstand bei offener Tastatur höher als der Viewport | Token `--space-5` existiert nicht; kein `max-height` | `3ea6a17`; inzwischen durch master ersetzt (Dialog nutzt `BaseDialog`) |
 | 9 | `/household` | alle | „Admin“-Badge ohne Innenabstand | Token `--space-0-5` existiert nicht | `b8dfcca` |
 | 10 | alle | alle | Abhak-Kreis 22 px, Dialog-Schliessen 26 px, Pill-Tabs 31 px, kleine Buttons 36 px | Basis-Komponenten unter 44 px | `089896f` (Utility `.tap-target`, Token `--touch-target`) |
 | 11 | `/shopping` | 360×780, 390×844 | „+“ für neue Liste bei langem Listennamen ausserhalb der Pill-Leiste | Button am Ende eines horizontalen Scroll-Containers | `f6cd713` (sticky) |
@@ -87,6 +87,8 @@ Screenshots und `summary.tsv`/`findings.json` landen unter
 | 14 | Formulare in allen Dialogen, `/household`, `/chores`, `/todos`, `/calendar` | alle | Eingabefelder/Selects 34–42 px, Checkbox-Zeilen 21–24 px, Aufgaben/Ämtli-Umschalter 37 px, Farbwähler 32 px, Kalender-Filterchips vom Scroll-Container abgeschnitten | keine Mindesthöhe | `f2590e0` |
 | 15 | `/documents`, `/expenses` (Rechnung buchen), KI-Rezeptkarte | alle | Selects 40–42 px, KI-Chips 36 px | komponenteneigene `min-height` unter 44 px überschreibt die globale | `0026e1d` |
 | 20 | Katze → Bearbeiten → Gesundheit | alle | Tap-Fläche von „Löschen“ liegt 2 px über dem Titel-Eingabefeld (erst mit ans Ende gescrolltem Dialog gefunden) | Abstand 8 px | `72a15cf` |
+| 21 | `/food` | alle, EN | „WED“/„THU“ ragen aus der 24-px-Wochentagsspalte (nach Merge von master gefunden) | feste Breite zu schmal | `11a9121` |
+| 22 | `/shopping` → Liste bearbeiten | alle | neuer Text-Button „Löschen“ 66×35 px (nach Merge von master) | kein Tap-Ziel-Utility | `99c4dab` |
 | 16 | `/calendar` (Woche, Monat) | 360×780 | Tage 39–41 px breit | 7 Spalten in 328 px; Zellen liegen lückenlos nebeneinander | offen, akzeptiert: 44 px Breite geht nur mit anderem Raster (Design-Entscheidung) |
 | 17 | Katze → Bearbeiten → Gesundheit | alle | Schweregrad-Punkte 18×18 px, 4 px untereinander | Layout | offen: vergrösserte Flächen würden sich überlappen; braucht anderes Layout (z. B. Segment-Control) → `claude/ui-design-audit` |
 | 18 | `/chores` | alle | Ämtli-Checkbox 17×20 px | — | kein Fix nötig: die ganze Zeile (`.assignment-row__main`) ist klickbar; das Skript kennt Klick-Handler nicht |
@@ -101,7 +103,7 @@ unlesbar, Kontrast ≈ 1:1). Screenshots `qa/mobile/before-12-overdue-dark/` →
 wurde diese Lösung übernommen (Dark `#3A2424`, Danger-Text im Dark Mode
 `#E86E6E`).
 
-**Summe:** 20 gemeldete Punkte, davon 16 behoben, 2 offen (16, 17) und 2 ohne
+**Summe:** 22 gemeldete Punkte, davon 18 behoben, 2 offen (16, 17) und 2 ohne
 Handlungsbedarf (18, 19). Sprache: EN wurde in allen Zuständen bei 360 px
 geprüft (Grundzustände zusätzlich bei 390/430); kein eigener EN-Befund, keine
 Texte, die nur auf Englisch überlaufen.
@@ -114,6 +116,9 @@ Texte, die nur auf Englisch überlaufen.
   gescrollt geprüft (Light, alle Viewports, DE/EN): fand Punkt 17 (vorher
   unter dem sichtbaren Dialogbereich) und Punkt 20.
 - `qa/mobile/final3-*` – nach dem Fix von Punkt 20: nur noch Punkte 16–19.
+- `qa/mobile/merged/` – nach dem Merge von `master` (UI-Design-Audit,
+  UX-Feedback): Punkte 21 und 22 neu, danach (`qa/mobile/merged-fix-*`) nur
+  noch Punkte 16–19.
 
 ## Für andere Branches notiert (nicht behoben)
 

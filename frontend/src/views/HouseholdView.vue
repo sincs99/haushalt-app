@@ -438,7 +438,7 @@ watch(() => authStore.currentHouseholdId, (id) => {
           <!-- Admin: Entfernen-Button (nicht bei Admins, nicht bei sich selbst) -->
           <button
             v-if="isAdmin && member.role !== 'admin' && member.id !== authStore.user?.id"
-            class="member-remove-btn"
+            class="member-remove-btn tap-target"
             :aria-label="$t('household.removeMemberButton')"
             @click="openRemoveMemberDialog(member)"
           >

@@ -326,7 +326,7 @@ async function confirmDissolve() {
       />
       <button
         type="submit"
-        class="quick-add__btn"
+        class="quick-add__btn tap-target"
         :disabled="!newItemName.trim()"
         :aria-label="$t('common.add')"
       >
@@ -394,7 +394,7 @@ async function confirmDissolve() {
             <span v-if="item.quantity" class="item-row__meta">{{ item.quantity }}</span>
             <button
               type="button"
-              class="item-row__assign"
+              class="item-row__assign tap-target"
               :title="item.assigned_to_user_id ? $t('shopping.unassign') : $t('shopping.assignToMe')"
               :aria-label="item.assigned_to_user_id ? $t('shopping.unassign') : $t('shopping.assignToMe')"
               @click.stop="handleAssignToggle(item.id)"
@@ -505,8 +505,8 @@ async function confirmDissolve() {
           {{ $t('shopping.mergeStoreConfirm', { to: mergeTarget, count: mergeCount }) }}
         </p>
         <div class="dialog-actions">
-          <button type="button" class="btn-secondary" @click="showRenameDialog = false">{{ $t('common.cancel') }}</button>
-          <button type="submit" class="btn-primary" :disabled="!renameNewName.trim() || isPending('reassignStore')">
+          <button type="button" class="btn-secondary tap-target" @click="showRenameDialog = false">{{ $t('common.cancel') }}</button>
+          <button type="submit" class="btn-primary tap-target" :disabled="!renameNewName.trim() || isPending('reassignStore')">
             {{ mergeTarget ? $t('shopping.mergeStores') : $t('common.save') }}
           </button>
         </div>
@@ -522,8 +522,8 @@ async function confirmDissolve() {
     >
       <p>{{ $t('shopping.dissolveConfirm', { store: dissolveTarget }) }}</p>
       <template #footer>
-        <button type="button" class="btn-secondary" @click="showDissolveDialog = false">{{ $t('common.cancel') }}</button>
-        <button type="button" class="btn-danger" :disabled="isPending('reassignStore')" @click="confirmDissolve">{{ $t('shopping.dissolveStore') }}</button>
+        <button type="button" class="btn-secondary tap-target" @click="showDissolveDialog = false">{{ $t('common.cancel') }}</button>
+        <button type="button" class="btn-danger tap-target" :disabled="isPending('reassignStore')" @click="confirmDissolve">{{ $t('shopping.dissolveStore') }}</button>
       </template>
     </BaseDialog>
   </div>
@@ -714,6 +714,7 @@ async function confirmDissolve() {
 .kebab-menu button {
   display: block;
   width: 100%;
+  min-height: var(--touch-target);
   text-align: left;
   padding: var(--space-3) var(--space-4);
   border: none;

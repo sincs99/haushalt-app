@@ -200,7 +200,7 @@ onUnmounted(() => {
       />
       <button
         type="submit"
-        class="quick-add__btn"
+        class="quick-add__btn tap-target"
         :disabled="!quickAddTitle.trim()"
         :aria-label="$t('common.add')"
       >
@@ -257,7 +257,7 @@ onUnmounted(() => {
               <span class="note-card__title">{{ note.title }}</span>
               <button
                 type="button"
-                class="pin-btn pin-btn--active"
+                class="pin-btn pin-btn--active tap-target"
                 @click.stop="handleTogglePin(note.id)"
                 :aria-label="$t('notes.unpin')"
                 :title="$t('notes.unpin')"
@@ -290,7 +290,7 @@ onUnmounted(() => {
               <span class="note-card__title">{{ note.title }}</span>
               <button
                 type="button"
-                class="pin-btn"
+                class="pin-btn tap-target"
                 @click.stop="handleTogglePin(note.id)"
                 :aria-label="$t('notes.pin')"
                 :title="$t('notes.pin')"
@@ -615,6 +615,7 @@ onUnmounted(() => {
 .pin-toggle {
   display: flex;
   align-items: center;
+  min-height: var(--touch-target); /* ganze Zeile ist Tap-Ziel der Checkbox */
   gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--ink);

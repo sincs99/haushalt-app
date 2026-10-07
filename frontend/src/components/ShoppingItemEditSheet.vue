@@ -150,13 +150,13 @@ function handleSubmit() {
       <!-- Actions -->
       <div class="edit-actions">
         <!-- Löschen auch für offene Artikel (mit Rückgängig im Toast) -->
-        <button type="button" class="btn-delete" :disabled="saving" @click="emit('delete')">
+        <button type="button" class="btn-delete tap-target" :disabled="saving" @click="emit('delete')">
           {{ t('common.delete') }}
         </button>
-        <button type="button" class="btn-secondary" @click="emit('close')">
+        <button type="button" class="btn-secondary tap-target" @click="emit('close')">
           {{ t('common.cancel') }}
         </button>
-        <button type="submit" class="btn-primary" :disabled="!canSave || saving">
+        <button type="submit" class="btn-primary tap-target" :disabled="!canSave || saving">
           {{ t('common.save') }}
         </button>
       </div>

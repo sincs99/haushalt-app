@@ -146,7 +146,7 @@ onMounted(async () => {
       <template v-for="tab in listTabs" :key="tab.key">
         <button
           type="button"
-          class="pill-tab"
+          class="pill-tab tap-target"
           :class="{ 'pill-tab--active': activeTab === tab.key }"
           :aria-pressed="activeTab === tab.key"
           @click="activeTab = tab.key"
@@ -157,7 +157,7 @@ onMounted(async () => {
         <button
           v-if="activeTab === tab.key"
           type="button"
-          class="pill-tab pill-tab--add"
+          class="pill-tab pill-tab--add tap-target"
           :aria-label="$t('shopping.editList')"
           :title="$t('shopping.editList')"
           @click="openEditList"
@@ -167,7 +167,7 @@ onMounted(async () => {
       </template>
       <button
         type="button"
-        class="pill-tab pill-tab--add"
+        class="pill-tab pill-tab--add pill-tab--new tap-target"
         :aria-label="$t('shopping.newList')"
         :title="$t('shopping.newList')"
         @click="showNewListDialog = true"
@@ -196,7 +196,7 @@ onMounted(async () => {
       :subtitle="$t('shopping.noListsSubtitle')"
     >
       <template #action>
-        <button type="button" class="btn-primary" @click="showNewListDialog = true">
+        <button type="button" class="btn-primary tap-target" @click="showNewListDialog = true">
           {{ $t('shopping.createFirstList') }}
         </button>
       </template>
@@ -226,10 +226,10 @@ onMounted(async () => {
           autofocus
         />
         <div class="dialog-actions">
-          <button type="button" class="btn-secondary" @click="showNewListDialog = false">
+          <button type="button" class="btn-secondary tap-target" @click="showNewListDialog = false">
             {{ $t('common.cancel') }}
           </button>
-          <button type="submit" class="btn-primary" :disabled="!newListName.trim() || isPending('createList')">
+          <button type="submit" class="btn-primary tap-target" :disabled="!newListName.trim() || isPending('createList')">
             {{ $t('common.add') }}
           </button>
         </div>
@@ -259,20 +259,20 @@ onMounted(async () => {
         <div class="dialog-actions dialog-actions--split">
           <button
             type="button"
-            class="btn-danger-text"
+            class="btn-danger-text tap-target"
             :disabled="isPending('editList')"
             @click="handleDeleteList"
           >
             {{ $t('shopping.deleteList') }}
           </button>
           <div class="dialog-actions">
-            <button type="button" class="btn-secondary" @click="showEditListDialog = false">
+            <button type="button" class="btn-secondary tap-target" @click="showEditListDialog = false">
               {{ $t('common.cancel') }}
             </button>
             <button
               v-if="!confirmingListDelete"
               type="submit"
-              class="btn-primary"
+              class="btn-primary tap-target"
               :disabled="!editListName.trim() || isPending('editList')"
             >
               {{ $t('common.save') }}
@@ -296,7 +296,10 @@ onMounted(async () => {
   gap: var(--space-2);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: var(--space-1);
+  /* Raum für die vergrösserte Tap-Fläche (Scroll-Container schneidet sonst ab) */
+  padding-block: var(--space-2) var(--space-3);
+  margin-block: calc(-1 * var(--space-2)) calc(-1 * var(--space-2));
+  padding-inline-end: var(--space-1);
 }
 
 /* Gleiche Tokens wie components/ui/BasePillTabs.vue */
@@ -324,12 +327,20 @@ onMounted(async () => {
 }
 
 .pill-tab--add {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--space-1-5) var(--space-3);
   background: var(--chip);
   color: var(--sub);
+}
+
+.pill-tab--new {
+  /* „Neue Liste“ bleibt bei langen Listennamen rechts sichtbar statt aus dem Bild zu scrollen */
+  position: sticky;
+  right: 0;
+  box-shadow: 0 0 0 var(--space-2) var(--bg);
 }
 
 .pill-tab--add:active {

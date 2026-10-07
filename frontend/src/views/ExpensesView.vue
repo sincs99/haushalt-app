@@ -299,7 +299,7 @@ onMounted(() => {
             {{ isOverspent ? $t('finance.overspent') : $t('finance.available') }}
           </span>
           <button
-            class="budget-card__amount"
+            class="budget-card__amount tap-target"
             :class="{ 'budget-card__amount--danger': isOverspent }"
             @click="startBudgetEdit"
             :title="$t('finance.editBudget')"
@@ -479,7 +479,7 @@ onMounted(() => {
             </div>
           </div>
           <button
-            class="action-btn action-btn--danger"
+            class="action-btn action-btn--danger tap-target"
             :disabled="isPending(`expense-${expense.id}`)"
             @click.stop="handleDeleteExpense(expense.id)"
             :title="$t('common.delete')"
@@ -539,7 +539,7 @@ onMounted(() => {
             <span v-if="s.note" class="settlement-item__note">{{ s.note }}</span>
           </div>
           <button
-            class="action-btn action-btn--danger"
+            class="action-btn action-btn--danger tap-target"
             :disabled="isPending(`settlement-${s.id}`)"
             @click="handleDeleteSettlement(s.id)"
             :title="$t('common.delete')"
@@ -775,7 +775,7 @@ onMounted(() => {
 
 .book-select {
   width: 100%;
-  min-height: 40px;
+  min-height: var(--touch-target);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-3);
@@ -965,9 +965,12 @@ onMounted(() => {
 }
 
 .settlement-item {
-  display: flex;
+  /* Raster statt Flex-Zeile: lange Namen + Betrag + Meta passen sonst nicht auf 360 px */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
   align-items: center;
-  gap: var(--space-3);
   padding: var(--space-3);
   border-radius: var(--radius-sm);
   background: var(--chip);
@@ -979,19 +982,24 @@ onMounted(() => {
 }
 
 .settlement-item__main {
-  flex: 1;
+  grid-column: 1;
+  min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
 }
 
 .settlement-item__flow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
+  min-width: 0;
   font-size: var(--text-sm);
   color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .settlement-item__amount {
@@ -1002,10 +1010,18 @@ onMounted(() => {
 }
 
 .settlement-item__meta {
+  grid-column: 1;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
+  min-width: 0;
   font-size: var(--text-xs);
   color: var(--sub);
+}
+
+.settlement-item > .action-btn {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .settlement-item__note {

@@ -172,6 +172,10 @@
   --z-popover: 9000;  /* Popover über Dialogen */
   --z-banner: 9999;   /* Offline-Banner */
   --z-toast: 10000;
+
+  /* --- 11. App-Shell (Mobile) --- */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);  /* iOS Home-Indicator */
+  --fab-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + var(--space-4));
 }
 
 /* ============================================
@@ -238,6 +242,30 @@ body {
   background-color: var(--color-bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================
+   Tap-Ziele
+   Vergrössert die Tap-Fläche kleiner Bedienelemente auf --touch-target, ohne die
+   Optik zu ändern (unsichtbares ::after). Das Element braucht position:
+   relative/absolute; Komponenten mit eigener Positionierung behalten sie
+   (scoped-Selektoren sind spezifischer).
+   ============================================ */
+
+.tap-target {
+  position: relative;
+}
+
+.tap-target::after {
+  content: '';
+  position: absolute;
+  inset: min(0px, calc((100% - var(--touch-target)) / 2));
+}
+
+/* Eingabefelder und Auswahllisten mindestens so hoch wie ein Tap-Ziel */
+input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=range]):not([type=file]):not([type=hidden]),
+select {
+  min-height: var(--touch-target);
 }
 
 /* iOS Tap-Highlight neutralisieren */

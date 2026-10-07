@@ -139,7 +139,7 @@ async function confirmSettlement() {
             <strong>{{ resolveUserName(s.to_user_id) }}</strong>:
             {{ formatRappen(s.amount_rappen) }}
           </span>
-          <button class="mark-paid-btn" @click="openSettlementDialog(s)">
+          <button class="mark-paid-btn tap-target" @click="openSettlementDialog(s)">
             {{ $t('settlements.markAsPaid') }}
           </button>
         </div>

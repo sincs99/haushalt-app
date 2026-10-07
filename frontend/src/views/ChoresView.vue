@@ -353,10 +353,10 @@ const weekdayOptions = computed(() =>
   <div class="view-page">
     <!-- Segment Control: Aufgaben | Ämtli -->
     <div class="segment-control">
-      <router-link to="/todos" :class="{ active: route.path === '/todos' }">
+      <router-link to="/todos" class="tap-target" :class="{ active: route.path === '/todos' }">
         {{ $t('tasks.segmentTodos') }}
       </router-link>
-      <router-link to="/chores" :class="{ active: route.path === '/chores' }">
+      <router-link to="/chores" class="tap-target" :class="{ active: route.path === '/chores' }">
         {{ $t('tasks.segmentChores') }}
       </router-link>
     </div>
@@ -456,7 +456,7 @@ const weekdayOptions = computed(() =>
                   size="sm"
                 />
                 <button
-                  class="action-btn"
+                  class="action-btn tap-target"
                   :title="$t('chores.reassignTo')"
                   :aria-label="$t('chores.reassignTo')"
                   @click="openReassignDialog(assignment.id)"
@@ -470,7 +470,7 @@ const weekdayOptions = computed(() =>
                 <div class="reassign-dropdown__header">
                   <span>{{ $t('chores.reassignTo') }}</span>
                   <button
-                    class="action-btn"
+                    class="action-btn tap-target"
                     :aria-label="$t('common.close')"
                     :title="$t('common.close')"
                     @click="closeReassignDialog"
@@ -586,7 +586,7 @@ const weekdayOptions = computed(() =>
                 <div class="rotation-item__actions">
                   <button
                     type="button"
-                    class="action-btn"
+                    class="action-btn tap-target"
                     :disabled="index === 0"
                     @click="moveUp(index)"
                     :aria-label="$t('chores.moveUpLabel')"
@@ -594,7 +594,7 @@ const weekdayOptions = computed(() =>
                   >↑</button>
                   <button
                     type="button"
-                    class="action-btn"
+                    class="action-btn tap-target"
                     :disabled="index === formRotationOrder.length - 1"
                     @click="moveDown(index)"
                     :aria-label="$t('chores.moveDownLabel')"
@@ -660,13 +660,13 @@ const weekdayOptions = computed(() =>
           </div>
           <div class="chore-card__actions">
             <button
-              class="action-btn"
+              class="action-btn tap-target"
               @click="openEditForm(chore)"
               :title="$t('common.edit')"
               :aria-label="$t('common.edit')"
             ><PhPencilSimple :size="16" /></button>
             <button
-              class="action-btn action-btn--danger"
+              class="action-btn action-btn--danger tap-target"
               @click="confirmDelete(chore.id)"
               :title="$t('common.delete')"
               :aria-label="$t('common.delete')"
@@ -996,6 +996,10 @@ const weekdayOptions = computed(() =>
   gap: var(--space-2);
 }
 
+.form-field--row .form-label {
+  min-height: var(--touch-target); /* ganze Zeile ist Tap-Ziel der Checkbox */
+}
+
 .form-label {
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
@@ -1092,7 +1096,8 @@ const weekdayOptions = computed(() =>
 
 .rotation-item__actions {
   display: flex;
-  gap: var(--space-1);
+  /* Abstand, damit sich die 44-px-Tap-Flächen (.tap-target) nicht überlappen */
+  gap: var(--space-3);
 }
 
 /* ── Chore-Liste ── */
@@ -1168,7 +1173,8 @@ const weekdayOptions = computed(() =>
 
 .chore-card__actions {
   display: flex;
-  gap: var(--space-1);
+  /* Abstand, damit sich die 44-px-Tap-Flächen (.tap-target) nicht überlappen */
+  gap: var(--space-3);
   flex-shrink: 0;
 }
 

@@ -553,7 +553,7 @@ onUnmounted(() => {
         <div class="doc-card__actions">
           <button
             v-if="isPreviewable(doc.files[0].mime_type)"
-            class="icon-btn"
+            class="icon-btn tap-target"
             :aria-label="$t('documents.preview')"
             @click.stop="openPreview(doc)"
           >
@@ -562,7 +562,7 @@ onUnmounted(() => {
           <!-- Mehrseitige Dokumente: Download pro Seite im Dialog/Vorschau -->
           <button
             v-if="doc.files.length === 1"
-            class="icon-btn"
+            class="icon-btn tap-target"
             :aria-label="$t('documents.download')"
             @click.stop="handleDownload(doc.files[0])"
           >
@@ -597,13 +597,13 @@ onUnmounted(() => {
             <li v-for="(file, index) in pendingFiles" :key="`${file.name}-${file.lastModified}-${index}`" class="page-row">
               <span class="page-row__num">{{ index + 1 }}</span>
               <span class="page-row__name">{{ file.name }}<small>{{ formatBytes(file.size) }}</small></span>
-              <button type="button" class="icon-btn" :disabled="index === 0" :aria-label="$t('documents.moveUp')" @click="movePendingFile(index, -1)">
+              <button type="button" class="icon-btn tap-target" :disabled="index === 0" :aria-label="$t('documents.moveUp')" @click="movePendingFile(index, -1)">
                 <PhCaretUp :size="16" />
               </button>
-              <button type="button" class="icon-btn" :disabled="index === pendingFiles.length - 1" :aria-label="$t('documents.moveDown')" @click="movePendingFile(index, 1)">
+              <button type="button" class="icon-btn tap-target" :disabled="index === pendingFiles.length - 1" :aria-label="$t('documents.moveDown')" @click="movePendingFile(index, 1)">
                 <PhCaretDown :size="16" />
               </button>
-              <button type="button" class="icon-btn" :aria-label="$t('documents.removePage')" @click="removePendingFile(index)">
+              <button type="button" class="icon-btn tap-target" :aria-label="$t('documents.removePage')" @click="removePendingFile(index)">
                 <PhX :size="16" />
               </button>
             </li>
@@ -615,22 +615,22 @@ onUnmounted(() => {
               <span class="page-row__num">{{ index + 1 }}</span>
               <button
                 type="button"
-                class="page-row__name page-row__name--link"
+                class="page-row__name page-row__name--link tap-target"
                 :disabled="!isPreviewable(file.mime_type)"
                 @click="openPreview(editingDoc, index)"
               >{{ file.original_name }}<small>{{ formatBytes(file.size_bytes) }}</small></button>
-              <button type="button" class="icon-btn" :aria-label="$t('documents.download')" @click="handleDownload(file)">
+              <button type="button" class="icon-btn tap-target" :aria-label="$t('documents.download')" @click="handleDownload(file)">
                 <PhDownloadSimple :size="16" />
               </button>
-              <button type="button" class="icon-btn" :disabled="index === 0 || pagesBusy" :aria-label="$t('documents.moveUp')" @click="moveStoredPage(file.id, -1)">
+              <button type="button" class="icon-btn tap-target" :disabled="index === 0 || pagesBusy" :aria-label="$t('documents.moveUp')" @click="moveStoredPage(file.id, -1)">
                 <PhCaretUp :size="16" />
               </button>
-              <button type="button" class="icon-btn" :disabled="index === editingDoc.files.length - 1 || pagesBusy" :aria-label="$t('documents.moveDown')" @click="moveStoredPage(file.id, 1)">
+              <button type="button" class="icon-btn tap-target" :disabled="index === editingDoc.files.length - 1 || pagesBusy" :aria-label="$t('documents.moveDown')" @click="moveStoredPage(file.id, 1)">
                 <PhCaretDown :size="16" />
               </button>
               <button
                 type="button"
-                class="icon-btn"
+                class="icon-btn tap-target"
                 :disabled="editingDoc.files.length <= 1 || pagesBusy"
                 :aria-label="$t('documents.removePage')"
                 @click="requestRemovePage(file)"
@@ -780,13 +780,13 @@ onUnmounted(() => {
       <template #footer>
         <div class="preview-footer">
           <div v-if="previewDoc && previewDoc.files.length > 1" class="preview-nav">
-            <button class="icon-btn" :disabled="previewIndex === 0" :aria-label="$t('documents.previousPage')" @click="showPreviewPage(previewIndex - 1)">
+            <button class="icon-btn tap-target" :disabled="previewIndex === 0" :aria-label="$t('documents.previousPage')" @click="showPreviewPage(previewIndex - 1)">
               <PhCaretLeft :size="20" />
             </button>
             <span class="preview-nav__label">
               {{ $t('documents.pageOf', { current: previewIndex + 1, total: previewDoc.files.length }) }}
             </span>
-            <button class="icon-btn" :disabled="previewIndex >= previewDoc.files.length - 1" :aria-label="$t('documents.nextPage')" @click="showPreviewPage(previewIndex + 1)">
+            <button class="icon-btn tap-target" :disabled="previewIndex >= previewDoc.files.length - 1" :aria-label="$t('documents.nextPage')" @click="showPreviewPage(previewIndex + 1)">
               <PhCaretRight :size="20" />
             </button>
           </div>
@@ -920,6 +920,8 @@ onUnmounted(() => {
 .doc-card__actions {
   display: flex;
   flex-shrink: 0;
+  /* Abstand, damit sich die 44-px-Tap-Flächen (.tap-target) nicht überlappen */
+  gap: var(--space-3);
 }
 
 .category-chip {
@@ -1025,7 +1027,7 @@ onUnmounted(() => {
   font-size: var(--text-base);
   color: var(--ink);
   background: var(--card);
-  min-height: 40px;
+  min-height: var(--touch-target);
 }
 
 .form-control:focus {
@@ -1087,7 +1089,8 @@ onUnmounted(() => {
 .page-row {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  /* Abstand, damit sich die 44-px-Tap-Flächen (.tap-target) nicht überlappen */
+  gap: var(--space-3);
   background: var(--chip);
   border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
@@ -1132,7 +1135,7 @@ onUnmounted(() => {
 }
 
 .page-row .icon-btn {
-  padding: var(--space-1);
+  padding: var(--space-2);
 }
 
 .icon-btn:disabled {

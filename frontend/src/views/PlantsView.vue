@@ -219,7 +219,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
 </script>
 
 <template>
-  <div class="view-page">
+  <div class="view-page view-page--fab">
     <PageHeader :title="$t('plants.title')" />
 
     <!-- Loading -->
@@ -321,7 +321,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
 
           <div class="plant-card__actions">
             <button
-              class="plant-card__delete"
+              class="plant-card__delete tap-target"
               @click.stop="deletingPlantId = plant.id"
               :aria-label="$t('common.delete')"
             >
@@ -531,9 +531,14 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
 }
 
 /* ── FAB ── */
+.view-page--fab {
+  /* Platz, damit der FAB die letzte Karte (Löschen-Button) nicht verdeckt */
+  padding-bottom: calc(var(--fab-size) + var(--space-6));
+}
+
 .fab {
   position: fixed;
-  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  bottom: var(--fab-bottom);
   right: var(--space-4);
   width: var(--fab-size);
   height: var(--fab-size);
@@ -570,6 +575,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
 .checkbox-row {
   display: flex;
   align-items: center;
+  min-height: var(--touch-target); /* ganze Zeile ist Tap-Ziel der Checkbox */
   gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--ink);

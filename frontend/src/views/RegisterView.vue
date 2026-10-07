@@ -105,7 +105,7 @@ async function handleRegister() {
       <div class="register-tabs">
         <button
           type="button"
-          class="register-tab"
+          class="register-tab tap-target"
           :aria-pressed="mode === 'create'"
           :class="{ 'register-tab--active': mode === 'create' }"
           @click="mode = 'create'"
@@ -114,7 +114,7 @@ async function handleRegister() {
         </button>
         <button
           type="button"
-          class="register-tab"
+          class="register-tab tap-target"
           :aria-pressed="mode === 'join'"
           :class="{ 'register-tab--active': mode === 'join' }"
           @click="mode = 'join'"

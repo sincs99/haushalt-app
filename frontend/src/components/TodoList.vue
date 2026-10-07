@@ -300,7 +300,7 @@ async function saveEdit(todoId: string) {
       />
       <button
         type="submit"
-        class="quick-add__btn"
+        class="quick-add__btn tap-target"
         :disabled="!newTodoTitle.trim()"
         :aria-label="$t('common.add')"
       >
@@ -311,7 +311,7 @@ async function saveEdit(todoId: string) {
     <!-- Details Toggle -->
     <button
       type="button"
-      class="details-toggle"
+      class="details-toggle tap-target"
       :aria-expanded="showAddDetails"
       @click="showAddDetails = !showAddDetails"
     >
@@ -357,7 +357,7 @@ async function saveEdit(todoId: string) {
           />
           <button
             type="button"
-            class="action-btn action-btn--danger"
+            class="action-btn action-btn--danger tap-target"
             :aria-label="$t('todos.removeReminder')"
             :title="$t('todos.removeReminder')"
             @click="newReminders.splice(idx, 1)"
@@ -368,7 +368,7 @@ async function saveEdit(todoId: string) {
         <button
           v-if="newReminders.length < 5"
           type="button"
-          class="reminder-add-btn"
+          class="reminder-add-btn tap-target"
           @click="newReminders.push('')"
         >
           + {{ $t('todos.addReminder') }}
@@ -432,8 +432,8 @@ async function saveEdit(todoId: string) {
             </div>
           </div>
           <div class="todo-row__actions">
-            <button class="action-btn" @click="startEdit(todo)" :title="$t('common.edit')" :aria-label="$t('common.edit')"><PhPencilSimple :size="16" /></button>
-            <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><PhX :size="16" /></button>
+            <button class="action-btn tap-target" @click="startEdit(todo)" :title="$t('common.edit')" :aria-label="$t('common.edit')"><PhPencilSimple :size="16" /></button>
+            <button class="action-btn action-btn--danger tap-target" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><PhX :size="16" /></button>
           </div>
         </template>
 
@@ -467,7 +467,7 @@ async function saveEdit(todoId: string) {
                 <span class="reminder-row__text">{{ formatReminderDate(rem.remind_at) }}</span>
                 <button
                   type="button"
-                  class="action-btn action-btn--danger"
+                  class="action-btn action-btn--danger tap-target"
                   :aria-label="$t('todos.removeReminder')"
                   :title="$t('todos.removeReminder')"
                   @click="handleDeleteReminder(todo.id, rem.id)"
@@ -484,7 +484,7 @@ async function saveEdit(todoId: string) {
                 />
                 <button
                   type="button"
-                  class="action-btn action-btn--danger"
+                  class="action-btn action-btn--danger tap-target"
                   :aria-label="$t('todos.removeReminder')"
                   :title="$t('todos.removeReminder')"
                   @click="editNewReminders.splice(idx, 1)"
@@ -495,7 +495,7 @@ async function saveEdit(todoId: string) {
               <button
                 v-if="(todo.reminders.length + editNewReminders.length) < 5"
                 type="button"
-                class="reminder-add-btn"
+                class="reminder-add-btn tap-target"
                 @click="editNewReminders.push('')"
               >
                 + {{ $t('todos.addReminder') }}
@@ -553,7 +553,7 @@ async function saveEdit(todoId: string) {
               </div>
             </div>
           </div>
-          <button class="action-btn action-btn--danger" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><PhX :size="16" /></button>
+          <button class="action-btn action-btn--danger tap-target" @click="handleDelete(todo.id)" :title="$t('common.delete')" :aria-label="$t('common.delete')"><PhX :size="16" /></button>
         </li>
       </ul>
     </div>
@@ -749,13 +749,16 @@ async function saveEdit(todoId: string) {
 
 .todo-row__title-line {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
 }
 
 .todo-row__name {
+  min-width: 0;
   font-size: var(--text-base);
   color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .overdue-badge {
@@ -791,7 +794,8 @@ async function saveEdit(todoId: string) {
 /* Aktions-Buttons */
 .todo-row__actions {
   display: flex;
-  gap: var(--space-1);
+  /* Abstand, damit sich die 44-px-Tap-Flächen (.tap-target) nicht überlappen */
+  gap: var(--space-3);
   flex-shrink: 0;
 }
 

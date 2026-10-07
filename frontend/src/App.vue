@@ -660,7 +660,8 @@ onUnmounted(() => {
   max-width: 640px;
   margin: 0 auto;
   padding: var(--space-4);
-  padding-bottom: calc(var(--space-4) + 64px);
+  /* Bottom-Nav wächst um den Safe-Area-Inset → Inhalt muss mitwachsen */
+  padding-bottom: calc(var(--space-4) + var(--bottom-nav-height) + var(--safe-bottom));
 }
 
 @media (min-width: 768px) {
@@ -698,7 +699,7 @@ onUnmounted(() => {
 /* ── Toast-Container ── */
 .toast-container {
   position: fixed;
-  bottom: calc(64px + env(safe-area-inset-bottom, 0) + var(--space-3));
+  bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + var(--space-3));
   left: 50%;
   transform: translateX(-50%);
   z-index: var(--z-toast);

@@ -408,11 +408,11 @@ async function doCreateMealPoll() {
     <PageHeader :title="t('food.title')">
       <template #actions>
         <div class="week-nav">
-          <button type="button" class="week-nav__btn" @click="goWeek(-1)" :aria-label="t('food.prevWeek')">
+          <button type="button" class="week-nav__btn tap-target" @click="goWeek(-1)" :aria-label="t('food.prevWeek')">
             <PhCaretLeft :size="20" weight="bold" />
           </button>
           <span class="week-nav__label">{{ t('food.kwLabel', { week: currentWeekNumber }) }}</span>
-          <button type="button" class="week-nav__btn" @click="goWeek(1)" :aria-label="t('food.nextWeek')">
+          <button type="button" class="week-nav__btn tap-target" @click="goWeek(1)" :aria-label="t('food.nextWeek')">
             <PhCaretRight :size="20" weight="bold" />
           </button>
         </div>
@@ -472,7 +472,7 @@ async function doCreateMealPoll() {
             <button
               v-if="getEntryForDate(date)?.recipe"
               type="button"
-              class="week-row__fav"
+              class="week-row__fav tap-target"
               :class="{ 'week-row__fav--active': getEntryForDate(date)?.recipe?.is_favorite }"
               @click.stop="toggleFavorite(getEntryForDate(date)!.recipe!.id)"
               @keydown.enter.stop
@@ -605,7 +605,7 @@ async function doCreateMealPoll() {
           </button>
         </div>
 
-        <button type="button" class="poll-form__add-btn" @click="addPollOption">
+        <button type="button" class="poll-form__add-btn tap-target" @click="addPollOption">
           <PhPlus :size="16" />
           {{ t('food.addOption') }}
         </button>
@@ -822,8 +822,6 @@ async function doCreateMealPoll() {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4);
-  padding-bottom: calc(var(--space-6) + 80px); /* Platz für Bottom-Nav */
   max-width: 600px;
   margin: 0 auto;
 }
@@ -930,7 +928,8 @@ async function doCreateMealPoll() {
   font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
   color: var(--sub);
-  width: 24px;
+  /* 3 Grossbuchstaben (EN „WED“, „THU“) brauchen ~29 px */
+  width: var(--space-8);
   flex-shrink: 0;
   text-transform: uppercase;
 }
@@ -1301,6 +1300,7 @@ async function doCreateMealPoll() {
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-1) 0;
+  margin-top: var(--space-1); /* Tap-Fläche nicht über dem Eingabefeld */
   font-size: var(--text-sm);
   color: var(--acc);
   background: none;

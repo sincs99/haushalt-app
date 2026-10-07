@@ -128,6 +128,11 @@ watch(() => props.open, (isOpen) => {
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0));
   box-shadow: var(--shadow-overlay);
+  /* Kleine/niedrige Displays: Sheet scrollt statt oben abgeschnitten zu werden */
+  max-height: calc(100vh - var(--space-8));
+  max-height: calc(100dvh - var(--space-8));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .more-sheet__handle {

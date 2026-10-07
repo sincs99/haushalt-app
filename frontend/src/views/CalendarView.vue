@@ -768,7 +768,7 @@ watch(
   <div class="calendar-view">
     <PageHeader :title="t('calendar.title')">
       <template #actions>
-        <button class="manage-btn" @click="manageDialogOpen = true" :aria-label="t('calendars.manage')">
+        <button class="manage-btn tap-target" @click="manageDialogOpen = true" :aria-label="t('calendars.manage')">
           <PhGear :size="20" />
         </button>
       </template>
@@ -788,7 +788,7 @@ watch(
       <button
         v-for="cal in store.calendars"
         :key="cal.id"
-        class="filter-chip"
+        class="filter-chip tap-target"
         :class="{ 'filter-chip--active': activeCalendarIds.includes(cal.id) }"
         :style="activeCalendarIds.includes(cal.id)
           ? { background: cal.color, color: '#fff', borderColor: cal.color }
@@ -802,11 +802,11 @@ watch(
     <!-- Week Strip (nur im Woche-Modus) -->
     <div v-if="activeTab === 'week'" class="week-nav">
       <div class="week-nav__header">
-        <button class="week-nav__arrow" @click="handleWeekNavigate(-1)" :aria-label="t('calendar.prevWeek')">
+        <button class="week-nav__arrow tap-target" @click="handleWeekNavigate(-1)" :aria-label="t('calendar.prevWeek')">
           <PhCaretLeft :size="20" />
         </button>
         <span class="week-nav__label">{{ weekLabel }}</span>
-        <button class="week-nav__arrow" @click="handleWeekNavigate(1)" :aria-label="t('calendar.nextWeek')">
+        <button class="week-nav__arrow tap-target" @click="handleWeekNavigate(1)" :aria-label="t('calendar.nextWeek')">
           <PhCaretRight :size="20" />
         </button>
       </div>
@@ -867,7 +867,7 @@ watch(
           <button
             v-for="option in poll.options"
             :key="option.id"
-            class="poll-option"
+            class="poll-option tap-target"
             :class="{ 'poll-option--selected': isMyVote(poll, option.id) }"
             :aria-pressed="isMyVote(poll, option.id)"
             :disabled="isPending(`poll-${poll.id}`)"
@@ -1132,7 +1132,7 @@ watch(
               v-for="cal in store.calendars"
               :key="cal.id"
               type="button"
-              class="category-chip"
+              class="category-chip tap-target"
               :class="{ 'category-chip--active': formCalendarId === cal.id }"
               @click="formCalendarId = cal.id"
             >
@@ -1155,7 +1155,7 @@ watch(
               v-for="member in store.members"
               :key="member.id"
               type="button"
-              class="participant-chip"
+              class="participant-chip tap-target"
               :class="{ 'participant-chip--active': formParticipants.includes(member.id) }"
               @click="toggleParticipant(member.id)"
             >
@@ -1233,7 +1233,7 @@ watch(
               v-for="option in decidingPoll.options"
               :key="option.id"
               type="button"
-              class="poll-option"
+              class="poll-option tap-target"
               :class="{ 'poll-option--selected': decideOptionId === option.id }"
               @click="decideOptionId = option.id"
             >
@@ -1253,7 +1253,7 @@ watch(
               v-for="cal in store.calendars"
               :key="cal.id"
               type="button"
-              class="category-chip"
+              class="category-chip tap-target"
               :class="{ 'category-chip--active': decideCalendarId === cal.id }"
               @click="decideCalendarId = cal.id"
             >
@@ -1304,7 +1304,7 @@ watch(
             maxlength="50"
             :aria-label="t('calendars.name')"
           />
-          <button @click="askDeleteCalendar(cal)" class="delete-btn" :aria-label="`${t('calendars.delete')}: ${cal.name}`">
+          <button @click="askDeleteCalendar(cal)" class="delete-btn tap-target" :aria-label="`${t('calendars.delete')}: ${cal.name}`">
             <PhTrash :size="16" />
           </button>
         </div>
@@ -1366,7 +1366,8 @@ watch(
 
 <style scoped>
 .calendar-view {
-  padding-bottom: 100px;
+  /* Platz, damit der FAB den letzten Termin nicht verdeckt */
+  padding-bottom: calc(var(--fab-size) + var(--space-6));
 }
 
 .calendar-tabs {
@@ -1396,7 +1397,9 @@ watch(
 .calendar-filter-chips {
   display: flex;
   gap: var(--space-2);
-  padding: 0 var(--space-4) var(--space-3);
+  /* oben Raum für die vergrösserte Tap-Fläche (Scroll-Container schneidet sonst ab) */
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  margin-top: calc(-1 * var(--space-2));
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
@@ -1655,7 +1658,7 @@ watch(
 .fab {
   position: fixed;
   right: var(--space-4);
-  bottom: 80px;
+  bottom: var(--fab-bottom);
   width: var(--fab-size);
   height: var(--fab-size);
   border-radius: var(--radius-full);
@@ -1990,8 +1993,8 @@ watch(
 }
 
 .color-picker {
-  width: 32px;
-  height: 32px;
+  width: var(--touch-target);
+  height: var(--touch-target);
   padding: 0;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);

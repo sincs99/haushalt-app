@@ -278,7 +278,7 @@ function navigateToPet(petId: string) {
 </script>
 
 <template>
-  <div class="view-page">
+  <div class="view-page view-page--fab">
     <PageHeader :title="$t('pets.title')" />
 
     <!-- Loading -->
@@ -337,7 +337,7 @@ function navigateToPet(petId: string) {
               <div class="feeding-row__toggles">
                 <button
                   type="button"
-                  class="feed-toggle"
+                  class="feed-toggle tap-target"
                   :class="{ 'feed-toggle--fed': isFed(status.pet_id, 'morning') }"
                   :title="$t('pets.feedToggleMorning', { name: status.pet_name })"
                   :aria-label="$t('pets.feedToggleMorning', { name: status.pet_name })"
@@ -348,7 +348,7 @@ function navigateToPet(petId: string) {
                 </button>
                 <button
                   type="button"
-                  class="feed-toggle"
+                  class="feed-toggle tap-target"
                   :class="{ 'feed-toggle--fed': isFed(status.pet_id, 'evening') }"
                   :title="$t('pets.feedToggleEvening', { name: status.pet_name })"
                   :aria-label="$t('pets.feedToggleEvening', { name: status.pet_name })"
@@ -405,7 +405,7 @@ function navigateToPet(petId: string) {
           </div>
           <div class="pet-card__actions">
             <button
-              class="pet-card__delete"
+              class="pet-card__delete tap-target"
               @click.stop="confirmDelete(pet.id)"
               :aria-label="$t('common.delete')"
             >
@@ -657,9 +657,14 @@ function navigateToPet(petId: string) {
 }
 
 /* ── FAB ── */
+.view-page--fab {
+  /* Platz, damit der FAB die letzte Karte (Löschen-Button) nicht verdeckt */
+  padding-bottom: calc(var(--fab-size) + var(--space-6));
+}
+
 .fab {
   position: fixed;
-  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  bottom: var(--fab-bottom);
   right: var(--space-4);
   width: var(--fab-size);
   height: var(--fab-size);

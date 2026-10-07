@@ -221,7 +221,7 @@ onMounted(resolve)
             type="button"
             role="radio"
             :aria-checked="slot === s"
-            class="slot-btn"
+            class="slot-btn tap-target"
             :class="{ 'slot-btn--active': slot === s }"
             @click="slot = s"
           >

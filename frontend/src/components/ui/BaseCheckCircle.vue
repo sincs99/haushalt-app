@@ -15,7 +15,7 @@ defineEmits<{
 <template>
   <button
     type="button"
-    class="check-circle"
+    class="check-circle tap-target"
     :class="{ 'check-circle--checked': checked }"
     @click.stop="$emit('toggle')"
     :aria-checked="checked"

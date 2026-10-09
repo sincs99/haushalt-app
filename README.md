@@ -53,6 +53,29 @@ Liegt Nginx Proxy Manager davor: für den Host ein längeres Timeout eintragen (
 
 Architektur, Datenfluss, Kosten und Ausgabe-Schemas: [`docs/ai-assistant.md`](docs/ai-assistant.md). Sicherheitsbewertung: [`docs/security/ai-assistant-review.md`](docs/security/ai-assistant-review.md).
 
+## E-Mail, Konto-Funktionen
+
+Passwort vergessen, E-Mail-Bestätigung und Hinweis-Mails laufen über SMTP (`SMTP_HOST`, `SMTP_PORT`,
+`SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TLS`, `MAIL_FROM`, `APP_BASE_URL`). Ohne `SMTP_HOST` werden Mails in
+der Entwicklung nur geloggt (`MAIL_BACKEND=auto`), in Produktion bleiben die Funktionen ausgeblendet.
+Passwort ändern und Konto löschen (Anonymisierung, Pflicht für die App Stores) stehen in den
+Einstellungen unter «Konto».
+
+## Tarife, Abrechnung, Betreiber-Zugang (SaaS-Betrieb)
+
+Standardmässig aus (`BILLING_ENABLED=false`): jeder Haushalt hat alle Funktionen. Mit
+`BILLING_ENABLED=true` gibt es die Tarife `free` und `premium` (Mitglieder, Speicher, KI-Limit je
+Tarif), Stripe-Checkout und Kundenportal, Webhook unter `/api/billing/webhooks/stripe` sowie eine
+Betreiber-Ansicht `/admin` (Plattform-Admin per `python -m scripts.make_platform_admin --email …`).
+Details: [`docs/monetization.md`](docs/monetization.md). Rechtstexte (Impressum, Datenschutz,
+Nutzungsbedingungen) liegen als Vorlagen in `frontend/public/legal/`; Betreiberangaben über
+`OPERATOR_NAME`, `OPERATOR_ADDRESS`, `OPERATOR_EMAIL`, Zustimmungspflicht über `LEGAL_TERMS_REQUIRED`.
+
+## Native Apps (iOS/Android)
+
+Das Frontend ist für eine Capacitor-Hülle vorbereitet (Token-Ablage, Store-Abrechnung,
+Konto löschen, Rechtstexte): [`docs/mobile-apps.md`](docs/mobile-apps.md).
+
 ## Lokale Entwicklung ohne Docker
 
 Voraussetzungen: Python 3.12, Node.js 22, eine PostgreSQL-Datenbank.
@@ -100,6 +123,10 @@ cd frontend && npm audit --omit=dev --audit-level=high
 Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` selbst und brauchen keine laufende Datenbank. Die Tests des KI-Assistenten mocken den Anthropic-Client und brauchen keinen API-Schlüssel. Wer `DATABASE_URL` in der Shell gesetzt hat, sollte sie vor `pytest` entfernen, sonst laufen die Tests gegen diese Datenbank.
 
 ## Produktion
+
+Mehrere Backend-Prozesse (`UVICORN_WORKERS`) brauchen den Redis-Container aus
+`docker-compose.prod.yml` (`RATE_LIMIT_STORAGE_URI`, `SOCKETIO_MESSAGE_QUEUE`); optionales
+Fehler-Monitoring über `SENTRY_DSN`. Siehe [`docs/deployment.md`](docs/deployment.md), Abschnitte 8–10.
 
 - [`docs/deployment.md`](docs/deployment.md): Docker-Deployment hinter Nginx Proxy Manager, Updates, Rollback, Web Push
 - [`docs/DEPLOYMENT-WINDOWS-SERVER.md`](docs/DEPLOYMENT-WINDOWS-SERVER.md): Einrichtung auf einem Windows-Server

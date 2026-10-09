@@ -3,7 +3,8 @@ import { ref, computed } from 'vue'
 import axios from 'axios'
 import api, { API_BASE, authRequestConfig } from '../api/client'
 import type { UserInfo, HouseholdInfo, MeResponse } from '../types'
-import { sessionMarker, SESSION_MARKER_KEY, takeLegacyRefreshToken } from '../services/tokenStorage'
+import { nativeRefreshToken, sessionMarker, SESSION_MARKER_KEY, takeLegacyRefreshToken } from '../services/tokenStorage'
+import { isNativeApp } from '../services/platform'
 import { useToast } from '../composables/useToast'
 import i18n from '../i18n'
 
@@ -25,6 +26,8 @@ function isAuthRejection(err: any): boolean {
 interface TokenPayload {
   access_token: string
   expires_in: number
+  /** Nur in nativen Apps gefüllt (Web: HttpOnly-Cookie) */
+  refresh_token?: string | null
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -74,11 +77,13 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Alte localStorage-Tokens (vor H-01) einmalig gegen den Cookie tauschen
     const legacyRefreshToken = takeLegacyRefreshToken()
+    // Native App: Refresh-Token aus dem Geräte-Speicher (kein Cookie)
+    const storedNativeToken = isNativeApp() ? await nativeRefreshToken.get() : null
 
-    if (legacyRefreshToken || sessionMarker.isSet()) {
+    if (legacyRefreshToken || storedNativeToken || sessionMarker.isSet()) {
       try {
-        // Access-Token wird nie persistiert → immer über den Cookie neu holen
-        await _refreshWith(legacyRefreshToken)
+        // Access-Token wird nie persistiert → immer über den Cookie bzw. den gespeicherten Token neu holen
+        await _refreshWith(legacyRefreshToken ?? storedNativeToken)
         await fetchMe()
       } catch (err: any) {
         if (isAuthRejection(err)) {
@@ -123,11 +128,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function _doRefresh(legacyRefreshToken: string | null): Promise<void> {
     // Direkter axios call OHNE Interceptor (um Endlos-Loop zu vermeiden).
-    // Der Refresh-Token kommt aus dem HttpOnly-Cookie (withCredentials); nur bei der
+    // Web: Der Refresh-Token kommt aus dem HttpOnly-Cookie (withCredentials); nur bei der
     // einmaligen Migration steht der alte localStorage-Token im Body.
-    const body = legacyRefreshToken ? { refresh_token: legacyRefreshToken } : {}
+    // Native App: Der Token aus dem Geräte-Speicher steht immer im Body.
+    const bodyToken = legacyRefreshToken ?? (isNativeApp() ? await nativeRefreshToken.get() : null)
+    const body = bodyToken ? { refresh_token: bodyToken } : {}
     const response = await axios.post(`${API_BASE}/api/auth/refresh`, body, authRequestConfig())
-    _applyTokens(response.data)
+    await _applyTokens(response.data)
   }
 
   /** Nach erfolgreicher Bestätigung per Link (VerifyEmailView) oder Passwort-Reset. */
@@ -135,12 +142,18 @@ export const useAuthStore = defineStore('auth', () => {
     if (user.value) user.value = { ...user.value, email_verified: true }
   }
 
-  /** Übernimmt den Access-Token einer Login-/Register-/Refresh-Antwort (Cookie setzt der Browser). */
-  function _applyTokens(data: TokenPayload) {
+  /**
+   * Übernimmt den Access-Token einer Login-/Register-/Refresh-Antwort (Cookie setzt der
+   * Browser). In der nativen App wird zusätzlich der Refresh-Token aus dem Body abgelegt.
+   */
+  async function _applyTokens(data: TokenPayload) {
     token.value = data.access_token
     hasOfflineSession.value = false
     sessionExpired.value = false
     sessionMarker.set()
+    if (isNativeApp() && data.refresh_token) {
+      await nativeRefreshToken.set(data.refresh_token)
+    }
   }
 
   /**
@@ -167,7 +180,7 @@ export const useAuthStore = defineStore('auth', () => {
       new URLSearchParams({ username: email, password }),
       authRequestConfig({ 'Content-Type': 'application/x-www-form-urlencoded' }),
     )
-    _applyTokens(response.data)
+    await _applyTokens(response.data)
 
     await fetchMe()
   }
@@ -193,7 +206,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
     if (acceptTerms) payload.accept_terms = true
     const response = await api.post('/api/auth/register', payload, authRequestConfig())
-    _applyTokens(response.data)
+    await _applyTokens(response.data)
 
     await fetchMe()
   }
@@ -268,8 +281,11 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Best-effort: Backend revoked den Refresh-Token aus dem Cookie und löscht den Cookie.
     // Ob ein Cookie existiert, sieht JS nicht (HttpOnly) — der Endpunkt ist idempotent.
+    // Native App: Token aus dem Geräte-Speicher im Body mitschicken.
     try {
-      await axios.post(`${API_BASE}/api/auth/logout`, {}, authRequestConfig())
+      const nativeToken = isNativeApp() ? await nativeRefreshToken.get() : null
+      const body = nativeToken ? { refresh_token: nativeToken } : {}
+      await axios.post(`${API_BASE}/api/auth/logout`, body, authRequestConfig())
     } catch {
       // Ignore — Logout ist best-effort
     }
@@ -302,6 +318,7 @@ export const useAuthStore = defineStore('auth', () => {
     // Löscht den Marker → storage-Event in anderen Tabs (Cross-Tab-Logout)
     sessionMarker.clear()
     localStorage.removeItem(HOUSEHOLD_KEY)
+    if (isNativeApp()) await nativeRefreshToken.clear()
   }
 
   // ── Cross-Tab Storage Listener ──

@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig } from 'axios'
+import { isNativeApp } from '../services/platform'
 
 export const API_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -20,6 +21,11 @@ export const CSRF_HEADER_VALUE = 'casa'
  * Dev-Setup auf einem anderen Origin läuft) plus CSRF-Header.
  */
 export function authRequestConfig(extraHeaders: Record<string, string> = {}): AxiosRequestConfig {
+  if (isNativeApp()) {
+    // Native App: kein Cookie-Jar → ohne den Header liefert das Backend den
+    // Refresh-Token im Body (services/tokenStorage.ts, nativeRefreshToken)
+    return { headers: { ...extraHeaders } }
+  }
   return {
     withCredentials: true,
     headers: { [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE, ...extraHeaders },

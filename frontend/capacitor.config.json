@@ -1,0 +1,16 @@
+{
+  "appId": "ch.example.haushalt",
+  "appName": "Haushalt",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "ios": {
+    "contentInset": "automatic"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true
+    }
+  }
+}

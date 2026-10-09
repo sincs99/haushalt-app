@@ -3,7 +3,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy import func
@@ -111,6 +111,7 @@ class MeResponse(BaseModel):
     id: uuid.UUID
     email: str
     display_name: str
+    email_verified: bool = False
     households: list[HouseholdOut]
 
 
@@ -253,6 +254,7 @@ def register(
     request: Request,
     response: Response,
     data: RegisterRequest,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     existing = db.query(User).filter_by(email=data.email).first()
@@ -301,6 +303,13 @@ def register(
     db.add(membership)
     db.flush()
 
+    # Bestätigungs-Mail (nur wenn Versand konfiguriert ist; die App bleibt ohne nutzbar)
+    if settings.mail_enabled:
+        from app.routers.account import send_verification_mail
+        from app.services.mail_templates import request_language
+
+        send_verification_mail(db, user, request_language(request), background)
+
     pair, _ = _create_token_pair(str(user.id), db)
     return _deliver(pair, request, response)
 
@@ -318,7 +327,7 @@ def login(
     # Antwortzeit nicht verrät, ob ein Account existiert (User-Enumeration).
     password_hash = user.password_hash if user else _DUMMY_PASSWORD_HASH
     password_ok = verify_password(form_data.password, password_hash)
-    if not user or not password_ok:
+    if not user or not password_ok or user.deleted_at is not None:
         raise HTTPException(status_code=401, detail=error_detail(ErrorCode.INVALID_CREDENTIALS, "Incorrect email or password"))
 
     pair, _ = _create_token_pair(str(user.id), db)
@@ -477,5 +486,6 @@ def get_me(
         id=current_user.id,
         email=current_user.email,
         display_name=current_user.display_name,
+        email_verified=current_user.email_verified_at is not None,
         households=households,
     )

@@ -8,8 +8,10 @@ import { isValidEmail, useAuthStore } from '../stores/auth'
 import { useI18n } from 'vue-i18n'
 import { errorText } from '../composables/useToast'
 import { PhHouse } from '@phosphor-icons/vue'
+import { useConfigStore } from '../stores/config'
 
 const router = useRouter()
+const configStore = useConfigStore()
 const route = useRoute()
 const authStore = useAuthStore()
 const { t } = useI18n()
@@ -39,7 +41,10 @@ const passwordError = computed(() => (submitted.value && !password.value ? t('au
 
 // Autofokus auf das E-Mail-Feld (das HTML-Attribut greift bei SPA-Navigation nicht zuverlässig)
 const formRef = ref<HTMLFormElement | null>(null)
-onMounted(() => formRef.value?.querySelector('input')?.focus())
+onMounted(() => {
+  formRef.value?.querySelector('input')?.focus()
+  configStore.load()
+})
 
 async function handleLogin() {
   error.value = ''
@@ -101,6 +106,10 @@ async function handleLogin() {
         >
           {{ $t('auth.login') }}
         </BaseButton>
+
+        <p v-if="configStore.config.mail_enabled" class="auth-link">
+          <router-link to="/forgot-password">{{ $t('account.forgotLink') }}</router-link>
+        </p>
 
         <p class="auth-link">
           {{ $t('auth.noAccount') }} <router-link :to="registerLink">{{ $t('auth.register') }}</router-link>

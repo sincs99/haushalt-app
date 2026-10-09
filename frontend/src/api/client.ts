@@ -29,12 +29,18 @@ export function authRequestConfig(extraHeaders: Record<string, string> = {}): Ax
 // URLs die NICHT refresht werden sollen (kein Retry bei 401)
 const AUTH_URLS = ['/api/auth/login', '/api/auth/refresh', '/api/auth/logout']
 
-// Request-Interceptor: JWT als Bearer-Token
+// Request-Interceptor: JWT als Bearer-Token + UI-Sprache (für System-Mails des Backends)
 api.interceptors.request.use(async (config) => {
   const { useAuthStore } = await import('../stores/auth')
   const authStore = useAuthStore()
   if (authStore.token) {
     config.headers.Authorization = `Bearer ${authStore.token}`
+  }
+  try {
+    const { default: i18n } = await import('../i18n')
+    config.headers['Accept-Language'] = i18n.global.locale.value
+  } catch {
+    // i18n nicht verfügbar (Tests) — Header weglassen
   }
   return config
 })

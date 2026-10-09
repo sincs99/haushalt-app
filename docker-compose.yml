@@ -40,6 +40,15 @@ services:
       # KI-Assistent (optional): ohne Schlüssel sind alle KI-Funktionen ausgeblendet
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_DAILY_LIMIT_PER_HOUSEHOLD: ${AI_DAILY_LIMIT_PER_HOUSEHOLD:-50}
+      # E-Mail (optional): ohne SMTP_HOST werden Mails in der Entwicklung nur geloggt
+      MAIL_BACKEND: ${MAIL_BACKEND:-auto}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_TLS: ${SMTP_TLS:-starttls}
+      MAIL_FROM: ${MAIL_FROM:-Haushalt App <noreply@example.com>}
+      APP_BASE_URL: ${APP_BASE_URL:-}
     # Nur lokal (API-Debugging); das Frontend erreicht das Backend über das Docker-Netz
     ports:
       - "127.0.0.1:8000:8000"

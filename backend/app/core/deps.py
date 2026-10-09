@@ -24,7 +24,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except (JWTError, KeyError, ValueError):
         raise credentials_exception
 
-    if user is None:
+    if user is None or user.deleted_at is not None:
         raise credentials_exception
     return user
 

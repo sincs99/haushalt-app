@@ -174,10 +174,51 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+    # Zeitpunkt, zu dem die Adresse per Link bestätigt wurde (None = unbestätigt).
+    # Bestehende Konten vor dieser Funktion gelten als unbestätigt; die App bleibt
+    # nutzbar, nur kostenpflichtige Aktionen verlangen eine bestätigte Adresse.
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Konto gelöscht (anonymisiert): Login und Token-Nutzung sind gesperrt. Die Zeile
+    # bleibt, weil Ausgaben/Zahlungen ehemaliger Mitglieder auf sie verweisen.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     memberships: Mapped[list["HouseholdMember"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    account_tokens: Mapped[list["UserToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class UserToken(Base):
+    """Einmal-Token für Konto-Aktionen (Passwort zurücksetzen, E-Mail bestätigen).
+
+    Siehe services/account_tokens.py. Per-User, nicht per-Household.
+    """
+
+    __tablename__ = "user_tokens"
+    __table_args__ = (
+        Index("ix_user_tokens_user_purpose", "user_id", "purpose"),
+        Index("ix_user_tokens_token_hash", "token_hash", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    user: Mapped["User"] = relationship(back_populates="account_tokens")
 
 
 class RefreshToken(Base):

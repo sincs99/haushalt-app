@@ -17,6 +17,7 @@ from app.core.rate_limit import limiter
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import SessionLocal
 from app.routers import (
+    account,
     ai,
     auth,
     budgets,
@@ -29,6 +30,7 @@ from app.routers import (
     files,
     food,
     households,
+    meta,
     notes,
     pets,
     plants,
@@ -165,6 +167,8 @@ app.add_middleware(
 app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth.router)
+app.include_router(account.router)
+app.include_router(meta.router)
 app.include_router(shopping.list_router)
 app.include_router(shopping.router)
 app.include_router(todos.router)

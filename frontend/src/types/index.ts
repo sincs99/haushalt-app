@@ -105,6 +105,8 @@ export interface UserInfo {
   id: string
   email: string
   display_name: string
+  /** E-Mail-Adresse per Link bestätigt (false bei Konten vor dieser Funktion) */
+  email_verified?: boolean
 }
 
 // ── Expenses ──
@@ -289,6 +291,7 @@ export interface MeResponse {
   id: string
   email: string
   display_name: string
+  email_verified?: boolean
   households: HouseholdInfo[]
 }
 

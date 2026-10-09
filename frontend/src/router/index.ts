@@ -33,6 +33,23 @@ const router = createRouter({
       component: () => import('../views/RegisterView.vue'),
     },
     {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: () => import('../views/ForgotPasswordView.vue'),
+    },
+    {
+      // Ziel des Links aus der «Passwort vergessen»-Mail
+      path: '/reset-password',
+      name: 'reset-password',
+      component: () => import('../views/ResetPasswordView.vue'),
+    },
+    {
+      // Ziel des Links aus der Bestätigungs-Mail (mit und ohne Login erreichbar)
+      path: '/verify-email',
+      name: 'verify-email',
+      component: () => import('../views/VerifyEmailView.vue'),
+    },
+    {
       path: '/no-household',
       name: 'no-household',
       component: () => import('../views/NoHouseholdView.vue'),

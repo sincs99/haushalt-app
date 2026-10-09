@@ -130,6 +130,11 @@ export const useAuthStore = defineStore('auth', () => {
     _applyTokens(response.data)
   }
 
+  /** Nach erfolgreicher Bestätigung per Link (VerifyEmailView) oder Passwort-Reset. */
+  function markEmailVerified() {
+    if (user.value) user.value = { ...user.value, email_verified: true }
+  }
+
   /** Übernimmt den Access-Token einer Login-/Register-/Refresh-Antwort (Cookie setzt der Browser). */
   function _applyTokens(data: TokenPayload) {
     token.value = data.access_token
@@ -200,6 +205,7 @@ export const useAuthStore = defineStore('auth', () => {
       id: data.id,
       email: data.email,
       display_name: data.display_name,
+      email_verified: data.email_verified === true,
     }
     households.value = data.households
 
@@ -449,6 +455,9 @@ export const useAuthStore = defineStore('auth', () => {
     switchHousehold,
     leaveHousehold,
     logout,
+    markEmailVerified,
+    /** Neues Token-Paar übernehmen (z. B. nach Passwort-Änderung, die andere Geräte abmeldet). */
+    applyTokenResponse: _applyTokens,
     // Socket-Event-Handler
     handleHouseholdUpdated,
     handleMemberJoined,

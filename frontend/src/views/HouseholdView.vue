@@ -23,6 +23,7 @@ import { PhUserMinus, PhSignOut, PhPlus, PhShareNetwork, PhQrCode } from '@phosp
 import PageHeader from '../components/ui/PageHeader.vue'
 import PushSettings from '../components/PushSettings.vue'
 import AiSettingsCard from '../components/AiSettingsCard.vue'
+import AccountSettingsCard from '../components/AccountSettingsCard.vue'
 import WidgetSettingsCard from '../components/WidgetSettingsCard.vue'
 import ConnectionStatus from '../components/ConnectionStatus.vue'
 
@@ -627,6 +628,9 @@ watch(() => authStore.currentHouseholdId, (id) => {
 
     <!-- ══ Sektion: KI-Assistent (nur wenn auf dem Server eingerichtet) ══ -->
     <AiSettingsCard />
+
+    <!-- ══ Sektion: Konto (Passwort ändern, Konto löschen) ══ -->
+    <AccountSettingsCard />
 
     <BaseCard>
       <h2 class="section-title">{{ $t('household.accountActions') }}</h2>

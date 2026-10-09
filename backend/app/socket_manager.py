@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import time
 import uuid
@@ -7,16 +8,117 @@ import socketio
 from jwt import PyJWTError as JWTError
 from starlette.concurrency import run_in_threadpool
 
+from app.core.config import settings
 from app.core.security import decode_access_token_with_expiry
 from app.database import SessionLocal
 from app.models import HouseholdMember, User
 
 logger = logging.getLogger(__name__)
 
+
+def _build_client_manager():
+    """Redis-Message-Queue, damit Events alle Worker/Container erreichen (leer = ein Prozess)."""
+    url = settings.socketio_message_queue.strip()
+    if not url:
+        return None
+    return socketio.AsyncRedisManager(url)
+
+
 # cors_allowed_origins=[] deaktiviert Engine.IO-CORS bewusst —
 # CORS wird von FastAPIs CORSMiddleware gehandhabt (wirkt auch auf den /socket.io-Mount).
-sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=[])
+sio = socketio.AsyncServer(
+    async_mode="asgi", cors_allowed_origins=[], client_manager=_build_client_manager()
+)
 socket_app = socketio.ASGIApp(sio)
+
+# ---------------------------------------------------------------------------
+# Kontrollkanal für mehrere Prozesse
+#
+# Die Socket.IO-Message-Queue verteilt ``emit`` an alle Prozesse. Teilnehmerlisten
+# (``get_participants``) kennt aber jeder Prozess nur für seine eigenen Verbindungen.
+# «Alle Verbindungen eines Users trennen» (Logout, Sperre) und «User aus dem
+# Haushalts-Room werfen» laufen deshalb zusätzlich über einen eigenen Redis-Kanal:
+# jeder Prozess führt den Befehl für seine lokalen Verbindungen aus.
+# ---------------------------------------------------------------------------
+
+CONTROL_CHANNEL = "casa:socket-control"
+HOST_ID = uuid.uuid4().hex
+_control_task: asyncio.Task | None = None
+
+
+def _control_enabled() -> bool:
+    return bool(settings.socketio_message_queue.strip())
+
+
+async def _publish_control(message: dict) -> None:
+    if not _control_enabled():
+        return
+    try:
+        import redis.asyncio as aioredis
+
+        client = aioredis.from_url(settings.socketio_message_queue.strip())
+        try:
+            await client.publish(CONTROL_CHANNEL, json.dumps({**message, "host": HOST_ID}))
+        finally:
+            await client.aclose()
+    except Exception:
+        logger.warning("Socket control publish failed (%s)", message.get("method"), exc_info=True)
+
+
+async def handle_control_message(message: dict) -> None:
+    """Führt einen Kontroll-Befehl eines anderen Prozesses lokal aus."""
+    if message.get("host") == HOST_ID:
+        return
+    method = message.get("method")
+    try:
+        user_id = uuid.UUID(str(message.get("user_id")))
+    except ValueError:
+        return
+    if method == "disconnect_user":
+        await _disconnect_user_local(user_id, str(message.get("reason") or "revoked"))
+    elif method == "evict_user":
+        try:
+            household_id = uuid.UUID(str(message.get("household_id")))
+        except ValueError:
+            return
+        await _evict_user_local(household_id, user_id)
+
+
+async def control_listener() -> None:
+    """Hintergrund-Task (main.py lifespan): hört auf dem Kontrollkanal."""
+    import redis.asyncio as aioredis
+
+    while True:
+        try:
+            client = aioredis.from_url(settings.socketio_message_queue.strip())
+            pubsub = client.pubsub()
+            await pubsub.subscribe(CONTROL_CHANNEL)
+            logger.info("Socket control listener subscribed (%s)", CONTROL_CHANNEL)
+            async for raw in pubsub.listen():
+                if raw.get("type") != "message":
+                    continue
+                try:
+                    await handle_control_message(json.loads(raw["data"]))
+                except Exception:
+                    logger.warning("Socket control message failed", exc_info=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("Socket control listener lost Redis — retrying in 5s", exc_info=True)
+            await asyncio.sleep(5)
+
+
+def start_control_listener() -> None:
+    global _control_task
+    if _control_enabled() and _control_task is None:
+        _control_task = asyncio.create_task(control_listener())
+
+
+def stop_control_listener() -> None:
+    global _control_task
+    if _control_task is not None:
+        _control_task.cancel()
+        _control_task = None
 
 # Wird beim App-Start gesetzt (main.py), damit sync Endpoints emit aufrufen können
 _event_loop = None
@@ -279,9 +381,17 @@ async def emit_to_household(
     room = _household_room(household_id)
     await sio.emit(event_name, data, room=room)
     if evict_user_id is not None:
-        for sid, _ in list(sio.manager.get_participants("/", _user_room(evict_user_id))):
-            await sio.leave_room(sid, room)
-        logger.info("Evicted user %s from room %s", evict_user_id, room)
+        await _evict_user_local(household_id, evict_user_id)
+        await _publish_control(
+            {"method": "evict_user", "household_id": str(household_id), "user_id": str(evict_user_id)}
+        )
+
+
+async def _evict_user_local(household_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    room = _household_room(household_id)
+    for sid, _ in list(sio.manager.get_participants("/", _user_room(user_id))):
+        await sio.leave_room(sid, room)
+    logger.info("Evicted user %s from room %s", user_id, room)
 
 
 def emit_to_household_sync(
@@ -305,10 +415,15 @@ def emit_to_household_sync(
         )
 
 
-async def disconnect_user(user_id: uuid.UUID, reason: str):
-    """Trennt alle Socket-Verbindungen eines Users (z.B. nach Logout)."""
+async def _disconnect_user_local(user_id: uuid.UUID, reason: str) -> None:
     for sid, _ in list(sio.manager.get_participants("/", _user_room(user_id))):
         await end_session(sid, reason)
+
+
+async def disconnect_user(user_id: uuid.UUID, reason: str):
+    """Trennt alle Socket-Verbindungen eines Users (z.B. nach Logout) — in allen Prozessen."""
+    await _disconnect_user_local(user_id, reason)
+    await _publish_control({"method": "disconnect_user", "user_id": str(user_id), "reason": reason})
 
 
 def disconnect_user_sync(user_id: uuid.UUID, reason: str):

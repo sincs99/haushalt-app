@@ -48,12 +48,36 @@ from app.routers import (
 )
 from app.services.file_cleanup import cleanup_loop
 from app.services.push_service import scheduler_loop
-from app.socket_manager import set_event_loop, socket_app
+from app.socket_manager import (
+    set_event_loop,
+    socket_app,
+    start_control_listener,
+    stop_control_listener,
+)
 
 logger = logging.getLogger("uvicorn.error")
 
 # Tag-Tokens (NFC/QR) stehen im URL-Pfad → in Access-Logs schwärzen
 install_tag_token_redaction()
+
+
+def init_sentry() -> bool:
+    """Fehler-Monitoring, nur mit SENTRY_DSN. Keine Personendaten (send_default_pii=False)."""
+    dsn = settings.sentry_dsn.strip()
+    if not dsn:
+        return False
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=dsn,
+        environment=settings.environment,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+        send_default_pii=False,
+    )
+    return True
+
+
+_sentry_active = init_sentry()
 
 _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 
@@ -119,14 +143,18 @@ async def lifespan(app: FastAPI):
     token_ttl = f"{settings.access_token_expire_minutes}min"
 
     logger.info(
-        "Casa starting — env=%s, db=%s, cors=%s, token_ttl=%s",
+        "Casa starting — env=%s, db=%s, cors=%s, token_ttl=%s, rate_limit=%s, socket_queue=%s, sentry=%s",
         settings.environment,
         db_display,
         cors_display,
         token_ttl,
+        settings.rate_limit_storage_uri.split("://", 1)[0],
+        "redis" if settings.socketio_message_queue.strip() else "in-process",
+        "on" if _sentry_active else "off",
     )
 
     set_event_loop(asyncio.get_running_loop())
+    start_control_listener()
 
     push_task = None
     if settings.push_enabled:
@@ -138,6 +166,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    stop_control_listener()
     cleanup_task.cancel()
     if push_task:
         push_task.cancel()

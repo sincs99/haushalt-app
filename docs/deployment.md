@@ -129,8 +129,8 @@ Erstelle in Nginx Proxy Manager einen neuen **Proxy Host** für die Casa-Domain:
 
 ```
 Internet → NPM (TLS) → casa-frontend:80 (Nginx)
-                          ├── /api/*       → backend:8000
-                          ├── /socket.io/* → backend:8000 (WebSocket)
+                          ├── /api/*       → backend:8000 ──┬── postgres:5432
+                          ├── /socket.io/* → backend:8000   └── redis:6379 (Rate-Limits, Socket.IO-Queue)
                           └── /*           → Vue SPA (statisch)
 ```
 
@@ -335,3 +335,46 @@ powercfg /change hibernate-timeout-ac 0
 ### Warum das funktioniert
 
 `restart: unless-stopped` in `docker-compose.prod.yml` sorgt dafür, dass alle Container **automatisch starten**, sobald Docker Desktop läuft. Die drei Bedingungen oben stellen sicher, dass Docker Desktop nach jedem Reboot zuverlässig startet.
+
+---
+
+## 8. Mehrere Backend-Prozesse (Redis)
+
+`docker-compose.prod.yml` startet einen Redis-Container (ohne Persistenz) und setzt
+`RATE_LIMIT_STORAGE_URI` und `SOCKETIO_MESSAGE_QUEUE` darauf. Damit teilen sich alle
+Backend-Prozesse die Rate-Limit-Zähler und die Socket.IO-Räume, und Logout/Sperren
+trennen die Verbindungen eines Users in jedem Prozess (Kontrollkanal `casa:socket-control`).
+
+Mehr Worker einschalten (CPU-Kerne beachten, 2–4 reichen lange):
+
+```
+UVICORN_WORKERS=2
+```
+
+Ohne Redis (`SOCKETIO_MESSAGE_QUEUE` leer, `RATE_LIMIT_STORAGE_URI=memory://`) muss
+`UVICORN_WORKERS=1` bleiben. Fällt Redis aus, zählt jeder Prozess die Rate-Limits
+vorübergehend im Speicher weiter; Socket-Events erreichen dann nur noch Clients desselben Prozesses.
+
+## 9. Fehler-Monitoring (Sentry)
+
+Optional, ohne Personendaten (`send_default_pii=False`):
+
+```
+SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<project>
+SENTRY_TRACES_SAMPLE_RATE=0
+```
+
+Der Startup-Log zeigt `sentry=on`. Zusätzlich zum Health-Check `/api/health` (DB-Prüfung)
+empfiehlt sich ein externer Uptime-Monitor auf diese Adresse.
+
+## 10. E-Mail, Tarife und Betreiber-Zugang
+
+- **E-Mail** (Passwort vergessen, Bestätigung): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
+  `SMTP_PASSWORD`, `SMTP_TLS`, `MAIL_FROM`, `APP_BASE_URL` (öffentliche Adresse für Links).
+  Ohne `SMTP_HOST` bleiben die Funktionen in Produktion ausgeblendet.
+- **Tarife/Stripe** (nur SaaS-Betrieb): siehe [`monetization.md`](monetization.md).
+- **Plattform-Admin** (Betreiber-Ansicht `/admin`, Tarife manuell setzen, Konten sperren):
+
+```powershell
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend python -m scripts.make_platform_admin --email admin@example.com
+```

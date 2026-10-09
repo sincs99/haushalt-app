@@ -82,6 +82,22 @@ class Settings(BaseSettings):
     billing_success_path: str = "/household?billing=success"
     billing_cancel_path: str = "/household?billing=cancel"
 
+    # ------------------------------------------------------------------
+    # Betrieb mit mehreren Prozessen (uvicorn --workers > 1 oder mehrere Container)
+    #
+    # Beide Werte zeigen dann auf denselben Redis. Ohne Redis läuft genau ein
+    # Prozess: Rate-Limits im Speicher, Socket.IO ohne Message-Queue.
+    # ------------------------------------------------------------------
+    # slowapi/limits-Storage, z. B. redis://redis:6379/0
+    rate_limit_storage_uri: str = "memory://"
+    # python-socketio Message-Queue, z. B. redis://redis:6379/1 (leer = ein Prozess)
+    socketio_message_queue: str = ""
+
+    # Fehler-Monitoring (optional). Leer = aus. Es werden keine Inhalte der Haushalte
+    # und keine Personendaten mitgeschickt (send_default_pii=False).
+    sentry_dsn: str = ""
+    sentry_traces_sample_rate: float = 0.0
+
     @property
     def push_enabled(self) -> bool:
         return bool(self.vapid_public_key and self.vapid_private_key)

@@ -9,6 +9,7 @@ import { useI18n } from 'vue-i18n'
 import { errorText } from '../composables/useToast'
 import { PhHouse } from '@phosphor-icons/vue'
 import { useConfigStore } from '../stores/config'
+import LegalLinks from '../components/LegalLinks.vue'
 
 const router = useRouter()
 const configStore = useConfigStore()
@@ -115,6 +116,7 @@ async function handleLogin() {
           {{ $t('auth.noAccount') }} <router-link :to="registerLink">{{ $t('auth.register') }}</router-link>
         </p>
       </form>
+      <LegalLinks />
     </BaseCard>
   </div>
 </template>

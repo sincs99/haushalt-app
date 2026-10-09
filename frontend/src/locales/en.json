@@ -647,7 +647,8 @@
     "BILLING_NO_SUBSCRIPTION": "This household has no online subscription",
     "BILLING_PROVIDER_ERROR": "The payment provider is currently unavailable",
     "EMAIL_VERIFICATION_REQUIRED": "Please confirm your e-mail address first",
-    "WEBHOOK_SIGNATURE_INVALID": "Invalid signature"
+    "WEBHOOK_SIGNATURE_INVALID": "Invalid signature",
+    "TERMS_ACCEPTANCE_REQUIRED": "Please accept the terms of use and the privacy policy"
   },
   "push": {
     "title": "Notifications",
@@ -1418,5 +1419,16 @@
     "userDeactivated": "Account disabled",
     "loadError": "Data could not be loaded",
     "saveError": "Saving failed"
+  },
+  "legal": {
+    "title": "Legal",
+    "imprint": "Imprint",
+    "privacy": "Privacy",
+    "terms": "Terms of use",
+    "acceptPrefix": "I accept the",
+    "acceptAnd": "and the",
+    "acceptRequired": "Please accept the terms of use and the privacy policy",
+    "operatorMissing": "[operator details missing – set OPERATOR_* in the configuration]",
+    "loadError": "The text could not be loaded."
   }
 }

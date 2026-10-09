@@ -50,6 +50,12 @@ const router = createRouter({
       component: () => import('../views/VerifyEmailView.vue'),
     },
     {
+      // Impressum, Datenschutz, AGB — ohne Login erreichbar (Pflicht vor der Anmeldung)
+      path: '/legal/:page(imprint|privacy|terms)',
+      name: 'legal',
+      component: () => import('../views/LegalView.vue'),
+    },
+    {
       path: '/no-household',
       name: 'no-household',
       component: () => import('../views/NoHouseholdView.vue'),

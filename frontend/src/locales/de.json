@@ -647,7 +647,8 @@
     "BILLING_NO_SUBSCRIPTION": "Für diesen Haushalt gibt es kein Online-Abo",
     "BILLING_PROVIDER_ERROR": "Der Zahlungsanbieter ist gerade nicht erreichbar",
     "EMAIL_VERIFICATION_REQUIRED": "Bitte bestätige zuerst deine E-Mail-Adresse",
-    "WEBHOOK_SIGNATURE_INVALID": "Ungültige Signatur"
+    "WEBHOOK_SIGNATURE_INVALID": "Ungültige Signatur",
+    "TERMS_ACCEPTANCE_REQUIRED": "Bitte akzeptiere die Nutzungsbedingungen und die Datenschutzerklärung"
   },
   "push": {
     "title": "Benachrichtigungen",
@@ -1418,5 +1419,16 @@
     "userDeactivated": "Konto gesperrt",
     "loadError": "Daten konnten nicht geladen werden",
     "saveError": "Speichern hat nicht geklappt"
+  },
+  "legal": {
+    "title": "Rechtliches",
+    "imprint": "Impressum",
+    "privacy": "Datenschutz",
+    "terms": "Nutzungsbedingungen",
+    "acceptPrefix": "Ich akzeptiere die",
+    "acceptAnd": "und die",
+    "acceptRequired": "Bitte akzeptiere die Nutzungsbedingungen und die Datenschutzerklärung",
+    "operatorMissing": "[Betreiberangaben fehlen – OPERATOR_* in der Konfiguration setzen]",
+    "loadError": "Der Text konnte nicht geladen werden."
   }
 }

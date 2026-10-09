@@ -25,6 +25,7 @@ import PushSettings from '../components/PushSettings.vue'
 import AiSettingsCard from '../components/AiSettingsCard.vue'
 import AccountSettingsCard from '../components/AccountSettingsCard.vue'
 import BillingCard from '../components/BillingCard.vue'
+import LegalLinks from '../components/LegalLinks.vue'
 import WidgetSettingsCard from '../components/WidgetSettingsCard.vue'
 import ConnectionStatus from '../components/ConnectionStatus.vue'
 
@@ -651,6 +652,8 @@ watch(() => authStore.currentHouseholdId, (id) => {
         </BaseButton>
       </div>
     </BaseCard>
+
+    <LegalLinks />
 
     <!-- ══ Dialog: Haushalt verlassen ══ -->
     <BaseDialog

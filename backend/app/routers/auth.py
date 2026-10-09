@@ -71,6 +71,8 @@ class RegisterRequest(BaseModel):
     display_name: str
     household_name: str | None = None
     invite_code: str | None = None
+    # Zustimmung zu Nutzungsbedingungen und Datenschutz (Pflicht bei LEGAL_TERMS_REQUIRED)
+    accept_terms: bool = False
 
     @model_validator(mode="after")
     def exactly_one_household_method(self):
@@ -261,6 +263,13 @@ def register(
     background: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
+    if settings.legal_terms_required and not data.accept_terms:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.TERMS_ACCEPTANCE_REQUIRED, "Terms of service and privacy policy must be accepted"
+            ),
+        )
     existing = db.query(User).filter_by(email=data.email).first()
     if existing:
         raise HTTPException(status_code=400, detail=error_detail(ErrorCode.EMAIL_ALREADY_REGISTERED, "Email already registered"))
@@ -298,6 +307,9 @@ def register(
         password_hash=hash_password(data.password),
         display_name=data.display_name,
     )
+    if data.accept_terms:
+        user.terms_accepted_at = datetime.now(timezone.utc)
+        user.terms_version = settings.legal_terms_version
     db.add(user)
     db.flush()
 

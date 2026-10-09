@@ -93,6 +93,20 @@ class Settings(BaseSettings):
     # python-socketio Message-Queue, z. B. redis://redis:6379/1 (leer = ein Prozess)
     socketio_message_queue: str = ""
 
+    # ------------------------------------------------------------------
+    # Rechtliches: Betreiberangaben für Impressum/Datenschutz (Frontend-Seiten
+    # /legal/…) und Zustimmung zu Nutzungsbedingungen bei der Registrierung.
+    # Die Texte selbst liegen als Markdown-Vorlagen im Frontend (public/legal/).
+    # ------------------------------------------------------------------
+    operator_name: str = ""
+    # Mehrere Zeilen mit " | " trennen, z. B. "Musterstrasse 1 | 8000 Zürich | Schweiz"
+    operator_address: str = ""
+    operator_email: str = ""
+    # true = Registrierung verlangt die Zustimmung (SaaS-Betrieb); Self-Hosting: false
+    legal_terms_required: bool = False
+    # Stand der Texte; bei Änderung erhöhen (wird am Konto gespeichert)
+    legal_terms_version: str = "2026-10"
+
     # Fehler-Monitoring (optional). Leer = aus. Es werden keine Inhalte der Haushalte
     # und keine Personendaten mitgeschickt (send_default_pii=False).
     sentry_dsn: str = ""
@@ -132,6 +146,10 @@ class Settings(BaseSettings):
             and self.stripe_webhook_secret.strip()
             and (self.stripe_price_id_monthly.strip() or self.stripe_price_id_yearly.strip())
         )
+
+    @property
+    def operator_address_lines(self) -> list[str]:
+        return [part.strip() for part in self.operator_address.split("|") if part.strip()]
 
     @property
     def public_base_url(self) -> str:

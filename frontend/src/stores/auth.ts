@@ -179,8 +179,9 @@ export const useAuthStore = defineStore('auth', () => {
     password: string,
     displayName: string,
     options: { householdName: string } | { inviteCode: string },
+    acceptTerms = false,
   ) {
-    const payload: Record<string, string> = {
+    const payload: Record<string, string | boolean> = {
       email,
       password,
       display_name: displayName,
@@ -190,6 +191,7 @@ export const useAuthStore = defineStore('auth', () => {
     } else {
       payload.invite_code = options.inviteCode
     }
+    if (acceptTerms) payload.accept_terms = true
     const response = await api.post('/api/auth/register', payload, authRequestConfig())
     _applyTokens(response.data)
 

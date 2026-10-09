@@ -312,3 +312,45 @@ def test_delete_account_keeps_shared_expenses_and_promotes_admin(client, db, use
     assert bob_membership.role == "admin"
     tokens = db.query(RefreshToken).filter_by(user_id=alice_id).all()
     assert all(t.revoked_at is not None for t in tokens)
+
+
+# ---------------------------------------------------------------------------
+# Rechtliches: Zustimmung bei der Registrierung, Betreiberangaben
+# ---------------------------------------------------------------------------
+
+
+def test_terms_required_blocks_registration(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "legal_terms_required", True)
+    monkeypatch.setattr(settings, "legal_terms_version", "2026-10")
+    payload = {"email": "t@test.com", "password": "password123", "display_name": "T", "household_name": "H"}
+    resp = client.post("/api/auth/register", json=payload)
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == ErrorCode.TERMS_ACCEPTANCE_REQUIRED
+    assert db.query(User).filter_by(email="t@test.com").first() is None
+
+    resp = client.post("/api/auth/register", json={**payload, "accept_terms": True})
+    assert resp.status_code == 200
+    user = db.query(User).filter_by(email="t@test.com").one()
+    assert user.terms_accepted_at is not None and user.terms_version == "2026-10"
+
+
+def test_terms_optional_by_default(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "legal_terms_required", False)
+    payload = {"email": "t2@test.com", "password": "password123", "display_name": "T", "household_name": "H"}
+    assert client.post("/api/auth/register", json=payload).status_code == 200
+    assert db.query(User).filter_by(email="t2@test.com").one().terms_accepted_at is None
+
+
+def test_public_config_operator(client, monkeypatch):
+    monkeypatch.setattr(settings, "operator_name", "Muster GmbH")
+    monkeypatch.setattr(settings, "operator_address", "Musterstrasse 1 | 8000 Zürich | Schweiz")
+    monkeypatch.setattr(settings, "operator_email", "hallo@example.com")
+    monkeypatch.setattr(settings, "legal_terms_required", True)
+    body = client.get("/api/config").json()
+    assert body["operator"] == {
+        "name": "Muster GmbH",
+        "address_lines": ["Musterstrasse 1", "8000 Zürich", "Schweiz"],
+        "email": "hallo@example.com",
+    }
+    assert body["terms_required"] is True
+    assert body["terms_version"] == settings.legal_terms_version

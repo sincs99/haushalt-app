@@ -9,9 +9,21 @@ export interface PublicConfig {
   billing_enabled: boolean
   /** Stripe eingerichtet → Upgrade im Web möglich */
   checkout_available: boolean
+  /** Registrierung verlangt Zustimmung zu AGB/Datenschutz */
+  terms_required: boolean
+  terms_version: string
+  /** Betreiberangaben für Impressum/Datenschutz */
+  operator: { name: string; address_lines: string[]; email: string }
 }
 
-const DEFAULTS: PublicConfig = { mail_enabled: false, billing_enabled: false, checkout_available: false }
+const DEFAULTS: PublicConfig = {
+  mail_enabled: false,
+  billing_enabled: false,
+  checkout_available: false,
+  terms_required: false,
+  terms_version: '',
+  operator: { name: '', address_lines: [], email: '' },
+}
 
 export const useConfigStore = defineStore('config', () => {
   const config = ref<PublicConfig>({ ...DEFAULTS })

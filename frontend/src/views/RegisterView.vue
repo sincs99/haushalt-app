@@ -8,8 +8,11 @@ import { isValidEmail, PASSWORD_MIN_LENGTH, useAuthStore } from '../stores/auth'
 import { useI18n } from 'vue-i18n'
 import { errorText } from '../composables/useToast'
 import { PhHouse } from '@phosphor-icons/vue'
+import { useConfigStore } from '../stores/config'
+import LegalLinks from '../components/LegalLinks.vue'
 
 const router = useRouter()
+const configStore = useConfigStore()
 const route = useRoute()
 const authStore = useAuthStore()
 const { t } = useI18n()
@@ -22,6 +25,7 @@ const password = ref('')
 const displayName = ref('')
 const householdName = ref('')
 const inviteCode = ref('')
+const acceptTerms = ref(false)
 const error = ref('')
 const isLoading = ref(false)
 const submitted = ref(false)
@@ -57,11 +61,15 @@ const householdNameError = computed(() =>
 const inviteCodeError = computed(() =>
   submitted.value && mode.value === 'join' && !inviteCode.value.trim() ? t('auth.inviteCodeRequired') : undefined,
 )
+const termsError = computed(() =>
+  submitted.value && configStore.config.terms_required && !acceptTerms.value ? t('legal.acceptRequired') : undefined,
+)
 const hasErrors = computed(() =>
-  !!(emailError.value || passwordError.value || displayNameError.value || householdNameError.value || inviteCodeError.value),
+  !!(emailError.value || passwordError.value || displayNameError.value || householdNameError.value || inviteCodeError.value || termsError.value),
 )
 
 onMounted(() => {
+  configStore.load()
   // Autofokus auf das erste Feld (E-Mail)
   formRef.value?.querySelector('input')?.focus()
 
@@ -82,9 +90,9 @@ async function handleRegister() {
   const name = displayName.value.trim()
   try {
     if (mode.value === 'create') {
-      await authStore.register(mail, password.value, name, { householdName: householdName.value.trim() })
+      await authStore.register(mail, password.value, name, { householdName: householdName.value.trim() }, acceptTerms.value)
     } else {
-      await authStore.register(mail, password.value, name, { inviteCode: inviteCode.value.trim().toUpperCase() })
+      await authStore.register(mail, password.value, name, { inviteCode: inviteCode.value.trim().toUpperCase() }, acceptTerms.value)
     }
     router.push(redirect.value || '/dashboard')
   } catch (err: any) {
@@ -174,6 +182,17 @@ async function handleRegister() {
           :error="inviteCodeError"
         />
 
+        <label v-if="configStore.config.terms_required" class="terms-row">
+          <input v-model="acceptTerms" type="checkbox" class="terms-row__box" />
+          <span>
+            {{ $t('legal.acceptPrefix') }}
+            <router-link to="/legal/terms" target="_blank">{{ $t('legal.terms') }}</router-link>
+            {{ $t('legal.acceptAnd') }}
+            <router-link to="/legal/privacy" target="_blank">{{ $t('legal.privacy') }}</router-link>
+          </span>
+        </label>
+        <p v-if="termsError" class="auth-error" role="alert">{{ termsError }}</p>
+
         <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
 
         <BaseButton type="submit" variant="primary" :loading="isLoading" :disabled="isLoading" class="auth-submit">
@@ -184,6 +203,7 @@ async function handleRegister() {
           {{ $t('auth.hasAccount') }} <router-link :to="loginLink">{{ $t('auth.loginHere') }}</router-link>
         </p>
       </form>
+      <LegalLinks />
     </BaseCard>
   </div>
 </template>
@@ -218,5 +238,25 @@ async function handleRegister() {
   background: var(--color-surface);
   color: var(--color-text);
   box-shadow: var(--shadow-sm);
+}
+
+.terms-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.terms-row__box {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--color-primary);
+}
+
+.terms-row a {
+  color: var(--color-primary);
 }
 </style>

@@ -206,6 +206,7 @@ export const useAuthStore = defineStore('auth', () => {
       email: data.email,
       display_name: data.display_name,
       email_verified: data.email_verified === true,
+      is_platform_admin: data.is_platform_admin === true,
     }
     households.value = data.households
 
@@ -332,11 +333,12 @@ export const useAuthStore = defineStore('auth', () => {
 
   // ── Socket-Event-Handler für Household-Events ──
 
-  function handleHouseholdUpdated(data: { id: string; name: string; ai_enabled?: boolean }) {
+  function handleHouseholdUpdated(data: { id: string; name: string; ai_enabled?: boolean; plan?: string }) {
     const h = households.value.find(h => h.id === data.id)
     if (!h) return
     h.name = data.name
     if (typeof data.ai_enabled === 'boolean') h.ai_enabled = data.ai_enabled
+    if (typeof data.plan === 'string') h.plan = data.plan
   }
 
   function handleMemberJoined(_data: { household_id: string; user_id: string; display_name: string; role: string }) {

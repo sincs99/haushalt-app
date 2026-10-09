@@ -24,6 +24,7 @@ import PageHeader from '../components/ui/PageHeader.vue'
 import PushSettings from '../components/PushSettings.vue'
 import AiSettingsCard from '../components/AiSettingsCard.vue'
 import AccountSettingsCard from '../components/AccountSettingsCard.vue'
+import BillingCard from '../components/BillingCard.vue'
 import WidgetSettingsCard from '../components/WidgetSettingsCard.vue'
 import ConnectionStatus from '../components/ConnectionStatus.vue'
 
@@ -628,6 +629,15 @@ watch(() => authStore.currentHouseholdId, (id) => {
 
     <!-- ══ Sektion: KI-Assistent (nur wenn auf dem Server eingerichtet) ══ -->
     <AiSettingsCard />
+
+    <!-- ══ Sektion: Tarif (nur im SaaS-Betrieb) ══ -->
+    <BillingCard />
+
+    <!-- ══ Sektion: Betreiber (nur Plattform-Admins) ══ -->
+    <BaseCard v-if="authStore.user?.is_platform_admin">
+      <h2 class="section-title">{{ $t('admin.title') }}</h2>
+      <BaseButton variant="secondary" size="sm" @click="router.push('/admin')">{{ $t('admin.open') }}</BaseButton>
+    </BaseCard>
 
     <!-- ══ Sektion: Konto (Passwort ändern, Konto löschen) ══ -->
     <AccountSettingsCard />

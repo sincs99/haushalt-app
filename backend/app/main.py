@@ -18,8 +18,10 @@ from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import SessionLocal
 from app.routers import (
     account,
+    admin,
     ai,
     auth,
+    billing,
     budgets,
     calendars,
     chores,
@@ -169,6 +171,9 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.include_router(auth.router)
 app.include_router(account.router)
 app.include_router(meta.router)
+app.include_router(admin.router)
+app.include_router(billing.router)
+app.include_router(billing.webhook_router)
 app.include_router(shopping.list_router)
 app.include_router(shopping.router)
 app.include_router(todos.router)

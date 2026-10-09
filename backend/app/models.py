@@ -78,7 +78,15 @@ class Household(Base):
     ai_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Tarif ("free" | "premium"); nur relevant bei BILLING_ENABLED (services/entitlements.py).
+    # plan_expires_at: Ende der bezahlten Periode inkl. Karenz; None = unbefristet.
+    plan: Mapped[str] = mapped_column(String(20), nullable=False, default="free", server_default="free")
+    plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
 
+    subscriptions: Mapped[list["Subscription"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
     members: Mapped[list["HouseholdMember"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
@@ -183,12 +191,80 @@ class User(Base):
     # Konto gelöscht (anonymisiert): Login und Token-Nutzung sind gesperrt. Die Zeile
     # bleibt, weil Ausgaben/Zahlungen ehemaliger Mitglieder auf sie verweisen.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Vom Plattform-Admin gesperrt (Missbrauch, Zahlungsstreit): Login gesperrt, Daten bleiben
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    # Betreiber-Zugang (routers/admin.py); wird nur per CLI/Admin vergeben, nie per API-Registrierung
+    is_platform_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Zustimmung zu Nutzungsbedingungen/Datenschutz bei der Registrierung (routers/meta.py)
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    terms_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     memberships: Mapped[list["HouseholdMember"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
     account_tokens: Mapped[list["UserToken"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class Subscription(Base):
+    """Abo eines Haushalts bei einem Zahlungsanbieter (services/billing).
+
+    provider: "stripe" | "apple" | "google" | "manual" (Plattform-Admin).
+    status: Anbieter-Status (active, trialing, past_due, canceled, unpaid, expired …).
+    Pro Anbieter und Abo-ID genau eine Zeile; der Haushalt-Tarif wird aus dem
+    aktuellsten Abo abgeleitet (services/billing/service.py).
+    """
+
+    __tablename__ = "subscriptions"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_subscription_id", name="uq_subscriptions_provider_id"),
+        Index("ix_subscriptions_household_id", "household_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_subscription_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Freitext für manuelle Vergaben (Grund, Ticket) — nie an normale Nutzer ausgeliefert
+    note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    household: Mapped["Household"] = relationship(back_populates="subscriptions")
+
+
+class BillingEvent(Base):
+    """Verarbeitete Webhook-Ereignisse (Idempotenz: Anbieter liefern Events mehrfach)."""
+
+    __tablename__ = "billing_events"
+    __table_args__ = (UniqueConstraint("provider", "event_id", name="uq_billing_events_provider_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
 

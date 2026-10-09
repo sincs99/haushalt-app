@@ -50,7 +50,7 @@ def _token_from(mail: Mail) -> str:
 
 def test_public_config_reports_mail(client, monkeypatch):
     monkeypatch.setattr(settings, "mail_backend", "off")
-    assert client.get("/api/config").json() == {"mail_enabled": False}
+    assert client.get("/api/config").json()["mail_enabled"] is False
     monkeypatch.setattr(settings, "mail_backend", "console")
     assert client.get("/api/config").json()["mail_enabled"] is True
 

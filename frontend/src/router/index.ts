@@ -134,6 +134,13 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      // Betreiber-Ansicht; die View leitet Nicht-Admins zum Start um
+      path: '/admin',
+      name: 'admin',
+      component: () => import('../views/AdminView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/tags',
       name: 'tags',
       component: () => import('../views/TagsView.vue'),

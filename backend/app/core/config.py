@@ -51,6 +51,37 @@ class Settings(BaseSettings):
     password_reset_token_minutes: int = 60
     email_verification_token_hours: int = 48
 
+    # ------------------------------------------------------------------
+    # Tarife und Abrechnung (SaaS-Betrieb). BILLING_ENABLED=false (Standard,
+    # Self-Hosting): jeder Haushalt hat alle Funktionen mit den globalen Limits
+    # oben (HOUSEHOLD_STORAGE_QUOTA_MB, AI_DAILY_LIMIT_PER_HOUSEHOLD).
+    # BILLING_ENABLED=true: Haushalte haben einen Tarif (free/premium) mit den
+    # Limits unten; Premium kommt über Stripe, später App-Store-Abos oder
+    # manuell über den Plattform-Admin.
+    # ------------------------------------------------------------------
+    billing_enabled: bool = False
+    # Limits des Gratis-Tarifs. 0 bei max_members = unbegrenzt; 0 bei ai = KI nicht enthalten
+    plan_free_max_members: int = 3
+    plan_free_storage_mb: int = 200
+    plan_free_ai_daily_limit: int = 0
+    # Limits des Premium-Tarifs
+    plan_premium_max_members: int = 0
+    plan_premium_storage_mb: int = 5120
+    plan_premium_ai_daily_limit: int = 50
+    # Karenz nach Ablauf einer bezahlten Periode (Zahlungsverzug), bevor der Haushalt
+    # auf den Gratis-Tarif fällt
+    plan_grace_days: int = 3
+
+    # Stripe (Web-Zahlung). Leer = kein Checkout, Tarife nur manuell/App-Store.
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_id_monthly: str = ""
+    stripe_price_id_yearly: str = ""
+    stripe_api_base: str = "https://api.stripe.com"
+    # Pfade im Frontend, zu denen Stripe nach dem Checkout zurückleitet
+    billing_success_path: str = "/household?billing=success"
+    billing_cancel_path: str = "/household?billing=cancel"
+
     @property
     def push_enabled(self) -> bool:
         return bool(self.vapid_public_key and self.vapid_private_key)
@@ -77,6 +108,14 @@ class Settings(BaseSettings):
     @property
     def mail_enabled(self) -> bool:
         return self.effective_mail_backend in ("smtp", "console")
+
+    @property
+    def stripe_configured(self) -> bool:
+        return bool(
+            self.stripe_secret_key.strip()
+            and self.stripe_webhook_secret.strip()
+            and (self.stripe_price_id_monthly.strip() or self.stripe_price_id_yearly.strip())
+        )
 
     @property
     def public_base_url(self) -> str:

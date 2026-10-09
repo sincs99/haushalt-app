@@ -12,6 +12,7 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Budget, Calendar, Expense, Household, HouseholdMember, RecurringBill, User
+from app.services import entitlements
 from app.services import membership as membership_service
 from app.services.household_time import household_today
 from app.services.invite_code import (
@@ -482,6 +483,11 @@ def join_household(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=error_detail(ErrorCode.ALREADY_MEMBER, "Already a member of this household"),
+        )
+    if not entitlements.can_add_member(db, household):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=error_detail(ErrorCode.PLAN_MEMBER_LIMIT_REACHED, "This household has reached its member limit"),
         )
 
     # Membership anlegen

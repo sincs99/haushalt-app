@@ -128,7 +128,7 @@ describe('initialize', () => {
     expect(axiosPost).toHaveBeenCalledWith(REFRESH_URL, {}, cookieRequest)
     expect(store.token).toBe('new-access')
     expect(store.isAuthenticated).toBe(true)
-    expect(store.user).toEqual({ id: 'user-1', email: 'a@example.com', display_name: 'Anna', email_verified: false })
+    expect(store.user).toEqual({ id: 'user-1', email: 'a@example.com', display_name: 'Anna', email_verified: false, is_platform_admin: false })
     expect(store.currentHouseholdId).toBe('hh-2')
     expect(store.currentHousehold?.name).toBe('Ferienhaus')
   })

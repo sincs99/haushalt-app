@@ -5,9 +5,13 @@ import api from '../api/client'
 /** Öffentliche Server-Konfiguration (GET /api/config): Schalter zum Ein-/Ausblenden von Funktionen. */
 export interface PublicConfig {
   mail_enabled: boolean
+  /** Tarife aktiv (SaaS-Betrieb) → Tarif-Karte in den Einstellungen */
+  billing_enabled: boolean
+  /** Stripe eingerichtet → Upgrade im Web möglich */
+  checkout_available: boolean
 }
 
-const DEFAULTS: PublicConfig = { mail_enabled: false }
+const DEFAULTS: PublicConfig = { mail_enabled: false, billing_enabled: false, checkout_available: false }
 
 export const useConfigStore = defineStore('config', () => {
   const config = ref<PublicConfig>({ ...DEFAULTS })

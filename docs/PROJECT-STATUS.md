@@ -213,10 +213,10 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 |---|---|---|
 | [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | GitHub Actions: Jobs `backend` (ruff, pytest mit Coverage), `backend-postgres` (postgres:16, `alembic upgrade head`, `pytest -m pg`, `alembic downgrade -1 && upgrade head`, Restore-Drill `scripts/restore-drill.sh`), `frontend` (Locale-Check, Typecheck, Vitest mit Coverage), `dependency-audit` (pip-audit, npm audit) | ✅ Fertig |
 | [`docker-compose.yml`](../docker-compose.yml) | Entwicklungs-Setup (Datenbank, Backend, Frontend; Ports nur lokal gebunden) | ✅ Fertig |
-| [`docker-compose.prod.yml`](../docker-compose.prod.yml) | Produktion hinter Nginx Proxy Manager (Healthchecks, keine veröffentlichten Ports) | ✅ Fertig |
+| [`docker-compose.prod.yml`](../docker-compose.prod.yml) | Produktion hinter Nginx Proxy Manager (Healthchecks für alle drei Container, keine veröffentlichten Ports, Log-Rotation `json-file` 5×10 MB, vertrauenswürdige Proxy-Bereiche `TRUSTED_PROXY_CIDRS`/`FORWARDED_ALLOW_IPS`) | ✅ Fertig |
 | [`.env.example`](../.env.example), [`.env.prod.example`](../.env.prod.example) | Vorlagen für Umgebungsvariablen | ✅ Fertig |
 | [`backend/Dockerfile`](../backend/Dockerfile), [`frontend/Dockerfile`](../frontend/Dockerfile), [`frontend/nginx.conf`](../frontend/nginx.conf), [`frontend/nginx/security-headers.conf`](../frontend/nginx/security-headers.conf) | Container-Images, Nginx-Konfiguration und Security-Header fürs Frontend | ✅ Fertig |
-| [`scripts/backup-db.ps1`](../scripts/backup-db.ps1), [`scripts/restore-db.ps1`](../scripts/restore-db.ps1) | Backup/Restore von Datenbank und Uploads (PowerShell). Restore: Backend stoppen, Dump in frische DB (`--single-transaction --exit-on-error`), Tausch, Uploads, Backend starten + Health-Check (CASA-07) | ✅ Fertig |
+| [`scripts/backup-db.ps1`](../scripts/backup-db.ps1), [`scripts/restore-db.ps1`](../scripts/restore-db.ps1) | Backup/Restore von Datenbank und Uploads (PowerShell). Backup: Dump vor Uploads, `-Consistent` (Backend gestoppt), `-Keep`, `-CopyTo` (Off-Host). Restore: Backend stoppen, Dump in frische DB (`--single-transaction --exit-on-error`), Tausch, Uploads, Backend starten + Health-Check (CASA-07, CASA-57) | ✅ Fertig |
 | [`scripts/restore-db.sh`](../scripts/restore-db.sh), [`scripts/restore-drill.sh`](../scripts/restore-drill.sh) | Restore für Linux-Hosts (gleiche Logik, auch direkt gegen eine DB-URL) und Restore-Drill für CI/Betrieb | ✅ Fertig |
 
 ### Frontend (`frontend/src/`)

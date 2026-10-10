@@ -303,13 +303,20 @@ class TestTagCrud:
         assert resp.status_code == 200
         by_type = {t["target_type"]: t for t in resp.json()}
         assert set(by_type) == {"pet", "pet_care_task", "plant", "plant_care_task", "chore", "shopping_list", "todo"}
-        assert by_type["pet"]["options"] == [{"id": str(pet_a.id), "name": "Luna"}]
+        assert by_type["pet"]["options"] == [
+            {"id": str(pet_a.id), "name": "Luna", "care_type": None, "plant_name": None}
+        ]
         assert by_type["pet_care_task"]["options"][0]["name"] == "Luna – Krallen schneiden"
-        assert by_type["plant"]["options"] == [{"id": str(plant_a.id), "name": "Monstera"}]
+        assert by_type["plant"]["options"] == [
+            {"id": str(plant_a.id), "name": "Monstera", "care_type": None, "plant_name": None}
+        ]
         assert by_type["plant"]["actions"] == [
             {"key": "plant.water", "target_optional": True, "navigate_only": False}
         ]
-        assert by_type["plant_care_task"]["options"][0]["name"] == "Monstera – Gießen"
+        # CASA-59: stabiler Schlüssel für die Übersetzung im Frontend, deutscher Name als Fallback
+        assert by_type["plant_care_task"]["options"][0] == {
+            "id": str(water_task_a.id), "name": "Monstera – Gießen", "care_type": "water", "plant_name": "Monstera",
+        }
         assert by_type["shopping_list"]["actions"] == [
             {"key": "shopping_list.open", "target_optional": True, "navigate_only": True}
         ]
@@ -643,7 +650,27 @@ class TestPlantCareTaskDone:
     def test_custom_label_is_used(self, client, db, household_a, token_a, plant_a):
         task = _plant_task(db, household_a, plant_a, "other", label="Blätter abwischen")
         tag = _make_tag(db, household_a, "plant.care_task.done", "plant_care_task", task.id)
-        assert _resolve(client, token_a, tag).json()["target_name"] == "Blätter abwischen"
+        data = _resolve(client, token_a, tag).json()
+        assert data["target_name"] == "Blätter abwischen"
+        # Eigene Bezeichnung wird nicht übersetzt
+        assert data["target_care_type"] is None
+
+    def test_care_type_key_for_i18n(self, client, db, household_a, token_a, plant_a):
+        """CASA-59: resolve, execute und Tag-Liste liefern care_type statt nur deutschem Namen."""
+        task = _plant_task(db, household_a, plant_a, "fertilize", interval=30)
+        tag = _make_tag(db, household_a, "plant.care_task.done", "plant_care_task", task.id)
+        resolved = _resolve(client, token_a, tag).json()
+        assert resolved["target_care_type"] == "fertilize"
+        assert resolved["details"]["label"] is None
+
+        listed = client.get(_tags_url(household_a), headers=_auth(token_a)).json()
+        entry = next(t for t in listed if t["id"] == str(tag.id))
+        assert entry["target_name"] == "Düngen"
+        assert entry["target_care_type"] == "fertilize"
+
+        executed = _execute(client, token_a, tag).json()
+        assert executed["target_name"] == "Düngen"
+        assert executed["target_care_type"] == "fertilize"
 
     def test_deleted_task_is_target_missing(self, client, db, household_a, token_a, plant_a, water_task_a):
         tag = _make_tag(db, household_a, "plant.care_task.done", "plant_care_task", water_task_a.id)

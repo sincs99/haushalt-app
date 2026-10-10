@@ -1033,6 +1033,8 @@ export interface TagInfo {
   target_type: string
   target_id: string | null
   target_name: string | null
+  /** Pflegeart ohne eigene Bezeichnung (CASA-59): übersetzen statt target_name */
+  target_care_type?: string | null
   target_missing: boolean
   action: TagActionKey
   created_by_user_id: string | null
@@ -1044,7 +1046,11 @@ export interface TagInfo {
 
 export interface TagTargetOption {
   id: string
+  /** Deutscher Fallback-Name (ältere Clients) */
   name: string
+  /** Pflegeart ohne eigene Bezeichnung (CASA-59) samt Pflanze */
+  care_type?: string | null
+  plant_name?: string | null
 }
 
 export interface TagTargetType {
@@ -1069,6 +1075,7 @@ export interface TagResolveResult {
   target_type: string
   target_id: string | null
   target_name: string | null
+  target_care_type?: string | null
   navigate_only: boolean
   navigate_to: string | null
   description: string
@@ -1089,6 +1096,7 @@ export interface TagExecuteResult {
   action: TagActionKey
   household_id: string
   target_name: string | null
+  target_care_type?: string | null
   changed: boolean
   /** z. B. ALREADY_DONE: wiederholter Scan, nichts geändert */
   reason?: string | null

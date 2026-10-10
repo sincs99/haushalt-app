@@ -4,7 +4,7 @@
  * TagScanView ruft resolve auf und entscheidet hier, ob direkt navigiert,
  * eine Bestätigung gezeigt oder ein Hinweis angezeigt wird.
  */
-import type { TagExecuteParams, TagResolveResult } from '../types'
+import type { TagExecuteParams, TagResolveResult, TagTargetOption } from '../types'
 
 export type ScanErrorKind =
   | 'not_found'
@@ -126,4 +126,25 @@ export function moduleRouteFor(result: Pick<TagResolveResult, 'action' | 'detail
     default:
       return '/dashboard'
   }
+}
+
+type Translate = (key: string) => string
+
+/**
+ * Anzeigename eines Tag-Ziels (Liste, Scan, Ergebnis). Pflegeaufgaben ohne eigene
+ * Bezeichnung liefert das Backend als Schlüssel ``target_care_type`` — übersetzt wie in
+ * der Pflanzenansicht; ``target_name`` (deutsch) bleibt Fallback für ältere Clients (CASA-59).
+ */
+export function localizedTargetName(
+  r: { target_name: string | null; target_care_type?: string | null },
+  t: Translate,
+): string | null {
+  if (r.target_care_type) return t(`plants.careTypes.${r.target_care_type}`)
+  return r.target_name
+}
+
+/** Eintrag im Ziel-Dropdown: „Pflanze – Pflegeart“ übersetzt, sonst ``name`` */
+export function localizedTargetOption(opt: TagTargetOption, t: Translate): string {
+  if (opt.care_type && opt.plant_name) return `${opt.plant_name} – ${t(`plants.careTypes.${opt.care_type}`)}`
+  return opt.name
 }

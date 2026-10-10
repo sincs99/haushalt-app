@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import type { TagResolveResult } from '../../types'
 import {
   executeParams,
+  localizedTargetName,
+  localizedTargetOption,
   moduleRouteFor,
   nextScanStep,
   plantWaterLines,
@@ -174,5 +176,25 @@ describe('QR-Code', () => {
 
   it('liefert eine Data-URL (CSP: img-src data:)', () => {
     expect(qrSvgDataUrl('x').startsWith('data:image/svg+xml;charset=utf-8,')).toBe(true)
+  })
+})
+
+describe('Pflegearten übersetzt statt deutscher Backend-Namen (CASA-59)', () => {
+  const t = (key: string) => `[${key}]`
+
+  it('Ziel mit target_care_type → übersetzte Pflegeart', () => {
+    expect(localizedTargetName({ target_name: 'Gießen', target_care_type: 'water' }, t)).toBe('[plants.careTypes.water]')
+  })
+
+  it('eigene Bezeichnung / andere Ziele / ältere API → target_name', () => {
+    expect(localizedTargetName({ target_name: 'Blätter abwischen', target_care_type: null }, t)).toBe('Blätter abwischen')
+    expect(localizedTargetName({ target_name: 'Luna' }, t)).toBe('Luna')
+    expect(localizedTargetName({ target_name: null }, t)).toBeNull()
+  })
+
+  it('Dropdown-Option: Pflanze – übersetzte Pflegeart, sonst name', () => {
+    expect(localizedTargetOption({ id: '1', name: 'Monstera – Gießen', care_type: 'water', plant_name: 'Monstera' }, t))
+      .toBe('Monstera – [plants.careTypes.water]')
+    expect(localizedTargetOption({ id: '2', name: 'Luna' }, t)).toBe('Luna')
   })
 })

@@ -37,7 +37,9 @@ Neuen Zieltyp ergänzen (Beispiel: Pflanzen, ``plant.water``):
    (``plant.open``) genügen ``navigate_to`` und ``execute=None``.
 6. Frontend: i18n-Keys ``tags.targetTypes.<target_type>`` und
    ``tags.actions.<action>.{label,confirm,done}`` in ``de.json``/``en.json``;
-   Detailzeilen der Bestätigungsseite optional in ``TagResolveView.vue``.
+   Detailzeilen der Bestätigungsseite optional in ``TagScanView.vue``
+   (``utils/tagScan.ts``). Anzeigenamen nicht hier übersetzen, sondern einen
+   stabilen Schlüssel mitliefern (wie ``care_type``, CASA-59).
 
 Keine Migration nötig: ``target_type``/``action`` sind Strings, ``target_id``
 hat bewusst keinen Fremdschlüssel.
@@ -83,6 +85,9 @@ class TargetOption:
 
     id: uuid.UUID
     name: str
+    # Pflegeart ohne eigene Bezeichnung (CASA-59): Frontend übersetzt, ``name`` ist Fallback
+    care_type: str | None = None
+    plant_name: str | None = None
 
 
 @dataclass
@@ -110,6 +115,8 @@ class TagDescription:
     reason: str | None = None
     # Was execute zurückschicken muss (requires_confirm), z. B. {"assignment_id": …}
     confirm: dict[str, Any] | None = None
+    # Stabiler Schlüssel statt deutschem Namen (CASA-59), siehe ``target_care_type``
+    target_care_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -394,7 +401,8 @@ def _execute_care_task_done(ctx: TagContext, params: dict[str, Any]) -> dict[str
 # plant.water — Gießen loggen (eine Pflanze oder alle fälligen)
 # ---------------------------------------------------------------------------
 
-# Anzeigenamen der Pflegearten für das Ziel-Dropdown (Tags kennen keine i18n)
+# Deutsche Fallback-Namen der Pflegearten (ältere Clients). Aktuelle Clients übersetzen
+# über ``care_type`` / ``target_care_type`` (plants.careTypes.<key>, CASA-59).
 PLANT_CARE_TYPE_NAMES = {
     "water": "Gießen",
     "fertilize": "Düngen",
@@ -406,6 +414,20 @@ PLANT_CARE_TYPE_NAMES = {
 
 def _plant_task_name(task: PlantCareTask) -> str:
     return (task.label or "").strip() or PLANT_CARE_TYPE_NAMES.get(task.care_type, task.care_type)
+
+
+def target_care_type(target: Any) -> str | None:
+    """Pflegeart, wenn der Anzeigename nur der Standardname ist (sonst None: eigene Bezeichnung)."""
+    if isinstance(target, PlantCareTask) and not (target.label or "").strip():
+        return target.care_type
+    return None
+
+
+def target_display_name(target: Any) -> str | None:
+    """Anzeigename eines geladenen Ziels (Tag-Liste, execute)."""
+    if isinstance(target, PlantCareTask):
+        return _plant_task_name(target)
+    return getattr(target, "name", None) or getattr(target, "title", None)
 
 
 def _plant_targets(db: Session, household_id: uuid.UUID) -> list[TargetOption]:
@@ -560,7 +582,15 @@ def _plant_care_task_targets(db: Session, household_id: uuid.UUID) -> list[Targe
         .order_by(Plant.name, PlantCareTask.care_type, PlantCareTask.label)
         .all()
     )
-    return [TargetOption(task.id, f"{plant_name} – {_plant_task_name(task)}") for task, plant_name in rows]
+    return [
+        TargetOption(
+            task.id,
+            f"{plant_name} – {_plant_task_name(task)}",
+            care_type=target_care_type(task),
+            plant_name=plant_name if target_care_type(task) else None,
+        )
+        for task, plant_name in rows
+    ]
 
 
 def _load_plant_care_task(db: Session, household_id: uuid.UUID, target_id: uuid.UUID):
@@ -576,16 +606,22 @@ def _describe_plant_care_task_done(ctx: TagContext) -> TagDescription:
         "plant_id": str(task.plant_id),
         "plant_name": plant_name,
         "care_type": task.care_type,
+        "label": (task.label or "").strip() or None,
         "interval_days": task.interval_days,
         "next_due_at": _iso(task.next_due_at),
         "last_done_at": _iso(task.last_done_at),
     }
+    care_type = target_care_type(task)
     if task.last_done_at == _plant_today(ctx):
-        return TagDescription(name, f"'{name}' was already done today", details, False, "ALREADY_DONE")
+        return TagDescription(
+            name, f"'{name}' was already done today", details, False, "ALREADY_DONE",
+            target_care_type=care_type,
+        )
     return TagDescription(
         target_name=name,
         description=f"Mark '{name}' as done" + (f" for {plant_name}" if plant_name else ""),
         details=details,
+        target_care_type=care_type,
     )
 
 

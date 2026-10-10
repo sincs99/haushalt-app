@@ -14,6 +14,7 @@ import { useTagsStore } from '../stores/tags'
 import { formatDateShort } from '../utils/dates'
 import {
   executeParams,
+  localizedTargetName,
   moduleRouteFor,
   nextScanStep,
   plantWaterLines,
@@ -55,7 +56,7 @@ const title = computed(() => {
   const r = result.value
   if (!r) return ''
   if ((r.action === 'pet.feed' || r.action === 'plant.water') && !r.target_name) return actionText('confirmAll')
-  return actionText('confirm', { name: r.target_name ?? r.label })
+  return actionText('confirm', { name: localizedTargetName(r, t) ?? r.label })
 })
 
 const showHousehold = computed(() => authStore.households.length > 1)
@@ -249,7 +250,7 @@ onMounted(resolve)
         <h1 class="scan-title">
           {{ execResult?.changed === false ? $t('tags.scan.successNoChange') : actionText('done') }}
         </h1>
-        <p class="scan-sub">{{ result.target_name ?? result.label }}</p>
+        <p class="scan-sub">{{ localizedTargetName(result, t) ?? result.label }}</p>
         <div class="scan-actions">
           <BaseButton @click="goToModule">{{ $t('tags.scan.openModule') }}</BaseButton>
           <BaseButton variant="secondary" @click="goHome">{{ $t('tags.scan.toDashboard') }}</BaseButton>

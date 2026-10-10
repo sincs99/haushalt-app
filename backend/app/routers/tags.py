@@ -43,6 +43,8 @@ from app.services.tag_actions import (
     TagAction,
     TagContext,
     get_action,
+    target_care_type,
+    target_display_name,
     target_types,
 )
 from app.socket_manager import emit_to_household_sync
@@ -107,6 +109,8 @@ class TagResponse(BaseModel):
     target_type: str
     target_id: uuid.UUID | None
     target_name: str | None = None
+    # Pflegeart ohne eigene Bezeichnung → Frontend übersetzt (CASA-59); target_name = Fallback
+    target_care_type: str | None = None
     target_missing: bool = False
     action: str
     created_by_user_id: uuid.UUID | None
@@ -121,6 +125,8 @@ class TagResponse(BaseModel):
 class TargetOptionResponse(BaseModel):
     id: uuid.UUID
     name: str
+    care_type: str | None = None
+    plant_name: str | None = None
 
 
 class TargetActionInfo(BaseModel):
@@ -144,6 +150,7 @@ class TagResolveResponse(BaseModel):
     target_type: str
     target_id: uuid.UUID | None
     target_name: str | None
+    target_care_type: str | None = None
     navigate_only: bool
     navigate_to: str | None
     description: str
@@ -166,6 +173,7 @@ class TagExecuteResponse(BaseModel):
     action: str
     household_id: uuid.UUID
     target_name: str | None
+    target_care_type: str | None = None
     changed: bool
     # z. B. ALREADY_DONE, wenn ein wiederholter Scan nichts geändert hat
     reason: str | None = None
@@ -221,10 +229,6 @@ def _validate_definition(
     return action
 
 
-def _target_display_name(target: Any) -> str | None:
-    return getattr(target, "name", None) or getattr(target, "title", None)
-
-
 def _tag_response(db: Session, tag: Tag) -> TagResponse:
     response = TagResponse.model_validate(tag)
     action = get_action(tag.action)
@@ -233,7 +237,8 @@ def _tag_response(db: Session, tag: Tag) -> TagResponse:
         if target is None:
             response.target_missing = True
         else:
-            response.target_name = _target_display_name(target)
+            response.target_name = target_display_name(target)
+            response.target_care_type = target_care_type(target)
     return response
 
 
@@ -340,7 +345,7 @@ def list_targets(
                     for a in actions
                 ],
                 options=[
-                    TargetOptionResponse(id=o.id, name=o.name)
+                    TargetOptionResponse(id=o.id, name=o.name, care_type=o.care_type, plant_name=o.plant_name)
                     for o in actions[0].list_targets(db, household_id)
                 ],
             )
@@ -482,6 +487,7 @@ def resolve_tag(
         target_type=tag.target_type,
         target_id=tag.target_id,
         target_name=description.target_name,
+        target_care_type=description.target_care_type,
         navigate_only=action.navigate_only,
         navigate_to=navigate_to,
         description=description.description,
@@ -521,7 +527,7 @@ def execute_tag(
             result = action.execute(ctx, {**params, "confirm": description.confirm})
     else:
         result = action.execute(ctx, params)
-    target_name = _target_display_name(ctx.target) if ctx.target is not None else None
+    target_name = target_display_name(ctx.target) if ctx.target is not None else None
     _record_use(db, tag)
 
     return TagExecuteResponse(
@@ -529,6 +535,7 @@ def execute_tag(
         action=tag.action,
         household_id=household.id,
         target_name=target_name,
+        target_care_type=target_care_type(ctx.target) if ctx.target is not None else None,
         changed=bool(result.get("changed", True)),
         reason=result.get("reason"),
         result=result,

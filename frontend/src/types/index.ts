@@ -89,18 +89,6 @@ export interface NoteItem {
   updated_at: string
 }
 
-// ── Unified Tasks ──
-
-export interface UnifiedTask {
-  type: 'todo' | 'chore'
-  id: string
-  title: string
-  due_date: string | null
-  assigned_to_user_id: string | null
-  tags: string[]
-  recurring: boolean
-}
-
 export interface UserInfo {
   id: string
   email: string
@@ -372,10 +360,14 @@ export interface DashboardChoreItem {
   id: string
   title: string
   assigned_user_id: string | null
+  due_date: string            // "YYYY-MM-DD"
+  is_overdue: boolean
 }
 
 export interface DashboardChoreSection {
+  /** Heute fällig und überfällig (wie die Zahl am App-Icon), Überfällige zuerst */
   items: DashboardChoreItem[]
+  overdue_count: number
 }
 
 export interface DashboardShoppingSection {

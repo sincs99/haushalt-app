@@ -31,7 +31,7 @@ from app.models import (
     Todo,
     TodoReminder,
 )
-from app.services.attention import attention_count
+from app.services.attention import CHORE_LOOKBACK, attention_count
 from app.services.balance_service import compute_user_saldo
 from app.services.chore_scheduler import today_in_tz
 from app.services.event_times import to_household_time
@@ -64,10 +64,15 @@ class DashboardChoreItem(BaseModel):
     id: uuid.UUID
     title: str
     assigned_user_id: uuid.UUID | None
+    due_date: date
+    is_overdue: bool
 
 
 class DashboardChoreSection(BaseModel):
-    items: list[DashboardChoreItem]  # max 3, fällig heute
+    # max 3: heute fällig und überfällig (wie Badge/Widget, services/attention.py),
+    # Überfällige zuerst
+    items: list[DashboardChoreItem]
+    overdue_count: int = 0
 
 
 class DashboardShoppingSection(BaseModel):
@@ -212,16 +217,23 @@ def get_dashboard(
     ]
 
     # ------------------------------------------------------------------
-    # 2. Chores (fällig heute)
+    # 2. Chores: heute fällig und überfällig (PD-C2, CASA-43) — gleiche Regel wie
+    #    Badge/Widget: offen, Ämtli aktiv, höchstens CHORE_LOOKBACK zurück
     # ------------------------------------------------------------------
-    chore_assignments = (
+    open_chores_query = (
         db.query(ChoreAssignment, Chore.title)
         .join(Chore, ChoreAssignment.chore_id == Chore.id)
         .filter(
             ChoreAssignment.household_id == household_id,
-            ChoreAssignment.due_date == today,
             ChoreAssignment.completed_at.is_(None),
+            Chore.active.is_(True),
+            ChoreAssignment.due_date <= today,
+            ChoreAssignment.due_date >= today - CHORE_LOOKBACK,
         )
+    )
+    chore_overdue_count = open_chores_query.filter(ChoreAssignment.due_date < today).count()
+    chore_assignments = (
+        open_chores_query.order_by(ChoreAssignment.due_date.asc(), Chore.title.asc())
         .limit(3)
         .all()
     )
@@ -231,6 +243,8 @@ def get_dashboard(
             id=assignment.id,
             title=title,
             assigned_user_id=assignment.assigned_user_id,
+            due_date=assignment.due_date,
+            is_overdue=assignment.due_date < today,
         )
         for assignment, title in chore_assignments
     ]
@@ -378,7 +392,7 @@ def get_dashboard(
             overdue_count=overdue_count,
             items=todo_items,
         ),
-        chores=DashboardChoreSection(items=chore_items),
+        chores=DashboardChoreSection(items=chore_items, overdue_count=chore_overdue_count),
         shopping=DashboardShoppingSection(
             open_count=shopping_open_count,
             top_items=top_item_names,

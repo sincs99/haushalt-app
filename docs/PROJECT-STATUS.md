@@ -105,7 +105,6 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`app/routers/households.py`](../backend/app/routers/households.py) | 9 Endpoints: Haushalt erstellen/umbenennen/beitreten/verlassen, Mitglieder, Einladungscode (anzeigen/erneuern, mit Ablaufdatum), Mitglied entfernen, Finanz-Zusammenfassung; Beitritt mit Rate-Limit | ✅ Fertig |
 | [`app/routers/shopping.py`](../backend/app/routers/shopping.py) | 10 Endpoints: Einkaufslisten (`list_router`) und Einkaufseinträge inkl. Geschäfts-Verwaltung (`router`) + Socket-Events | ✅ Fertig |
 | [`app/routers/todos.py`](../backend/app/routers/todos.py) | 7 Endpoints: Todos (CRUD, Claim) und Erinnerungen + Socket-Events | ✅ Fertig |
-| [`app/routers/tasks.py`](../backend/app/routers/tasks.py) | 1 Endpoint: vereinte Aufgabenliste (Todos + Putzplan-Zuweisungen) | ✅ Fertig |
 | [`app/routers/expenses.py`](../backend/app/routers/expenses.py) | 5 Endpoints: Ausgaben (CRUD, Split even/custom) und Salden; Pydantic-Schemas inline | ✅ Fertig |
 | [`app/routers/settlements.py`](../backend/app/routers/settlements.py) | 3 Endpoints: Ausgleichszahlungen (GET/POST/DELETE) + Socket-Events | ✅ Fertig |
 | [`app/routers/chores.py`](../backend/app/routers/chores.py) | 8 Endpoints: Ämtli (CRUD) und Zuweisungen (Liste, abhaken, rückgängig, neu zuweisen) + Socket-Events | ✅ Fertig |
@@ -254,7 +253,6 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`stores/auth.ts`](../frontend/src/stores/auth.ts) | Login, Register (+ Invite-Code), Token-Persistenz und -Refresh, fetchMe, Haushalt-Wechsel, Socket-Handler (`household_*`) | ✅ Fertig |
 | [`stores/shopping.ts`](../frontend/src/stores/shopping.ts) | Einkauf: Listen und Einträge, Optimistic Updates, Race-Condition-Schutz, Geschäfts-Verwaltung | ✅ Fertig |
 | [`stores/todos.ts`](../frontend/src/stores/todos.ts) | Todos: CRUD, Claim, Erinnerungen, Optimistic Updates | ✅ Fertig |
-| [`stores/tasks.ts`](../frontend/src/stores/tasks.ts) | Vereinte Aufgabenliste (Todos + Putzplan) | ✅ Fertig |
 | [`stores/chores.ts`](../frontend/src/stores/chores.ts) | Ämtli: CRUD, Optimistic Updates, Toggle-Mutex, Socket-Handler | ✅ Fertig |
 | [`stores/expenses.ts`](../frontend/src/stores/expenses.ts) | Ausgaben: CRUD, Socket-Handler, debounced Balances-Refetch | ✅ Fertig |
 | [`stores/settlements.ts`](../frontend/src/stores/settlements.ts) | Ausgleichszahlungen: CRUD, Socket-Handler | ✅ Fertig |
@@ -269,7 +267,6 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | **Repositories** (Offline-Ready Seam, aktuell nur Online-Variante) | | |
 | [`repositories/shoppingRepository.ts`](../frontend/src/repositories/shoppingRepository.ts) | Einkaufslisten, Einträge, Geschäfte | ✅ Fertig |
 | [`repositories/todosRepository.ts`](../frontend/src/repositories/todosRepository.ts) | Todos und Erinnerungen | ✅ Fertig |
-| [`repositories/tasksRepository.ts`](../frontend/src/repositories/tasksRepository.ts) | Vereinte Aufgabenliste | ✅ Fertig |
 | [`repositories/householdsRepository.ts`](../frontend/src/repositories/householdsRepository.ts) | Beitreten, Einladungscode, Mitglieder, Erstellen, Umbenennen, Verlassen, Entfernen | ✅ Fertig |
 | [`repositories/expensesRepository.ts`](../frontend/src/repositories/expensesRepository.ts) | Ausgaben (CRUD + Balances) | ✅ Fertig |
 | [`repositories/settlementsRepository.ts`](../frontend/src/repositories/settlementsRepository.ts) | Ausgleichszahlungen | ✅ Fertig |
@@ -379,11 +376,10 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | DELETE | `/api/households/{id}/members/{user_id}` | ✅ Admin | Mitglied entfernen (204) |
 | GET | `/api/households/{id}/finance-summary` | ✅ | Finanz-Zusammenfassung eines Monats (`month`, Default aktueller Monat) |
 | **Dashboard und Aufgaben** | | | |
-| GET | `/api/households/{id}/dashboard` | ✅ | Aggregierte Startseite (Aufgaben, Einkauf, Finanzen) |
+| GET | `/api/households/{id}/dashboard` | ✅ | Aggregierte Startseite (Aufgaben, Ämtli heute + überfällig wie die Badge-Zahl, Einkauf, Finanzen) |
 | GET | `/api/households/{id}/dashboard/badge` | ✅ | Zahl am App-Icon für die aufrufende Person (`{count}`) |
 | GET/POST/DELETE | `/api/households/{id}/widget-token` | ✅ | Nur-Lese-Schlüssel fürs Homescreen-Widget anzeigen/erzeugen/widerrufen |
 | GET | `/api/widget/summary` | Widget-Schlüssel | Widget-Daten (fällig heute, Einkauf, Termine) — [`widget.md`](widget.md) |
-| GET | `/api/households/{id}/tasks` | ✅ | Vereinte Aufgabenliste (Todos + Putzplan-Zuweisungen) |
 | **Einkauf** | | | |
 | GET | `/api/households/{id}/shopping-lists/` | ✅ | Einkaufslisten |
 | POST | `/api/households/{id}/shopping-lists/` | ✅ | Liste erstellen |
@@ -1071,7 +1067,7 @@ Die Nummerierung ist die der Dokumentation und nicht identisch mit den „Epic-N
 ### Epic 11: Aufgaben 2.0 – Unified Tasks ✅
 - **Abgeschlossen:** 2026-08-07
 - **Umfang:** Aufgaben-View vereinigt Todos + Chore-Assignments in einer Timeline-Ansicht (Überfällig / Heute / Diese Woche / Später). Todo-Tags, Todo-Claim, Personen-Filter (PillTabs)
-- **Backend:** `app/routers/tasks.py` – Unified Tasks Endpoint (merges todos + chore assignments), `Todo.tags` JSON-Feld, Claim-Endpoint
+- **Backend:** `app/routers/tasks.py` – Unified Tasks Endpoint (merges todos + chore assignments), `Todo.tags` JSON-Feld, Claim-Endpoint (2026-10: entfernt — nicht genutzt, PD-C2)
 - **Migration:** `e6cbf2921e48` (add_tags_to_todos)
 - **Frontend:** `TodosView.vue` (komplett neu als Unified Tasks), `stores/tasks.ts`, `repositories/tasksRepository.ts`, UnifiedTask-Type
 - **Tests:** `test_todo_tags.py`, `test_todo_claim.py`

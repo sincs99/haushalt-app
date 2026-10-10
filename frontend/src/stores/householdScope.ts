@@ -19,7 +19,6 @@ import { usePetsStore } from './pets'
 import { usePlantsStore } from './plants'
 import { useNotesStore } from './notes'
 import { useFoodStore } from './food'
-import { useTasksStore } from './tasks'
 
 export function resetHouseholdScopedStores(): void {
   const shopping = useShoppingStore()
@@ -58,6 +57,5 @@ export function resetHouseholdScopedStores(): void {
   usePlantsStore().reset()
   useNotesStore().reset()
   useFoodStore().reset()
-  useTasksStore().reset()
   // ai, documents und tags setzen sich selbst über einen Watch auf currentHouseholdId zurück
 }

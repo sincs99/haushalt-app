@@ -6,8 +6,9 @@ Zwei Router:
   widerrufen — pro Person und Haushalt höchstens einer.
 - ``router``: ``GET /api/widget/summary`` mit ``Authorization: Bearer hw_…``.
   Der Schlüssel erlaubt nur diesen einen Lese-Endpoint, läuft nicht ab und
-  ist an Person und Haushalt gebunden. Verlässt die Person den Haushalt,
-  wird er beim nächsten Aufruf ungültig (und gelöscht).
+  ist an Person und Haushalt gebunden. Verlässt die Person den Haushalt (oder
+  wird entfernt), wird er im selben Commit gelöscht (PD-H1); als Rückfall prüft
+  jeder Abruf die Mitgliedschaft.
 
 Gespeichert wird nur der SHA-256-Hash; der Klartext erscheint einmal beim Erzeugen.
 Doku: docs/widget.md

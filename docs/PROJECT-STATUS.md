@@ -519,21 +519,21 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 
 ### Socket.IO Events
 
-Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen an den Raum `household_{id}`; ein Client betritt ihn mit `join_household` (Mitgliedschaft wird geprüft). Wird ein Mitglied entfernt, wirft der Server seine Verbindungen nach dem Event `household_member_removed` aus dem Raum. Server-seitige Fehler beim Beitritt kommen als Event `error` (`{ message }`) an den Client.
+Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen an den Raum `household_{id}`; ein Client betritt ihn mit `join_household` (Mitgliedschaft wird vor UND nach dem Raumbeitritt geprüft). Wird ein Mitglied entfernt oder verlässt es den Haushalt, wirft der Server seine Verbindungen nach dem Event aus dem Raum; `reauth` prüft die Haushaltsräume der Verbindung erneut (CASA-48). Server-seitige Fehler beim Beitritt kommen als Event `error` an den Client; bei fehlender Mitgliedschaft mit `code: "NOT_HOUSEHOLD_MEMBER"` — der Client lädt dann `/me` neu (wie bei REST-403 und nach jedem Reconnect, CASA-49).
 
 | Event | Richtung | Payload |
 |---|---|---|
 | `join_household` | Client → Server | `{ household_id }` |
 | `leave_household` | Client → Server | `{ household_id }` |
-| `error` | Server → Client | `{ message }` |
+| `error` | Server → Client | `{ message }`; bei fehlender Mitgliedschaft zusätzlich `{ code: "NOT_HOUSEHOLD_MEMBER", household_id }` |
 | **Sitzung** | | |
-| `reauth` | Client → Server | `{ token }` → Ack `{ ok }` |
+| `reauth` | Client → Server | `{ token }` → Ack `{ ok }`; verlässt Haushaltsräume ohne Mitgliedschaft (dann `error` wie oben) |
 | `session_ended` | Server → Client (eine Verbindung) | `{ reason: "expired" \| "logout" \| "revoked" }`, danach trennt der Server |
 | **Haushalt** | | |
 | `household_updated` | Server → Room | `{ id, name }` |
-| `household_member_joined` | Server → Room | `{ household_id, user_id, display_name, role }` |
-| `household_member_left` | Server → Room | `{ household_id, user_id }` |
-| `household_member_removed` | Server → Room | `{ household_id, user_id }` |
+| `household_member_joined` | Server → Room | `{ household_id, user_id, display_name, role }` (auch bei Registrierung mit Code) |
+| `household_member_left` | Server → Room | `{ household_id, user_id, released }` — `released`: freigegebene Bereiche (PD-H1), Clients laden sie neu |
+| `household_member_removed` | Server → Room | `{ household_id, user_id, released }` |
 | **Einkauf** | | |
 | `shopping_list_created` | Server → Room | `ShoppingList` (auch beim Übernehmen fehlender Zutaten) |
 | `shopping_list_updated` | Server → Room | `ShoppingList` |
@@ -618,6 +618,7 @@ Eine Verbindung gilt nur so lange wie das Access-Token (15 Min.), mit dem sie zu
 - **Verlängern:** Nach jedem Token-Refresh (Axios-Interceptor, Cross-Tab-Sync) schickt der Client `reauth` mit dem neuen Token. Gehört es zum selben User, setzt der Server `exp` und Timer neu. Die Verbindung bleibt bestehen, Räume bleiben erhalten; früher baute der Client bei jedem Refresh eine neue Verbindung auf.
 - **Ablauf:** Läuft der Timer ab, schickt der Server `session_ended` (`expired`) und trennt. `join_household` prüft `exp` zusätzlich. Der Client holt sich per Refresh ein neues Token und verbindet neu; die Reconnect-Callbacks treten dem Haushalts-Raum wieder bei und laden die Daten nach.
 - **Logout:** `/api/auth/logout` trennt alle Verbindungen des Users (`session_ended` mit `logout`); die Reuse-Detection in `/refresh` trennt mit `revoked`. Der Access-Token kennt kein Gerät, deshalb trifft das auch andere Geräte. Diese verbinden sich mit ihrem noch gültigen Access-Token sofort neu, aber **ohne** Refresh: Der Refresh-Token könnte gerade widerrufen sein (z. B. zweiter Tab im selben Browser), ein Refresh würde dann die Reuse-Detection auslösen und alle Geräte abmelden. Das ausloggende Gerät trennt seinen Socket schon vor dem Logout-Aufruf und verbindet nicht neu.
+- **Push nach Sitzungsende:** Beim Logout meldet sich der Browser vom Push ab. Lehnt der Server beim App-Start den Refresh ab (Sitzung still abgelaufen) oder meldet sich ein anderer Tab ab, wird die Subscription ebenfalls lokal entfernt (`disablePush({ notifyBackend: false })`, CASA-47); das Backend räumt den Endpoint beim nächsten Versand (410) auf.
 - **Abgelehnter Connect** (z. B. Token abgelaufen): höchstens ein Refresh-Versuch bis zur nächsten erfolgreichen Verbindung, kein Endlos-Loop.
 
 **Warum `exp` + Timer + `reauth` (und nicht nur eine Prüfung bei jedem Event):** Fast der ganze Verkehr läuft vom Server zum Client; ein Client, der nur zuhört, schickt nach `join_household` keine Events mehr und würde bei reiner Event-Prüfung nie getrennt. Ohne `reauth` wiederum müsste jede Verbindung alle 15 Minuten neu aufgebaut werden. Der Client erneuert sein Token ohnehin über den Axios-Interceptor; `reauth` gibt das Ergebnis nur an den Socket weiter.
@@ -725,23 +726,47 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 - Admin-geschützte Endpoints: PATCH Haushalt (rename), DELETE Member, Tags anlegen/ändern/löschen/Token neu erzeugen (Ausführen per Scan dürfen alle Mitglieder)
 - Keine feingranularen Berechtigungen (bewusst: nur admin/member)
 
+### Mitgliedschaft ändern (gemeinsame Regeln, `app/services/membership.py`)
+- Beitreten (`/join`, Registrierung mit Code), Verlassen und Entfernen sperren zuerst die `households`-Zeile (`lock_household`, CASA-10) und prüfen erst danach — parallele Änderungen desselben Haushalts laufen nacheinander
+- Invarianten nach jedem Commit: **≥ 1 Admin, solange es Mitglieder gibt**; **0 Mitglieder → Haushalt gelöscht** (CASCADE, Upload-Ordner danach; bleibt einer liegen, räumt ihn der stündliche Cleanup weg)
+- Fehlt der Admin (Altbestand), wird bei jeder Mitgliedschaftsänderung das dienstälteste Mitglied (frühestes `joined_at`, Tiebreaker: `user_id`) befördert (PD-H3). Migration `hh1a2b3c4d5e` hat Altbestand repariert (verwaiste Haushalte gelöscht, fehlenden Admin nachgetragen)
+- Beitritt: unbekannter, inzwischen rotierter oder zu einem verwaisten/gelöschten Haushalt gehörender Code → 404 `INVITE_CODE_NOT_FOUND`; abgelaufen → 410; schon Mitglied (auch beim parallelen Doppel-Join) → 409 `ALREADY_MEMBER`
+- Kein manueller Admin-Transfer-Dialog (Auto-Promotion-Regel reicht)
+
 ### Haushalt verlassen
 - **Immer erlaubt**, auch mit offenem Saldo
 - Expenses/Shares werden NICHT gelöscht ("Ehemaliges Mitglied"-Muster)
-- Letztes Mitglied verlässt → Haushalt wird komplett gelöscht (CASCADE)
-- Einziger Admin verlässt → dienstältestes verbleibendes Mitglied (frühestes `joined_at`, Tiebreaker: `user_id`) wird automatisch Admin
-- Kein manueller Admin-Transfer-Dialog (Auto-Promotion-Regel reicht)
+- Letztes Mitglied verlässt → Haushalt wird komplett gelöscht (CASCADE) inkl. hochgeladener Dateien
+- Bleiben Mitglieder ohne Admin → dienstältestes Mitglied wird Admin
+- **Offene Zuständigkeiten werden freigegeben (PD-H1)**, im selben Commit wie der Austritt:
+  - offene Aufgaben (`is_done = false`) und offene Einkaufsartikel (`is_checked = false`) der Person → niemandem zugewiesen
+  - offene Ämtli-Termine (`completed_at IS NULL`, auch überfällige und vorab erzeugte) → niemandem zugewiesen
+  - die Person wird aus `rotation_order` aller Ämtli entfernt; `next_rotation_index` wird so angepasst, dass die Person, die als Nächstes dran gewesen wäre, auch weiterhin als Nächste dran ist (war es die austretende Person, ist es die folgende). Vollständig durchlaufene Runden bleiben im Index erhalten
+  - Standard-Zahler wiederkehrender Rechnungen → leer (Buchen verlangt dann einen Zahler, `BILL_PAYER_REQUIRED`)
+  - Stimmen in **offenen** Umfragen werden gelöscht; entschiedene Umfragen behalten sie
+  - Widget-Schlüssel der Person für diesen Haushalt wird gelöscht
+  - Erledigte Aufgaben/Ämtli, Ausgaben, Ausgleiche und entschiedene Umfragen behalten die Person (Geschichte)
+- Zuweisungen an Nicht-Mitglieder (Altbestand) gelten in Badge, Widget und Dashboard als „niemandem zugewiesen“ — wie beim Push, der dann an alle Mitglieder geht
+- Socket: `household_member_left` mit `released` (betroffene Bereiche: `todos`, `shopping`, `chores`, `recurring_bills`, `polls`); andere Clients laden diese Listen neu
+- Einladungscode bleibt (PD-H4): wer freiwillig geht, kann innerhalb der Gültigkeit wieder beitreten — ohne seine alten Zuständigkeiten und ohne alten Widget-Schlüssel
 
 ### Mitglied entfernen
-- Admin darf Mitglieder mit `role="member"` entfernen
+- Admin darf Mitglieder mit `role="member"` entfernen; Rolle und Mitgliedschaft des Aufrufers werden unter der Haushaltssperre neu geprüft
 - Admin darf andere Admins NICHT entfernen → 403 CANNOT_REMOVE_ADMIN
 - Sich selbst entfernen → 422 CANNOT_REMOVE_SELF (nutze /leave stattdessen)
-- rotation_order in Chores wird NICHT bereinigt (Scheduler überspringt Nicht-Mitglieder)
+- Offene Zuständigkeiten werden wie beim Verlassen freigegeben (PD-H1); Socket `household_member_removed` mit `released`
+- Einladungscode wird erneuert
 
 ### Registrierung
 - Genau eines von `household_name` oder `invite_code` muss gesetzt sein
 - `household_name` → neuer Haushalt + Admin
-- `invite_code` → bestehender Haushalt + Member
+- `invite_code` → bestehender Haushalt + Member (gleicher gesperrter Beitrittsweg wie `/join`, danach `household_member_joined`)
+- Parallele Registrierung derselben E-Mail → 400 `EMAIL_ALREADY_REGISTERED` (nie 500)
+
+### Refresh-Token-Rotation
+- `/refresh` sperrt den alten Token (`FOR UPDATE`); Widerruf, `replaced_by_id` und Nachfolger entstehen in einem Commit (CASA-11)
+- Grace Window (`REFRESH_TOKEN_REUSE_GRACE_SECONDS`, 30 s): Wer den bereits ersetzten Token nochmals schickt (zweiter Tab, PWA), bekommt ein neues Paar; der Server folgt dazu der Ersetzungskette bis zum aktiven Nachfolger und rotiert diesen. Es bleibt eine aktive Kette
+- Ausserhalb des Grace Windows oder ohne Nachfolger → Reuse-Erkennung: alle Tokens des Users widerrufen, Sockets getrennt
 
 ---
 

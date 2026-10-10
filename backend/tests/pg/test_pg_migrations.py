@@ -1,4 +1,4 @@
-"""Migrationen auf PostgreSQL: Datenreparatur fnd1a2b3c4d5 (P0-3 / CASA-04) und Downgrade."""
+"""Migrationen auf PostgreSQL: Datenreparatur fnd1a2b3c4d5 (P0-3 / CASA-04), Ledger-FKs und Downgrade."""
 
 import uuid
 
@@ -100,5 +100,59 @@ def test_repair_migration_replaces_json_null_with_empty_list(pg_admin_url):
             # Rückweg und erneuter Aufstieg funktionieren
             run_alembic(url, "downgrade", "-1")
             run_alembic(url, "upgrade", "head")
+        finally:
+            engine.dispose()
+
+
+def test_full_downgrade_to_base_and_upgrade_again(pg_admin_url):
+    """CASA-56: jeder Downgrade läuft durch (früher Abbruch bei 0f34ff355756, drop_constraint(None))."""
+    with fresh_database(pg_admin_url) as url:
+        run_alembic(url, "downgrade", "base")
+        run_alembic(url, "upgrade", "head")
+
+
+def test_ledger_fk_migration_keeps_rows_and_downgrades(pg_admin_url):
+    """ops1a2b3c4d5: FK-Wechsel auf RESTRICT mit Bestandsdaten, Rückweg stellt CASCADE wieder her."""
+    with fresh_database(pg_admin_url, upgrade_to=REPAIR) as url:
+        engine = create_engine(url)
+        try:
+            hh, anna, ben, expense = (uuid.uuid4() for _ in range(4))
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "INSERT INTO households (id, name, invite_code, created_at) "
+                    "VALUES (:id, 'HH', 'ABCDEFGH', now())"
+                ), {"id": hh})
+                for uid, name in ((anna, "anna"), (ben, "ben")):
+                    conn.execute(text(
+                        "INSERT INTO users (id, email, password_hash, display_name, created_at) "
+                        "VALUES (:id, :email, 'x', :name, now())"
+                    ), {"id": uid, "email": f"{name}@example.com", "name": name})
+                conn.execute(text(
+                    "INSERT INTO expenses (id, household_id, description, amount_rappen, "
+                    "paid_by_user_id, created_at, updated_at) "
+                    "VALUES (:id, :hh, 'E', 1000, :anna, now(), now())"
+                ), {"id": expense, "hh": hh, "anna": anna})
+                conn.execute(text(
+                    "INSERT INTO expense_shares (id, expense_id, household_id, user_id, amount_rappen) "
+                    "VALUES (gen_random_uuid(), :e, :hh, :ben, 1000)"
+                ), {"e": expense, "hh": hh, "ben": ben})
+                conn.execute(text(
+                    "INSERT INTO settlements (id, household_id, from_user_id, to_user_id, "
+                    "amount_rappen, created_at) VALUES (gen_random_uuid(), :hh, :ben, :anna, 500, now())"
+                ), {"hh": hh, "anna": anna, "ben": ben})
+            run_alembic(url, "upgrade", "ops1a2b3c4d5")
+            rule = text(
+                "SELECT confdeltype FROM pg_constraint WHERE conname = 'expense_shares_user_id_fkey'"
+            )
+            with engine.connect() as conn:
+                assert conn.execute(rule).scalar_one() == "r"
+                counts = conn.execute(text(
+                    "SELECT (SELECT count(*) FROM expenses), (SELECT count(*) FROM expense_shares), "
+                    "(SELECT count(*) FROM settlements)"
+                )).one()
+                assert tuple(counts) == (1, 1, 1)
+            run_alembic(url, "downgrade", REPAIR)
+            with engine.connect() as conn:
+                assert conn.execute(rule).scalar_one() == "c"
         finally:
             engine.dispose()

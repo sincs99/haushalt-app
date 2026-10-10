@@ -1,6 +1,6 @@
 # Haushalt-App — Aktueller Projektstand
 
-**Stand:** 2026-10-07 (Audit-Korrekturen, aktuelle lokale Test- und Locale-Zahlen, HEIC/HEIF und Build-Prüfung nachgeführt; die OpenAPI-Doku des Backends unter `/docs` bleibt für API-Details maßgeblich)
+**Stand:** 2026-10-10 (Fix-Welle zum Logik-Audit `docs/qa/FULL_LOGIC_AUDIT.md` samt Nacharbeiten; Test-, Locale-, Migrations- und Tabellenzahlen neu erhoben; die OpenAPI-Doku des Backends unter `/docs` bleibt für API-Details maßgeblich)
 **Autor:** Tech Lead (automatisch generiert)
 
 ---
@@ -16,12 +16,20 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzp
 | Realtime | Socket.IO (python-socketio) |
 | Frontend | Vue 3.5, TypeScript 5.8, Vite 8, Pinia 4, PWA (`vite-plugin-pwa`) |
 | Auth | JWT-Access-Token (15 Min., nur im Speicher) + rotierender Refresh-Token als HttpOnly-Cookie (`SameSite=Strict`, CSRF-Header) mit Reuse-Erkennung, bcrypt-Hashing |
-| i18n | vue-i18n, 1173 Keys (DE + EN), Build-gesicherter Key-Sync |
+| i18n | vue-i18n, 1312 Keys (DE + EN), Build-gesicherter Key-Sync |
 | KI (optional) | Anthropic-API (`claude-opus-5-5`) über das offizielle `anthropic`-SDK, Structured Outputs; ohne `ANTHROPIC_API_KEY` ausgeblendet |
 | Qualität / CI | GitHub Actions: Backend (ruff, pytest mit Coverage), Backend auf PostgreSQL 16 (`alembic upgrade head`, pg-Testlane, Downgrade/Upgrade), Frontend (Locale-Check, Typecheck, Vitest mit Coverage), Dependency-Audit (pip-audit, npm audit) |
 | Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager), Backup-Skripte für Datenbank und Uploads |
 | Icons | Phosphor Icons (`@phosphor-icons/vue`) — regular/fill/bold |
 | UI | Custom Design-System (CSS Custom Properties, Nunito + Quicksand), Mobile-First |
+
+### Änderungen seit 2026-10-07
+
+| PR | Inhalt |
+|---|---|
+| (PR folgt) Fix-Welle Logik-Audit | Umsetzung von `docs/qa/FULL_LOGIC_AUDIT.md` (CASA-01…60) nach `docs/qa/PRODUCT_DECISIONS.md` in Bereichs-Branches: PostgreSQL-Testlane (`tests/pg/`, Marker `pg`) und Sperr-Helfer (`services/locking.py`); Finanzen mit Version/If-Match, Soft Delete, Verlauf, Wiederherstellen, Ausgleich-Idempotenz und Rechnungsverwaltung; Mitgliedschafts-Sperren, Austritt „freigeben“, Refresh-Rotation; Ämtli-Übergänge, Tag-Idempotenz, Todo-Erinnerungen; Haustiere (Archiv, Medikamenten-Verlauf), Pflanzen, Datei-Sperren; Kalender-Sperren, Menüplan-Entscheid, Bulk-Einkauf, Termin-Erinnerungen, Rezept-UI; Zustandsisolierung pro Haushalt im Frontend; Restore/Backup, KI-Kontingent pro Person, Ledger-FKs. Nacharbeiten: Registrierung legt Haushalte über denselben Helfer an wie `POST /households/` (Default-Kalender), Dashboard zeigt „läuft seit …“ für mehrtägige Termine, Termine/Notizen/Todos senden beim Bearbeiten nur geänderte Felder (CASA-09), Salden ehemaliger Mitglieder gekennzeichnet (`is_member`), Tier mit Verlauf nur mit `?force=true` löschbar (`PET_HAS_HISTORY`), Pflegearten bei Tags als Schlüssel statt deutscher Namen (CASA-59) |
+
+**Kennzahlen (lokal erhoben am 10. Oktober 2026):** Backend 1159 Tests in 98 Dateien (81 in `tests/`, 1093 Tests auf SQLite; 17 in `tests/pg/`, 66 Tests auf PostgreSQL 16), Coverage 95 % (SQLite-Lane); Frontend 727 Tests in 56 Dateien, Coverage 83,4 % (Statements), 77,89 % (Branches), Statement-Schwelle 66 %; 1312 i18n-Schlüssel; 46 Alembic-Revisionen (einziger Kopf `cal1a2b3c4d5`); 39 Tabellen in `Base.metadata`; 162 API-Endpoints (inkl. Health-Check).
 
 ### Änderungen seit 2026-08-12
 
@@ -47,7 +55,7 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | Branch `claude/ai-assistant` | KI-Assistent Etappe 1: Rezeptvorschlag und Pflanzenpflege, Opt-in pro Haushalt, Tageslimit; Rezepte erhalten Zubereitungsschritte und Tags (Epic 33, `docs/ai-assistant.md`) |
 | Branch `claude/logic-review` | Logik-Review der Geschäftsregeln (`docs/qa/logic-review.md`): Kalenderdaten der Finanzen in Haushaltszeit (`services/household_time.py`), gebuchte Rechnungen immer `even`, `decide` sendet den vollständigen Termin, Dashboard zählt heute fällige Todos nicht als überfällig, Ämtli mit Ex-Mitglied in der Rotation bleibt bearbeitbar, Tierpflege-Erinnerung nach Verschieben der Fälligkeit, Haushaltswechsel leert alle Stores, Rolle nach Auto-Beförderung wird sofort geladen; 10 offene Produktentscheidungen |
 
-**Kennzahlen (lokaler Reparaturstand vom 7. Oktober 2026):** Backend 837 Tests in 62 Dateien, Coverage 94 %; Frontend 473 Tests in 33 Dateien, Coverage 77,49 % (Statements), 72,14 % (Branches), Statement-Schwelle 66 %; 1173 i18n-Schlüssel; 37 Alembic-Migrationen (einziger Kopf `y1z2a3b4c5d6`).
+Aktuelle Kennzahlen: siehe „Änderungen seit 2026-10-07“ oben.
 
 Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fixes.md). App-Typprüfung und Produktionsbuild bestehen; Chromium und WebKit wurden lokal geprüft. Produktion und das echte iPhone bleiben ungeprüft. Für den HEIC/HEIF-Serverfallback sind passende Frontend- und Backend-Builds mit `pillow-heif==1.8.0` erforderlich; keine neue Datenbankmigration.
 
@@ -90,7 +98,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | Datei | Zweck | Status |
 |---|---|---|
 | [`app/main.py`](../backend/app/main.py) | FastAPI-App (`redirect_slashes=False`), Startup-Prüfung der Konfiguration, CORS, Security-Header-Middleware, Rate-Limit-Handler, Mount aller 23 Router, Socket.IO-Mount unter `/socket.io`, `GET /api/health` (mit DB-Check), Hintergrund-Tasks (Web-Push-Scheduler, Upload-Cleanup) | ✅ Fertig |
-| [`app/models.py`](../backend/app/models.py) | SQLAlchemy-Models (32 Tabellen, siehe Abschnitt 5) und `SyncVersionMixin` (`updated_at`/`version`) | ✅ Fertig |
+| [`app/models.py`](../backend/app/models.py) | SQLAlchemy-Models (39 Tabellen, siehe Abschnitt 5) und `SyncVersionMixin` (`updated_at`/`version`) | ✅ Fertig |
 | [`app/database.py`](../backend/app/database.py) | DB-Session, Engine, Base | ✅ Fertig |
 | [`app/socket_manager.py`](../backend/app/socket_manager.py) | Socket.IO-Server: JWT-Auth beim Verbindungsaufbau, Haushalt-Räume (`join_household` prüft Mitgliedschaft), persönlicher Raum pro User, Sitzungs-Ablauf (Timer + `reauth`), `emit_to_household(_sync)` inkl. Rauswurf entfernter Mitglieder, `disconnect_user_sync` | ✅ Fertig |
 | [`app/core/config.py`](../backend/app/core/config.py) | Pydantic Settings (DB-URL, JWT-Secret, CORS, Token-Laufzeiten, Umgebung, VAPID-Schlüssel, Speicher-Limit pro Haushalt) | ✅ Fertig |
@@ -134,14 +142,14 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`app/services/attention.py`](../backend/app/services/attention.py) | Was heute ansteht (Zahl am App-Icon und Liste fürs Widget): bis heute fällige offene Aufgaben und Ämtli (eigene oder niemandem zugewiesene), Tier- und Pflanzenpflege | ✅ Fertig |
 | [`app/routers/widget.py`](../backend/app/routers/widget.py) | Homescreen-Widget (Scriptable): Nur-Lese-Schlüssel verwalten (3 Endpoints) und Widget-Daten (`/api/widget/summary`) — siehe [`widget.md`](widget.md) | ✅ Fertig |
 | [`app/services/storage.py`](../backend/app/services/storage.py) | `LocalStorageService`: Dateien unter `UPLOAD_DIR/{household_id}/` | ✅ Fertig |
-| [`alembic.ini`](../backend/alembic.ini), `migrations/` | Alembic-Konfiguration und -Migrationen (33 Versionen unter `migrations/versions/`, einziger Kopf `w1x2y3z4a5b6`) | ✅ Fertig |
+| [`alembic.ini`](../backend/alembic.ini), `migrations/` | Alembic-Konfiguration und -Migrationen (46 Revisionen unter `migrations/versions/`, einziger Kopf `cal1a2b3c4d5`) | ✅ Fertig |
 | [`scripts/regenerate_invite_codes.py`](../backend/scripts/regenerate_invite_codes.py) | Dry-Run/Apply-Script für Invite-Code-Migration | ✅ Fertig |
 | [`scripts/generate_vapid_keys.py`](../backend/scripts/generate_vapid_keys.py) | Erzeugt VAPID-Schlüssel für Web Push | ✅ Fertig |
 | [`pyproject.toml`](../backend/pyproject.toml) | ruff-Konfiguration (E, F, I, B) | ✅ Fertig |
 
 ### Backend-Tests (`backend/tests/`)
 
-62 Testdateien, 837 Tests (SQLite in-memory, Coverage 94 %). Die Mehrmandanten-Dateien (`*_scoping`) prüfen jeweils, dass Zugriffe auf fremde Haushalte mit 403 abgewiesen werden.
+81 Testdateien mit 1093 Tests (SQLite in-memory, Coverage 95 %) plus 17 Dateien mit 66 Tests in der PostgreSQL-Lane `tests/pg/` (nur mit `TEST_PG_URL`); zusammen 1159 Tests. Die Mehrmandanten-Dateien (`*_scoping`) prüfen jeweils, dass Zugriffe auf fremde Haushalte mit 403 abgewiesen werden.
 
 | Datei | Abdeckung | Status |
 |---|---|---|
@@ -239,8 +247,8 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`services/pushService.ts`](../frontend/src/services/pushService.ts) | Web-Push-Abo im Browser verwalten und mit dem Backend synchronisieren | ✅ Fertig |
 | [`public/push-sw.js`](../frontend/public/push-sw.js) | Service-Worker-Teil für Push-Benachrichtigungen; Icon-Zahl nur für den Haushalt, den die App gerade zeigt (CASA-40) | ✅ Fertig |
 | **i18n** | | |
-| [`locales/de.json`](../frontend/src/locales/de.json) | Deutsche Übersetzungen (1173 Keys) | ✅ Fertig |
-| [`locales/en.json`](../frontend/src/locales/en.json) | Englische Übersetzungen (1173 Keys) | ✅ Fertig |
+| [`locales/de.json`](../frontend/src/locales/de.json) | Deutsche Übersetzungen (1312 Keys) | ✅ Fertig |
+| [`locales/en.json`](../frontend/src/locales/en.json) | Englische Übersetzungen (1312 Keys) | ✅ Fertig |
 | [`scripts/check-locales.js`](../frontend/scripts/check-locales.js) | Build-Script: prüft Key-Sync zwischen DE und EN | ✅ Fertig |
 | **Design-System** | | |
 | [`assets/theme.css`](../frontend/src/assets/theme.css) | Design-Token-System: Farben (Light/Dark), Typografie (Nunito/Quicksand), Spacing, Radii, Schatten, Transitions, Avatar-Palette, Global Reset | ✅ Fertig |
@@ -291,7 +299,9 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`utils/money.ts`](../frontend/src/utils/money.ts) | formatRappen (Intl.NumberFormat), parseAmountToRappen (String-basiert, kein Float) | ✅ Fertig |
 | [`utils/apiErrors.ts`](../frontend/src/utils/apiErrors.ts) | Error-Code-Extraktion, i18n-Mapping für maschinenlesbare Backend-Codes | ✅ Fertig |
 | [`utils/memberColor.ts`](../frontend/src/utils/memberColor.ts) | Deterministisches User→Farbe-Mapping | ✅ Fertig |
-| [`utils/dates.ts`](../frontend/src/utils/dates.ts) | Datums-Helfer (z. B. `formatDateShort`) | ✅ Fertig |
+| [`utils/dates.ts`](../frontend/src/utils/dates.ts) | Datums-Helfer (z. B. `formatDateShort`, `todayEventLabel` fürs Dashboard) | ✅ Fertig |
+| [`utils/balances.ts`](../frontend/src/utils/balances.ts) | Salden aktueller und ehemaliger Mitglieder trennen, Ausgleichs-Parteien (PD-F2) | ✅ Fertig |
+| [`utils/eventEdit.ts`](../frontend/src/utils/eventEdit.ts), [`utils/editDiff.ts`](../frontend/src/utils/editDiff.ts) | Nur geänderte Felder beim Bearbeiten von Terminen, Notizen und Todos (CASA-09) | ✅ Fertig |
 | [`utils/storeName.ts`](../frontend/src/utils/storeName.ts) | Geschäftsnamen normalisieren und ohne Beachtung der Schreibweise vergleichen | ✅ Fertig |
 | [`utils/syncVersion.ts`](../frontend/src/utils/syncVersion.ts) | Erkennung veralteter Events anhand von `version` | ✅ Fertig |
 | [`utils/documents.ts`](../frontend/src/utils/documents.ts) | Ablaufstatus von Dokumenten (abgelaufen / läuft bald ab) | ✅ Fertig |
@@ -341,7 +351,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 
 ### Frontend-Tests (`frontend/src/**/__tests__/`)
 
-33 Testdateien, 473 Tests (Vitest, Umgebung `node`). Die Coverage (77,49 % Statements, 72,14 % Branches) misst nur `utils/`, `stores/` und `repositories/`. Views und Komponenten sind nicht Teil dieser Coverage; lokale Browserprüfungen stehen im [aktuellen Audit](qa/current-audit-fixes.md).
+56 Testdateien, 727 Tests (Vitest, Umgebung `node`). Die Coverage (83,4 % Statements, 77,89 % Branches) misst nur `utils/`, `stores/` und `repositories/`. Views und Komponenten sind nicht Teil dieser Coverage; lokale Browserprüfungen stehen im [aktuellen Audit](qa/current-audit-fixes.md).
 
 | Datei | Abdeckung | Status |
 |---|---|---|
@@ -365,18 +375,18 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 
 ## 4. API-Endpoints
 
-124 Endpoints (123 in den Routern plus Health-Check). Maßgeblich ist die OpenAPI-Doku des Backends unter `/docs`. Alle Pfade stehen ohne Weiterleitung bei fehlendem oder überzähligem Slash (`redirect_slashes=False`): Der abschliessende Slash muss exakt so verwendet werden, wie er hier steht. `{id}` steht für die Haushalts-ID; alle Endpoints unter `/api/households/{id}/…` prüfen die Mitgliedschaft (fremder Haushalt → 403). Rate-Limits gelten pro IP und im Speicher; bei Überschreitung antwortet der Server mit 429.
+162 Endpoints (inkl. Health-Check). Maßgeblich ist die OpenAPI-Doku des Backends unter `/docs`. Alle Pfade stehen ohne Weiterleitung bei fehlendem oder überzähligem Slash (`redirect_slashes=False`): Der abschliessende Slash muss exakt so verwendet werden, wie er hier steht. `{id}` steht für die Haushalts-ID; alle Endpoints unter `/api/households/{id}/…` prüfen die Mitgliedschaft (fremder Haushalt → 403). Rate-Limits gelten pro IP und im Speicher; bei Überschreitung antwortet der Server mit 429.
 
 | Method | Path | Auth | Beschreibung |
 |---|---|---|---|
 | **Auth** | | | |
-| POST | `/api/auth/register` | ❌ | Registrieren: `household_name` ODER `invite_code`; Rate-Limit 3/Stunde |
+| POST | `/api/auth/register` | ❌ | Registrieren: `household_name` (neuer Haushalt wie `POST /households/`, inkl. Default-Kalender „Allgemein“) ODER `invite_code`; Rate-Limit 3/Stunde |
 | POST | `/api/auth/login` | ❌ | Login (Formular-Daten), gibt Access- und Refresh-Token zurück; Rate-Limit 5/Minute |
 | POST | `/api/auth/refresh` | ❌ | Refresh-Token-Rotation mit Reuse-Erkennung; Rate-Limit 30/Minute |
 | POST | `/api/auth/logout` | ❌ | Refresh-Token widerrufen (idempotent, 204); Rate-Limit 30/Minute |
 | GET | `/api/auth/me` | ✅ | User-Info + Haushalte (inkl. Rolle, Währung) |
 | **Haushalt** | | | |
-| POST | `/api/households/` | ✅ | Haushalt erstellen (Ersteller wird Admin) |
+| POST | `/api/households/` | ✅ | Haushalt erstellen (Ersteller wird Admin; Einladungscode mit Ablauf, Default-Kalender „Allgemein“; `services/membership.create_household_with_admin`) |
 | POST | `/api/households/join` | ✅ | Haushalt per Einladungscode beitreten; Rate-Limit 5/Minute und 20/Stunde |
 | PATCH | `/api/households/{id}` | ✅ Admin | Haushalt umbenennen |
 | GET | `/api/households/{id}/members` | ✅ | Mitglieder-Liste (inkl. Rolle) |
@@ -414,7 +424,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | GET | `/api/households/{id}/expenses/` | ✅ | Ausgaben-Liste (nach Datum absteigend, `limit`/`offset`, optional `month`; `deleted=true` → nur gelöschte) |
 | GET | `/api/households/{id}/expenses/{expense_id}` | ✅ | Einzelne Ausgabe (auch gelöscht) |
 | POST | `/api/households/{id}/expenses/` | ✅ | Ausgabe erstellen (even/custom Split) |
-| GET | `/api/households/{id}/expenses/balances` | ✅ | Salden + Ausgleichsvorschläge (Greedy-Algorithmus) |
+| GET | `/api/households/{id}/expenses/balances` | ✅ | Salden + Ausgleichsvorschläge (Greedy-Algorithmus); pro Saldo `is_member` und `display_name` — ehemalige Mitglieder behalten ihren Saldo (PD-F2) |
 | PATCH | `/api/households/{id}/expenses/{expense_id}` | ✅ | Ausgabe aktualisieren (optional Shares neu berechnen; `If-Match: <version>` → 409 bei veraltetem Stand) |
 | DELETE | `/api/households/{id}/expenses/{expense_id}` | ✅ | Ausgabe löschen (Soft Delete, idempotent; Shares bleiben für das Wiederherstellen) |
 | POST | `/api/households/{id}/expenses/{expense_id}/restore` | ✅ | Gelöschte Ausgabe exakt wiederherstellen (409 `BILL_ALREADY_BOOKED`, wenn der Monat inzwischen neu gebucht wurde) |
@@ -467,7 +477,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | POST | `/api/households/{id}/pets/feed-all` | ✅ | Alle aktiven Tiere füttern; Savepoint pro Tier, liefert genau die selbst angelegten Fütterungen (CASA-13) |
 | GET | `/api/households/{id}/pets/{pet_id}` | ✅ | Haustier lesen |
 | PATCH | `/api/households/{id}/pets/{pet_id}` | ✅ | Haustier aktualisieren (inkl. `photo_file_id`) |
-| DELETE | `/api/households/{id}/pets/{pet_id}` | ✅ | Haustier endgültig löschen (inkl. Verlauf; die App bietet zuerst „Archivieren“ an und warnt mit den Zahlen aus `/history`) |
+| DELETE | `/api/households/{id}/pets/{pet_id}` | ✅ | Haustier endgültig löschen. Mit Verlauf (Fütterungen, Gaben, erledigte Pflege) nur mit `?force=true`, sonst 409 `PET_HAS_HISTORY` mit Zahlen (`history`); die App bietet zuerst „Archivieren“ an |
 | POST | `/api/households/{id}/pets/{pet_id}/archive` | ✅ | Tier archivieren (verstorben/abgegeben): Verlauf bleibt, raus aus Fütterung, Dashboard, Badge, Push, Tag-Zielen (PD-P2/P3) |
 | POST | `/api/households/{id}/pets/{pet_id}/unarchive` | ✅ | Tier wieder aktivieren |
 | GET | `/api/households/{id}/pets/{pet_id}/history` | ✅ | Umfang des Verlaufs: `feedings`, `medications`, `medication_logs`, `care_tasks` |
@@ -528,6 +538,26 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | DELETE | `/api/households/{id}/tags/{tag_id}` | ✅ Admin | Tag löschen |
 | POST | `/api/tags/resolve/{token}` | ✅ Mitglied | Was der Tag tut (keine Mutation; 30/min/IP); liefert `confirm` (angezeigte Zuweisung bzw. Gießaufgaben) |
 | POST | `/api/tags/{token}/execute` | ✅ Mitglied | Aktion ausführen (30/min/IP). `chore.assignment.done` und `plant.water` verlangen `confirm` aus resolve (fehlt → 422 `TAG_CONFIRMATION_REQUIRED`, veraltet → 409 `TAG_CONFIRMATION_STALE`). Idempotent pro Haushaltstag: schon erledigt → `changed=false`, `reason=ALREADY_DONE` |
+| **Pflanzen** | | | |
+| GET | `/api/households/{id}/plants/` | ✅ | Pflanzen des Haushalts |
+| POST | `/api/households/{id}/plants/` | ✅ | Pflanze anlegen (optional mit Pflegeaufgaben) |
+| GET | `/api/households/{id}/plants/care-status` | ✅ | Pflegestatus aller Pflanzen (fällig/überfällig) |
+| POST | `/api/households/{id}/plants/water-all` | ✅ | Alle fälligen Gießaufgaben erledigen |
+| GET | `/api/households/{id}/plants/{plant_id}` | ✅ | Pflanze lesen |
+| PATCH | `/api/households/{id}/plants/{plant_id}` | ✅ | Pflanze aktualisieren (inkl. Foto) |
+| DELETE | `/api/households/{id}/plants/{plant_id}` | ✅ | Pflanze löschen |
+| GET | `/api/households/{id}/plants/{plant_id}/care-tasks/` | ✅ | Pflegeaufgaben |
+| POST | `/api/households/{id}/plants/{plant_id}/care-tasks/` | ✅ | Pflegeaufgabe anlegen |
+| PATCH | `/api/households/{id}/plants/{plant_id}/care-tasks/{task_id}` | ✅ | Pflegeaufgabe ändern |
+| POST | `/api/households/{id}/plants/{plant_id}/care-tasks/{task_id}/complete` | ✅ | Pflege erledigt (Log + neue Fälligkeit, idempotent pro Haushaltstag) |
+| DELETE | `/api/households/{id}/plants/{plant_id}/care-tasks/{task_id}` | ✅ | Pflegeaufgabe löschen |
+| GET | `/api/households/{id}/plants/{plant_id}/care-log` | ✅ | Letzte Pflege-Einträge |
+| **KI-Assistent (optional)** | | | |
+| GET | `/api/ai/status` | ✅ | Ob ein Server-Schlüssel konfiguriert ist (`enabled`) |
+| GET | `/api/households/{id}/ai/settings` | ✅ | Opt-in des Haushalts und Tageskontingent |
+| PUT | `/api/households/{id}/ai/settings` | ✅ Admin | Opt-in ein-/ausschalten (`household_updated` mit `ai_enabled`) |
+| POST | `/api/households/{id}/ai/recipe` | ✅ | Rezeptvorschlag aus Zutaten (Kontingent pro Haushalt und Person) |
+| POST | `/api/households/{id}/ai/plant-care` | ✅ | Pflanzenpflege-Hinweise |
 | **Health** | | | |
 | GET | `/api/health` | ❌ | Health-Check mit DB-Prüfung |
 
@@ -544,7 +574,7 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `reauth` | Client → Server | `{ token }` → Ack `{ ok }`; verlässt Haushaltsräume ohne Mitgliedschaft (dann `error` wie oben) |
 | `session_ended` | Server → Client (eine Verbindung) | `{ reason: "expired" \| "logout" \| "revoked" }`, danach trennt der Server |
 | **Haushalt** | | |
-| `household_updated` | Server → Room | `{ id, name }` |
+| `household_updated` | Server → Room | `{ id, name }`; beim KI-Opt-in `{ id, name, ai_enabled }` |
 | `household_member_joined` | Server → Room | `{ household_id, user_id, display_name, role }` (auch bei Registrierung mit Code) |
 | `household_member_left` | Server → Room | `{ household_id, user_id, released }` — `released`: freigegebene Bereiche (PD-H1), Clients laden sie neu |
 | `household_member_removed` | Server → Room | `{ household_id, user_id, released }` |
@@ -622,6 +652,18 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `document_created` | Server → Room | `DocumentResponse` |
 | `document_updated` | Server → Room | `DocumentResponse` (auch bei Seiten-Änderungen) |
 | `document_deleted` | Server → Room | `{ id, file_ids }` |
+| **Pflanzen** | | |
+| `plant_created` | Server → Room | `PlantResponse` |
+| `plant_updated` | Server → Room | `PlantResponse` |
+| `plant_deleted` | Server → Room | `{ id, household_id }` |
+| `plant_care_task_created` | Server → Room | `CareTaskResponse` |
+| `plant_care_task_updated` | Server → Room | `CareTaskResponse` (auch beim Erledigen und bei „Alle giessen“) |
+| `plant_care_task_deleted` | Server → Room | `{ id, plant_id, household_id }` |
+| `plant_care_logged` | Server → Room | `CareLogResponse` |
+| **Tags** | | |
+| `tag_created` | Server → Room | `TagResponse` |
+| `tag_updated` | Server → Room | `TagResponse` (auch nach jeder Nutzung: `use_count`, `last_used_at`) |
+| `tag_deleted` | Server → Room | `{ id, household_id }` |
 
 Der Client verarbeitet `file_uploaded` und `file_deleted` nicht (kein Handler im Frontend; Fotos und Dokumente kommen über ihre eigenen Events). Web Push (Todo- und Termin-Erinnerungen, Tier- und Pflanzenpflege, Putzplan, Dokument-Ablauf) läuft nicht über Socket.IO, sondern über `/api/push/…` und den Scheduler im Backend.
 
@@ -641,16 +683,12 @@ Eine Verbindung gilt nur so lange wie das Access-Token (15 Min.), mit dem sie zu
 **Client (`composables/useRealtimeSession.ts`, `useSocket.ts`):** Ein Token-Refresh gibt nur das neue Token per `reauth` weiter; die Stores werden **nur** bei Anmeldung, Haushaltswechsel und Reconnect nachgeladen (CASA-44). Der Sync-Punkt zeigt „Verbunden“ erst, wenn auch `join_household` bestätigt ist (`useSyncStatus`, CASA-46). Payloads mit `household_id` eines anderen als des aktuellen Haushalts verwirft `useSocket.on` (CASA-12).
 
 **Grenze:** Ein Access-Token bleibt bis zu seinem Ablauf gültig (zustandsloses JWT). Wer es hat, kann sich nach dem Logout bis zu 15 Minuten lang neu verbinden, genau wie bei der REST-API. Danach endet jede Verbindung spätestens mit dem Ablauf des Tokens. Timer und Räume liegen im Prozessspeicher (ein Worker, siehe Abschnitt 8).
-| **Tags** | | |
-| `tag_created` | Server → Room | `TagResponse` |
-| `tag_updated` | Server → Room | `TagResponse` (auch nach jeder Nutzung: `use_count`, `last_used_at`) |
-| `tag_deleted` | Server → Room | `{ id, household_id }` |
 
 ---
 
 ## 5. Datenmodell
 
-32 Tabellen in `backend/app/models.py` (Alembic-Migrationen: `backend/migrations/versions/`, 33 Versionen). Geldbeträge sind Integer in Rappen (`*_rappen`). Soweit nicht anders vermerkt, haben alle Haushalts-Tabellen `household_id` (FK auf `households`, `ON DELETE CASCADE`).
+39 Tabellen in `backend/app/models.py` (Alembic-Migrationen: `backend/migrations/versions/`, 46 Revisionen, einziger Kopf `cal1a2b3c4d5`). Geldbeträge sind Integer in Rappen (`*_rappen`). Soweit nicht anders vermerkt, haben alle Haushalts-Tabellen `household_id` (FK auf `households`, `ON DELETE CASCADE`).
 
 ### Übersicht
 
@@ -707,6 +745,13 @@ User ──< HouseholdMember >── Household
 | `stored_files` | `original_name`, `mime_type`, `size_bytes`, `storage_path`, `uploaded_by_user_id` | Datei liegt unter `UPLOAD_DIR/{household_id}/` |
 | `documents` | `title`, `category`, `notes`, `document_date`, `expiry_date`, `created_by_user_id` | `updated_at`; Index `(household_id, category)` |
 | `document_files` | `document_id`, `file_id` (beide CASCADE), `position` | Seiten eines Dokuments; `file_id` unique (eine Datei gehört zu höchstens einem Dokument) |
+| `plants` | `name`, `species`, `location`, `notes`, `care_notes`, `photo_file_id` | |
+| `plant_care_tasks` | `plant_id` (CASCADE), `care_type` (`water`/`fertilize`/`repot`/`mist`/`other`), `label`, `interval_days`, `next_due_at`, `last_done_at`, `notified_at` | Push-Erinnerung bei Fälligkeit |
+| `plant_care_logs` | `plant_id`, `care_task_id`, `care_type`, `label`, `done_at`, `done_by_user_id`, `note` | Pflege-Verlauf |
+| `tags` | `token` (unique), `label`, `target_type`, `target_id` (ohne FK), `action`, `created_by_user_id`, `last_used_at`, `use_count`, `enabled` | NFC-Chips / QR-Sticker |
+| `widget_tokens` | `user_id`, `token_hash`, `token_prefix`, `last_used_at` | Unique `(user_id, household_id)`; Nur-Lese-Schlüssel fürs Widget |
+| `ai_usage` | `day`, `calls`, `input_tokens`, `output_tokens` | Unique `(household_id, day)`; Tageskontingent pro Haushalt |
+| `ai_user_usage` | `user_id`, `day`, `calls` | Unique `(user_id, day)`; Tageskontingent pro Person (PD-A2) |
 
 Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_user_id`, `assigned_to_user_id`, `paid_by_user_id` …) sind `ON DELETE SET NULL`. Beim Verlassen eines Haushalts bleiben Ausgaben und Anteile des Ex-Mitglieds bestehen („Ehemaliges Mitglied“-Muster, siehe Geschäftsregeln).
 
@@ -743,7 +788,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 - Registrierung mit `household_name` → Ersteller wird `admin`
 - Registrierung mit `invite_code` → Beitritt als `member`
 - `POST /api/households/` → Ersteller wird `admin`
-- Admin-geschützte Endpoints: PATCH Haushalt (rename), DELETE Member, Tags anlegen/ändern/löschen/Token neu erzeugen (Ausführen per Scan dürfen alle Mitglieder)
+- Admin-geschützte Endpoints (`verify_household_admin`): PATCH Haushalt (rename), DELETE Member, Einladungscode erneuern (`POST …/invite-code/rotate`), KI-Opt-in (`PUT …/ai/settings`), Tags anlegen/ändern/löschen/Token neu erzeugen (Ausführen per Scan dürfen alle Mitglieder)
 - Keine feingranularen Berechtigungen (bewusst: nur admin/member)
 
 ### Mitgliedschaft ändern (gemeinsame Regeln, `app/services/membership.py`)
@@ -779,7 +824,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 
 ### Registrierung
 - Genau eines von `household_name` oder `invite_code` muss gesetzt sein
-- `household_name` → neuer Haushalt + Admin
+- `household_name` → neuer Haushalt + Admin über denselben Helfer wie `POST /api/households/` (`create_household_with_admin`: Einladungscode mit Ablauf, Default-Kalender „Allgemein“)
 - `invite_code` → bestehender Haushalt + Member (gleicher gesperrter Beitrittsweg wie `/join`, danach `household_member_joined`)
 - Parallele Registrierung derselben E-Mail → 400 `EMAIL_ALREADY_REGISTERED` (nie 500)
 
@@ -882,7 +927,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Expenses-Modul (CRUD + Split + Saldo) | ✅ | ✅ ExpensesView, ExpenseList, BalanceSummary, ExpenseFormDialog | ✅ Socket |
 | Settlements-Modul | ✅ | ✅ | ✅ Socket |
 | Chores-Modul (Putzplan + Rotation) | ✅ | ✅ | ✅ Socket |
-| i18n (DE + EN, 1173 Keys, Locale-Check) | ✅ | ✅ | — |
+| i18n (DE + EN, 1312 Keys, Locale-Check) | ✅ | ✅ | — |
 | Error-Code-System (maschinenlesbar) | ✅ | ✅ i18n-Mapping | — |
 | Offline-Banner | — | ✅ | — |
 | Toast-System | — | ✅ | — |
@@ -895,7 +940,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Haushalt verlassen / Mitglied entfernen | ✅ POST /leave, DELETE /members/{uid} | ✅ HouseholdView | ✅ Socket |
 | Rollen-System (admin/member) | ✅ verify_household_admin | ✅ UI-Anzeige | — |
 | Währung pro Haushalt | ✅ Household.currency | ✅ /me Response | — |
-| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 62 Testdateien, 837 Tests (Coverage 94 %) | — | — |
+| Backend-Tests (Multi-Tenant, Auth, Module, Sicherheit) | ✅ 98 Testdateien, 1159 Tests (1093 SQLite + 66 PostgreSQL; Coverage 95 %) | — | — |
 | Dashboard | ✅ | ✅ DashboardView | — |
 | Einkauf 2.0 (Multi-Listen, Stores) | ✅ | ✅ ShoppingView | ✅ Socket |
 | Aufgaben 2.0 (Unified Tasks) | ✅ | ✅ TodosView | ✅ Socket |
@@ -970,7 +1015,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 |---|---|---|
 | FastAPI | 0.141.1 | Web-Framework |
 | SQLAlchemy | (via requirements.txt) | ORM |
-| Alembic | 1.18.5 | DB-Migrationen (37 Versionen) |
+| Alembic | 1.18.5 | DB-Migrationen (46 Revisionen) |
 | psycopg2-binary | 2.9.12 | PostgreSQL-Driver |
 | python-socketio | (via requirements.txt) | WebSocket |
 | bcrypt | 4.0.1 | Passwort-Hashing |

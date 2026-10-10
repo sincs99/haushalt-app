@@ -20,7 +20,7 @@
 | `frontend/src/views/TagsView.vue`, `frontend/src/utils/qr.ts`, `frontend/src/composables/useNfcWriter.ts` | Verwaltung, QR-Code, Web NFC |
 | `frontend/src/router/index.ts`, `frontend/src/views/LoginView.vue` | Login-Pflicht, `redirect` |
 | `frontend/nginx.conf`, `frontend/vite.config.ts` | Access-Log, SPA-Fallback, Service Worker |
-| `backend/tests/test_tags.py` | 52 Tests |
+| `backend/tests/test_tags.py` | 79 Tests (Stand 2026-10-10) |
 
 ---
 
@@ -175,7 +175,7 @@ Jemand mit Zugang zur Wohnung könnte einen QR-Sticker durch einen mit fremder U
 
 ## Verifikation
 
-**Backend:** `backend/tests/test_tags.py`, 66 Tests: Token-Format; CRUD und Rollen; Aktion/Zieltyp-Validierung; Ziel aus fremdem Haushalt; resolve/execute für `pet.feed` (einzeln, alle Tiere, doppelt → 409, Slot-Wahl), `pet.care_task.done`, `chore.assignment.done` (aktuelle Periode vor Rückstand, pausiert, nichts fällig), `shopping_list.open` (nur Navigation, execute → 422), `todo.done` (idempotent), `plant.water` (eine Pflanze, nur fällige Gießaufgaben bei „alle“, keine Gießaufgabe → 409, gelöschte Pflanze → `TAG_TARGET_NOT_FOUND`, fremder Haushalt → 403, Pflanze aus fremdem Haushalt beim Anlegen → 422), `plant.care_task.done`; 401/403/404/410/422; Rate-Limit beider Endpunkte über verschiedene Tokens; Schwärzung in Log-Records und in der slowapi-Warnung.
+**Backend:** `backend/tests/test_tags.py`, 79 Tests (Stand 2026-10-10): Token-Format; CRUD und Rollen; Aktion/Zieltyp-Validierung; Ziel aus fremdem Haushalt; resolve/execute für `pet.feed` (einzeln, alle Tiere, doppelt → 409, Slot-Wahl), `pet.care_task.done`, `chore.assignment.done` (aktuelle Periode vor Rückstand, pausiert, nichts fällig), `shopping_list.open` (nur Navigation, execute → 422), `todo.done` (idempotent), `plant.water` (eine Pflanze, nur fällige Gießaufgaben bei „alle“, keine Gießaufgabe → 409, gelöschte Pflanze → `TAG_TARGET_NOT_FOUND`, fremder Haushalt → 403, Pflanze aus fremdem Haushalt beim Anlegen → 422), `plant.care_task.done`; 401/403/404/410/422; Rate-Limit beider Endpunkte über verschiedene Tokens; Schwärzung in Log-Records und in der slowapi-Warnung.
 
 **E2E (wie H-02):** Produktions-Build (`vite build`) mit der echten `nginx.conf` + `security-headers.conf` (`nginx -t` ok) vor einem lokalen Backend (SQLite, Seed-Daten), headless Chromium (Playwright), Locale `de-DE`, Viewport 390×844:
 

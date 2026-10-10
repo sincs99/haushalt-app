@@ -708,6 +708,7 @@
     "DATE_OUT_OF_RANGE": "Das Datum liegt zu weit in der Vergangenheit oder Zukunft.",
     "BILL_MONTH_OUT_OF_RANGE": "Nachbuchen ist nur für die letzten 12 Monate möglich.",
     "MEDICATION_INACTIVE": "Das Medikament ist deaktiviert",
+    "PET_HAS_HISTORY": "Das Tier hat einen Verlauf – bitte archivieren oder ausdrücklich endgültig löschen",
     "MEDICATION_HAS_HISTORY": "Medikament wurde schon gegeben – bitte deaktivieren statt löschen",
     "PET_ARCHIVED": "Das Tier ist archiviert",
     "MEAL_PLAN_OCCUPIED": "Für diesen Tag ist schon ein Essen geplant",

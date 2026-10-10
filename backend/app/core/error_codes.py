@@ -73,6 +73,8 @@ class ErrorCode:
     MEDICATION_HAS_HISTORY = "MEDICATION_HAS_HISTORY"
     # Archiviertes Tier (PD-P2) — z. B. Fütterung
     PET_ARCHIVED = "PET_ARCHIVED"
+    # Tier mit Verlauf → archivieren oder ?force=true (PD-P2)
+    PET_HAS_HISTORY = "PET_HAS_HISTORY"
     RECIPE_NOT_FOUND = "RECIPE_NOT_FOUND"
     MEAL_PLAN_ENTRY_NOT_FOUND = "MEAL_PLAN_ENTRY_NOT_FOUND"
     MEAL_PLAN_DATE_TAKEN = "MEAL_PLAN_DATE_TAKEN"

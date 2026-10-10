@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { activePets, archivedPets, hasHistory, isRecentDose, lastDose, MEDICATION_CONFIRM_HOURS, needsUnfeedConfirmation } from '../petCare'
+import { activePets, archivedPets, hasHistory, isRecentDose, petHistoryConflict, lastDose, MEDICATION_CONFIRM_HOURS, needsUnfeedConfirmation } from '../petCare'
 
 const log = (id: string, givenAt: string, by = 'u1') => ({
   id, household_id: 'h', medication_id: 'm', given_at: givenAt, given_by_user_id: by, created_at: givenAt,
@@ -53,5 +53,19 @@ describe('Archiv (PD-P2)', () => {
     expect(hasHistory(none)).toBe(false)
     expect(hasHistory({ ...none, feedings: 1 })).toBe(true)
     expect(hasHistory({ ...none, medications: 1 })).toBe(true)
+  })
+})
+
+describe('petHistoryConflict (409 PET_HAS_HISTORY)', () => {
+  const history = { feedings: 3, medications: 1, medication_logs: 2, care_tasks: 0 }
+
+  it('liefert die Zahlen aus der 409-Antwort', () => {
+    const err = { response: { status: 409, data: { detail: { code: 'PET_HAS_HISTORY', message: 'x', history } } } }
+    expect(petHistoryConflict(err)).toEqual(history)
+  })
+
+  it('andere Fehler → null', () => {
+    expect(petHistoryConflict(new Error('x'))).toBeNull()
+    expect(petHistoryConflict({ response: { status: 409, data: { detail: { code: 'MEDICATION_HAS_HISTORY' } } } })).toBeNull()
   })
 })

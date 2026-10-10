@@ -151,7 +151,8 @@ export const usePetsStore = defineStore('pets', () => {
     return updated
   }
 
-  async function removePet(petId: string) {
+  /** `force`: erst nach ausdrücklicher Bestätigung mit den Verlaufszahlen (PD-P2) */
+  async function removePet(petId: string, options: { force?: boolean } = {}) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -165,7 +166,7 @@ export const usePetsStore = defineStore('pets', () => {
     feedingStatus.value = feedingStatus.value.filter(s => s.pet_id !== petId)
 
     try {
-      await repo.remove(householdId, petId)
+      await repo.remove(householdId, petId, options.force ?? false)
     } catch (error) {
       // Rollback
       if (active()) {

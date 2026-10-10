@@ -9,7 +9,7 @@ import { useToast } from '../composables/useToast'
 import { useAsyncAction } from '../composables/useAsyncAction'
 import { useLoader } from '../composables/useLoader'
 import { parseWeightKgToGrams } from '../utils/money'
-import { activePets, archivedPets, formatClock, hasHistory, needsUnfeedConfirmation } from '../utils/petCare'
+import { activePets, archivedPets, formatClock, hasHistory, needsUnfeedConfirmation, petHistoryConflict } from '../utils/petCare'
 import type { Pet, PetCreatePayload, PetHistory, FeedingSlot, FeedingLog } from '../types'
 import { PhCat, PhSun, PhMoon, PhPlus } from '@phosphor-icons/vue'
 import PetPhotoAvatar from '../components/PetPhotoAvatar.vue'
@@ -331,12 +331,27 @@ function cancelDelete() {
 async function handleDelete() {
   const id = deletingPetId.value
   if (!id) return
-  const ok = await run(() => petsStore.removePet(id), {
+  // Mit Verlauf: der Dialog hat die Zahlen gezeigt und „Endgültig löschen“ wurde
+  // ausdrücklich gewählt → force. Ohne bekannten Verlauf lehnt das Backend ab (409),
+  // falls inzwischen doch etwas erfasst wurde — dann zeigt der Dialog die Zahlen.
+  const force = deleteHasHistory.value
+  let conflict: PetHistory | null = null
+  const ok = await run(async () => {
+    try {
+      await petsStore.removePet(id, { force })
+      return true
+    } catch (err) {
+      conflict = petHistoryConflict(err)
+      if (!conflict) throw err
+      return false
+    }
+  }, {
     key: 'delete',
-    success: t('pets.deleted'),
+    success: (deleted) => (deleted ? t('pets.deleted') : undefined),
     error: t('pets.deleteError'),
   })
-  if (ok) deletingPetId.value = null
+  if (conflict) deleteHistory.value = conflict
+  else if (ok) deletingPetId.value = null
 }
 
 async function handleArchive() {

@@ -44,6 +44,17 @@ export function hasHistory(history: PetHistory | null | undefined): boolean {
 }
 
 /**
+ * 409 PET_HAS_HISTORY beim Löschen ohne `force` (PD-P2): Zahlen des Verlaufs aus der
+ * Antwort — z. B. hat inzwischen jemand gefüttert. Andere Fehler → null.
+ */
+export function petHistoryConflict(err: unknown): PetHistory | null {
+  const detail = (err as { response?: { data?: { detail?: { code?: string; history?: PetHistory } } } })
+    ?.response?.data?.detail
+  if (detail?.code !== 'PET_HAS_HISTORY') return null
+  return detail.history ?? { feedings: 0, medications: 0, medication_logs: 0, care_tasks: 0 }
+}
+
+/**
  * Entfernen einer Fütterung, die jemand anderes erfasst hat, braucht eine Rückfrage
  * mit Name und Uhrzeit (CASA-30). Eigene Fütterungen bleiben ein Tap (Undo per Toast).
  */

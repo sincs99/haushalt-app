@@ -11,7 +11,8 @@ export interface PetsRepository {
   fetchOne(householdId: string, petId: string): Promise<Pet>
   create(householdId: string, data: PetCreatePayload): Promise<Pet>
   update(householdId: string, petId: string, data: PetUpdatePayload): Promise<Pet>
-  remove(householdId: string, petId: string): Promise<void>
+  /** `force`: Tier samt Verlauf löschen (sonst 409 PET_HAS_HISTORY, PD-P2) */
+  remove(householdId: string, petId: string, force?: boolean): Promise<void>
   archive(householdId: string, petId: string): Promise<Pet>
   unarchive(householdId: string, petId: string): Promise<Pet>
   fetchHistory(householdId: string, petId: string): Promise<PetHistory>
@@ -67,9 +68,10 @@ export function createOnlinePetsRepository(): PetsRepository {
       return data
     },
 
-    async remove(householdId, petId) {
+    async remove(householdId, petId, force = false) {
       await deleteIdempotent(
         `/api/households/${householdId}/pets/${petId}`,
+        force ? { params: { force: true } } : undefined,
       )
     },
 

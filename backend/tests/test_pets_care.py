@@ -112,6 +112,54 @@ def test_archived_pet_not_offered_as_tag_target(client, db, household_a, token_a
 # ---------------------------------------------------------------------------
 
 
+def test_delete_pet_with_history_requires_force(client, db, household_a, token_a, pet_a, medication_a):
+    """Tier mit Verlauf: 409 PET_HAS_HISTORY mit Zahlen, erst ?force=true löscht (PD-P2)."""
+    from app.models import FeedingLog, MedicationLog, PetCareTask
+
+    base = f"/api/households/{household_a.id}/pets/{pet_a.id}"
+    assert client.post(f"{base}/feedings", json={"slot": "morning"}, headers=_h(token_a)).status_code == 201
+    assert client.post(f"{base}/medications/{medication_a.id}/give", headers=_h(token_a)).status_code == 201
+
+    resp = client.delete(base, headers=_h(token_a))
+    assert resp.status_code == 409
+    detail = resp.json()["detail"]
+    assert detail["code"] == "PET_HAS_HISTORY"
+    assert detail["history"] == {"feedings": 1, "medications": 1, "medication_logs": 1, "care_tasks": 0}
+    assert db.query(FeedingLog).filter_by(pet_id=pet_a.id).count() == 1
+
+    assert client.delete(f"{base}?force=true", headers=_h(token_a)).status_code == 204
+    db.expire_all()
+    assert db.get(Pet, pet_a.id) is None
+    assert db.query(MedicationLog).count() == 0
+    assert db.query(PetCareTask).filter_by(pet_id=pet_a.id).count() == 0
+
+
+def test_delete_pet_with_completed_care_task_requires_force(client, db, household_a, token_a, pet_a):
+    from datetime import date
+
+    from app.models import PetCareTask
+
+    db.add(PetCareTask(household_id=household_a.id, pet_id=pet_a.id, name="Wurmkur", interval_days=90,
+                       next_due_at=date.today(), last_done_at=date.today()))
+    db.commit()
+    resp = client.delete(f"/api/households/{household_a.id}/pets/{pet_a.id}", headers=_h(token_a))
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "PET_HAS_HISTORY"
+
+
+def test_delete_pet_without_history_needs_no_force(client, db, household_a, token_a, pet_a, medication_a):
+    """Nur Stammdaten (Medikament ohne Gabe, nie erledigte Pflege) → direkt löschbar."""
+    from datetime import date
+
+    from app.models import PetCareTask
+
+    db.add(PetCareTask(household_id=household_a.id, pet_id=pet_a.id, name="Krallen", interval_days=30,
+                       next_due_at=date.today()))
+    db.commit()
+    resp = client.delete(f"/api/households/{household_a.id}/pets/{pet_a.id}", headers=_h(token_a))
+    assert resp.status_code == 204
+
+
 def test_delete_medication_with_history_is_rejected(client, db, household_a, token_a, pet_a, medication_a):
     from app.models import MedicationLog
 

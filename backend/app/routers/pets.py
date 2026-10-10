@@ -2,7 +2,7 @@ import uuid
 import zoneinfo
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -598,7 +598,10 @@ def pet_history(
     db: Session = Depends(get_db),
 ):
     _get_pet_or_404(db, pet_id, household_id)
+    return _history_counts(db, pet_id)
 
+
+def _history_counts(db: Session, pet_id: uuid.UUID) -> PetHistoryResponse:
     def count(query) -> int:
         return query.scalar() or 0
 
@@ -614,16 +617,41 @@ def pet_history(
     )
 
 
+def _has_records(db: Session, pet_id: uuid.UUID, history: PetHistoryResponse) -> bool:
+    """Verlauf = Fütterungen, Medikamentengaben, erledigte Pflege (nicht blosse Stammdaten)."""
+    if history.feedings or history.medication_logs:
+        return True
+    return (
+        db.query(PetCareTask.id)
+        .filter(PetCareTask.pet_id == pet_id, PetCareTask.last_done_at.isnot(None))
+        .first()
+        is not None
+    )
+
+
 # DELETE /{pet_id} — Pet endgültig löschen (inkl. Verlauf). Die App bietet zuerst
 # „Archivieren“ an und warnt mit den Zahlen aus GET /{pet_id}/history (PD-P2).
+# Mit Verlauf nur nach ausdrücklicher Bestätigung (?force=true), sonst 409 mit Zahlen.
 @router.delete("/{pet_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_pet(
     household_id: uuid.UUID,
     pet_id: uuid.UUID,
+    force: bool = Query(False, description="true: Tier samt Verlauf endgültig löschen"),
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
     pet = _get_pet_or_404(db, pet_id, household_id)
+
+    # Verlauf nie still mitlöschen (wie MEDICATION_HAS_HISTORY): App bietet Archivieren an
+    if not force:
+        history = _history_counts(db, pet_id)
+        if _has_records(db, pet_id, history):
+            detail = error_detail(
+                ErrorCode.PET_HAS_HISTORY,
+                "Pet has feeding/medication/care history; archive it or delete with force=true",
+            )
+            detail["history"] = history.model_dump()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
     # StoredFile-Referenz merken für späteres physisches Löschen — nur wenn die
     # Datei von nichts anderem (Dokument, anderes Pet) referenziert wird

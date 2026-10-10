@@ -98,6 +98,18 @@ describe('Pets', () => {
   })
 })
 
+describe('Löschen mit Verlauf (PD-P2)', () => {
+  test('removePet sendet force nur nach ausdrücklicher Bestätigung', async () => {
+    const store = usePetsStore()
+    store.pets = [pet('a'), pet('b')]
+    repo.remove.mockResolvedValue(undefined)
+    await store.removePet('a')
+    expect(repo.remove).toHaveBeenLastCalledWith(HOUSEHOLD_ID, 'a', false)
+    await store.removePet('b', { force: true })
+    expect(repo.remove).toHaveBeenLastCalledWith(HOUSEHOLD_ID, 'b', true)
+  })
+})
+
 describe('Archiv (PD-P2)', () => {
   test('archivePet entfernt das Tier aus dem Fütterungsstatus, unarchivePet lädt ihn neu', async () => {
     const store = usePetsStore()

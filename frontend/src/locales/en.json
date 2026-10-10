@@ -708,6 +708,7 @@
     "DATE_OUT_OF_RANGE": "The date is too far in the past or future.",
     "BILL_MONTH_OUT_OF_RANGE": "Bills can only be booked for the past 12 months.",
     "MEDICATION_INACTIVE": "The medication is deactivated",
+    "PET_HAS_HISTORY": "The pet has a history – archive it or explicitly delete it permanently",
     "MEDICATION_HAS_HISTORY": "The medication has been given already – deactivate it instead of deleting",
     "PET_ARCHIVED": "The pet is archived",
     "MEAL_PLAN_OCCUPIED": "A meal is already planned for this day",

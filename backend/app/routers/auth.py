@@ -28,6 +28,7 @@ from app.services.invite_code import (
     is_invite_code_expired,
     new_invite_code_expiry,
 )
+from app.services.locking import lock_row
 from app.socket_manager import disconnect_user_sync
 
 logger = logging.getLogger(__name__)
@@ -198,22 +199,27 @@ def _refresh_rejected(code: str, message: str, from_cookie: bool) -> HTTPExcepti
 
 
 def _create_token_pair(user_id: str, db: Session) -> tuple[TokenResponse, RefreshToken]:
-    """Erzeugt Access- + Refresh-Token-Paar und persistiert den Refresh-Token.
+    """Erzeugt Access- + Refresh-Token-Paar und legt den Refresh-Token an (flush, KEIN Commit).
+
+    Der Aufrufer committet — bei der Rotation zusammen mit ``revoked_at`` und
+    ``replaced_by_id`` des alten Tokens, damit kein Zwischenzustand sichtbar wird
+    ("widerrufen, aber ohne Nachfolger"), den ein paralleler Refresh als Reuse
+    fehldeuten würde (CASA-11).
 
     Returns:
-        Tuple aus (TokenResponse für den Client, RefreshToken DB-Objekt).
+        Tuple aus (TokenResponse für den Client, RefreshToken DB-Objekt mit id).
     """
     access_token = create_access_token(user_id)
     raw_refresh = create_refresh_token()
 
     rt = RefreshToken(
+        id=uuid.uuid4(),
         user_id=uuid.UUID(user_id),
         token_hash=hash_refresh_token(raw_refresh),
         expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days),
     )
     db.add(rt)
-    db.commit()
-    db.refresh(rt)  # Damit rt.id verfügbar ist
+    db.flush()
 
     response = TokenResponse(
         access_token=access_token,
@@ -222,6 +228,44 @@ def _create_token_pair(user_id: str, db: Session) -> tuple[TokenResponse, Refres
         expires_in=get_access_token_expires_in(),
     )
     return response, rt
+
+
+def _rotate(db: Session, token: RefreshToken) -> TokenResponse:
+    """Ersetzt einen (gesperrten) aktiven Token durch einen neuen — ein einziger Commit."""
+    pair, new_rt = _create_token_pair(str(token.user_id), db)
+    token.revoked_at = datetime.now(timezone.utc)
+    token.replaced_by_id = new_rt.id
+    db.commit()
+    return pair
+
+
+def _as_aware(dt: datetime) -> datetime:
+    # SQLite gibt naive datetimes, PostgreSQL aware
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+# Schutz gegen Zyklen/Endlosketten in replaced_by_id (sollte nie vorkommen)
+MAX_REPLACEMENT_CHAIN = 50
+
+
+def _active_successor(db: Session, token: RefreshToken) -> RefreshToken | None:
+    """Folgt der Ersetzungskette bis zum aktiven Nachfolger (gesperrt) oder None.
+
+    Mehrere Tabs/Geräte mit demselben Cookie können innerhalb des Grace Windows
+    mehrmals mit dem alten Token kommen; jeder Aufruf hängt einen weiteren
+    Nachfolger an. Deshalb nicht nur einen Schritt prüfen, sondern bis zum Ende.
+    """
+    current = token
+    for _ in range(MAX_REPLACEMENT_CHAIN):
+        if current.replaced_by_id is None:
+            return None
+        nxt = lock_row(db, RefreshToken, current.replaced_by_id)
+        if nxt is None:
+            return None
+        if nxt.revoked_at is None:
+            return nxt
+        current = nxt
+    return None
 
 
 def _cleanup_expired_tokens(user_id: uuid.UUID, db: Session) -> None:
@@ -302,6 +346,7 @@ def register(
     db.flush()
 
     pair, _ = _create_token_pair(str(user.id), db)
+    db.commit()
     return _deliver(pair, request, response)
 
 
@@ -322,6 +367,7 @@ def login(
         raise HTTPException(status_code=401, detail=error_detail(ErrorCode.INVALID_CREDENTIALS, "Incorrect email or password"))
 
     pair, _ = _create_token_pair(str(user.id), db)
+    db.commit()
     return _deliver(pair, request, response)
 
 
@@ -347,76 +393,62 @@ def refresh_endpoint(
         )
 
     token_hash = hash_refresh_token(raw_token)
-    old_token = db.query(RefreshToken).filter_by(token_hash=token_hash).first()
+    # Zeile sperren (CASA-11): Parallele Refreshes mit demselben Token laufen
+    # nacheinander; der zweite sieht danach "widerrufen MIT Nachfolger" (Grace-Pfad)
+    old_token = (
+        db.query(RefreshToken)
+        .filter_by(token_hash=token_hash)
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
 
     # 1) Token nicht gefunden
     if old_token is None:
         raise _refresh_rejected(ErrorCode.REFRESH_TOKEN_INVALID, "Refresh token invalid", from_cookie)
 
+    now = datetime.now(timezone.utc)
+
     # 2) Reuse-Detection MIT Grace Window
     if old_token.revoked_at is not None:
-        # Prüfe ob innerhalb der Grace Period UND ein Replacement existiert
-        revoked_at = old_token.revoked_at
-        if revoked_at.tzinfo is None:
-            revoked_at = revoked_at.replace(tzinfo=timezone.utc)
-
         grace_ok = (
             old_token.replaced_by_id is not None
-            and (datetime.now(timezone.utc) - revoked_at).total_seconds()
+            and (now - _as_aware(old_token.revoked_at)).total_seconds()
             <= settings.refresh_token_reuse_grace_seconds
         )
-
         if grace_ok:
-            # Benign retry / zweiter Tab → Replacement-Token prüfen
-            replacement = db.get(RefreshToken, old_token.replaced_by_id)
-            if replacement and replacement.revoked_at is None:
-                # Replacement noch gültig → davon ableiten (nochmal rotieren)
-                replacement_expires = replacement.expires_at
-                if replacement_expires.tzinfo is None:
-                    replacement_expires = replacement_expires.replace(tzinfo=timezone.utc)
-
-                if replacement_expires >= datetime.now(timezone.utc):
-                    # Replacement revoken und neues Paar erstellen
-                    replacement.revoked_at = datetime.now(timezone.utc)
-                    db.flush()
-
-                    pair, new_rt = _create_token_pair(str(old_token.user_id), db)
-                    replacement.replaced_by_id = new_rt.id
-                    db.commit()
-                    return _deliver(pair, request, response)
+            # Benign retry / zweiter Tab → aktiven Nachfolger der Kette weiterrotieren
+            successor = _active_successor(db, old_token)
+            if successor is not None and _as_aware(successor.expires_at) >= now:
+                return _deliver(_rotate(db, successor), request, response)
 
         # Grace Window nicht anwendbar → volle Reuse-Detection
+        user_id = old_token.user_id
         db.query(RefreshToken).filter(
-            RefreshToken.user_id == old_token.user_id,
+            RefreshToken.user_id == user_id,
             RefreshToken.revoked_at.is_(None),
-        ).update({"revoked_at": datetime.now(timezone.utc)})
+        ).update({"revoked_at": now})
         db.commit()
         # Alle Sitzungen sind widerrufen → auch offene Socket-Verbindungen beenden
-        disconnect_user_sync(old_token.user_id, "revoked")
+        disconnect_user_sync(user_id, "revoked")
         raise _refresh_rejected(
             ErrorCode.REFRESH_TOKEN_REUSED, "Refresh token reuse detected", from_cookie
         )
 
-    # 3) Token abgelaufen (SQLite gibt naive datetimes, PostgreSQL aware)
-    expires_at = old_token.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at < datetime.now(timezone.utc):
+    # 3) Token abgelaufen
+    if _as_aware(old_token.expires_at) < now:
         raise _refresh_rejected(ErrorCode.REFRESH_TOKEN_EXPIRED, "Refresh token expired", from_cookie)
 
-    # 4) Alles OK → alten Token revoken, neues Paar erstellen
-    old_token.revoked_at = datetime.now(timezone.utc)
-    db.flush()
-
-    pair, new_rt = _create_token_pair(str(old_token.user_id), db)
-    old_token.replaced_by_id = new_rt.id
-    db.commit()
+    # 4) Alles OK → alten Token widerrufen + Nachfolger anlegen, ein Commit
+    user_id = old_token.user_id
+    pair = _rotate(db, old_token)
 
     # 5) Lazy Cleanup: alte Tokens dieses Users aufräumen
     try:
-        _cleanup_expired_tokens(old_token.user_id, db)
+        _cleanup_expired_tokens(user_id, db)
     except Exception:
-        logger.warning("Refresh token cleanup failed for user %s", old_token.user_id, exc_info=True)
+        db.rollback()
+        logger.warning("Refresh token cleanup failed for user %s", user_id, exc_info=True)
 
     return _deliver(pair, request, response)
 

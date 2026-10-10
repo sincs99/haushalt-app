@@ -1,0 +1,48 @@
+
+ RUN  v4.1.10 <scratchpad>/work/frontend_realtime_ux
+
+stdout | races.test.ts > R1 shopping.fetchItems: late response of household A lands after switch to B
+R1 items after switch: ["A:Milch A (fremder Haushalt)"]
+
+stdout | races.test.ts > R2 expenses.fetchBalances: late balances of A shown in B (money)
+R2 balances after switch: {"household":"A","balances":[{"user_id":"x","saldo_rappen":-5000}]}
+
+stdout | races.test.ts > R3 logout then login of other user: stores are NOT reset (oldHouseholdId=null path)
+R3 items visible to next user before fetch returns: ["Privat A"]
+
+stdout | races.test.ts > R4 deleteItem: concurrent remote delete -> own DELETE 404 -> rollback resurrects ghost item
+R4 items after own 404: ["i1"]
+
+stdout | races.test.ts > R5 chore schedule change by other member: assignments deleted server-side stay in UI (no event)
+R5 assignments on other client: ["as-old@2026-10-12","as-new@2026-10-15"]
+
+stdout | races.test.ts > R6 expense_updated arriving after expense_deleted resurrects deleted expense
+R6 expenses: ["x1"]
+
+stdout | races.test.ts > R7 refreshAllStores (token refresh/reconnect) GET snapshot older than own create wipes the item
+R7 items after stale snapshot: []
+
+stdout | races.test.ts > R8 meal_plan_updated from poll decide carries only {date}
+R8 weekPlan entry after poll decide event: [{"date":"2026-10-12"}]
+
+stdout | races.test.ts > R9 addItem: server committed, socket echo arrived, REST response lost -> rollback removes confirmed item; retry uses NEW id
+R9 items after rollback: []
+
+stdout | races.test.ts > R9 addItem: server committed, socket echo arrived, REST response lost -> rollback removes confirmed item; retry uses NEW id
+R9 client ids used for the two attempts: DIFFERENT
+
+ ✓ races.test.ts > R1 shopping.fetchItems: late response of household A lands after switch to B 14ms
+ ✓ races.test.ts > R2 expenses.fetchBalances: late balances of A shown in B (money) 4ms
+ ✓ races.test.ts > R3 logout then login of other user: stores are NOT reset (oldHouseholdId=null path) 1ms
+ ✓ races.test.ts > R4 deleteItem: concurrent remote delete -> own DELETE 404 -> rollback resurrects ghost item 4ms
+ ✓ races.test.ts > R5 chore schedule change by other member: assignments deleted server-side stay in UI (no event) 9ms
+ ✓ races.test.ts > R6 expense_updated arriving after expense_deleted resurrects deleted expense 1ms
+ ✓ races.test.ts > R7 refreshAllStores (token refresh/reconnect) GET snapshot older than own create wipes the item 6ms
+ ✓ races.test.ts > R8 meal_plan_updated from poll decide carries only {date} 5ms
+ ✓ races.test.ts > R9 addItem: server committed, socket echo arrived, REST response lost -> rollback removes confirmed item; retry uses NEW id 5ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  07:02:29
+   Duration  1.15s (transform 724ms, setup 40ms, import 891ms, tests 50ms, environment 0ms)
+

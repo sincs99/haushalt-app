@@ -1,0 +1,46 @@
+== F0: version consistency of concurrent shopping patches ==
+version -> quantities in responses: {9: {'4'}, 8: {'0'}, 5: {'7'}, 3: {'3'}, 6: {'6'}}
+final: [(9, '4')]
+
+== F1: recipe delete leaves meal plan entry with neither recipe nor text ==
+assign 200 
+delete recipe 204 
+entry after delete: [('2026-10-12', None, None, None)]
+add-missing on orphan entry 400 {"detail":{"code":"MEAL_PLAN_NO_RECIPE","message":"This meal plan entry has no recipe assigned"}}
+
+== F2: add-missing dedupe ==
+1st: {'added': ['200 g Mehl', 'Milch', 'Tomaten'], 'skipped': ['milch', 'Eier'], 'list_id': '317ef7f4-eb6a-4cfd-b67e-a6904c93481f'}
+ emits: [('shopping_item_created', '200 g Mehl'), ('shopping_item_created', 'Milch'), ('shopping_item_created', 'Tomaten')]
+2nd: {'added': [], 'skipped': ['200 g Mehl', 'Milch', 'milch', 'Tomaten', 'Eier'], 'list_id': '317ef7f4-eb6a-4cfd-b67e-a6904c93481f'}
+3rd after checking Tomaten: {'added': ['Tomaten'], 'skipped': ['200 g Mehl', 'Milch', 'milch', 'Eier'], 'list_id': '317ef7f4-eb6a-4cfd-b67e-a6904c93481f'}
+Which list? True
+
+== F2b: concurrent add-missing ==
+[(200, ['Reis', 'Kokosmilch', 'Curry']), (200, ['Reis', 'Kokosmilch', 'Curry'])]
+Reis count: 2
+
+== F2c: concurrent add-missing with NO list (default list created twice?) ==
+[200, 200]
+lists: [('Einkaufsliste', 0), ('Einkaufsliste', 0)]
+
+== F3: concurrent PUT same day ==
+2026-11-01 [200, 500]
+2026-11-02 [500, 200]
+2026-11-03 [200, 500]
+2026-11-04 [500, 200]
+
+== F4: recipe edit after scheduling reflects in plan ==
+['Pasta2', 'Pasta2', 'Curry']
+
+== F5: recipe update with null on NOT NULL fields ==
+recipe name=null 500 Internal Server Error
+recipe servings=null 500 Internal Server Error
+recipe is_favorite=null 500 Internal Server Error
+recipe ingredients=null 500 Internal Server Error
+
+== F6: recipe_id of other household in meal plan ==
+foreign recipe 404 {"detail":{"code":"RECIPE_NOT_FOUND","message":"Recipe not found in this household"}}
+
+== F7: meal plan both recipe and free_text ==
+EXC 1 validation error for MealPlanEntryResponse
+recipe.ingredients

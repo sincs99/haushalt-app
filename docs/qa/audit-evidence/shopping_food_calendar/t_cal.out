@@ -1,0 +1,39 @@
+default calendars: []
+== C1: DST gap 2026-03-29 02:30 (nonexistent) ==
+create 02:30-03:15 422 {"detail":{"code":"EVENT_END_BEFORE_START","message":"ends_at must not be before starts_at"}}
+create 02:30-03:45 201 
+ response starts/ends: 2026-03-29T03:30:00+02:00 2026-03-29T03:45:00+02:00
+ db: 2026-03-29 01:30:00|2026-03-29 01:45:00
+== C2: DST overlap 2026-10-25 02:30 (ambiguous) ==
+ response: 2026-10-25T02:30:00+02:00
+ db: 2026-10-25 00:30:00
+ 02:00-02:59 resp: 2026-10-25T02:00:00+02:00 2026-10-25T02:59:00+02:00
+ gap end 02:10 after start 01:59 201 
+== C3: all-day event edit title only (UI sends full payload) ==
+ created 2026-10-24T00:00:00+02:00 2026-10-26T23:59:00+01:00
+ title-only patch: 2026-10-24T00:00:00+02:00 2026-10-26T23:59:00+01:00
+ UI full patch: 2026-10-24T00:00:00+02:00 2026-10-26T23:59:00+01:00
+== C4: timed event, PATCH starts_at only later than existing end ==
+ move start after end 422 {"detail":{"code":"EVENT_END_BEFORE_START","message":"ends_at must not be before starts_at"}}
+ move start + clear end 200 
+== C5: null on NOT NULL fields ==
+ title=null 500 Internal Server Error
+ starts_at=null 500 Internal Server Error
+ calendar_id=null 500 Internal Server Error
+ all_day=null 500 Internal Server Error
+ participant_ids=null 500 Internal Server Error
+ GET range containing corrupted event: 500
+ GET range Oct (unaffected): 200
+== C6: participants not members / duplicates ==
+ random participant 201 
+ other-household user as participant 201 
+== C7: range query consistency ==
+== C8: delete calendar with events / last calendar ==
+ delete with events 422 {"detail":{"code":"CALENDAR_NOT_EMPTY","message":"Calendar still has events"}}
+== C9: race: delete empty calendar vs create event in it ==
+ (delete, create) statuses: [(204, 422), (204, 201), (204, 201), (204, 500), (204, 500), (422, 201)]
+ orphan check (events whose calendar missing): 0
+ race events existing: 1
+== C10: race: delete two calendars concurrently leaving zero ==
+ statuses [204, 422] remaining calendars: 1
+== C11: dashboard today events vs multi-day ==

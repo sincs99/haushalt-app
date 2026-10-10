@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type { EventPoll, PollCreatePayload, PollVotePayload, PollDecidePayload, MealDecidePayload } from '../types'
 
 export interface PollsRepository {
@@ -55,7 +56,7 @@ export function createOnlinePollsRepository(): PollsRepository {
       return data
     },
     async remove(householdId, pollId) {
-      await api.delete(`/api/households/${householdId}/polls/${pollId}`)
+      await deleteIdempotent(`/api/households/${householdId}/polls/${pollId}`)
     },
   }
 }

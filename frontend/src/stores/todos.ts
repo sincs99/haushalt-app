@@ -6,6 +6,7 @@ import { createOnlineHouseholdsRepository } from '../repositories/householdsRepo
 import type { TodoItem, HouseholdMemberInfo } from '../types'
 import { upsertVersioned } from '../utils/syncVersion'
 import { createRequestGuard } from '../utils/householdGuard'
+import { createRetryIds } from '../utils/clientIds'
 
 export const useTodosStore = defineStore('todos', () => {
   // Repositories — einmal im Store-Setup erstellen
@@ -21,6 +22,8 @@ export const useTodosStore = defineStore('todos', () => {
   const pendingToggles = new Set<string>()
   // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
   const captureRequest = createRequestGuard()
+  // Manueller Retry eines gescheiterten Creates nutzt dieselbe Client-ID (CASA-45)
+  const retryIds = createRetryIds()
 
   // Actions
   async function fetchTodos() {
@@ -61,7 +64,8 @@ export const useTodosStore = defineStore('todos', () => {
 
     // 1. Optimistic: Sofort lokalen Eintrag mit endgültiger Client-ID erzeugen.
     //    Der Server übernimmt die ID → kein Temp-ID-Swap nötig.
-    const todoId = crypto.randomUUID()
+    const retryKey = JSON.stringify([householdId, title, description, assignedToUserId, dueDate, tags])
+    const todoId = retryIds.idFor(retryKey)
     const now = new Date().toISOString()
     const optimisticItem: TodoItem = {
       id: todoId,
@@ -96,11 +100,18 @@ export const useTodosStore = defineStore('todos', () => {
       //    Socket-Event → egal wer zuerst kommt, es entsteht kein Duplikat.
       //    Kein Insert, falls das Todo inzwischen gelöscht wurde.
       upsertVersioned(items.value, serverItem, false)
+      retryIds.settled(retryKey)
       // ID zurückgeben, damit Aufrufer (z. B. Erinnerungen) nicht raten müssen
       return todoId
     } catch (error) {
-      // 4. Rollback bei Fehler
+      // 4a. Antwort verloren, Socket-Echo schon da → Server hat angelegt, behalten
+      if (items.value.some(i => i.id === todoId && i.version > 0)) {
+        retryIds.settled(retryKey)
+        return todoId
+      }
+      // 4b. Rollback bei Fehler; bei Netzwerkfehler nutzt ein Retry dieselbe ID
       items.value = items.value.filter(i => i.id !== todoId)
+      retryIds.failed(retryKey, todoId, error)
       throw error
     }
   }

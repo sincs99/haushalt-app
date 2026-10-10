@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type { SettlementInfo, SettlementCreatePayload } from '../types'
 
 export interface SettlementsRepository {
@@ -26,7 +27,7 @@ export function createOnlineSettlementsRepository(): SettlementsRepository {
     },
 
     async remove(householdId, settlementId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/settlements/${settlementId}`,
       )
     },

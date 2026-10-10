@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type { ReassignStoreResult, ShoppingItem, ShoppingList, ShoppingListCreatePayload, ShoppingListUpdatePayload } from '../types'
 
 export interface ShoppingRepository {
@@ -51,7 +52,7 @@ export function createOnlineShoppingRepository(): ShoppingRepository {
     },
 
     async deleteList(householdId, listId, force = false) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/shopping-lists/${listId}`,
         { params: force ? { force: true } : undefined },
       )
@@ -94,7 +95,7 @@ export function createOnlineShoppingRepository(): ShoppingRepository {
     },
 
     async remove(householdId, itemId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/shopping-items/${itemId}`,
       )
     },

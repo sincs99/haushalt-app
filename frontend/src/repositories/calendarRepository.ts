@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type {
   CalendarEvent,
   CalendarEventCreatePayload,
@@ -47,7 +48,7 @@ export function createOnlineCalendarRepository(): CalendarRepository {
       return data
     },
     async remove(householdId, eventId) {
-      await api.delete(`/api/households/${householdId}/events/${eventId}`)
+      await deleteIdempotent(`/api/households/${householdId}/events/${eventId}`)
     },
 
     // ── Calendars ──
@@ -72,7 +73,7 @@ export function createOnlineCalendarRepository(): CalendarRepository {
       return data
     },
     async deleteCalendar(householdId, calendarId) {
-      await api.delete(`/api/households/${householdId}/calendars/${calendarId}`)
+      await deleteIdempotent(`/api/households/${householdId}/calendars/${calendarId}`)
     },
   }
 }

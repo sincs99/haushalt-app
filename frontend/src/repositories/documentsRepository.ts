@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type { DocumentCategory, DocumentItem, DocumentList, DocumentMeta, StorageUsage } from '../types'
 
 export interface DocumentListQuery {
@@ -77,7 +78,7 @@ export function createOnlineDocumentsRepository(): DocumentsRepository {
     },
 
     async remove(householdId, documentId) {
-      await api.delete(`${base(householdId)}/${documentId}`)
+      await deleteIdempotent(`${base(householdId)}/${documentId}`)
     },
   }
 }

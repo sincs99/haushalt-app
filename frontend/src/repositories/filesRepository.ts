@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type { StoredFile } from '../types'
 
 export interface FilesRepository {
@@ -39,7 +40,7 @@ export function createOnlineFilesRepository(): FilesRepository {
     fetchFileBlob,
 
     async deleteFile(householdId, fileId) {
-      await api.delete(`/api/households/${householdId}/files/${fileId}`)
+      await deleteIdempotent(`/api/households/${householdId}/files/${fileId}`)
     },
 
     revokeObjectUrl(url) {

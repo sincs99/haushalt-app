@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type { Expense, ExpenseCreatePayload, ExpenseUpdatePayload, BalancesResponse } from '../types'
 
 export interface ExpensesRepository {
@@ -36,7 +37,7 @@ export function createOnlineExpensesRepository(): ExpensesRepository {
     },
 
     async remove(householdId, expenseId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/expenses/${expenseId}`,
       )
     },

@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type {
   Plant, PlantCreatePayload, PlantUpdatePayload, PlantCareStatus,
   PlantCareTask, PlantCareTaskCreatePayload, PlantCareTaskUpdatePayload,
@@ -56,7 +57,7 @@ export function createOnlinePlantsRepository(): PlantsRepository {
     },
 
     async remove(householdId, plantId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/plants/${plantId}`,
       )
     },
@@ -109,7 +110,7 @@ export function createOnlinePlantsRepository(): PlantsRepository {
     },
 
     async removeCareTask(householdId, plantId, taskId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/plants/${plantId}/care-tasks/${taskId}`,
       )
     },

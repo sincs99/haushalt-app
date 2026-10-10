@@ -6,6 +6,7 @@ import type { ShoppingItem, ShoppingList, ShoppingListUpdatePayload } from '../t
 import { upsertVersioned } from '../utils/syncVersion'
 import { findCanonicalStore, storesEqual } from '../utils/storeName'
 import { createRequestGuard } from '../utils/householdGuard'
+import { createRetryIds } from '../utils/clientIds'
 
 // ── localStorage-Persistenz für aktive Liste ──
 
@@ -47,6 +48,8 @@ export const useShoppingStore = defineStore('shopping', () => {
   const pendingToggles = new Set<string>()
   // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
   const captureRequest = createRequestGuard()
+  // Manueller Retry eines gescheiterten Creates nutzt dieselbe Client-ID (CASA-45)
+  const retryIds = createRetryIds()
 
   // ── Computed ──
 
@@ -232,7 +235,8 @@ export const useShoppingStore = defineStore('shopping', () => {
 
     // 1. Optimistic: Sofort lokalen Eintrag mit endgültiger Client-ID erzeugen.
     //    Der Server übernimmt die ID → kein Temp-ID-Swap nötig.
-    const itemId = crypto.randomUUID()
+    const retryKey = JSON.stringify([householdId, activeListId.value, name, quantity, category, store])
+    const itemId = retryIds.idFor(retryKey)
     const now = new Date().toISOString()
     const optimisticItem: ShoppingItem = {
       id: itemId,
@@ -267,10 +271,18 @@ export const useShoppingStore = defineStore('shopping', () => {
       //    Socket-Event → egal wer zuerst kommt, es entsteht kein Duplikat.
       //    Kein Insert, falls das Item inzwischen gelöscht wurde.
       upsertVersioned(items.value, serverItem, false)
+      retryIds.settled(retryKey)
       return itemId
     } catch (error) {
-      // 4. Rollback bei Fehler
+      // 4a. Antwort verloren, aber das Socket-Echo (gleiche ID, Server-Version) ist schon
+      //     da: Der Server hat den Artikel angelegt → behalten statt zurückrollen
+      if (items.value.some(i => i.id === itemId && i.version > 0)) {
+        retryIds.settled(retryKey)
+        return itemId
+      }
+      // 4b. Rollback bei Fehler; bei Netzwerkfehler nutzt ein Retry dieselbe ID
       items.value = items.value.filter(i => i.id !== itemId)
+      retryIds.failed(retryKey, itemId, error)
       throw error
     }
   }

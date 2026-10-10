@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type {
   Pet, PetCreatePayload, PetUpdatePayload, FeedingLog, PetFeedingStatus,
   Medication, MedicationCreatePayload, MedicationUpdatePayload, MedicationLog,
@@ -63,7 +64,7 @@ export function createOnlinePetsRepository(): PetsRepository {
     },
 
     async remove(householdId, petId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/pets/${petId}`,
       )
     },
@@ -84,7 +85,7 @@ export function createOnlinePetsRepository(): PetsRepository {
     },
 
     async deleteFeeding(householdId, petId, feedingId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/pets/${petId}/feedings/${feedingId}`,
       )
     },
@@ -125,7 +126,7 @@ export function createOnlinePetsRepository(): PetsRepository {
     },
 
     async removeMedication(householdId, petId, medicationId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/pets/${petId}/medications/${medicationId}`,
       )
     },
@@ -177,7 +178,7 @@ export function createOnlinePetsRepository(): PetsRepository {
     },
 
     async removeCareTask(householdId, petId, taskId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/pets/${petId}/care-tasks/${taskId}`,
       )
     },

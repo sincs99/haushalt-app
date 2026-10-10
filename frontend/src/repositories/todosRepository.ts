@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type { TodoItem, TodoReminder } from '../types'
 
 export interface TodosRepository {
@@ -67,7 +68,7 @@ export function createOnlineTodosRepository(): TodosRepository {
     },
 
     async remove(householdId, todoId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/todos/${todoId}`,
       )
     },
@@ -81,7 +82,7 @@ export function createOnlineTodosRepository(): TodosRepository {
     },
 
     async deleteReminder(householdId, todoId, reminderId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/todos/${todoId}/reminders/${reminderId}`,
       )
     },

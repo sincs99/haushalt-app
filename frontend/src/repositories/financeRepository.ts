@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type { Budget, BudgetUpsertPayload, RecurringBill, RecurringBillCreatePayload, RecurringBillUpdatePayload, FinanceSummary, Expense } from '../types'
 
 export interface FinanceRepository {
@@ -64,7 +65,7 @@ export function createOnlineFinanceRepository(): FinanceRepository {
     },
 
     async removeBill(householdId, billId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/recurring-bills/${billId}`,
       )
     },

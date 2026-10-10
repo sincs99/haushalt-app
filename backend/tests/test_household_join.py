@@ -232,7 +232,7 @@ def test_join_with_expired_code_is_rejected(client, db, household_a, user_a, use
     )
 
 
-def test_register_with_expired_code_is_rejected(client, db, household_a):
+def test_register_with_expired_code_is_rejected(client, db, household_a, user_a):
     household_a.invite_code_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
     db.commit()
     resp = client.post(

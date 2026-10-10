@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field, model_validator
-from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
@@ -25,11 +25,11 @@ from app.database import get_db
 from app.models import Household, HouseholdMember, RefreshToken, User
 from app.services.invite_code import (
     generate_unique_invite_code,
-    is_invite_code_expired,
     new_invite_code_expiry,
 )
 from app.services.locking import lock_row
-from app.socket_manager import disconnect_user_sync
+from app.services.membership import join_by_invite_code
+from app.socket_manager import disconnect_user_sync, emit_to_household_sync
 
 logger = logging.getLogger(__name__)
 
@@ -299,9 +299,12 @@ def register(
     data: RegisterRequest,
     db: Session = Depends(get_db),
 ):
+    email_taken = HTTPException(
+        status_code=400, detail=error_detail(ErrorCode.EMAIL_ALREADY_REGISTERED, "Email already registered")
+    )
     existing = db.query(User).filter_by(email=data.email).first()
     if existing:
-        raise HTTPException(status_code=400, detail=error_detail(ErrorCode.EMAIL_ALREADY_REGISTERED, "Email already registered"))
+        raise email_taken
 
     user = User(
         email=data.email,
@@ -309,27 +312,23 @@ def register(
         display_name=data.display_name,
     )
     db.add(user)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        # Parallele Registrierung derselben E-Mail (CASA-24): Unique-Constraint greift
+        db.rollback()
+        raise email_taken
 
+    joined = None
     if data.invite_code:
-        # ── Pfad B: Mit Einladungscode beitreten ──
-        code = data.invite_code.strip().upper()
-        household = (
-            db.query(Household)
-            .filter(func.upper(Household.invite_code) == code)
-            .first()
-        )
-        if household is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=error_detail(ErrorCode.INVITE_CODE_NOT_FOUND, "Invite code not found"),
-            )
-        if is_invite_code_expired(household):
-            raise HTTPException(
-                status_code=status.HTTP_410_GONE,
-                detail=error_detail(ErrorCode.INVITE_CODE_EXPIRED, "Invite code has expired"),
-            )
-        membership = HouseholdMember(household_id=household.id, user_id=user.id, role="member")
+        # ── Pfad B: Mit Einladungscode beitreten (gleiche Regeln/Sperre wie /join) ──
+        household, membership = join_by_invite_code(db, data.invite_code, user.id)
+        joined = {
+            "household_id": str(household.id),
+            "user_id": str(user.id),
+            "display_name": user.display_name,
+            "role": membership.role,
+        }
     else:
         # ── Pfad A: Neuen Haushalt erstellen (Standard, wie bisher) ──
         invite_code = generate_unique_invite_code(db)
@@ -340,13 +339,16 @@ def register(
         )
         db.add(household)
         db.flush()
-        membership = HouseholdMember(household_id=household.id, user_id=user.id, role="admin")
+        db.add(HouseholdMember(household_id=household.id, user_id=user.id, role="admin"))
+        db.flush()
 
-    db.add(membership)
-    db.flush()
-
+    household_id = household.id
     pair, _ = _create_token_pair(str(user.id), db)
     db.commit()
+
+    if joined is not None:
+        # Wie POST /households/join: andere Mitglieder aktualisieren ihre Listen (CASA-46)
+        emit_to_household_sync(household_id, "household_member_joined", joined)
     return _deliver(pair, request, response)
 
 

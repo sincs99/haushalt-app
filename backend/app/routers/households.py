@@ -14,7 +14,6 @@ from app.database import get_db
 from app.models import Budget, Calendar, Expense, Household, HouseholdMember, RecurringBill, User
 from app.services.household_time import household_today
 from app.services.invite_code import (
-    find_household_by_invite_code,
     generate_unique_invite_code,
     is_invite_code_expired,
     new_invite_code_expiry,
@@ -23,6 +22,7 @@ from app.services.invite_code import (
 from app.services.locking import lock_household
 from app.services.membership import (
     ensure_admin,
+    join_by_invite_code,
     locked_membership,
     member_count,
     release_departing_member,
@@ -519,43 +519,7 @@ def join_household(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    household = find_household_by_invite_code(db, data.invite_code)
-    # Sperren (CASA-10): Ein paralleler Austritt des letzten Mitglieds löscht den
-    # Haushalt — danach darf niemand mehr "erfolgreich" beitreten.
-    household = lock_household(db, household.id)
-    if (
-        household is None
-        or household.invite_code.upper() != data.invite_code.strip().upper()
-        or member_count(db, household.id) == 0
-    ):
-        # Gelöscht, Code inzwischen rotiert oder verwaist (0 Mitglieder): Code gilt nicht mehr
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=error_detail(ErrorCode.INVITE_CODE_NOT_FOUND, "Invite code not found"),
-        )
-    if is_invite_code_expired(household):
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail=error_detail(ErrorCode.INVITE_CODE_EXPIRED, "Invite code has expired"),
-        )
-
-    # Prüfen ob User bereits Mitglied ist (unter der Sperre → kein Doppel-Insert)
-    if locked_membership(db, household.id, current_user.id) is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=error_detail(ErrorCode.ALREADY_MEMBER, "Already a member of this household"),
-        )
-
-    # Membership anlegen
-    membership = HouseholdMember(
-        household_id=household.id,
-        user_id=current_user.id,
-        role="member",
-    )
-    db.add(membership)
-    db.flush()
-    # Reparatur: Haushalt ohne Admin (Altbestand) bekommt hier wieder einen
-    ensure_admin(db, household.id)
+    household, membership = join_by_invite_code(db, data.invite_code, current_user.id)
     role = membership.role
 
     # Werte vor dem Commit sichern (SQLAlchemy expired Objekte nach commit)

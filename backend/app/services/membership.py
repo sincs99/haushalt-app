@@ -15,19 +15,24 @@ Beim Verlassen/Entfernen werden offene Zuständigkeiten der Person im selben Com
 import uuid
 from dataclasses import dataclass, field
 
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.error_codes import ErrorCode, error_detail
 from app.models import (
     Chore,
     ChoreAssignment,
     EventPoll,
     EventPollVote,
+    Household,
     HouseholdMember,
     RecurringBill,
     ShoppingItem,
     Todo,
     WidgetToken,
 )
+from app.services.invite_code import find_household_by_invite_code, is_invite_code_expired
+from app.services.locking import lock_household
 
 
 def locked_membership(db: Session, household_id: uuid.UUID, user_id: uuid.UUID) -> HouseholdMember | None:
@@ -66,6 +71,41 @@ def ensure_admin(db: Session, household_id: uuid.UUID) -> HouseholdMember | None
 
 def member_count(db: Session, household_id: uuid.UUID) -> int:
     return db.query(HouseholdMember).filter(HouseholdMember.household_id == household_id).count()
+
+
+def join_by_invite_code(db: Session, raw_code: str, user_id: uuid.UUID) -> tuple[Household, HouseholdMember]:
+    """Tritt per Einladungscode bei (POST /households/join und Registrierung mit Code). Kein Commit.
+
+    Sperrt den Haushalt (CASA-10): Ein paralleler Austritt des letzten Mitglieds
+    löscht ihn — danach darf niemand mehr "erfolgreich" beitreten. Unter der Sperre:
+    gelöscht, Code inzwischen rotiert oder verwaist (0 Mitglieder) → 404,
+    abgelaufen → 410, schon Mitglied → 409 (auch bei parallelem Doppel-Join).
+    """
+    code = raw_code.strip().upper()
+    found = find_household_by_invite_code(db, raw_code)
+    household = lock_household(db, found.id)
+    if household is None or household.invite_code.upper() != code or member_count(db, household.id) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail(ErrorCode.INVITE_CODE_NOT_FOUND, "Invite code not found"),
+        )
+    if is_invite_code_expired(household):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail=error_detail(ErrorCode.INVITE_CODE_EXPIRED, "Invite code has expired"),
+        )
+    if locked_membership(db, household.id, user_id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=error_detail(ErrorCode.ALREADY_MEMBER, "Already a member of this household"),
+        )
+
+    membership = HouseholdMember(household_id=household.id, user_id=user_id, role="member")
+    db.add(membership)
+    db.flush()
+    # Reparatur: Haushalt ohne Admin (Altbestand) bekommt hier wieder einen
+    ensure_admin(db, household.id)
+    return household, membership
 
 
 # ---------------------------------------------------------------------------

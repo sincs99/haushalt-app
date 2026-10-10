@@ -20,6 +20,7 @@ from app.models import (
     StoredFile,
 )
 from app.routers.files import file_in_use, file_in_use_error, remove_from_storage
+from app.services.care_schedule import apply_care_task_update
 from app.socket_manager import emit_to_household_sync
 
 # Standard-Intervalle (Tage) pro Pflegeart
@@ -544,11 +545,11 @@ def update_care_task(
     _get_plant_or_404(db, plant_id, household_id)
     task = _get_care_task_or_404(db, task_id, plant_id, household_id)
 
-    update_data = body.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(task, key, value)
-    if "next_due_at" in update_data:
-        task.notified_at = None
+    # Neue Fälligkeit bzw. geändertes Intervall (auch KI-Vorschlag) → Fälligkeit und
+    # Erinnerung neu (PD-P4 / E-2)
+    apply_care_task_update(
+        task, body.model_dump(exclude_unset=True), _get_household_today(db, household_id)
+    )
 
     db.commit()
     db.refresh(task)

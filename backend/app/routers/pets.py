@@ -23,6 +23,7 @@ from app.models import (
     StoredFile,
 )
 from app.routers.files import file_in_use, file_in_use_error, remove_from_storage
+from app.services.care_schedule import apply_care_task_update
 from app.services.client_ids import commit_or_get_existing, get_existing_by_client_id
 from app.socket_manager import emit_to_household_sync
 
@@ -1036,12 +1037,10 @@ def update_care_task(
     _get_pet_or_404(db, pet_id, household_id)
     task = _get_care_task_or_404(db, task_id, pet_id, household_id)
 
-    update_data = body.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(task, key, value)
-    # Neue Fälligkeit → zur neuen Fälligkeit wieder erinnern (wie bei Pflanzen)
-    if "next_due_at" in update_data:
-        task.notified_at = None
+    # Neue Fälligkeit bzw. geändertes Intervall → Fälligkeit/Erinnerung neu (PD-P4 / E-2)
+    apply_care_task_update(
+        task, body.model_dump(exclude_unset=True), _get_household_today(db, household_id)
+    )
 
     db.commit()
     db.refresh(task)

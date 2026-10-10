@@ -11,7 +11,8 @@ Companion documents:
 [TEST_GAP_MATRIX.md](TEST_GAP_MATRIX.md) ·
 [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md) ·
 [REMEDIATION_ROADMAP.md](REMEDIATION_ROADMAP.md) ·
-reproduction scripts and raw outputs: [audit-evidence/](audit-evidence/README.md)
+reproduction scripts and raw outputs: [audit-evidence/](audit-evidence/README.md) ·
+**fix status after the audit: [REMEDIATION_STATUS.md](REMEDIATION_STATUS.md)**
 
 ---
 

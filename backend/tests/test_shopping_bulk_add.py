@@ -61,6 +61,7 @@ def _item(db, household, lst, name, checked=False, quantity=None):
         ("  Salz  ", "salz"),
         ("1 Prise Salz", "salz"),
         ("Gewürze", "gewürze"),
+        ("7Up", "7up"),
     ],
 )
 def test_ingredient_key(raw, key):

@@ -492,6 +492,21 @@ describe('plants store', () => {
       })
     })
 
+    it('applies only the selected tasks (PD-P5)', async () => {
+      repo.fetchCareTasks.mockResolvedValue([task({ id: 'w', interval_days: 10 })])
+      repo.createCareTask.mockResolvedValue(task({ id: 'r', care_type: 'repot', interval_days: 720 }))
+      repo.update.mockResolvedValue(plant({ care_notes: 'Hell stellen.' }))
+      const s = usePlantsStore()
+      s.plants = [plant()]
+
+      // Gießintervall bewusst behalten (abgewählt), nur Umtopfen übernehmen
+      const result = await s.applyCareAdvice(plant(), advice, ['create:repot'])
+
+      expect(result).toEqual({ created: 1, updated: 0 })
+      expect(repo.updateCareTask).not.toHaveBeenCalled()
+      expect(repo.createCareTask).toHaveBeenCalledWith('h1', 'p1', { care_type: 'repot', interval_days: 720 })
+    })
+
     it('keeps existing species and does not rewrite identical notes', async () => {
       repo.fetchCareTasks.mockResolvedValue([])
       repo.createCareTask.mockResolvedValue(task())

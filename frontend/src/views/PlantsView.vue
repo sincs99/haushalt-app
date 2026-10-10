@@ -155,6 +155,8 @@ const formAddWaterTask = ref(true)
 const formSaving = computed(() => isPending('create'))
 // Übernommener KI-Vorschlag: wird erst beim Speichern der Pflanze angelegt
 const formAdvice = ref<AiPlantCareAdvice | null>(null)
+// In der Vorschau angehakte Aufgaben (PD-P5)
+const formAdviceSelected = ref<string[] | null>(null)
 
 function openAddDialog() {
   formName.value = ''
@@ -163,11 +165,13 @@ function openAddDialog() {
   formNotes.value = ''
   formAddWaterTask.value = true
   formAdvice.value = null
+  formAdviceSelected.value = null
   showAddDialog.value = true
 }
 
-function adoptAdvice(advice: AiPlantCareAdvice) {
+function adoptAdvice(advice: AiPlantCareAdvice, selected: string[]) {
   formAdvice.value = advice
+  formAdviceSelected.value = selected
   if (!formSpecies.value.trim() && advice.botanical_name) formSpecies.value = advice.botanical_name.slice(0, 80)
 }
 
@@ -190,7 +194,7 @@ async function handleCreatePlant() {
     // Folgeschritte: Pflanze ist angelegt, Fehler hier nur melden
     if (created && formAdvice.value) {
       try {
-        await plantsStore.applyAdviceTasks(created.id, formAdvice.value)
+        await plantsStore.applyAdviceTasks(created.id, formAdvice.value, formAdviceSelected.value)
       } catch (err) {
         notifyError(t('ai.plant.applyError'), err)
       }

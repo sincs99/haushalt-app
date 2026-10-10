@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlinePlantsRepository } from '../repositories/plantsRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
-import { planAdvice, mergeCareNotes } from '../utils/plantCare'
+import { planAdvice, mergeCareNotes, selectPlan } from '../utils/plantCare'
 import { localDateString } from '../utils/dates'
 import type {
   AiPlantCareAdvice, Plant, PlantCreatePayload, PlantUpdatePayload, PlantCareStatus, PlantCareStatusTask,
@@ -344,15 +344,16 @@ export const usePlantsStore = defineStore('plants', () => {
   /**
    * KI-Vorschlag als Pflegeaufgaben übernehmen: gleiche Pflegeart wird aktualisiert,
    * fehlende angelegt. Liest die Aufgaben frisch vom Server (Fehler → Abbruch statt Duplikate).
-   * Liefert die Anzahl angelegter und aktualisierter Aufgaben.
+   * `selected`: in der Vorschau angehakte Einträge (PD-P5, Schlüssel aus `adviceKey`);
+   * ohne Angabe alle. Liefert die Anzahl angelegter und aktualisierter Aufgaben.
    */
-  async function applyAdviceTasks(plantId: string, advice: AiPlantCareAdvice) {
+  async function applyAdviceTasks(plantId: string, advice: AiPlantCareAdvice, selected?: string[] | null) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return { created: 0, updated: 0 }
 
     const existing = await repo.fetchCareTasks(householdId, plantId)
-    const plan = planAdvice(advice, existing)
+    const plan = selectPlan(planAdvice(advice, existing), selected)
     for (const task of plan.update) {
       await updateCareTask(plantId, task.id, { interval_days: task.interval_days })
     }
@@ -363,8 +364,8 @@ export const usePlantsStore = defineStore('plants', () => {
   }
 
   /** Aufgaben + Pflegehinweise (angehängt) + Art (nur wenn leer) einer bestehenden Pflanze übernehmen. */
-  async function applyCareAdvice(plant: Plant, advice: AiPlantCareAdvice) {
-    const result = await applyAdviceTasks(plant.id, advice)
+  async function applyCareAdvice(plant: Plant, advice: AiPlantCareAdvice, selected?: string[] | null) {
+    const result = await applyAdviceTasks(plant.id, advice, selected)
     const payload: PlantUpdatePayload = {}
     const notes = mergeCareNotes(plant.care_notes, advice.care_notes)
     if (notes !== (plant.care_notes ?? '')) payload.care_notes = notes

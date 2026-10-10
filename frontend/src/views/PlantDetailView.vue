@@ -194,11 +194,12 @@ const adviceApplied = ref(false)
 // Neue Pflanze (Navigation) → Zustand zurücksetzen
 watch(plantId, () => { adviceApplied.value = false })
 
-async function handleApplyAdvice(advice: AiPlantCareAdvice) {
+async function handleApplyAdvice(advice: AiPlantCareAdvice, selected: string[]) {
   if (!plant.value || adviceApplying.value) return
   adviceApplying.value = true
   try {
-    await plantsStore.applyCareAdvice(plant.value, advice)
+    // Nur die angehakten Aufgaben; geänderte Intervalle verschieben die Fälligkeit (PD-P4/P5)
+    await plantsStore.applyCareAdvice(plant.value, advice, selected)
     adviceApplied.value = true
     showToast(t('ai.plant.applied'), 'success')
   } catch (err) {

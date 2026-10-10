@@ -43,9 +43,17 @@ export interface AdviceTask {
   interval_days: number
 }
 
+/** Bestehende Aufgabe, deren Intervall der Vorschlag ändert (alt → neu, PD-P5). */
+export interface AdviceUpdate {
+  id: string
+  care_type: AdviceTask['care_type']
+  from: number
+  interval_days: number
+}
+
 export interface AdvicePlan {
   create: AdviceTask[]
-  update: { id: string; interval_days: number }[]
+  update: AdviceUpdate[]
 }
 
 function validDays(value: number | null | undefined): number | null {
@@ -80,10 +88,36 @@ export function planAdvice(
     const match = existing.find(e => e.care_type === task.care_type && !e.label?.trim())
     if (!match) plan.create.push(task)
     else if (match.interval_days !== task.interval_days) {
-      plan.update.push({ id: match.id, interval_days: task.interval_days })
+      plan.update.push({
+        id: match.id, care_type: task.care_type, from: match.interval_days, interval_days: task.interval_days,
+      })
     }
   }
   return plan
+}
+
+/** Stabiler Schlüssel eines Plan-Eintrags — für die Auswahl in der Vorschau (PD-P5). */
+export function adviceKey(item: AdviceTask | AdviceUpdate): string {
+  return 'id' in item ? `update:${item.id}` : `create:${item.care_type}`
+}
+
+/** Alle Einträge des Plans in Anzeigereihenfolge (Anpassungen zuerst). */
+export function planItems(plan: AdvicePlan): (AdviceTask | AdviceUpdate)[] {
+  return [...plan.update, ...plan.create]
+}
+
+/**
+ * Nur die ausgewählten Einträge übernehmen (`selected` = Schlüssel aus `adviceKey`).
+ * Ohne Auswahl → alles. Ein Eintrag, der sich seit der Vorschau geändert hat
+ * (z. B. inzwischen angelegte Aufgabe), hat einen anderen Schlüssel und wird nicht übernommen.
+ */
+export function selectPlan(plan: AdvicePlan, selected?: Iterable<string> | null): AdvicePlan {
+  if (!selected) return plan
+  const keys = new Set(selected)
+  return {
+    create: plan.create.filter(item => keys.has(adviceKey(item))),
+    update: plan.update.filter(item => keys.has(adviceKey(item))),
+  }
 }
 
 /** Pflegehinweise an bestehenden Text anhängen (nie überschreiben), auf das Feldlimit gekürzt. */

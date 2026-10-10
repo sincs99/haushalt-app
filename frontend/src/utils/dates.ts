@@ -114,3 +114,26 @@ export function localDateString(date: Date = new Date()): string {
   const d = String(date.getDate()).padStart(2, '0')
   return `${y}-${m}-${d}`
 }
+
+/**
+ * Heutiges Datum (YYYY-MM-DD) in der Zeitzone des Haushalts (`timezone` aus
+ * GET /api/auth/me). Fälligkeiten von Ämtli und Aufgaben gelten im Haushalt,
+ * nicht auf dem Gerät — sonst ist unterwegs (andere Zeitzone) „heute“ falsch.
+ * Ohne bekannte Zeitzone: Gerätedatum.
+ */
+export function householdDateString(timeZone: string | null | undefined, now: Date = new Date()): string {
+  if (!timeZone) return localDateString(now)
+  try {
+    // en-CA formatiert als YYYY-MM-DD
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(now)
+  } catch {
+    return localDateString(now)
+  }
+}
+
+/** Kalenderdatum eines Todo-Fälligkeitstags: die API liefert 00:00 UTC, gemeint ist der Tag */
+export function todoDueDay(dueDate: string | null | undefined): string | null {
+  return dueDate ? dueDate.substring(0, 10) : null
+}

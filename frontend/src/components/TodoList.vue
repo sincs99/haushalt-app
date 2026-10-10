@@ -4,7 +4,8 @@ import { useTodosStore } from '../stores/todos'
 import { useToast } from '../composables/useToast'
 import { useAsyncAction } from '../composables/useAsyncAction'
 import { useI18n } from 'vue-i18n'
-import { formatDateShort } from '../utils/dates'
+import { formatDateShort, householdDateString, todoDueDay } from '../utils/dates'
+import { useAuthStore } from '../stores/auth'
 import { nextPendingReminder } from '../utils/todoReminders'
 import type { TodoItem } from '../types'
 import { PhPencilSimple, PhX, PhListChecks, PhBell, PhPlus } from '@phosphor-icons/vue'
@@ -16,6 +17,7 @@ import BaseCheckCircle from './ui/BaseCheckCircle.vue'
 import BaseErrorState from './ui/BaseErrorState.vue'
 
 const todosStore = useTodosStore()
+const authStore = useAuthStore()
 const { notifyError, notifyInfo } = useToast()
 const { run } = useAsyncAction()
 const { t } = useI18n()
@@ -92,10 +94,13 @@ const doneTodos = computed(() => {
   return list
 })
 
-// Überfällig-Check
+// Überfällig-Check: Fälligkeit ist ein Kalendertag (gespeichert 00:00 UTC) und wird
+// mit „heute“ im Haushalt verglichen — nicht über new Date(), sonst wäre die Aufgabe
+// westlich von UTC schon am Fälligkeitstag überfällig (CASA-39)
 function isOverdue(todo: TodoItem): boolean {
-  if (!todo.due_date || todo.is_done) return false
-  return new Date(todo.due_date) < new Date(new Date().toDateString())
+  const due = todoDueDay(todo.due_date)
+  if (!due || todo.is_done) return false
+  return due < householdDateString(authStore.currentHousehold?.timezone)
 }
 
 // Mitglied-Name auflösen
@@ -236,7 +241,7 @@ function startEdit(todo: TodoItem) {
   editingId.value = todo.id
   editTitle.value = todo.title
   editDescription.value = todo.description ?? ''
-  editDueDate.value = todo.due_date ?? ''
+  editDueDate.value = todoDueDay(todo.due_date) ?? ''
   editAssignedTo.value = todo.assigned_to_user_id ?? ''
   editNewReminders.value = []
   editTitleError.value = ''
@@ -414,7 +419,7 @@ async function saveEdit(todoId: string) {
               <div v-if="todo.description || todo.due_date || todo.assigned_to_user_id" class="todo-row__meta">
                 <span v-if="todo.description" class="todo-row__desc">{{ todo.description }}</span>
                 <span v-if="todo.due_date" class="todo-row__date" :class="{ 'todo-row__date--overdue': isOverdue(todo) }">
-                  {{ formatDateShort(todo.due_date) }}
+                  {{ formatDateShort(todoDueDay(todo.due_date)!) }}
                 </span>
                 <BaseAvatar
                   v-if="todo.assigned_to_user_id && getMemberName(todo.assigned_to_user_id)"
@@ -537,7 +542,7 @@ async function saveEdit(todoId: string) {
               <span class="todo-row__name">{{ todo.title }}</span>
               <div v-if="todo.description || todo.due_date || todo.assigned_to_user_id" class="todo-row__meta">
                 <span v-if="todo.description" class="todo-row__desc">{{ todo.description }}</span>
-                <span v-if="todo.due_date" class="todo-row__date">{{ formatDateShort(todo.due_date) }}</span>
+                <span v-if="todo.due_date" class="todo-row__date">{{ formatDateShort(todoDueDay(todo.due_date)!) }}</span>
                 <BaseAvatar
                   v-if="todo.assigned_to_user_id && getMemberName(todo.assigned_to_user_id)"
                   :name="getMemberName(todo.assigned_to_user_id)!"

@@ -121,7 +121,8 @@ const detailLines = computed<string[]>(() => {
       }
       break
     case 'todo.done':
-      if (d.due_date) lines.push(t('tags.scan.dueDate', { date: formatDateShort(d.due_date) }))
+      // Todo-Fälligkeit ist ein Kalendertag (00:00 UTC gespeichert)
+      if (d.due_date) lines.push(t('tags.scan.dueDate', { date: formatDateShort(String(d.due_date).substring(0, 10)) }))
       if (d.assigned_user_name) lines.push(t('tags.scan.assignedTo', { name: d.assigned_user_name }))
       break
   }

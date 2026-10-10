@@ -105,6 +105,8 @@ class HouseholdOut(BaseModel):
     role: str
     currency: str
     ai_enabled: bool = False
+    # IANA-Zeitzone des Haushalts: „heute“ für Fälligkeiten im Frontend (CASA-39)
+    timezone: str = "Europe/Zurich"
 
 
 class MeResponse(BaseModel):
@@ -469,6 +471,7 @@ def get_me(
             role=m.role,
             currency=m.household.currency,
             ai_enabled=m.household.ai_enabled,
+            timezone=m.household.timezone or "Europe/Zurich",
         )
         for m in memberships
     ]

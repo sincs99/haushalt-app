@@ -265,6 +265,7 @@ export interface HouseholdInfo {
   role: string
   currency: string  // z.B. "CHF" — vom Backend via GET /api/auth/me
   ai_enabled?: boolean  // Opt-in für den KI-Assistenten (nur Admins schalten um)
+  timezone?: string  // IANA-Zeitzone des Haushalts (z.B. "Europe/Zurich") — „heute“ für Fälligkeiten
 }
 
 export interface HouseholdMemberInfo {

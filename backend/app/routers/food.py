@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func, update
+from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -16,11 +16,10 @@ from app.models import (
     HouseholdMember,
     MealPlanEntry,
     Recipe,
-    ShoppingItem,
     ShoppingList,
 )
 from app.services.household_time import household_today
-from app.services.locking import lock_row
+from app.services.locking import lock_household, lock_row
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -145,6 +144,11 @@ class MealPlanEntryResponse(BaseModel):
     recipe: RecipeResponse | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AddToShoppingRequest(BaseModel):
+    # Zielliste (aktive Liste im Client); ohne → erste Liste des Haushalts
+    list_id: uuid.UUID | None = None
 
 
 class AddToShoppingResponse(BaseModel):
@@ -504,6 +508,8 @@ def delete_meal_plan(
 
 
 # POST /{entry_id}/add-missing-to-shopping — Zutaten in Einkaufsliste übernehmen
+# Gleiche Logik wie POST /shopping-items/bulk-add (PD-M2): Ziel = vom Client
+# übergebene (aktive) Liste, sonst die erste; Dedupe gegen offene Items aller Listen.
 @meal_plan_router.post(
     "/{entry_id}/add-missing-to-shopping",
     response_model=AddToShoppingResponse,
@@ -511,9 +517,16 @@ def delete_meal_plan(
 def add_missing_to_shopping(
     household_id: uuid.UUID,
     entry_id: uuid.UUID,
+    body: AddToShoppingRequest | None = None,
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
+    from app.routers.shopping import (
+        ShoppingListResponse,
+        bulk_add_items,
+        emit_items_created,
+    )
+
     # 1. MealPlanEntry laden (scoped by household_id)
     entry = _get_meal_plan_entry_or_404(db, entry_id, household_id)
 
@@ -529,79 +542,39 @@ def add_missing_to_shopping(
 
     # 3. Recipe laden
     recipe = _get_recipe_or_404(db, entry.recipe_id, household_id)
-    ingredients: list[str] = recipe.ingredients or []
 
-    # 4. Standard-Einkaufsliste holen oder erstellen
-    shopping_list, list_created = _get_or_create_default_shopping_list(db, household_id)
-
-    added: list[str] = []
-    skipped: list[str] = []
-
-    # 5. Für jede Zutat prüfen ob bereits vorhanden (Whitespace strippen)
-    for raw_ingredient in ingredients:
-        ingredient = raw_ingredient.strip()
-        if not ingredient:
-            continue  # leere Zutaten überspringen
-
-        exists = (
-            db.query(ShoppingItem)
-            .filter(
-                ShoppingItem.list_id == shopping_list.id,
-                func.lower(ShoppingItem.name) == ingredient.lower(),
-                ShoppingItem.is_checked == False,  # noqa: E712
+    # 4. Haushalt sperren (Dedupe über alle Listen, keine zwei Standard-Listen
+    #    bei parallelen Aufrufen — CASA-53), dann Zielliste bestimmen
+    lock_household(db, household_id)
+    list_created = False
+    if body is not None and body.list_id is not None:
+        shopping_list = lock_row(db, ShoppingList, body.list_id)
+        if shopping_list is None or shopping_list.household_id != household_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_detail(ErrorCode.SHOPPING_LIST_NOT_FOUND, "Shopping list not found"),
             )
-            .first()
-        )
+    else:
+        shopping_list, list_created = _get_or_create_default_shopping_list(db, household_id)
 
-        if exists:
-            skipped.append(ingredient)
-        else:
-            item_name = ingredient[:200]  # Defense-in-depth: truncate
-            item = ShoppingItem(
-                household_id=household_id,
-                list_id=shopping_list.id,
-                name=item_name,
-                added_by_user_id=membership.user_id,
-            )
-            db.add(item)
-            db.flush()  # ID generieren
-
-            added.append(ingredient)
-
+    # 5. Anlegen mit Dedupe
+    added, skipped = bulk_add_items(
+        db, household_id, shopping_list, recipe.ingredients or [], membership.user_id
+    )
     db.commit()
+    for item in added:
+        db.refresh(item)
 
     # Socket-Event bei neu erstellter Einkaufsliste
     if list_created:
-        from app.routers.shopping import ShoppingListResponse
-
+        db.refresh(shopping_list)
         response_data = ShoppingListResponse.model_validate(shopping_list).model_dump(mode="json")
         response_data["open_count"] = len(added)
         emit_to_household_sync(str(household_id), "shopping_list_created", response_data)
-
-    # Socket-Events für jedes neue Item emittieren
-    # Wir müssen die Items nach dem Commit nochmal laden für korrekte Daten
-    if added:
-        new_items = (
-            db.query(ShoppingItem)
-            .filter(
-                ShoppingItem.list_id == shopping_list.id,
-                ShoppingItem.household_id == household_id,
-                func.lower(ShoppingItem.name).in_([a.lower() for a in added]),
-                ShoppingItem.is_checked == False,  # noqa: E712
-            )
-            .all()
-        )
-        for item in new_items:
-            from app.routers.shopping import ShoppingItemResponse
-
-            emit_to_household_sync(
-                household_id,
-                "shopping_item_created",
-                ShoppingItemResponse.model_validate(item).model_dump(mode="json"),
-            )
+    emit_items_created(household_id, added)
 
     return AddToShoppingResponse(
-        added=added,
+        added=[item.name for item in added],
         skipped=skipped,
         list_id=shopping_list.id,
     )

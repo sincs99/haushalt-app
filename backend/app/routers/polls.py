@@ -24,6 +24,7 @@ from app.models import (
 from app.routers.events import _event_response
 from app.services.event_times import household_tz, to_utc
 from app.services.household_time import household_today
+from app.services.locking import lock_row
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -388,16 +389,19 @@ def decide_poll(
             detail=error_detail(ErrorCode.POLL_OPTION_INVALID, "Option does not belong to this poll"),
         )
 
-    # Calendar validieren
-    calendar = db.get(Calendar, body.calendar_id)
+    # Atomar schließen: nur ein gleichzeitiger Request darf entscheiden
+    _claim_poll(db, poll_id)
+
+    # Kalender NACH dem Claim in derselben Transaktion prüfen und sperren (CASA-20):
+    # ein paralleles Löschen des Kalenders kann den Termin dann nicht mehr verlieren.
+    # Ist er weg, wird der Claim zurückgerollt — die Abstimmung bleibt offen.
+    calendar = lock_row(db, Calendar, body.calendar_id)
     if calendar is None or calendar.household_id != household_id:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=error_detail(ErrorCode.CALENDAR_MISMATCH, "Calendar does not belong to this household"),
         )
-
-    # Atomar schließen: nur ein gleichzeitiger Request darf entscheiden
-    _claim_poll(db, poll_id)
 
     # Event erstellen
     if chosen_option.starts_at is not None:

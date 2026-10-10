@@ -12,6 +12,7 @@ from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Calendar, Event, Household, HouseholdMember
 from app.services.event_times import household_tz, range_bounds, to_household_time, to_utc
+from app.services.locking import lock_row
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -156,8 +157,9 @@ def create_event(
             detail=error_detail(ErrorCode.EVENT_END_BEFORE_START, "ends_at must not be before starts_at"),
         )
 
-    # Calendar muss zum gleichen Haushalt gehören
-    calendar = db.get(Calendar, body.calendar_id)
+    # Calendar muss zum gleichen Haushalt gehören. Gesperrt bis zum Commit, damit
+    # ein paralleles Löschen des Kalenders den neuen Termin nicht verliert (CASA-20)
+    calendar = lock_row(db, Calendar, body.calendar_id)
     if calendar is None or calendar.household_id != household_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -244,7 +246,7 @@ def update_event(
 
     # calendar_id Validierung falls mitgesendet
     if "calendar_id" in update_data and update_data["calendar_id"] is not None:
-        calendar = db.get(Calendar, update_data["calendar_id"])
+        calendar = lock_row(db, Calendar, update_data["calendar_id"])
         if calendar is None or calendar.household_id != household_id:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

@@ -10,6 +10,7 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Calendar, Event, HouseholdMember
+from app.services.locking import lock_household, lock_row
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -172,7 +173,12 @@ def delete_calendar(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    cal = db.get(Calendar, calendar_id)
+    # Sperren (CASA-20/54): Haushalt zuerst (Invariante "mindestens ein Kalender" —
+    # zwei parallele Löschungen liefen sonst beide durch), dann der Kalender selbst
+    # (Termin anlegen/verschieben und Abstimmung entscheiden sperren ihn ebenfalls,
+    # die Prüfung "keine Termine" bleibt so bis zum Commit gültig).
+    lock_household(db, household_id)
+    cal = lock_row(db, Calendar, calendar_id)
     if cal is None or cal.household_id != household_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -686,8 +686,11 @@ class Calendar(Base):
     )
 
     household: Mapped["Household"] = relationship(back_populates="calendars")
+    # Kein ORM-Cascade: Ein Kalender mit Terminen darf nicht verschwinden (CASA-20).
+    # passive_deletes="all" überlässt das der DB (FK RESTRICT) — ein parallel
+    # angelegter Termin lässt das Löschen scheitern statt mitgelöscht zu werden.
     events: Mapped[list["Event"]] = relationship(
-        back_populates="calendar", cascade="all, delete-orphan"
+        back_populates="calendar", passive_deletes="all"
     )
 
 
@@ -704,7 +707,7 @@ class Event(Base):
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
     )
     calendar_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("calendars.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("calendars.id", ondelete="RESTRICT"), nullable=False
     )
     title: Mapped[str] = mapped_column(String(150), nullable=False)
     starts_at: Mapped[datetime] = mapped_column(

@@ -354,7 +354,29 @@
       "uncategorized": "Uncategorized"
     },
     "saved": "Expense saved",
-    "deleteLabel": "Delete expense “{name}”"
+    "deleteLabel": "Delete expense “{name}”",
+    "retroWarning": "This expense is dated on or before the last settlement between the people involved – balances will change retroactively.",
+    "deleteRetroTitle": "Already settled",
+    "deleteAnyway": "Delete anyway",
+    "conflictReloaded": "{name} changed this expense in the meantime. The current values have been loaded – please check them and save again.",
+    "deletedMeanwhile": "This expense has been deleted in the meantime.",
+    "createdBy": "Added by {name}",
+    "updatedBy": "Last changed by {name}",
+    "loadMore": "Load older expenses",
+    "restoreConflict": "The bill has been booked again for this month – the deleted booking cannot be restored.",
+    "history": {
+      "show": "Show deleted entries",
+      "hide": "Hide deleted entries",
+      "title": "History: deleted entries",
+      "empty": "No deleted entries",
+      "deletedBy": "Deleted by {name} on {date}",
+      "restore": "Restore",
+      "restoreLabel": "Restore “{name}”",
+      "restored": "Restored",
+      "restoreError": "Could not be restored.",
+      "loadError": "History could not be loaded.",
+      "settlementName": "Payment {from} → {to}"
+    }
   },
   "finance": {
     "available": "Still available",
@@ -385,7 +407,27 @@
     "spentThisMonth": "Spent this month",
     "allBooked": "All bills for this month are booked.",
     "budgetSaveError": "Couldn't save the budget.",
-    "bookError": "Couldn't book the bill."
+    "bookError": "Couldn't book the bill.",
+    "bookMonth": "Month",
+    "bookMonthCurrent": "{month} (current month)",
+    "choosePayer": "Please choose …",
+    "noDefaultPayerHint": "This bill has no default payer – please choose who paid.",
+    "manageBills": "Manage bills",
+    "billsEmpty": "No recurring bills yet",
+    "editBill": "Edit bill",
+    "newBill": "New bill",
+    "billNamePlaceholder": "e.g. Rent",
+    "billDefaultPayer": "Default payer",
+    "billNoDefaultPayer": "None (choose when booking)",
+    "billActive": "Active (shown under “Upcoming bills”)",
+    "billPaused": "Paused",
+    "billMeta": "{amount} · on the {day}. · {payer}",
+    "billDeleteTitle": "Delete bill?",
+    "billDeleteConfirm": "Delete bill “{name}”? Expenses already booked are kept.",
+    "billSaveError": "The bill could not be saved.",
+    "billDeleteError": "The bill could not be deleted.",
+    "billDayInvalid": "Please choose a day between 1 and 28.",
+    "billEditLabel": "Edit bill “{name}”"
   },
   "settlements": {
     "title": "Settlements",
@@ -405,7 +447,16 @@
     "sameUser": "Sender and recipient must be different.",
     "flow": "{from} → {to}",
     "saveError": "Could not save payment.",
-    "deleteLabel": "Delete settlement"
+    "deleteLabel": "Delete settlement",
+    "createdBy": "added by {name}",
+    "warningTitle": "Please check",
+    "warnings": {
+      "DUPLICATE_RECENT": "An identical payment was already recorded in the last 10 minutes.",
+      "EXCEEDS_OPEN_DEBT": "The amount is higher than the open debt ({amount})."
+    },
+    "saveAnyway": "Record anyway",
+    "createdWithWarning": "Saved – an identical payment was just recorded. Please check.",
+    "loadMore": "Load older payments"
   },
   "chores": {
     "title": "Chores",
@@ -636,7 +687,12 @@
     "notFound": "Not found – it may have been deleted",
     "IMAGE_TOO_MANY_PIXELS": "Image has too many pixels (max. 25 megapixels)",
     "imageUnreadable": "Could not read the image – supported are JPEG, PNG, WebP and iPhone photos (HEIC)",
-    "WIDGET_TOKEN_INVALID": "Invalid widget key"
+    "WIDGET_TOKEN_INVALID": "Invalid widget key",
+    "EXPENSE_VERSION_CONFLICT": "The expense has been changed in the meantime.",
+    "EXPENSE_DELETED": "The expense has been deleted in the meantime.",
+    "SETTLEMENT_DELETED": "The payment has been deleted in the meantime.",
+    "DATE_OUT_OF_RANGE": "The date is too far in the past or future.",
+    "BILL_MONTH_OUT_OF_RANGE": "Bills can only be booked for the past 12 months."
   },
   "push": {
     "title": "Notifications",

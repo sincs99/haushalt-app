@@ -78,7 +78,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest httpx
+        run: pip install -r requirements.txt pytest httpx hypothesis
 
       - name: Migrate fresh database (alembic upgrade head)
         run: alembic upgrade head

@@ -3,6 +3,8 @@ Balance-Service – Wiederverwendbare Saldo-Berechnung.
 
 Extrahiert aus routers/expenses.py, damit Dashboard und andere Module
 dieselbe Logik nutzen können.  Gibt plain dicts zurück (keine Pydantic-Objekte).
+
+Soft-gelöschte Ausgaben und Ausgleiche (``deleted_at IS NOT NULL``) zählen nicht (PD-F1).
 """
 
 import uuid
@@ -33,6 +35,7 @@ def _build_balance_maps(
         .filter(
             Expense.household_id == household_id,
             Expense.paid_by_user_id.isnot(None),
+            Expense.deleted_at.is_(None),
         )
         .group_by(Expense.paid_by_user_id)
         .all()
@@ -42,7 +45,8 @@ def _build_balance_maps(
     # 2. owed: Summe pro Share-Inhaber
     owed_rows = (
         db.query(ExpenseShare.user_id, func.sum(ExpenseShare.amount_rappen))
-        .filter(ExpenseShare.household_id == household_id)
+        .join(Expense, Expense.id == ExpenseShare.expense_id)
+        .filter(ExpenseShare.household_id == household_id, Expense.deleted_at.is_(None))
         .group_by(ExpenseShare.user_id)
         .all()
     )
@@ -54,6 +58,7 @@ def _build_balance_maps(
         .filter(
             Expense.household_id == household_id,
             Expense.paid_by_user_id.is_(None),
+            Expense.deleted_at.is_(None),
         )
         .scalar()
     )
@@ -62,7 +67,7 @@ def _build_balance_maps(
     # 4a. settled_out: Summe pro from_user_id
     settled_out_rows = (
         db.query(Settlement.from_user_id, func.sum(Settlement.amount_rappen))
-        .filter(Settlement.household_id == household_id)
+        .filter(Settlement.household_id == household_id, Settlement.deleted_at.is_(None))
         .group_by(Settlement.from_user_id)
         .all()
     )
@@ -71,7 +76,7 @@ def _build_balance_maps(
     # 4b. settled_in: Summe pro to_user_id
     settled_in_rows = (
         db.query(Settlement.to_user_id, func.sum(Settlement.amount_rappen))
-        .filter(Settlement.household_id == household_id)
+        .filter(Settlement.household_id == household_id, Settlement.deleted_at.is_(None))
         .group_by(Settlement.to_user_id)
         .all()
     )

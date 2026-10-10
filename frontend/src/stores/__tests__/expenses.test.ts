@@ -43,6 +43,7 @@ function expense(over: Partial<Expense> = {}): Expense {
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     shares: [],
+    version: 1,
     category: null,
     recurring_bill_id: null,
     ...over,

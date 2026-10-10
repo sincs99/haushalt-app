@@ -63,6 +63,7 @@ export function useRealtimeSession(): { stop: () => void } {
     ['chore_assignment_updated', choresStore.handleAssignmentUpdated],
     ['chore_assignments_deleted', choresStore.handleAssignmentsDeleted],
     ['budget_updated', financeStore.handleBudgetUpdated],
+    ['budget_deleted', financeStore.handleBudgetDeleted],
     ['recurring_bill_created', financeStore.handleBillCreated],
     ['recurring_bill_updated', financeStore.handleBillUpdated],
     ['recurring_bill_deleted', financeStore.handleBillDeleted],
@@ -83,7 +84,7 @@ export function useRealtimeSession(): { stop: () => void } {
     ['plant_care_task_deleted', plantsStore.handleCareTaskDeleted],
     // Dashboard invalidieren bei relevanten Events
     ...[
-      'budget_updated', 'recurring_bill_booked',
+      'budget_updated', 'budget_deleted', 'recurring_bill_booked',
       'todo_created', 'todo_updated', 'todo_deleted',
       'shopping_item_created', 'shopping_item_updated', 'shopping_item_deleted',
       'shopping_list_created', 'shopping_list_deleted', 'shopping_items_bulk_updated',

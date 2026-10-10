@@ -105,11 +105,11 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`app/routers/households.py`](../backend/app/routers/households.py) | 9 Endpoints: Haushalt erstellen/umbenennen/beitreten/verlassen, Mitglieder, Einladungscode (anzeigen/erneuern, mit Ablaufdatum), Mitglied entfernen, Finanz-Zusammenfassung; Beitritt mit Rate-Limit | ✅ Fertig |
 | [`app/routers/shopping.py`](../backend/app/routers/shopping.py) | 10 Endpoints: Einkaufslisten (`list_router`) und Einkaufseinträge inkl. Geschäfts-Verwaltung (`router`) + Socket-Events | ✅ Fertig |
 | [`app/routers/todos.py`](../backend/app/routers/todos.py) | 7 Endpoints: Todos (CRUD, Claim) und Erinnerungen + Socket-Events | ✅ Fertig |
-| [`app/routers/expenses.py`](../backend/app/routers/expenses.py) | 5 Endpoints: Ausgaben (CRUD, Split even/custom) und Salden; Pydantic-Schemas inline | ✅ Fertig |
+| [`app/routers/expenses.py`](../backend/app/routers/expenses.py) | 7 Endpoints: Ausgaben (CRUD, Split even/custom, Einzelabruf, Wiederherstellen) und Salden; Zeilensperre + `version`/`If-Match` (409 `EXPENSE_VERSION_CONFLICT`), Soft Delete mit `created_by`/`updated_by`/`deleted_by`, Flag `before_last_settlement`; Pydantic-Schemas inline | ✅ Fertig |
 | [`app/routers/settlements.py`](../backend/app/routers/settlements.py) | 3 Endpoints: Ausgleichszahlungen (GET/POST/DELETE) + Socket-Events | ✅ Fertig |
 | [`app/routers/chores.py`](../backend/app/routers/chores.py) | 8 Endpoints: Ämtli (CRUD) und Zuweisungen (Liste, abhaken, rückgängig, neu zuweisen) + Socket-Events | ✅ Fertig |
 | [`app/routers/budgets.py`](../backend/app/routers/budgets.py) | 3 Endpoints: Monatsbudget (setzen, lesen, löschen) | ✅ Fertig |
-| [`app/routers/recurring_bills.py`](../backend/app/routers/recurring_bills.py) | 5 Endpoints: wiederkehrende Rechnungen (CRUD, Buchen als Ausgabe; idempotent pro Monat) | ✅ Fertig |
+| [`app/routers/recurring_bills.py`](../backend/app/routers/recurring_bills.py) | 5 Endpoints: wiederkehrende Rechnungen (CRUD, Buchen als Ausgabe; eine nicht gelöschte Buchung pro Rechnung und Monat; Nachbuchen bis 12 Monate zurück; nur `split_type` `even`) | ✅ Fertig |
 | [`app/routers/calendars.py`](../backend/app/routers/calendars.py) | 4 Endpoints: Kalender (Name/Farbe/Position) | ✅ Fertig |
 | [`app/routers/events.py`](../backend/app/routers/events.py) | 5 Endpoints: Termine (CRUD, Zeitraum-Abfrage in Haushaltszeit) | ✅ Fertig |
 | [`app/routers/polls.py`](../backend/app/routers/polls.py) | 7 Endpoints: Abstimmungen (Termin- und Essens-Umfragen, Stimme, Entscheidung) | ✅ Fertig |
@@ -120,7 +120,8 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`app/routers/documents.py`](../backend/app/routers/documents.py) | 10 Endpoints: Dokument-Ablage (mehrseitig, Kategorien, Ablaufdatum, Speicher-Auslastung) | ✅ Fertig |
 | [`app/routers/push.py`](../backend/app/routers/push.py) | 4 Endpoints: Web-Push-Konfiguration, Geräte an-/abmelden, Test-Benachrichtigung | ✅ Fertig |
 | [`app/routers/dashboard.py`](../backend/app/routers/dashboard.py) | 2 Endpoints: aggregierte Startseite (Aufgaben, Einkauf, Finanzen) und Zahl fürs App-Icon (`/badge`) | ✅ Fertig |
-| [`app/services/balance_service.py`](../backend/app/services/balance_service.py) | Saldo-Berechnung (von Ausgaben-Router und Dashboard gemeinsam genutzt) | ✅ Fertig |
+| [`app/services/balance_service.py`](../backend/app/services/balance_service.py) | Saldo-Berechnung (von Ausgaben-Router und Dashboard gemeinsam genutzt; gelöschte Ausgaben/Ausgleiche zählen nicht) | ✅ Fertig |
+| [`app/services/finance_rules.py`](../backend/app/services/finance_rules.py) | Finanzregeln: Betrags-/Datumsgrenzen (≤ 10^9 Rappen, ±10 Jahre), Monatsvalidierung, `If-Match`, letzter Ausgleich je Personenpaar | ✅ Fertig |
 | [`app/services/chore_scheduler.py`](../backend/app/services/chore_scheduler.py) | Lazy-Materialisierung, Kalender-basierte Rotation, Datumsberechnung (weekly/biweekly/monthly) | ✅ Fertig |
 | [`app/services/locking.py`](../backend/app/services/locking.py) | Zeilensperren für Check-then-Act: `lock_household(db, id)`, `lock_row(db, Model, id)` (`SELECT … FOR UPDATE`, auf SQLite No-Op) | ✅ Fertig |
 | [`app/services/client_ids.py`](../backend/app/services/client_ids.py) | Vom Client erzeugte IDs: idempotentes Anlegen (Offline-Meilenstein M0) | ✅ Fertig |
@@ -184,6 +185,9 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`test_budget_scoping.py`](../backend/tests/test_budget_scoping.py) | Budget: Mehrmandanten-Scoping | ✅ Fertig |
 | [`test_recurring_bill_scoping.py`](../backend/tests/test_recurring_bill_scoping.py) | Wiederkehrende Rechnungen: Mehrmandanten-Scoping | ✅ Fertig |
 | [`test_recurring_bill_book.py`](../backend/tests/test_recurring_bill_book.py) | Idempotenz von `POST /recurring-bills/{id}/book` | ✅ Fertig |
+| [`test_finance_integrity.py`](../backend/tests/test_finance_integrity.py) | Version/If-Match, Soft Delete + Verlauf, Restore (inkl. Rechnungsbuchung, Ex-Mitglied), Settlement-Idempotenz/Plausibilität, Grenzen, Paginierung, Nachbuchen | ✅ Fertig |
+| [`test_finance_props.py`](../backend/tests/test_finance_props.py) | Property-based (hypothesis): Aufteilung, Ausgleichsvorschläge, Custom-Shares | ✅ Fertig |
+| [`pg/test_pg_finance.py`](../backend/tests/pg/test_pg_finance.py), [`pg/test_pg_finance_props.py`](../backend/tests/pg/test_pg_finance_props.py) | PostgreSQL: parallele Ausgaben-Änderungen, Settlement-Duplikate, Restore ‖ Neubuchung, Migration `fin1a2b3c4d5`; Ledger-Invarianten über zufällige REST-Folgen | ✅ Fertig |
 | [`test_dashboard_scoping.py`](../backend/tests/test_dashboard_scoping.py) | Dashboard: Mehrmandanten-Scoping | ✅ Fertig |
 | **Kalender, Haustiere, Essen, Notizen** | | |
 | [`test_calendar_scoping.py`](../backend/tests/test_calendar_scoping.py) | Kalender: Mehrmandanten-Scoping | ✅ Fertig |
@@ -255,9 +259,9 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`stores/shopping.ts`](../frontend/src/stores/shopping.ts) | Einkauf: Listen und Einträge, Optimistic Updates, Race-Condition-Schutz, Geschäfts-Verwaltung | ✅ Fertig |
 | [`stores/todos.ts`](../frontend/src/stores/todos.ts) | Todos: CRUD, Claim, Erinnerungen, Optimistic Updates | ✅ Fertig |
 | [`stores/chores.ts`](../frontend/src/stores/chores.ts) | Ämtli: CRUD, Optimistic Updates, Toggle-Mutex, Socket-Handler | ✅ Fertig |
-| [`stores/expenses.ts`](../frontend/src/stores/expenses.ts) | Ausgaben: CRUD, Socket-Handler, debounced Balances-Refetch | ✅ Fertig |
-| [`stores/settlements.ts`](../frontend/src/stores/settlements.ts) | Ausgleichszahlungen: CRUD, Socket-Handler | ✅ Fertig |
-| [`stores/finance.ts`](../frontend/src/stores/finance.ts) | Budget, wiederkehrende Rechnungen, Finanz-Zusammenfassung | ✅ Fertig |
+| [`stores/expenses.ts`](../frontend/src/stores/expenses.ts) | Ausgaben: CRUD mit Version (If-Match, Konflikt übernimmt Server-Stand), Wiederherstellen, Verlauf, „Mehr laden“, Socket-Handler, debounced Balances-Refetch | ✅ Fertig |
+| [`stores/settlements.ts`](../frontend/src/stores/settlements.ts) | Ausgleichszahlungen: CRUD mit Client-ID, Plausibilitätsprüfung, Wiederherstellen, Verlauf, „Mehr laden“, Socket-Handler | ✅ Fertig |
+| [`stores/finance.ts`](../frontend/src/stores/finance.ts) | Budget, wiederkehrende Rechnungen (inkl. pausierter, Nachbuchen), Finanz-Zusammenfassung; Budget-Events nur für den angezeigten Monat | ✅ Fertig |
 | [`stores/dashboard.ts`](../frontend/src/stores/dashboard.ts) | Dashboard-Daten (mit Invalidierung) | ✅ Fertig |
 | [`stores/calendar.ts`](../frontend/src/stores/calendar.ts) | Kalender und Termine | ✅ Fertig |
 | [`stores/polls.ts`](../frontend/src/stores/polls.ts) | Abstimmungen | ✅ Fertig |
@@ -309,7 +313,9 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`views/ShoppingView.vue`](../frontend/src/views/ShoppingView.vue) | Einkauf: Listen-Tabs, Einträge nach Geschäft | ✅ Fertig |
 | [`views/TodosView.vue`](../frontend/src/views/TodosView.vue) | Aufgaben: vereinte Zeitleiste (Überfällig / Heute / Diese Woche / Später), Link zu „Ämtli verwalten“ | ✅ Fertig |
 | [`views/ChoresView.vue`](../frontend/src/views/ChoresView.vue) | Putzplan: „Diese Woche“ + „Ämtli verwalten“, Filter Alle/Meine (Route `/chores`, nicht in der Top-Bar) | ✅ Fertig |
-| [`views/ExpensesView.vue`](../frontend/src/views/ExpensesView.vue) | Finanzen: Budget, offene Rechnungen, Ausgaben, Salden, Rechnungsverwaltung | ✅ Fertig |
+| [`views/ExpensesView.vue`](../frontend/src/views/ExpensesView.vue) | Finanzen: Budget, offene Rechnungen (Buchen mit Zahler- und Monatswahl), Rechnungsverwaltung, Ausgaben, Salden, Zahlungen, Verlauf gelöschter Einträge | ✅ Fertig |
+| [`components/RecurringBillsManager.vue`](../frontend/src/components/RecurringBillsManager.vue) | Wiederkehrende Rechnungen anlegen, bearbeiten, pausieren, löschen; Standard-Zahler | ✅ Fertig |
+| [`components/FinanceHistory.vue`](../frontend/src/components/FinanceHistory.vue) | Verlauf: gelöschte Ausgaben/Zahlungen („gelöscht von X am …“) und Wiederherstellen | ✅ Fertig |
 | [`views/PetsView.vue`](../frontend/src/views/PetsView.vue) | Haustiere: Übersicht mit Fütterungs-Widget | ✅ Fertig |
 | [`views/PetDetailView.vue`](../frontend/src/views/PetDetailView.vue) | Tierprofil: Stammdaten, Foto, Medikamente, Gesundheitseinträge, Pflegeaufgaben | ✅ Fertig |
 | [`views/FoodView.vue`](../frontend/src/views/FoodView.vue) | Essen: Wochenmenü, Rezepte, Essens-Abstimmungen | ✅ Fertig |
@@ -403,15 +409,19 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | POST | `/api/households/{id}/todos/{todo_id}/reminders/` | ✅ | Erinnerung anlegen (maximal 5 pro Todo; nicht an erledigte Todos → 422 `TODO_IS_DONE`; `remind_at` ohne Offset = Wanduhrzeit des Haushalts, wie bei Terminen; Vergangenheit → 422 `REMINDER_IN_PAST`). Erledigen markiert Erinnerungen nicht mehr; Wiedereröffnen schaltet künftige wieder scharf |
 | DELETE | `/api/households/{id}/todos/{todo_id}/reminders/{reminder_id}` | ✅ | Erinnerung löschen |
 | **Expenses** | | | |
-| GET | `/api/households/{id}/expenses/` | ✅ | Ausgaben-Liste (nach Datum absteigend, `limit`/`offset`) |
+| GET | `/api/households/{id}/expenses/` | ✅ | Ausgaben-Liste (nach Datum absteigend, `limit`/`offset`, optional `month`; `deleted=true` → nur gelöschte) |
+| GET | `/api/households/{id}/expenses/{expense_id}` | ✅ | Einzelne Ausgabe (auch gelöscht) |
 | POST | `/api/households/{id}/expenses/` | ✅ | Ausgabe erstellen (even/custom Split) |
 | GET | `/api/households/{id}/expenses/balances` | ✅ | Salden + Ausgleichsvorschläge (Greedy-Algorithmus) |
-| PATCH | `/api/households/{id}/expenses/{expense_id}` | ✅ | Ausgabe aktualisieren (optional Shares neu berechnen) |
-| DELETE | `/api/households/{id}/expenses/{expense_id}` | ✅ | Ausgabe löschen (Shares via CASCADE) |
+| PATCH | `/api/households/{id}/expenses/{expense_id}` | ✅ | Ausgabe aktualisieren (optional Shares neu berechnen; `If-Match: <version>` → 409 bei veraltetem Stand) |
+| DELETE | `/api/households/{id}/expenses/{expense_id}` | ✅ | Ausgabe löschen (Soft Delete, idempotent; Shares bleiben für das Wiederherstellen) |
+| POST | `/api/households/{id}/expenses/{expense_id}/restore` | ✅ | Gelöschte Ausgabe exakt wiederherstellen (409 `BILL_ALREADY_BOOKED`, wenn der Monat inzwischen neu gebucht wurde) |
 | **Settlements** | | | |
-| GET | `/api/households/{id}/settlements/` | ✅ | Ausgleichszahlungen (`limit`/`offset`) |
-| POST | `/api/households/{id}/settlements/` | ✅ | Ausgleichszahlung erstellen |
-| DELETE | `/api/households/{id}/settlements/{settlement_id}` | ✅ | Ausgleichszahlung löschen |
+| GET | `/api/households/{id}/settlements/` | ✅ | Ausgleichszahlungen (`limit`/`offset`; `deleted=true` → nur gelöschte) |
+| POST | `/api/households/{id}/settlements/check` | ✅ | Plausibilität prüfen ohne Speichern (`DUPLICATE_RECENT`, `EXCEEDS_OPEN_DEBT`) |
+| POST | `/api/households/{id}/settlements/` | ✅ | Ausgleichszahlung erstellen (Client-`id` idempotent; Antwort mit `warnings`) |
+| DELETE | `/api/households/{id}/settlements/{settlement_id}` | ✅ | Ausgleichszahlung löschen (Soft Delete) |
+| POST | `/api/households/{id}/settlements/{settlement_id}/restore` | ✅ | Gelöschte Ausgleichszahlung wiederherstellen |
 | **Budget und wiederkehrende Rechnungen** | | | |
 | GET | `/api/households/{id}/budget` | ✅ | Budget eines Monats (`month`, Default aktueller Monat) |
 | PUT | `/api/households/{id}/budget` | ✅ | Budget eines Monats setzen (Upsert) |
@@ -420,7 +430,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | POST | `/api/households/{id}/recurring-bills/` | ✅ | Rechnung erstellen |
 | PATCH | `/api/households/{id}/recurring-bills/{bill_id}` | ✅ | Rechnung aktualisieren |
 | DELETE | `/api/households/{id}/recurring-bills/{bill_id}` | ✅ | Rechnung löschen |
-| POST | `/api/households/{id}/recurring-bills/{bill_id}/book` | ✅ | Rechnung als Ausgabe buchen (eine Buchung pro Rechnung und Monat) |
+| POST | `/api/households/{id}/recurring-bills/{bill_id}/book` | ✅ | Rechnung als Ausgabe buchen (eine Buchung pro Rechnung und Monat; optional `month` bis 12 Monate zurück) |
 | **Chores** | | | |
 | GET | `/api/households/{id}/chores/` | ✅ | Ämtli-Liste (inkl. inaktive) |
 | POST | `/api/households/{id}/chores/` | ✅ | Ämtli erstellen (Validierung, `anchor_date`) |
@@ -546,19 +556,19 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `todo_updated` | Server → Room | `TodoItem` (auch bei Claim und Erinnerungen; Erinnerung anlegen/löschen erhöht `version`) |
 | `todo_deleted` | Server → Room | `{ id }` |
 | **Expenses** | | |
-| `expense_created` | Server → Room | `ExpenseResponse` (inkl. shares; auch beim Buchen einer Rechnung) |
-| `expense_updated` | Server → Room | `ExpenseResponse` (inkl. shares) |
-| `expense_deleted` | Server → Room | `{ id, household_id }` |
+| `expense_created` | Server → Room | `ExpenseResponse` (inkl. shares, `version`; auch beim Buchen einer Rechnung und beim Wiederherstellen) |
+| `expense_updated` | Server → Room | `ExpenseResponse` (inkl. shares, `version`) |
+| `expense_deleted` | Server → Room | `{ id, household_id, deleted_by_user_id, version }` (Soft Delete) |
 | **Settlements** | | |
-| `settlement_created` | Server → Room | `SettlementResponse` |
-| `settlement_deleted` | Server → Room | `{ id, household_id }` |
+| `settlement_created` | Server → Room | `SettlementResponse` (auch beim Wiederherstellen) |
+| `settlement_deleted` | Server → Room | `{ id, household_id, deleted_by_user_id }` (Soft Delete) |
 | **Budget und Rechnungen** | | |
 | `budget_updated` | Server → Room | `BudgetResponse` |
 | `budget_deleted` | Server → Room | `{ household_id, month }` |
 | `recurring_bill_created` | Server → Room | `RecurringBillResponse` |
 | `recurring_bill_updated` | Server → Room | `RecurringBillResponse` |
 | `recurring_bill_deleted` | Server → Room | `{ id, household_id }` |
-| `recurring_bill_booked` | Server → Room | `{ bill_id, expense_id, household_id }` |
+| `recurring_bill_booked` | Server → Room | `{ bill_id, expense_id, household_id, booked_month }` |
 | **Chores** | | |
 | `chore_created` | Server → Room | `ChoreResponse` |
 | `chore_updated` | Server → Room | `ChoreResponse` |

@@ -414,8 +414,18 @@ class Expense(Base):
     __table_args__ = (
         CheckConstraint("amount_rappen > 0", name="ck_expense_amount_positive"),
         Index("ix_expenses_household_date", "household_id", "expense_date"),
-        # Eine Buchung pro wiederkehrender Rechnung und Monat — auch bei gleichzeitigem Klick
-        UniqueConstraint("recurring_bill_id", "booked_month", name="uq_expense_bill_booked_month"),
+        # Eine (nicht gelöschte) Buchung pro wiederkehrender Rechnung und Monat — auch bei
+        # gleichzeitigem Klick. Eine gelöschte Buchung gibt den Monat frei; wiederherstellen
+        # lässt sie sich nur, solange der Monat nicht neu gebucht wurde (CASA-03).
+        Index(
+            "uq_expense_bill_booked_month",
+            "recurring_bill_id",
+            "booked_month",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+            sqlite_where=text("deleted_at IS NULL"),
+        ),
+        Index("ix_expenses_household_deleted", "household_id", "deleted_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -455,6 +465,22 @@ class Expense(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
+    )
+    # Optimistic Locking (PD-F7): jede Änderung erhöht die Version; PATCH/DELETE mit
+    # If-Match auf eine ältere Version → 409 EXPENSE_VERSION_CONFLICT
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    # Nachvollziehbarkeit (PD-F1): wer hat erfasst / zuletzt geändert / gelöscht
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    # Soft Delete: gelöschte Ausgaben zählen nirgends mehr (Salden, Budget, Rechnungen),
+    # bleiben aber sichtbar ("gelöscht von …") und wiederherstellbar (CASA-02/03)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
     shares: Mapped[list["ExpenseShare"]] = relationship(
@@ -525,6 +551,11 @@ class Settlement(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    # Soft Delete (PD-F1): gelöschte Ausgleiche zählen nicht mehr, bleiben aber sichtbar
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
     household: Mapped["Household"] = relationship(back_populates="settlements")

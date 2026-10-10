@@ -44,6 +44,14 @@ class ErrorCode:
     BILL_ALREADY_BOOKED = "BILL_ALREADY_BOOKED"
     BILL_INACTIVE = "BILL_INACTIVE"
     BILL_PAYER_REQUIRED = "BILL_PAYER_REQUIRED"
+    # Retro-Buchung nur für den aktuellen und die letzten 12 Monate (PD-F4)
+    BILL_MONTH_OUT_OF_RANGE = "BILL_MONTH_OUT_OF_RANGE"
+    # Ausgabe wurde inzwischen geändert (If-Match veraltet, PD-F7) bzw. gelöscht
+    EXPENSE_VERSION_CONFLICT = "EXPENSE_VERSION_CONFLICT"
+    EXPENSE_DELETED = "EXPENSE_DELETED"
+    SETTLEMENT_DELETED = "SETTLEMENT_DELETED"
+    # Datum ausserhalb von ±10 Jahren um das Haushaltsdatum (CASA-36)
+    DATE_OUT_OF_RANGE = "DATE_OUT_OF_RANGE"
     INVALID_MONTH = "INVALID_MONTH"
     EVENT_NOT_FOUND = "EVENT_NOT_FOUND"
     EVENT_END_BEFORE_START = "EVENT_END_BEFORE_START"

@@ -12,7 +12,8 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Expense, ExpenseShare, Household, HouseholdMember, RecurringBill
-from app.routers.expenses import ExpenseResponse, split_evenly
+from app.routers.expenses import ExpenseResponse, expense_response, split_evenly
+from app.services.finance_rules import MAX_AMOUNT_RAPPEN, add_months, first_of_month
 from app.services.household_checks import assert_users_in_household
 from app.services.household_time import household_today
 from app.socket_manager import emit_to_household_sync
@@ -22,12 +23,18 @@ from app.socket_manager import emit_to_household_sync
 # ---------------------------------------------------------------------------
 
 
+# Wie viele Monate zurück eine vergessene Rechnung nachgebucht werden darf (PD-F4)
+RETRO_BOOKING_MONTHS = 12
+
+
 class RecurringBillCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    amount_rappen: int = Field(..., gt=0)
+    amount_rappen: int = Field(..., gt=0, le=MAX_AMOUNT_RAPPEN)
     day_of_month: int = Field(..., ge=1, le=28)
     category: str | None = Field(None, max_length=50)
-    split_type: Literal["even", "custom"] = "even"
+    # Gebucht wird immer gleichmässig auf alle aktuellen Mitglieder; "custom" hatte nie
+    # eine Wirkung und wird abgelehnt (PD-F5)
+    split_type: Literal["even"] = "even"
     active: bool = True
     paid_by_user_id: uuid.UUID | None = None
 
@@ -37,10 +44,10 @@ class RecurringBillUpdate(PatchModel):
     __orm_model__ = RecurringBill
 
     name: str | None = Field(None, min_length=1, max_length=100)
-    amount_rappen: int | None = Field(None, gt=0)
+    amount_rappen: int | None = Field(None, gt=0, le=MAX_AMOUNT_RAPPEN)
     day_of_month: int | None = Field(None, ge=1, le=28)
     category: str | None = Field(None, max_length=50)
-    split_type: Literal["even", "custom"] | None = None
+    split_type: Literal["even"] | None = None  # PD-F5
     active: bool | None = None
     paid_by_user_id: uuid.UUID | None = None
 
@@ -48,6 +55,9 @@ class RecurringBillUpdate(PatchModel):
 class BookBillRequest(BaseModel):
     # Zahler dieser Buchung; ohne Angabe gilt der Standard-Zahler der Rechnung
     paid_by_user_id: uuid.UUID | None = None
+    # Monat der Buchung (YYYY-MM-01); ohne Angabe der aktuelle Haushaltsmonat.
+    # Vergessene Monate lassen sich bis 12 Monate zurück nachbuchen, nie im Voraus (PD-F4)
+    month: date | None = None
 
 
 class RecurringBillResponse(BaseModel):
@@ -68,7 +78,7 @@ class RecurringBillResponse(BaseModel):
 def _already_booked() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_409_CONFLICT,
-        detail=error_detail(ErrorCode.BILL_ALREADY_BOOKED, "This bill has already been booked for the current month"),
+        detail=error_detail(ErrorCode.BILL_ALREADY_BOOKED, "This bill has already been booked for this month"),
     )
 
 
@@ -234,17 +244,33 @@ def book_recurring_bill(
         )
     assert_users_in_household(db, household_id, [payer_id])
 
-    # 3b. Aktuellen Monat ermitteln
+    # 3b. Monat der Buchung: aktueller Haushaltsmonat oder (PD-F4) einer der letzten 12
     today = household_today(db, household_id)
-    first_of_month = date(today.year, today.month, 1)
+    current_month = first_of_month(today)
+    booked_month = body.month if body and body.month else current_month
+    if booked_month.day != 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(ErrorCode.INVALID_MONTH, "month must be the first day of a month"),
+        )
+    if not add_months(current_month, -RETRO_BOOKING_MONTHS) <= booked_month <= current_month:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.BILL_MONTH_OUT_OF_RANGE,
+                f"Bills can be booked for the current and the past {RETRO_BOOKING_MONTHS} months only",
+            ),
+        )
 
     # 4. Idempotenz: Prüfen ob bereits gebucht (über booked_month, nicht expense_date —
-    #    sonst erlaubt ein verschobenes Datum eine zweite Buchung)
+    #    sonst erlaubt ein verschobenes Datum eine zweite Buchung). Gelöschte Buchungen
+    #    geben den Monat frei; eine wiederhergestellte belegt ihn wieder (CASA-03)
     already_booked = (
         db.query(Expense.id)
         .filter(
             Expense.recurring_bill_id == bill.id,
-            Expense.booked_month == first_of_month,
+            Expense.booked_month == booked_month,
+            Expense.deleted_at.is_(None),
         )
         .first()
     )
@@ -252,7 +278,7 @@ def book_recurring_bill(
         raise _already_booked()
 
     # 5. Expense erstellen
-    expense_date = date(today.year, today.month, min(bill.day_of_month, 28))
+    expense_date = date(booked_month.year, booked_month.month, min(bill.day_of_month, 28))
 
     # Alle Household-Mitglieder für even-split
     members = (
@@ -276,14 +302,15 @@ def book_recurring_bill(
         # Gebucht wird immer gleichmässig auf alle Mitglieder (siehe share_map oben);
         # die Ausgabe muss das auch sagen, sonst lässt sich ihr Betrag später nicht
         # ändern (custom verlangt Anteile im PATCH). RecurringBill.split_type hat
-        # keine Wirkung — Produktentscheidung E-5 in docs/qa/logic-review.md.
+        # keine Wirkung — Produktentscheidung E-5/PD-F5 (custom wird abgelehnt).
         split_type="even",
         recurring_bill_id=bill.id,
-        booked_month=first_of_month,
+        booked_month=booked_month,
         expense_date=expense_date,
         paid_by_user_id=payer_id,
+        created_by_user_id=membership.user_id,
     )
-    # Gleichzeitiger zweiter Klick: Unique-Constraint (recurring_bill_id, booked_month)
+    # Gleichzeitiger zweiter Klick: partieller Unique-Index (recurring_bill_id, booked_month)
     # greift schon beim ersten Flush
     try:
         db.add(expense)
@@ -305,13 +332,18 @@ def book_recurring_bill(
     db.refresh(expense)
 
     # 6. Socket-Events
-    expense_data = ExpenseResponse.model_validate(expense).model_dump(mode="json")
+    expense_data = expense_response(expense, db=db).model_dump(mode="json")
 
     emit_to_household_sync(household_id, "expense_created", expense_data)
     emit_to_household_sync(
         household_id,
         "recurring_bill_booked",
-        {"bill_id": str(bill.id), "expense_id": str(expense.id), "household_id": str(household_id)},
+        {
+            "bill_id": str(bill.id),
+            "expense_id": str(expense.id),
+            "household_id": str(household_id),
+            "booked_month": booked_month.isoformat(),
+        },
     )
 
-    return expense
+    return expense_data

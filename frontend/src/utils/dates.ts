@@ -137,3 +137,17 @@ export function householdDateString(timeZone: string | null | undefined, now: Da
 export function todoDueDay(dueDate: string | null | undefined): string | null {
   return dueDate ? dueDate.substring(0, 10) : null
 }
+
+/** Erster des Monats ("YYYY-MM-01") zu einem Datum "YYYY-MM-DD" */
+export function monthStart(dateStr: string): string {
+  return `${dateStr.substring(0, 7)}-01`
+}
+
+/** Monat ("YYYY-MM-01") um `delta` Monate verschoben */
+export function addMonths(monthStr: string, delta: number): string {
+  const y = Number(monthStr.substring(0, 4))
+  const m = Number(monthStr.substring(5, 7)) - 1 + delta
+  const year = y + Math.floor(m / 12)
+  const month = (((m % 12) + 12) % 12) + 1
+  return `${year}-${String(month).padStart(2, '0')}-01`
+}

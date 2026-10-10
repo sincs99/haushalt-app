@@ -5,6 +5,7 @@ import { createOnlineShoppingRepository } from '../repositories/shoppingReposito
 import type { ShoppingItem, ShoppingList, ShoppingListUpdatePayload } from '../types'
 import { upsertVersioned } from '../utils/syncVersion'
 import { findCanonicalStore, storesEqual } from '../utils/storeName'
+import { createRequestGuard } from '../utils/householdGuard'
 
 // ── localStorage-Persistenz für aktive Liste ──
 
@@ -44,6 +45,8 @@ export const useShoppingStore = defineStore('shopping', () => {
 
   // Interner State für Race-Condition-Schutz
   const pendingToggles = new Set<string>()
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
 
   // ── Computed ──
 
@@ -57,8 +60,12 @@ export const useShoppingStore = defineStore('shopping', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'lists')
 
-    lists.value = await repo.fetchLists(householdId)
+    const result = await repo.fetchLists(householdId)
+    // Antwort eines anderen Haushalts: weder Listen noch aktive Liste übernehmen
+    if (!active()) return
+    lists.value = result
 
     // Aktive Liste aus localStorage oder erste Liste
     const stored = getStoredActiveListId(householdId)
@@ -123,11 +130,14 @@ export const useShoppingStore = defineStore('shopping', () => {
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
+    const active = captureRequest(householdId, 'items')
+
     loading.value = true
     try {
-      items.value = await repo.fetchAll(householdId)
+      const result = await repo.fetchAll(householdId)
+      if (active()) items.value = result
     } finally {
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -137,7 +147,10 @@ export const useShoppingStore = defineStore('shopping', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
-    stores.value = await repo.fetchStores(householdId)
+    const active = captureRequest(householdId, 'stores')
+    const result = await repo.fetchStores(householdId)
+    if (!active()) return
+    stores.value = result
 
     // Aktiven Filter aus localStorage validieren (case-insensitive → kanonische Schreibweise)
     const stored = getStoredStoreFilter(householdId)

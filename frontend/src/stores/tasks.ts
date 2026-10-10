@@ -4,6 +4,7 @@ import { useAuthStore } from './auth'
 import { createOnlineTasksRepository } from '../repositories/tasksRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import type { UnifiedTask, HouseholdMemberInfo } from '../types'
+import { createRequestGuard } from '../utils/householdGuard'
 
 export const useTasksStore = defineStore('tasks', () => {
   const repo = createOnlineTasksRepository()
@@ -12,17 +13,21 @@ export const useTasksStore = defineStore('tasks', () => {
   const items = ref<UnifiedTask[]>([])
   const members = ref<HouseholdMemberInfo[]>([])
   const loading = ref(false)
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
 
   async function fetchTasks() {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'tasks')
 
     loading.value = true
     try {
-      items.value = await repo.fetchTasks(householdId)
+      const result = await repo.fetchTasks(householdId)
+      if (active()) items.value = result
     } finally {
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -30,7 +35,10 @@ export const useTasksStore = defineStore('tasks', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
-    members.value = await householdRepo.fetchMembers(householdId)
+    const active = captureRequest(householdId, 'members')
+
+    const result = await householdRepo.fetchMembers(householdId)
+    if (active()) members.value = result
   }
 
   async function claimTask(taskId: string) {

@@ -5,6 +5,7 @@ import { createOnlineChoresRepository } from '../repositories/choresRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import type { ChoreInfo, ChoreCreatePayload, ChoreUpdatePayload, ChoreAssignmentInfo, HouseholdMemberInfo } from '../types'
 import { upsertVersioned } from '../utils/syncVersion'
+import { createRequestGuard } from '../utils/householdGuard'
 
 export const useChoresStore = defineStore('chores', () => {
   const repo = createOnlineChoresRepository()
@@ -18,6 +19,8 @@ export const useChoresStore = defineStore('chores', () => {
 
   // Mutex für Toggle-Operationen (wie pendingToggles in todos.ts)
   const pendingToggles = new Set<string>()
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
 
   // Ämtli und Einträge laden parallel → `loading` erst false, wenn beide fertig sind
   let loadsInFlight = 0
@@ -36,9 +39,11 @@ export const useChoresStore = defineStore('chores', () => {
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
+    const active = captureRequest(householdId, 'chores')
     startLoad()
     try {
-      chores.value = await repo.fetchChores(householdId)
+      const result = await repo.fetchChores(householdId)
+      if (active()) chores.value = result
     } finally {
       endLoad()
     }
@@ -49,9 +54,11 @@ export const useChoresStore = defineStore('chores', () => {
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
+    const active = captureRequest(householdId, 'assignments')
     startLoad()
     try {
-      assignments.value = await repo.fetchAssignments(householdId, params)
+      const result = await repo.fetchAssignments(householdId, params)
+      if (active()) assignments.value = result
     } finally {
       endLoad()
     }
@@ -61,8 +68,10 @@ export const useChoresStore = defineStore('chores', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'members')
 
-    members.value = await householdRepo.fetchMembers(householdId)
+    const result = await householdRepo.fetchMembers(householdId)
+    if (active()) members.value = result
   }
 
   async function createChore(payload: ChoreCreatePayload) {

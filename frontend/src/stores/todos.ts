@@ -5,6 +5,7 @@ import { createOnlineTodosRepository } from '../repositories/todosRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import type { TodoItem, HouseholdMemberInfo } from '../types'
 import { upsertVersioned } from '../utils/syncVersion'
+import { createRequestGuard } from '../utils/householdGuard'
 
 export const useTodosStore = defineStore('todos', () => {
   // Repositories — einmal im Store-Setup erstellen
@@ -18,18 +19,22 @@ export const useTodosStore = defineStore('todos', () => {
 
   // Interner State für Race-Condition-Schutz
   const pendingToggles = new Set<string>()
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
 
   // Actions
   async function fetchTodos() {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'todos')
 
     loading.value = true
     try {
-      items.value = await repo.fetchAll(householdId)
+      const result = await repo.fetchAll(householdId)
+      if (active()) items.value = result
     } finally {
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -37,8 +42,10 @@ export const useTodosStore = defineStore('todos', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'members')
 
-    members.value = await householdRepo.fetchMembers(householdId)
+    const result = await householdRepo.fetchMembers(householdId)
+    if (active()) members.value = result
   }
 
   async function addTodo(

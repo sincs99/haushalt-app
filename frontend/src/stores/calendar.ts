@@ -12,6 +12,7 @@ import type {
   CalendarUpdatePayload,
   HouseholdMemberInfo,
 } from '../types'
+import { createRequestGuard } from '../utils/householdGuard'
 
 /**
  * Berechnet den ISO-Datumstring (YYYY-MM-DD) des Montags der Woche,
@@ -52,6 +53,9 @@ export const useCalendarStore = defineStore('calendar', () => {
   // State — Calendars
   const calendars = ref<CalendarInfo[]>([])
 
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
+
   // ── Calendar Helpers ──
 
   function getCalendarColor(calendarId: string): string {
@@ -68,8 +72,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'calendars')
 
-    calendars.value = await repo.fetchCalendars(householdId)
+    const result = await repo.fetchCalendars(householdId)
+    if (active()) calendars.value = result
   }
 
   async function addCalendar(payload: CalendarCreatePayload) {
@@ -179,12 +185,14 @@ export const useCalendarStore = defineStore('calendar', () => {
 
     const from = fromDate ?? currentWeekStart.value
     const to = toDate ?? addDays(from, 6) // Sonntag der Woche
+    const active = captureRequest(householdId, 'events')
 
     loading.value = true
     try {
-      events.value = await repo.fetchByRange(householdId, from, to)
+      const result = await repo.fetchByRange(householdId, from, to)
+      if (active()) events.value = result
     } finally {
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -192,8 +200,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'members')
 
-    members.value = await householdRepo.fetchMembers(householdId)
+    const result = await householdRepo.fetchMembers(householdId)
+    if (active()) members.value = result
   }
 
   async function addEvent(payload: CalendarEventCreatePayload) {

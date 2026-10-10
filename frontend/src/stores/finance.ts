@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlineFinanceRepository } from '../repositories/financeRepository'
 import { translateApiError } from '../utils/apiErrors'
+import { createRequestGuard } from '../utils/householdGuard'
 import type { Budget, RecurringBill, FinanceSummary, RecurringBillCreatePayload, RecurringBillUpdatePayload, BudgetUpsertPayload, Expense } from '../types'
 
 export const useFinanceStore = defineStore('finance', () => {
@@ -15,22 +16,27 @@ export const useFinanceStore = defineStore('finance', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
+
   // Actions
   async function fetchSummary(householdId?: string) {
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
+    const active = captureRequest(hid, 'summary')
 
     loading.value = true
     error.value = null
     try {
-      summary.value = await repo.getSummary(hid)
+      const result = await repo.getSummary(hid)
+      if (active()) summary.value = result
     } catch (e: any) {
-      error.value = translateApiError(e)
+      if (active()) error.value = translateApiError(e)
       // Weiterwerfen, damit die Ansicht einen Fehlerzustand zeigen kann
       throw e
     } finally {
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -38,9 +44,11 @@ export const useFinanceStore = defineStore('finance', () => {
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
+    const active = captureRequest(hid, 'budget')
 
     try {
-      budget.value = await repo.getBudget(hid, month)
+      const result = await repo.getBudget(hid, month)
+      if (active()) budget.value = result
     } catch (e: any) {
       console.error('Failed to fetch budget:', e)
     }
@@ -67,9 +75,11 @@ export const useFinanceStore = defineStore('finance', () => {
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
+    const active = captureRequest(hid, 'bills')
 
     try {
-      bills.value = await repo.fetchBills(hid)
+      const result = await repo.fetchBills(hid)
+      if (active()) bills.value = result
     } catch (e: any) {
       console.error('Failed to fetch bills:', e)
     }

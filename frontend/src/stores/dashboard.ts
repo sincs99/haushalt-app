@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlineDashboardRepository } from '../repositories/dashboardRepository'
 import type { DashboardResponse } from '../types'
+import { createRequestGuard } from '../utils/householdGuard'
 
 export const useDashboardStore = defineStore('dashboard', () => {
   const repo = createOnlineDashboardRepository()
@@ -15,23 +16,28 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
   // Debounce-Timer für Invalidierung
   let invalidateTimer: ReturnType<typeof setTimeout> | null = null
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
 
   // Actions
   async function fetchDashboard() {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'dashboard')
 
     loading.value = true
     try {
-      data.value = await repo.fetchDashboard(householdId)
+      const result = await repo.fetchDashboard(householdId)
+      if (!active()) return
+      data.value = result
       loadError.value = false
     } catch (e) {
       // Nicht weiterwerfen: wird auch ungewartet (Socket-Invalidierung, App-Start) aufgerufen
       console.error('Failed to fetch dashboard:', e)
-      loadError.value = true
+      if (active()) loadError.value = true
     } finally {
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 

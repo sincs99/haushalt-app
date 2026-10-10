@@ -18,7 +18,7 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzp
 | Auth | JWT-Access-Token (15 Min., nur im Speicher) + rotierender Refresh-Token als HttpOnly-Cookie (`SameSite=Strict`, CSRF-Header) mit Reuse-Erkennung, bcrypt-Hashing |
 | i18n | vue-i18n, 1173 Keys (DE + EN), Build-gesicherter Key-Sync |
 | KI (optional) | Anthropic-API (`claude-opus-5-5`) über das offizielle `anthropic`-SDK, Structured Outputs; ohne `ANTHROPIC_API_KEY` ausgeblendet |
-| Qualität / CI | GitHub Actions: Backend (ruff, pytest mit Coverage), Frontend (Locale-Check, Typecheck, Vitest mit Coverage), Dependency-Audit (pip-audit, npm audit) |
+| Qualität / CI | GitHub Actions: Backend (ruff, pytest mit Coverage), Backend auf PostgreSQL 16 (`alembic upgrade head`, pg-Testlane, Downgrade/Upgrade), Frontend (Locale-Check, Typecheck, Vitest mit Coverage), Dependency-Audit (pip-audit, npm audit) |
 | Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager), Backup-Skripte für Datenbank und Uploads |
 | Icons | Phosphor Icons (`@phosphor-icons/vue`) — regular/fill/bold |
 | UI | Custom Design-System (CSS Custom Properties, Nunito + Quicksand), Mobile-First |
@@ -97,6 +97,8 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`app/core/security.py`](../backend/app/core/security.py) | Access-/Refresh-Token-Erzeugung, Passwort-Hashing/-Verify (bcrypt), Invite-Code-Generierung | ✅ Fertig |
 | [`app/core/deps.py`](../backend/app/core/deps.py) | Dependencies: `get_current_user`, `verify_household_access`, `verify_household_admin` | ✅ Fertig |
 | [`app/core/error_codes.py`](../backend/app/core/error_codes.py) | Maschinenlesbare Error-Codes (`ErrorCode`, `error_detail`) | ✅ Fertig |
+| [`app/core/db_errors.py`](../backend/app/core/db_errors.py) | Globale Handler: `IntegrityError`, `StaleDataError`, PG-Deadlock/Serialisierung/Lock-Timeout → 409 `CONFLICT_RETRY` (Safety-Net; `get_db` rollt zurück) | ✅ Fertig |
+| [`app/core/patch_schema.py`](../backend/app/core/patch_schema.py) | `PatchModel`: Basis aller `*Update`-Schemas — explizites `null` auf NOT-NULL-Spalten (aus dem ORM-Modell abgeleitet) → 422 | ✅ Fertig |
 | [`app/core/rate_limit.py`](../backend/app/core/rate_limit.py) | Zentraler `slowapi`-Limiter (pro IP, im Speicher; Client-IP aus `X-Forwarded-For` des Proxys) | ✅ Fertig |
 | [`app/core/security_headers.py`](../backend/app/core/security_headers.py) | ASGI-Middleware: HTTP-Security-Header (u. a. CSP) für alle API-Antworten | ✅ Fertig |
 | [`app/routers/auth.py`](../backend/app/routers/auth.py) | 5 Endpoints: register, login, refresh, logout, me (mit Rate-Limits) | ✅ Fertig |
@@ -121,6 +123,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`app/routers/dashboard.py`](../backend/app/routers/dashboard.py) | 2 Endpoints: aggregierte Startseite (Aufgaben, Einkauf, Finanzen) und Zahl fürs App-Icon (`/badge`) | ✅ Fertig |
 | [`app/services/balance_service.py`](../backend/app/services/balance_service.py) | Saldo-Berechnung (von Ausgaben-Router und Dashboard gemeinsam genutzt) | ✅ Fertig |
 | [`app/services/chore_scheduler.py`](../backend/app/services/chore_scheduler.py) | Lazy-Materialisierung, Kalender-basierte Rotation, Datumsberechnung (weekly/biweekly/monthly) | ✅ Fertig |
+| [`app/services/locking.py`](../backend/app/services/locking.py) | Zeilensperren für Check-then-Act: `lock_household(db, id)`, `lock_row(db, Model, id)` (`SELECT … FOR UPDATE`, auf SQLite No-Op) | ✅ Fertig |
 | [`app/services/client_ids.py`](../backend/app/services/client_ids.py) | Vom Client erzeugte IDs: idempotentes Anlegen (Offline-Meilenstein M0) | ✅ Fertig |
 | [`app/services/event_times.py`](../backend/app/services/event_times.py) | Termin-Zeiten als Wanduhrzeit in der Haushalts-Zeitzone (Speicherung UTC) | ✅ Fertig |
 | [`app/services/file_cleanup.py`](../backend/app/services/file_cleanup.py) | Periodisches Aufräumen verwaister Uploads | ✅ Fertig |
@@ -142,6 +145,9 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | Datei | Abdeckung | Status |
 |---|---|---|
 | [`conftest.py`](../backend/tests/conftest.py) | SQLite in-memory DB (StaticPool), Multi-Tenant-Fixtures (2 Haushalte, 3 User), Socket-Mock | ✅ Fertig |
+| [`pg/`](../backend/tests/pg/README.md) | PostgreSQL-Lane (Marker `pg`, nur mit `TEST_PG_URL`): frische DB per `alembic upgrade head`, echte Sessions pro Request, `run_parallel`, Emit-Recorder; Smoke/Drift-Check, Konflikt- und Migrationstests | ✅ Fertig |
+| [`test_patch_null.py`](../backend/tests/test_patch_null.py) | `null` auf jedem NOT-NULL-Feld jedes PATCH-Endpunkts → 422, Zeile unverändert (CASA-04/37) | ✅ Fertig |
+| [`test_db_conflicts.py`](../backend/tests/test_db_conflicts.py) | DB-Konflikt-Mapping → 409 `CONFLICT_RETRY`, Rollback in `get_db`, Sperr-Helfer | ✅ Fertig |
 | **Auth und Sicherheit** | | |
 | [`test_auth_guard.py`](../backend/tests/test_auth_guard.py) | Kein/ungültiger/abgelaufener Token → 401 | ✅ Fertig |
 | [`test_auth_refresh.py`](../backend/tests/test_auth_refresh.py) | Refresh-Token-Rotation, Reuse-Erkennung, Logout | ✅ Fertig |
@@ -205,7 +211,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 
 | Datei | Zweck | Status |
 |---|---|---|
-| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | GitHub Actions: Jobs `backend` (ruff, pytest mit Coverage), `frontend` (Locale-Check, Typecheck, Vitest mit Coverage), `dependency-audit` (pip-audit, npm audit) | ✅ Fertig |
+| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | GitHub Actions: Jobs `backend` (ruff, pytest mit Coverage), `backend-postgres` (postgres:16, `alembic upgrade head`, `pytest -m pg`, `alembic downgrade -1 && upgrade head`), `frontend` (Locale-Check, Typecheck, Vitest mit Coverage), `dependency-audit` (pip-audit, npm audit) | ✅ Fertig |
 | [`docker-compose.yml`](../docker-compose.yml) | Entwicklungs-Setup (Datenbank, Backend, Frontend; Ports nur lokal gebunden) | ✅ Fertig |
 | [`docker-compose.prod.yml`](../docker-compose.prod.yml) | Produktion hinter Nginx Proxy Manager (Healthchecks, keine veröffentlichten Ports) | ✅ Fertig |
 | [`.env.example`](../.env.example), [`.env.prod.example`](../.env.prod.example) | Vorlagen für Umgebungsvariablen | ✅ Fertig |
@@ -693,6 +699,8 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 ### Invarianten
 
 - `SUM(expense_shares.amount_rappen) == expenses.amount_rappen` (im Service-Layer erzwungen, nicht als DB-Constraint).
+- PATCH: ein weggelassenes Feld bleibt unverändert, `null` leert es — für NOT-NULL-Spalten antwortet die API mit 422 (`PatchModel`). Ausnahme: `ingredients`/`steps`/`tags` von Rezepten, dort wird `null` zu `[]`. NOT-NULL-JSON-Spalten speichern Python-`None` nie als JSON-`null` (`JSON(none_as_null=True)`); Altlasten repariert Migration `fnd1a2b3c4d5`.
+- Parallele Schreibkonflikte, die nicht fachlich behandelt werden, liefern 409 `CONFLICT_RETRY` (Frontend: „bitte noch einmal versuchen“) statt 500.
 - `households.timezone` (Default `Europe/Zurich`) steuert Putzplan-Datumsberechnung, Termin-Uhrzeiten, Fütterungs-/Pflegetage sowie die Kalenderdaten der Finanzen (Buchungsmonat, Default-Monat von Budget und Übersicht, Standard-Datum von Ausgaben/Ausgleich; `services/household_time.py`); `households.currency` (Default `CHF`): eine Währung pro Haushalt.
 - Beim Löschen eines Haushalts werden alle zugehörigen Tabellen per `CASCADE` geleert; die Dateien auf dem Datenträger entfernt der Router beim Auflösen des Haushalts (`POST /leave` durch das letzte Mitglied); verwaiste Uploads räumt `app/services/file_cleanup.py` periodisch auf.
 

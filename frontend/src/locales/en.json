@@ -245,7 +245,9 @@
     "listDeleted": "List deleted",
     "listName": "List name",
     "storeActions": "Actions for {store}",
-    "mergeStores": "Merge"
+    "mergeStores": "Merge",
+    "alreadyOnList": "«{name}» is already on the list",
+    "alreadyOnOtherList": "«{name}» is already on the list «{list}»"
   },
   "todos": {
     "title": "Tasks",

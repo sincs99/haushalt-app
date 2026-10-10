@@ -10,7 +10,7 @@ import asyncio
 import logging
 
 from app.database import SessionLocal
-from app.routers.files import delete_orphan_files
+from app.routers.files import delete_orphan_files, delete_untracked_storage_files
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -23,6 +23,10 @@ def run_once() -> None:
         deleted = delete_orphan_files(db)
         if deleted:
             logger.info("Deleted %d orphaned uploaded file(s)", deleted)
+        # Dateien auf der Platte ohne DB-Zeile (Commit nach dem Schreiben gescheitert)
+        untracked = delete_untracked_storage_files(db)
+        if untracked:
+            logger.info("Deleted %d untracked file(s) from storage", untracked)
     except Exception:
         db.rollback()
         logger.exception("Orphan file cleanup failed")

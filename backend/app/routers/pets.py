@@ -22,7 +22,7 @@ from app.models import (
     PetCareTask,
     StoredFile,
 )
-from app.routers.files import file_in_use, file_in_use_error, remove_from_storage
+from app.routers.files import file_in_use, file_in_use_error, lock_files, remove_from_storage
 from app.services.care_schedule import apply_care_task_update
 from app.services.client_ids import commit_or_get_existing, get_existing_by_client_id
 from app.socket_manager import emit_to_household_sync
@@ -521,7 +521,10 @@ def update_pet(
     # photo_file_id Validierung
     if "photo_file_id" in update_data and update_data["photo_file_id"] is not None:
         file_id = update_data["photo_file_id"]
-        stored_file = db.get(StoredFile, file_id)
+        # Datei bis zum Commit sperren: parallele Zuordnung derselben Datei (Dokument,
+        # anderes Tier) wartet und sieht danach diese Referenz (CASA-28)
+        locked = lock_files(db, [file_id])
+        stored_file = locked[0] if locked else None
         if (
             stored_file is None
             or stored_file.household_id != household_id

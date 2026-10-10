@@ -996,17 +996,23 @@ class TestRotationWithDepartedMember:
         ).json()
         self._leave(client, household_a, token_a2)
 
+        # Seit PD-H1 entfernt der Austritt die Person aus der Rotation; die UI lädt
+        # die Ämtli danach neu (Socket-Event household_member_left mit "released")
+        reloaded = client.get(_chores_url(household_a.id), headers=_auth(token_a)).json()
+        rotation = next(c for c in reloaded if c["id"] == chore["id"])["rotation_order"]
+        assert rotation == [str(user_a.id)]
+
         resp = client.patch(
             f"{_chores_url(household_a.id)}{chore['id']}",
             headers=_auth(token_a),
             json={
                 "title": "Boden saugen", "recurrence": "weekly", "weekday": 0, "day_of_month": None,
-                "rotation_order": chore["rotation_order"], "active": True,
+                "rotation_order": rotation, "active": True,
             },
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["title"] == "Boden saugen"
-        assert resp.json()["rotation_order"] == chore["rotation_order"]
+        assert resp.json()["rotation_order"] == rotation
 
     def test_departed_member_can_be_removed_but_not_added(
         self, client, household_a, token_a, token_a2, user_a, user_a2

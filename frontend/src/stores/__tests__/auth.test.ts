@@ -11,13 +11,14 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { MeResponse } from '../../types'
 import { createMemoryStorage, deferred } from './helpers'
 
-const { axiosPost, api, router, showToast, disablePush, socketDisconnect } = vi.hoisted(() => ({
+const { axiosPost, api, router, showToast, disablePush, socketDisconnect, refetchAfterMemberDeparture } = vi.hoisted(() => ({
   axiosPost: vi.fn(),
   api: { get: vi.fn(), post: vi.fn() },
   router: { push: vi.fn(), replace: vi.fn(), currentRoute: { value: { fullPath: '/' } } },
   showToast: vi.fn(),
   disablePush: vi.fn(),
   socketDisconnect: vi.fn(),
+  refetchAfterMemberDeparture: vi.fn(),
 }))
 
 vi.mock('axios', () => ({ default: { post: axiosPost } }))
@@ -36,6 +37,7 @@ vi.mock('../../i18n', () => ({ default: { global: { t: (key: string) => key } } 
 vi.mock('../../router', () => ({ default: router }))
 vi.mock('../../services/pushService', () => ({ disablePush }))
 vi.mock('../../composables/useSocket', () => ({ useSocket: () => ({ disconnect: socketDisconnect }) }))
+vi.mock('../../services/memberDeparture', () => ({ refetchAfterMemberDeparture }))
 
 import { useAuthStore } from '../auth'
 import { SESSION_MARKER_KEY } from '../../services/tokenStorage'
@@ -358,6 +360,22 @@ describe('Haushalte', () => {
     expect(api.get).toHaveBeenCalledTimes(2)
     expect(store.currentHouseholdId).toBe('hh-1')
     expect(showToast).not.toHaveBeenCalled()
+  })
+
+  test('Austritt einer anderen Person lädt die freigegebenen Bereiche neu (PD-H1)', async () => {
+    api.get.mockResolvedValue(meResponse())
+    const store = useAuthStore()
+    await store.fetchMe()
+
+    store.handleMemberRemoved({ household_id: 'hh-1', user_id: 'user-2', released: ['todos', 'chores'] })
+    await vi.waitFor(() => expect(refetchAfterMemberDeparture).toHaveBeenCalledWith(['todos', 'chores']))
+
+    // Austritt in einem anderen (nicht aktiven) Haushalt: nichts neu laden
+    refetchAfterMemberDeparture.mockClear()
+    store.handleMemberLeft({ household_id: 'hh-2', user_id: 'user-2', released: ['todos'] })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(refetchAfterMemberDeparture).not.toHaveBeenCalled()
   })
 
   test('member_left in einem fremden Haushalt löst kein /me aus', async () => {

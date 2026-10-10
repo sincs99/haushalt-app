@@ -21,7 +21,12 @@ from app.services.invite_code import (
     rotate_household_invite_code,
 )
 from app.services.locking import lock_household
-from app.services.membership import ensure_admin, locked_membership, member_count
+from app.services.membership import (
+    ensure_admin,
+    locked_membership,
+    member_count,
+    release_departing_member,
+)
 from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
 
@@ -192,6 +197,7 @@ def leave_household(
     - Haushaltszeile wird gesperrt (CASA-10): parallele Austritte/Beitritte laufen nacheinander
     - Letztes Mitglied → Haushalt wird komplett gelöscht (CASCADE) inkl. Dateien
     - Bleiben Mitglieder ohne Admin → dienstältestes Mitglied wird Admin (PD-H3)
+    - Offene Zuständigkeiten werden freigegeben (PD-H1, release_departing_member)
     - Expenses/Shares werden NICHT gelöscht (Ehemaliges-Mitglied-Muster)
     """
     user_id = membership.user_id
@@ -215,15 +221,18 @@ def leave_household(
         _delete_household_files(household_id)
         return  # Kein Event nötig bei Löschung
 
+    # Offene Zuständigkeiten freigeben (PD-H1) — im selben Commit wie der Austritt
+    released = release_departing_member(db, household_id, user_id)
     ensure_admin(db, household_id)
     db.commit()
 
     # Socket-Event NACH Commit; danach verlassen alle Verbindungen des Users
-    # serverseitig den Room (REST ist bereits durch verify_household_access dicht)
+    # serverseitig den Room (REST ist bereits durch verify_household_access dicht).
+    # ``released`` nennt die Bereiche, die andere Clients neu laden müssen.
     emit_to_household_sync(
         household_id,
         "household_member_left",
-        {"household_id": str(household_id), "user_id": str(user_id)},
+        {"household_id": str(household_id), "user_id": str(user_id), "released": released.areas()},
         evict_user_id=user_id,
     )
 
@@ -239,6 +248,7 @@ def remove_member(
 
     Sich selbst entfernt man über POST /leave, nicht über diesen Endpoint.
 
+    Offene Zuständigkeiten werden wie beim Verlassen freigegeben (PD-H1).
     Der Einladungscode wird dabei erneuert, sonst könnte das entfernte Mitglied
     mit dem bekannten Code sofort wieder beitreten. Seine Socket-Verbindungen
     verlassen serverseitig den Room des Haushalts.
@@ -280,6 +290,8 @@ def remove_member(
 
     db.delete(target)
     db.flush()
+    # Offene Zuständigkeiten freigeben (PD-H1) — im selben Commit wie die Entfernung
+    released = release_departing_member(db, household_id, user_id)
     rotate_household_invite_code(db, household)
     # Reparatur: Haushalt ohne Admin (Altbestand) bekommt hier wieder einen
     ensure_admin(db, household_id)
@@ -288,7 +300,7 @@ def remove_member(
     emit_to_household_sync(
         household_id,
         "household_member_removed",
-        {"household_id": str(household_id), "user_id": str(user_id)},
+        {"household_id": str(household_id), "user_id": str(user_id), "released": released.areas()},
         evict_user_id=user_id,
     )
 

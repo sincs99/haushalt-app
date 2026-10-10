@@ -176,7 +176,7 @@ def test_leave_emits_event(client, db, shared_household, _mock_socket_emit):
     _mock_socket_emit.assert_called_with(
         sh["household"].id,
         "household_member_left",
-        {"household_id": str(sh["household"].id), "user_id": str(sh["member2"].id)},
+        {"household_id": str(sh["household"].id), "user_id": str(sh["member2"].id), "released": []},
         evict_user_id=sh["member2"].id,
     )
 

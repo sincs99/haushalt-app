@@ -337,12 +337,19 @@ export const useAuthStore = defineStore('auth', () => {
     // Kein State-Update nötig im auth store — HouseholdView refetcht Members
   }
 
-  function handleMemberLeft(data: { household_id: string; user_id: string }) {
-    _handleRemoval(data.household_id, data.user_id)
+  /** Payload von household_member_left/_removed; `released` = freigegebene Bereiche (PD-H1). */
+  interface MemberDepartedPayload {
+    household_id: string
+    user_id: string
+    released?: string[]
   }
 
-  function handleMemberRemoved(data: { household_id: string; user_id: string }) {
-    _handleRemoval(data.household_id, data.user_id)
+  function handleMemberLeft(data: MemberDepartedPayload) {
+    _handleRemoval(data.household_id, data.user_id, data.released)
+  }
+
+  function handleMemberRemoved(data: MemberDepartedPayload) {
+    _handleRemoval(data.household_id, data.user_id, data.released)
   }
 
   // ── Haushalt verlassen ──
@@ -382,7 +389,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  function _handleRemoval(householdId: string, userId: string) {
+  function _handleRemoval(householdId: string, userId: string, released?: string[]) {
     // Eigener Austritt läuft gerade → still entfernen, die View meldet und navigiert
     if (userId === user.value?.id && _ownLeaves.has(householdId)) {
       _dropHousehold(householdId)
@@ -396,6 +403,15 @@ export const useAuthStore = defineStore('auth', () => {
         fetchMe().catch(() => {
           // Best-effort — der nächste Start lädt /me ohnehin
         })
+      }
+      // Der Server hat die offenen Zuständigkeiten der Person freigegeben (PD-H1):
+      // betroffene Listen des aktuellen Haushalts neu laden
+      if (householdId === currentHouseholdId.value) {
+        import('../services/memberDeparture')
+          .then(({ refetchAfterMemberDeparture }) => refetchAfterMemberDeparture(released))
+          .catch(() => {
+            // Best-effort — beim nächsten Reconnect/Öffnen wird ohnehin neu geladen
+          })
       }
       return
     }

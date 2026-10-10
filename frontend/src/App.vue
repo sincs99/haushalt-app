@@ -2,19 +2,9 @@
 import { watch, onUnmounted, computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
-import { useShoppingStore } from './stores/shopping'
-import { useTodosStore } from './stores/todos'
-import { useExpensesStore } from './stores/expenses'
-import { useSettlementsStore } from './stores/settlements'
-import { useChoresStore } from './stores/chores'
-import { useFinanceStore } from './stores/finance'
-import { useDashboardStore } from './stores/dashboard'
-import { usePollsStore } from './stores/polls'
-import { usePetsStore } from './stores/pets'
-import { usePlantsStore } from './stores/plants'
-import { resetHouseholdScopedStores } from './stores/householdScope'
 import { useSocket } from './composables/useSocket'
 import { useConnectivity } from './composables/useConnectivity'
+import { useSyncStatus } from './composables/useSyncStatus'
 import BaseAvatar from './components/ui/BaseAvatar.vue'
 import BaseButton from './components/ui/BaseButton.vue'
 import BaseDialog from './components/ui/BaseDialog.vue'
@@ -22,7 +12,7 @@ import TheBottomNav from './components/TheBottomNav.vue'
 import MoreSheet from './components/MoreSheet.vue'
 import { useToast } from './composables/useToast'
 import { syncPushSubscription } from './services/pushService'
-import { BADGE_EVENTS, refreshAppBadge, refreshAppBadgeSoon, setAppBadgeHousehold } from './composables/useAppBadge'
+import { useRealtimeSession } from './composables/useRealtimeSession'
 import { useI18n } from 'vue-i18n'
 import { PhShoppingBagOpen, PhListChecks, PhWallet, PhHouse, PhCalendarDots, PhWifiSlash, PhCheckCircle, PhWarningCircle, PhInfo, PhDotsThreeCircle } from '@phosphor-icons/vue'
 
@@ -47,17 +37,7 @@ const moreActive = computed(() =>
   moreOpen.value || !TAB_ROUTES.some((p) => route.path === p || route.path.startsWith(`${p}/`))
 )
 const authStore = useAuthStore()
-const shoppingStore = useShoppingStore()
-const todosStore = useTodosStore()
-const expensesStore = useExpensesStore()
-const settlementsStore = useSettlementsStore()
-const choresStore = useChoresStore()
-const financeStore = useFinanceStore()
-const dashboardStore = useDashboardStore()
-const pollsStore = usePollsStore()
-const petsStore = usePetsStore()
-const plantsStore = usePlantsStore()
-const { updateToken, setTokenRefresher, joinHousehold, leaveHousehold, on, off, onReconnect, offReconnect, disconnect, isConnected } = useSocket()
+const { setTokenRefresher } = useSocket()
 
 // Trennt der Server den Socket wegen Token-Ablauf, holt sich der Socket hierüber ein frisches Token
 setTokenRefresher(() => authStore.refreshForSocket())
@@ -72,304 +52,15 @@ watch(
   { immediate: true },
 )
 
-// Sync-Status für Indikator
-const syncStatus = computed(() => {
-  if (!isOnline.value) return 'offline'
-  if (isConnected.value) return 'connected'
-  return 'reconnecting'
-})
+// Sync-Status für Indikator („verbunden“ erst, wenn auch der Haushalts-Room betreten ist)
+const syncStatus = useSyncStatus()
 
-// Socket-Event-Binding: Watch auf Token + HouseholdId
-watch(
-  () => [authStore.token, authStore.currentHouseholdId] as const,
-  (newValue, oldValue) => {
-    const [token, householdId] = newValue ?? [null, null]
-    const [, oldHouseholdId] = oldValue ?? [null, null]
-
-    // IMMER zuerst alle Listener entfernen (idempotent, schadet nicht wenn nicht vorhanden)
-    off('shopping_item_created', shoppingStore.handleItemCreated)
-    off('shopping_item_updated', shoppingStore.handleItemUpdated)
-    off('shopping_item_deleted', shoppingStore.handleItemDeleted)
-    off('shopping_list_created', shoppingStore.handleListCreated)
-    off('shopping_list_updated', shoppingStore.handleListUpdated)
-    off('shopping_list_deleted', shoppingStore.handleListDeleted)
-    off('shopping_items_bulk_updated', shoppingStore.handleBulkUpdated)
-    off('todo_created', todosStore.handleTodoCreated)
-    off('todo_updated', todosStore.handleTodoUpdated)
-    off('todo_deleted', todosStore.handleTodoDeleted)
-    off('expense_created', expensesStore.handleExpenseCreated)
-    off('expense_updated', expensesStore.handleExpenseUpdated)
-    off('expense_deleted', expensesStore.handleExpenseDeleted)
-    off('settlement_created', settlementsStore.handleSettlementCreated)
-    off('settlement_deleted', settlementsStore.handleSettlementDeleted)
-    off('chore_created', choresStore.handleChoreCreated)
-    off('chore_updated', choresStore.handleChoreUpdated)
-    off('chore_deleted', choresStore.handleChoreDeleted)
-    off('chore_assignment_created', choresStore.handleAssignmentCreated)
-    off('chore_assignment_updated', choresStore.handleAssignmentUpdated)
-    off('budget_updated', financeStore.handleBudgetUpdated)
-    off('recurring_bill_created', financeStore.handleBillCreated)
-    off('recurring_bill_updated', financeStore.handleBillUpdated)
-    off('recurring_bill_deleted', financeStore.handleBillDeleted)
-    off('recurring_bill_booked', financeStore.handleBillBooked)
-    off('household_updated', authStore.handleHouseholdUpdated)
-    off('household_member_joined', authStore.handleMemberJoined)
-    off('household_member_left', authStore.handleMemberLeft)
-    off('household_member_removed', authStore.handleMemberRemoved)
-    off('budget_updated', dashboardStore.invalidate)
-    off('recurring_bill_booked', dashboardStore.invalidate)
-    off('todo_created', dashboardStore.invalidate)
-    off('todo_updated', dashboardStore.invalidate)
-    off('todo_deleted', dashboardStore.invalidate)
-    off('shopping_item_created', dashboardStore.invalidate)
-    off('shopping_item_updated', dashboardStore.invalidate)
-    off('shopping_item_deleted', dashboardStore.invalidate)
-    off('shopping_list_created', dashboardStore.invalidate)
-    off('shopping_list_deleted', dashboardStore.invalidate)
-    off('shopping_items_bulk_updated', dashboardStore.invalidate)
-    off('expense_created', dashboardStore.invalidate)
-    off('expense_updated', dashboardStore.invalidate)
-    off('expense_deleted', dashboardStore.invalidate)
-    off('settlement_created', dashboardStore.invalidate)
-    off('settlement_deleted', dashboardStore.invalidate)
-    off('chore_assignment_created', dashboardStore.invalidate)
-    off('chore_assignment_updated', dashboardStore.invalidate)
-    off('event_created', dashboardStore.invalidate)
-    off('event_updated', dashboardStore.invalidate)
-    off('event_deleted', dashboardStore.invalidate)
-    off('poll_created', pollsStore.handleSocketCreated)
-    off('poll_voted', pollsStore.handleSocketVoted)
-    off('poll_decided', pollsStore.handleSocketDecided)
-    off('poll_deleted', pollsStore.handleSocketDeleted)
-    off('poll_decided', dashboardStore.invalidate)
-    off('pet_care_task_created', petsStore.handleCareTaskCreated)
-    off('pet_care_task_updated', petsStore.handleCareTaskUpdated)
-    off('pet_care_task_deleted', petsStore.handleCareTaskDeleted)
-    off('pet_care_task_created', dashboardStore.invalidate)
-    off('pet_care_task_updated', dashboardStore.invalidate)
-    off('pet_care_task_deleted', dashboardStore.invalidate)
-    off('plant_care_task_created', plantsStore.handleCareTaskCreated)
-    off('plant_care_task_updated', plantsStore.handleCareTaskUpdated)
-    off('plant_care_task_deleted', plantsStore.handleCareTaskDeleted)
-    off('plant_care_task_created', dashboardStore.invalidate)
-    off('plant_care_task_updated', dashboardStore.invalidate)
-    off('plant_care_task_deleted', dashboardStore.invalidate)
-    off('plant_care_logged', dashboardStore.invalidate)
-    off('plant_created', dashboardStore.invalidate)
-    off('plant_deleted', dashboardStore.invalidate)
-    BADGE_EVENTS.forEach((event) => off(event, refreshAppBadgeSoon))
-
-    // Wenn Token weg (Logout): Socket disconnecten, Zahl am App-Icon entfernen
-    if (!token) {
-      disconnect()
-      setAppBadgeHousehold(null)
-      return
-    }
-
-    // Erstverbindung oder neues Token nach Refresh (Server verlängert die Verbindung per reauth)
-    updateToken(token)
-
-    // Alten Room verlassen
-    if (oldHouseholdId && oldHouseholdId !== householdId) {
-      leaveHousehold(oldHouseholdId)
-    }
-
-    if (householdId) {
-      // Stores leeren bei Household-Wechsel (alle haushaltsbezogenen Stores, auch die
-      // der Ansichten, die ihre Daten nur beim Öffnen laden)
-      if (oldHouseholdId && oldHouseholdId !== householdId) {
-        resetHouseholdScopedStores()
-      }
-
-      joinHousehold(householdId)
-
-      // Neue Listener binden
-      on('shopping_item_created', shoppingStore.handleItemCreated)
-      on('shopping_item_updated', shoppingStore.handleItemUpdated)
-      on('shopping_item_deleted', shoppingStore.handleItemDeleted)
-      on('shopping_list_created', shoppingStore.handleListCreated)
-      on('shopping_list_updated', shoppingStore.handleListUpdated)
-      on('shopping_list_deleted', shoppingStore.handleListDeleted)
-      on('shopping_items_bulk_updated', shoppingStore.handleBulkUpdated)
-      on('todo_created', todosStore.handleTodoCreated)
-      on('todo_updated', todosStore.handleTodoUpdated)
-      on('todo_deleted', todosStore.handleTodoDeleted)
-      on('expense_created', expensesStore.handleExpenseCreated)
-      on('expense_updated', expensesStore.handleExpenseUpdated)
-      on('expense_deleted', expensesStore.handleExpenseDeleted)
-      on('settlement_created', settlementsStore.handleSettlementCreated)
-      on('settlement_deleted', settlementsStore.handleSettlementDeleted)
-      on('chore_created', choresStore.handleChoreCreated)
-      on('chore_updated', choresStore.handleChoreUpdated)
-      on('chore_deleted', choresStore.handleChoreDeleted)
-      on('chore_assignment_created', choresStore.handleAssignmentCreated)
-      on('chore_assignment_updated', choresStore.handleAssignmentUpdated)
-      on('budget_updated', financeStore.handleBudgetUpdated)
-      on('recurring_bill_created', financeStore.handleBillCreated)
-      on('recurring_bill_updated', financeStore.handleBillUpdated)
-      on('recurring_bill_deleted', financeStore.handleBillDeleted)
-      on('recurring_bill_booked', financeStore.handleBillBooked)
-      on('household_updated', authStore.handleHouseholdUpdated)
-      on('household_member_joined', authStore.handleMemberJoined)
-      on('household_member_left', authStore.handleMemberLeft)
-      on('household_member_removed', authStore.handleMemberRemoved)
-
-      // Dashboard invalidieren bei relevanten Events
-      on('budget_updated', dashboardStore.invalidate)
-      on('recurring_bill_booked', dashboardStore.invalidate)
-      on('todo_created', dashboardStore.invalidate)
-      on('todo_updated', dashboardStore.invalidate)
-      on('todo_deleted', dashboardStore.invalidate)
-      on('shopping_item_created', dashboardStore.invalidate)
-      on('shopping_item_updated', dashboardStore.invalidate)
-      on('shopping_item_deleted', dashboardStore.invalidate)
-      on('shopping_list_created', dashboardStore.invalidate)
-      on('shopping_list_deleted', dashboardStore.invalidate)
-      on('shopping_items_bulk_updated', dashboardStore.invalidate)
-      on('expense_created', dashboardStore.invalidate)
-      on('expense_updated', dashboardStore.invalidate)
-      on('expense_deleted', dashboardStore.invalidate)
-      on('settlement_created', dashboardStore.invalidate)
-      on('settlement_deleted', dashboardStore.invalidate)
-      on('chore_assignment_created', dashboardStore.invalidate)
-      on('chore_assignment_updated', dashboardStore.invalidate)
-      on('event_created', dashboardStore.invalidate)
-      on('event_updated', dashboardStore.invalidate)
-      on('event_deleted', dashboardStore.invalidate)
-      on('poll_created', pollsStore.handleSocketCreated)
-      on('poll_voted', pollsStore.handleSocketVoted)
-      on('poll_decided', pollsStore.handleSocketDecided)
-      on('poll_deleted', pollsStore.handleSocketDeleted)
-      on('poll_decided', dashboardStore.invalidate)
-      on('pet_care_task_created', petsStore.handleCareTaskCreated)
-      on('pet_care_task_updated', petsStore.handleCareTaskUpdated)
-      on('pet_care_task_deleted', petsStore.handleCareTaskDeleted)
-      on('pet_care_task_created', dashboardStore.invalidate)
-      on('pet_care_task_updated', dashboardStore.invalidate)
-      on('pet_care_task_deleted', dashboardStore.invalidate)
-      on('plant_care_task_created', plantsStore.handleCareTaskCreated)
-      on('plant_care_task_updated', plantsStore.handleCareTaskUpdated)
-      on('plant_care_task_deleted', plantsStore.handleCareTaskDeleted)
-      on('plant_care_task_created', dashboardStore.invalidate)
-      on('plant_care_task_updated', dashboardStore.invalidate)
-      on('plant_care_task_deleted', dashboardStore.invalidate)
-      on('plant_care_logged', dashboardStore.invalidate)
-      on('plant_created', dashboardStore.invalidate)
-      on('plant_deleted', dashboardStore.invalidate)
-
-      // Zahl am App-Icon aktuell halten
-      BADGE_EVENTS.forEach((event) => on(event, refreshAppBadgeSoon))
-      setAppBadgeHousehold(householdId)
-
-      refreshAllStores()
-    }
-  },
-  { immediate: true }
-)
-
-// Hintergrund-Aktualisierung aller Stores. Fehler werden hier bewusst
-// verschluckt: die Ansichten zeigen ihren eigenen Fehlerzustand mit „Erneut versuchen“.
-function refreshAllStores() {
-  const quiet = (p: Promise<unknown> | void) => { if (p) p.catch(() => {}) }
-  quiet(shoppingStore.fetchLists())
-  quiet(shoppingStore.fetchItems())
-  quiet(shoppingStore.fetchStores())
-  quiet(todosStore.fetchTodos())
-  quiet(expensesStore.fetchExpenses())
-  quiet(expensesStore.fetchBalances())
-  quiet(settlementsStore.fetchAll())
-  quiet(choresStore.fetchChores())
-  quiet(choresStore.fetchAssignments())
-  quiet(financeStore.fetchSummary())
-  quiet(financeStore.fetchBills())
-  quiet(dashboardStore.fetchDashboard())
-  quiet(pollsStore.fetchPolls('offen'))
-}
-
-// Reconnect-Handler: Room neu beitreten + Daten nachladen
-function handleReconnect() {
-  const householdId = authStore.currentHouseholdId
-  if (householdId) {
-    joinHousehold(householdId)
-    refreshAllStores()
-    void refreshAppBadge()
-  }
-}
-
-onReconnect(handleReconnect)
+// Socket, Room, Listener und Nachladen (inkl. Token-/Haushaltswechsel, Reconnect)
+const realtime = useRealtimeSession()
 
 onUnmounted(() => {
-  off('shopping_item_created', shoppingStore.handleItemCreated)
-  off('shopping_item_updated', shoppingStore.handleItemUpdated)
-  off('shopping_item_deleted', shoppingStore.handleItemDeleted)
-  off('shopping_list_created', shoppingStore.handleListCreated)
-  off('shopping_list_updated', shoppingStore.handleListUpdated)
-  off('shopping_list_deleted', shoppingStore.handleListDeleted)
-  off('shopping_items_bulk_updated', shoppingStore.handleBulkUpdated)
-  off('todo_created', todosStore.handleTodoCreated)
-  off('todo_updated', todosStore.handleTodoUpdated)
-  off('todo_deleted', todosStore.handleTodoDeleted)
-  off('expense_created', expensesStore.handleExpenseCreated)
-  off('expense_updated', expensesStore.handleExpenseUpdated)
-  off('expense_deleted', expensesStore.handleExpenseDeleted)
-  off('settlement_created', settlementsStore.handleSettlementCreated)
-  off('settlement_deleted', settlementsStore.handleSettlementDeleted)
-  off('chore_created', choresStore.handleChoreCreated)
-  off('chore_updated', choresStore.handleChoreUpdated)
-  off('chore_deleted', choresStore.handleChoreDeleted)
-  off('chore_assignment_created', choresStore.handleAssignmentCreated)
-  off('chore_assignment_updated', choresStore.handleAssignmentUpdated)
-  off('budget_updated', financeStore.handleBudgetUpdated)
-  off('recurring_bill_created', financeStore.handleBillCreated)
-  off('recurring_bill_updated', financeStore.handleBillUpdated)
-  off('recurring_bill_deleted', financeStore.handleBillDeleted)
-  off('recurring_bill_booked', financeStore.handleBillBooked)
-  off('household_updated', authStore.handleHouseholdUpdated)
-  off('household_member_joined', authStore.handleMemberJoined)
-  off('household_member_left', authStore.handleMemberLeft)
-  off('household_member_removed', authStore.handleMemberRemoved)
-  off('budget_updated', dashboardStore.invalidate)
-  off('recurring_bill_booked', dashboardStore.invalidate)
-  off('todo_created', dashboardStore.invalidate)
-  off('todo_updated', dashboardStore.invalidate)
-  off('todo_deleted', dashboardStore.invalidate)
-  off('shopping_item_created', dashboardStore.invalidate)
-  off('shopping_item_updated', dashboardStore.invalidate)
-  off('shopping_item_deleted', dashboardStore.invalidate)
-  off('shopping_list_created', dashboardStore.invalidate)
-  off('shopping_list_deleted', dashboardStore.invalidate)
-  off('shopping_items_bulk_updated', dashboardStore.invalidate)
-  off('expense_created', dashboardStore.invalidate)
-  off('expense_updated', dashboardStore.invalidate)
-  off('expense_deleted', dashboardStore.invalidate)
-  off('settlement_created', dashboardStore.invalidate)
-  off('settlement_deleted', dashboardStore.invalidate)
-  off('chore_assignment_created', dashboardStore.invalidate)
-  off('chore_assignment_updated', dashboardStore.invalidate)
-  off('poll_created', pollsStore.handleSocketCreated)
- off('poll_voted', pollsStore.handleSocketVoted)
- off('poll_decided', pollsStore.handleSocketDecided)
- off('poll_deleted', pollsStore.handleSocketDeleted)
- off('poll_decided', dashboardStore.invalidate)
- off('pet_care_task_created', petsStore.handleCareTaskCreated)
- off('pet_care_task_updated', petsStore.handleCareTaskUpdated)
- off('pet_care_task_deleted', petsStore.handleCareTaskDeleted)
-  off('pet_care_task_created', dashboardStore.invalidate)
-  off('pet_care_task_updated', dashboardStore.invalidate)
-  off('pet_care_task_deleted', dashboardStore.invalidate)
-  off('plant_care_task_created', plantsStore.handleCareTaskCreated)
-  off('plant_care_task_updated', plantsStore.handleCareTaskUpdated)
-  off('plant_care_task_deleted', plantsStore.handleCareTaskDeleted)
-  off('plant_care_task_created', dashboardStore.invalidate)
-  off('plant_care_task_updated', dashboardStore.invalidate)
-  off('plant_care_task_deleted', dashboardStore.invalidate)
-  off('plant_care_logged', dashboardStore.invalidate)
-  off('plant_created', dashboardStore.invalidate)
-  off('plant_deleted', dashboardStore.invalidate)
-  BADGE_EVENTS.forEach((event) => off(event, refreshAppBadgeSoon))
-  offReconnect(handleReconnect)
+  realtime.stop()
   setTokenRefresher(null)
-  disconnect()
 })
 </script>
 

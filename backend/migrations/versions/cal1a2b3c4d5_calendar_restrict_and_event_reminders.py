@@ -6,6 +6,9 @@ ein parallel bestätigter Termin verschwand mit dem gelöschten Kalender. Jetzt
 Das Löschen eines ganzen Haushalts bleibt möglich (ORM löscht Termine vor Kalendern,
 die DB-Cascades über ``household_id`` laufen in derselben Anweisung).
 
+PD-K1: Termin-Erinnerungen — ``events.reminder`` (none|15m|1h|1d, Default none)
+und ``events.notified_at`` (Claim des Push-Schedulers).
+
 Revision ID: cal1a2b3c4d5
 Revises: fnd1a2b3c4d5
 Create Date: 2026-10-10 12:00:00.000000
@@ -13,6 +16,7 @@ Create Date: 2026-10-10 12:00:00.000000
 """
 from typing import Sequence, Union
 
+import sqlalchemy as sa
 from alembic import op
 
 
@@ -30,8 +34,21 @@ def upgrade() -> None:
         ['calendar_id'], ['id'], ondelete='RESTRICT'
     )
 
+    op.add_column('events', sa.Column(
+        'reminder', sa.String(4), nullable=False, server_default='none'
+    ))
+    op.add_column('events', sa.Column(
+        'notified_at', sa.DateTime(timezone=True), nullable=True
+    ))
+    op.create_check_constraint(
+        'ck_events_reminder', 'events', "reminder IN ('none', '15m', '1h', '1d')"
+    )
+
 
 def downgrade() -> None:
+    op.drop_constraint('ck_events_reminder', 'events', type_='check')
+    op.drop_column('events', 'notified_at')
+    op.drop_column('events', 'reminder')
     op.drop_constraint('fk_events_calendar_id', 'events', type_='foreignkey')
     op.create_foreign_key(
         'fk_events_calendar_id', 'events', 'calendars',

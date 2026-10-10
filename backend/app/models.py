@@ -694,10 +694,16 @@ class Calendar(Base):
     )
 
 
+EVENT_REMINDERS = ("none", "15m", "1h", "1d")
+
+
 class Event(Base):
     __tablename__ = "events"
     __table_args__ = (
         Index("ix_events_household_starts", "household_id", "starts_at"),
+        CheckConstraint(
+            "reminder IN ('none', '15m', '1h', '1d')", name="ck_events_reminder"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -724,6 +730,15 @@ class Event(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    # Push-Erinnerung (PD-K1): none | 15m | 1h | 1d vor Beginn; ganztägig 08:00 am Tag
+    # bzw. am Vortag. notified_at = Claim des Schedulers, zurückgesetzt bei Zeit-/
+    # Erinnerungsänderung.
+    reminder: Mapped[str] = mapped_column(
+        String(4), nullable=False, default="none", server_default="none"
+    )
+    notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     household: Mapped["Household"] = relationship(back_populates="events")

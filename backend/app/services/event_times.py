@@ -102,3 +102,23 @@ def overlaps_range(start: datetime, end: datetime):
 def on_day(day: date, tz: zoneinfo.ZoneInfo):
     """SQL-Filter: Termin findet (auch teilweise) am Haushaltstag ``day`` statt."""
     return overlaps_range(*range_bounds(day, day, tz))
+
+
+# Erinnerungen (PD-K1): Vorlauf bei Terminen mit Uhrzeit; ganztägige um 08:00
+# Haushaltszeit am Tag selbst bzw. am Vortag (1d)
+REMINDER_OFFSETS = {"15m": timedelta(minutes=15), "1h": timedelta(hours=1), "1d": timedelta(days=1)}
+ALL_DAY_REMINDER_TIME = time(8, 0)
+
+
+def event_remind_at(
+    starts_at: datetime, all_day: bool, reminder: str, tz: zoneinfo.ZoneInfo
+) -> datetime | None:
+    """Zeitpunkt (UTC) der Erinnerung eines Termins; None = keine Erinnerung."""
+    if reminder not in REMINDER_OFFSETS:
+        return None
+    if all_day:
+        day = to_household_time(starts_at, tz).date()
+        if reminder == "1d":
+            day -= timedelta(days=1)
+        return to_utc(datetime.combine(day, ALL_DAY_REMINDER_TIME), tz)
+    return to_household_time(starts_at, timezone.utc) - REMINDER_OFFSETS[reminder]

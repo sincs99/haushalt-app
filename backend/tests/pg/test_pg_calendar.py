@@ -131,3 +131,52 @@ def test_raw_household_delete_cascades_despite_restrict(client, make_household, 
     db.execute(text("DELETE FROM households WHERE id = :id"), {"id": hh.id})
     db.commit()
     assert db.query(Event).filter_by(household_id=hh.id).count() == 0
+
+
+def test_migration_cal_upgrade_downgrade(pg_admin_url):
+    """cal1a2b3c4d5: bestehende Termine bekommen reminder='none'; RESTRICT greift; Rückweg geht."""
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.exc import IntegrityError
+
+    from tests.pg.harness import fresh_database, run_alembic
+
+    with fresh_database(pg_admin_url, upgrade_to="fnd1a2b3c4d5") as url:
+        engine = create_engine(url)
+        try:
+            hh, user, cal, ev = uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "INSERT INTO households (id, name, invite_code, currency, timezone, created_at) "
+                    "VALUES (:id, 'HH', :code, 'CHF', 'Europe/Zurich', now())"
+                ), {"id": hh, "code": uuid.uuid4().hex[:8].upper()})
+                conn.execute(text(
+                    "INSERT INTO users (id, email, password_hash, display_name, created_at) "
+                    "VALUES (:id, :email, 'x', 'Anna', now())"
+                ), {"id": user, "email": f"anna-{uuid.uuid4().hex[:6]}@example.com"})
+                conn.execute(text(
+                    "INSERT INTO calendars (id, household_id, name, color, position, created_at) "
+                    "VALUES (:id, :hh, 'Allgemein', '#5B8DEF', 0, now())"
+                ), {"id": cal, "hh": hh})
+                conn.execute(text(
+                    "INSERT INTO events (id, household_id, calendar_id, title, starts_at, all_day, "
+                    "participant_ids, created_by_user_id, created_at) "
+                    "VALUES (:id, :hh, :cal, 'T', now(), false, CAST('[]' AS json), :u, now())"
+                ), {"id": ev, "hh": hh, "cal": cal, "u": user})
+
+            run_alembic(url, "upgrade", "cal1a2b3c4d5")
+            with engine.connect() as conn:
+                row = conn.execute(
+                    text("SELECT reminder, notified_at FROM events WHERE id = :id"), {"id": ev}
+                ).one()
+                assert row == ("none", None)
+            with engine.connect() as conn:
+                try:
+                    conn.execute(text("DELETE FROM calendars WHERE id = :id"), {"id": cal})
+                    raise AssertionError("RESTRICT hätte das Löschen verhindern müssen")
+                except IntegrityError:
+                    conn.rollback()
+
+            run_alembic(url, "downgrade", "-1")
+            run_alembic(url, "upgrade", "head")
+        finally:
+            engine.dispose()

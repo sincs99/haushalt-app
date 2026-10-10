@@ -1,5 +1,6 @@
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -26,6 +27,10 @@ from app.socket_manager import emit_to_household_sync
 # ---------------------------------------------------------------------------
 
 
+# Push-Erinnerung vor Beginn (PD-K1)
+EventReminder = Literal["none", "15m", "1h", "1d"]
+
+
 class EventCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=150)
     starts_at: datetime
@@ -34,6 +39,7 @@ class EventCreate(BaseModel):
     calendar_id: uuid.UUID
     participant_ids: list[uuid.UUID] = Field(default_factory=list)
     note: str | None = Field(None, max_length=500)
+    reminder: EventReminder = "none"
 
     @field_validator("title")
     @classmethod
@@ -61,6 +67,7 @@ class EventUpdate(PatchModel):
     calendar_id: uuid.UUID | None = None
     participant_ids: list[uuid.UUID] | None = None
     note: str | None = Field(None, max_length=500)
+    reminder: EventReminder | None = None
 
     @field_validator("title")
     @classmethod
@@ -87,6 +94,7 @@ class EventResponse(BaseModel):
     all_day: bool
     participant_ids: list[uuid.UUID]
     note: str | None
+    reminder: str
     created_by_user_id: uuid.UUID
     created_at: datetime
 
@@ -96,6 +104,11 @@ class EventResponse(BaseModel):
 def _tz(db: Session, household_id: uuid.UUID):
     household = db.get(Household, household_id)
     return household_tz(household.timezone if household else None)
+
+
+def _as_utc(dt: datetime) -> datetime:
+    # SQLite liefert naive Datetimes (UTC)
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def _dedupe(ids: list[uuid.UUID]) -> list[uuid.UUID]:
@@ -196,6 +209,7 @@ def create_event(
         all_day=body.all_day,
         participant_ids=_validated_participants(db, household_id, body.participant_ids),
         note=body.note,
+        reminder=body.reminder,
         created_by_user_id=membership.user_id,
     )
     db.add(event)
@@ -280,8 +294,14 @@ def update_event(
             db, household_id, update_data["participant_ids"], item.participant_ids
         )
 
+    # Erinnerung neu scharf schalten, wenn sich ihr Zeitpunkt ändert (PD-K1)
+    before = (_as_utc(item.starts_at), item.all_day, item.reminder)
+
     for field, value in update_data.items():
         setattr(item, field, value)
+
+    if (_as_utc(item.starts_at), item.all_day, item.reminder) != before:
+        item.notified_at = None
 
     db.commit()
     db.refresh(item)

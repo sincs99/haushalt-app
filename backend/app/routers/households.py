@@ -14,11 +14,14 @@ from app.database import get_db
 from app.models import Budget, Calendar, Expense, Household, HouseholdMember, RecurringBill, User
 from app.services.household_time import household_today
 from app.services.invite_code import (
+    find_household_by_invite_code,
     generate_unique_invite_code,
     is_invite_code_expired,
     new_invite_code_expiry,
     rotate_household_invite_code,
 )
+from app.services.locking import lock_household
+from app.services.membership import ensure_admin, locked_membership, member_count
 from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
 
@@ -157,6 +160,26 @@ def rename_household(
     return result
 
 
+def _not_member() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=error_detail(ErrorCode.NOT_HOUSEHOLD_MEMBER, "Not a member of this household"),
+    )
+
+
+def _delete_household_files(household_id: uuid.UUID) -> None:
+    """Hochgeladene Dateien (Dokumente, Fotos) eines gelöschten Haushalts entfernen.
+
+    Die DB-Einträge verschwinden per CASCADE, die Dateien auf der Platte sonst nie.
+    Best-effort: schlägt es fehl, räumt der periodische Cleanup
+    (services/file_cleanup.py) verwaiste Haushaltsordner später auf.
+    """
+    try:
+        _storage.delete_household(str(household_id))
+    except Exception:
+        pass
+
+
 @router.post("/leave", status_code=status.HTTP_204_NO_CONTENT)
 def leave_household(
     household_id: uuid.UUID,
@@ -165,49 +188,34 @@ def leave_household(
 ):
     """Haushalt verlassen. Immer erlaubt — auch mit offenen Salden.
 
-    Geschäftsregeln:
-    - Letztes Mitglied → Haushalt wird komplett gelöscht (CASCADE)
-    - Einziger Admin, aber andere Mitglieder → dienstältestes Mitglied wird Admin
+    Geschäftsregeln (docs/PROJECT-STATUS.md, "Haushalt verlassen"):
+    - Haushaltszeile wird gesperrt (CASA-10): parallele Austritte/Beitritte laufen nacheinander
+    - Letztes Mitglied → Haushalt wird komplett gelöscht (CASCADE) inkl. Dateien
+    - Bleiben Mitglieder ohne Admin → dienstältestes Mitglied wird Admin (PD-H3)
     - Expenses/Shares werden NICHT gelöscht (Ehemaliges-Mitglied-Muster)
-    - rotation_order wird NICHT bereinigt (Scheduler überspringt)
     """
     user_id = membership.user_id
 
-    # Alle Mitglieder dieses Haushalts zählen
-    all_members = (
-        db.query(HouseholdMember)
-        .filter(HouseholdMember.household_id == household_id)
-        .all()
-    )
+    household = lock_household(db, household_id)
+    if household is None:
+        # Parallel gelöscht (letztes anderes Mitglied ist gerade gegangen)
+        raise _not_member()
+    # Unter der Sperre neu lesen: parallel entfernt oder befördert?
+    own = locked_membership(db, household_id, user_id)
+    if own is None:
+        raise _not_member()
 
-    if len(all_members) <= 1:
-        # Letztes Mitglied → Haushalt löschen
-        household = db.get(Household, household_id)
-        if household:
-            db.delete(household)  # CASCADE löscht members, expenses, etc.
+    db.delete(own)
+    db.flush()
+
+    # Nach dem Löschen neu zählen (nicht vorher), dann Invarianten herstellen
+    if member_count(db, household_id) == 0:
+        db.delete(household)  # CASCADE löscht members, expenses, etc.
         db.commit()
-        # Hochgeladene Dateien (Dokumente, Fotos) mitlöschen — die DB-Einträge
-        # verschwinden per CASCADE, die Dateien auf der Platte sonst nie
-        try:
-            _storage.delete_household(str(household_id))
-        except Exception:
-            pass  # Best-effort, DB ist konsistent
+        _delete_household_files(household_id)
         return  # Kein Event nötig bei Löschung
 
-    # Prüfe ob Admin-Promotion nötig
-    is_admin = membership.role == "admin"
-    remaining = [m for m in all_members if m.id != membership.id]
-
-    if is_admin:
-        # Gibt es andere Admins?
-        other_admins = [m for m in remaining if m.role == "admin"]
-        if not other_admins:
-            # Kein anderer Admin → dienstältestes Mitglied promoten
-            # Sortierung: joined_at ASC, dann user_id ASC (deterministic tiebreaker)
-            promoted = sorted(remaining, key=lambda m: (m.joined_at, str(m.user_id)))[0]
-            promoted.role = "admin"
-
-    db.delete(membership)
+    ensure_admin(db, household_id)
     db.commit()
 
     # Socket-Event NACH Commit; danach verlassen alle Verbindungen des Users
@@ -242,11 +250,21 @@ def remove_member(
             detail=error_detail(ErrorCode.CANNOT_REMOVE_SELF, "Use /leave to remove yourself"),
         )
 
-    # Ziel-Membership finden
-    target = db.query(HouseholdMember).filter_by(
-        household_id=household_id, user_id=user_id
-    ).first()
+    household = lock_household(db, household_id)
+    if household is None:
+        raise _not_member()
+    # Unter der Sperre prüfen, ob der Aufrufer noch (Admin-)Mitglied ist
+    caller = locked_membership(db, household_id, membership.user_id)
+    if caller is None:
+        raise _not_member()
+    if caller.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_detail(ErrorCode.ADMIN_REQUIRED, "Admin role required"),
+        )
 
+    # Ziel-Membership finden
+    target = locked_membership(db, household_id, user_id)
     if target is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -261,8 +279,10 @@ def remove_member(
         )
 
     db.delete(target)
-    household = db.get(Household, household_id)
+    db.flush()
     rotate_household_invite_code(db, household)
+    # Reparatur: Haushalt ohne Admin (Altbestand) bekommt hier wieder einen
+    ensure_admin(db, household_id)
     db.commit()
 
     emit_to_household_sync(
@@ -487,17 +507,16 @@ def join_household(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Code normalisieren (case-insensitiv)
-    code = data.invite_code.strip().upper()
-
-    # Household suchen
-    from sqlalchemy import func
-    household = (
-        db.query(Household)
-        .filter(func.upper(Household.invite_code) == code)
-        .first()
-    )
-    if household is None:
+    household = find_household_by_invite_code(db, data.invite_code)
+    # Sperren (CASA-10): Ein paralleler Austritt des letzten Mitglieds löscht den
+    # Haushalt — danach darf niemand mehr "erfolgreich" beitreten.
+    household = lock_household(db, household.id)
+    if (
+        household is None
+        or household.invite_code.upper() != data.invite_code.strip().upper()
+        or member_count(db, household.id) == 0
+    ):
+        # Gelöscht, Code inzwischen rotiert oder verwaist (0 Mitglieder): Code gilt nicht mehr
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=error_detail(ErrorCode.INVITE_CODE_NOT_FOUND, "Invite code not found"),
@@ -508,13 +527,8 @@ def join_household(
             detail=error_detail(ErrorCode.INVITE_CODE_EXPIRED, "Invite code has expired"),
         )
 
-    # Prüfen ob User bereits Mitglied ist
-    existing = (
-        db.query(HouseholdMember)
-        .filter_by(household_id=household.id, user_id=current_user.id)
-        .first()
-    )
-    if existing is not None:
+    # Prüfen ob User bereits Mitglied ist (unter der Sperre → kein Doppel-Insert)
+    if locked_membership(db, household.id, current_user.id) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=error_detail(ErrorCode.ALREADY_MEMBER, "Already a member of this household"),
@@ -527,6 +541,10 @@ def join_household(
         role="member",
     )
     db.add(membership)
+    db.flush()
+    # Reparatur: Haushalt ohne Admin (Altbestand) bekommt hier wieder einen
+    ensure_admin(db, household.id)
+    role = membership.role
 
     # Werte vor dem Commit sichern (SQLAlchemy expired Objekte nach commit)
     household_id = household.id
@@ -543,7 +561,7 @@ def join_household(
             "household_id": str(household_id),
             "user_id": str(user_id),
             "display_name": display_name,
-            "role": "member",
+            "role": role,
         },
     )
 

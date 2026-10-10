@@ -363,3 +363,54 @@ def test_balances_show_ex_member(client, db, shared_household):
     assert member1_balance["paid_rappen"] == 2000
     assert member1_balance["owed_rappen"] == 1000
     assert member1_balance["saldo_rappen"] == 1000
+
+
+# ---------------------------------------------------------------------------
+# PD-H3 / CASA-10: Admin-Reparatur und verwaiste Haushalte
+# ---------------------------------------------------------------------------
+
+
+def _demote_all(db, household_id):
+    for m in db.query(HouseholdMember).filter_by(household_id=household_id):
+        m.role = "member"
+    db.commit()
+
+
+def _roles(db, household_id) -> dict:
+    db.expire_all()
+    return {m.user_id: m.role for m in db.query(HouseholdMember).filter_by(household_id=household_id)}
+
+
+def test_leave_repairs_household_without_admin(client, db, shared_household):
+    """Altbestand ohne Admin: Jede Mitgliedschaftsänderung befördert das dienstälteste Mitglied."""
+    sh = shared_household
+    _demote_all(db, sh["household"].id)
+
+    # member2 (jüngstes Mitglied) geht → "admin" (ältester Eintrag) wird wieder Admin
+    resp = client.post(_leave_url(sh["household"].id), headers=_auth(create_access_token(str(sh["member2"].id))))
+    assert resp.status_code == 204
+    assert _roles(db, sh["household"].id) == {sh["admin"].id: "admin", sh["member1"].id: "member"}
+
+
+def test_join_repairs_household_without_admin(client, db, shared_household, user_b, token_b):
+    sh = shared_household
+    _demote_all(db, sh["household"].id)
+
+    resp = client.post("/api/households/join", headers=_auth(token_b), json={"invite_code": "SHARED01"})
+    assert resp.status_code == 200
+    roles = _roles(db, sh["household"].id)
+    # Der Dienstälteste wird Admin, nicht der Neue
+    assert roles[sh["admin"].id] == "admin"
+    assert roles[user_b.id] == "member"
+
+
+def test_join_orphan_household_is_rejected(client, db, user_b, token_b):
+    """Haushalt mit 0 Mitgliedern (Altbestand): Code gilt nicht, alte Daten bleiben unsichtbar."""
+    orphan = Household(id=uuid.uuid4(), name="Verwaist", invite_code="ORPHAN01", currency="CHF")
+    db.add(orphan)
+    db.commit()
+
+    resp = client.post("/api/households/join", headers=_auth(token_b), json={"invite_code": "ORPHAN01"})
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["code"] == ErrorCode.INVITE_CODE_NOT_FOUND
+    assert db.query(HouseholdMember).filter_by(household_id=orphan.id).count() == 0

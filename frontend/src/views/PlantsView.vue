@@ -129,7 +129,10 @@ const anyWaterDue = computed(() => plantsStore.careStatus.some(isWaterDue))
 function handleWater(plant: Plant) {
   return run(() => plantsStore.waterPlant(plant.id), {
     key: `water-${plant.id}`,
-    success: t('plants.wateredToast', { name: plant.name }),
+    // Heute schon gegossen (auch von jemand anderem) → kein zweiter Eintrag (CASA-29)
+    success: (logs) => (logs.length > 0
+      ? t('plants.wateredToast', { name: plant.name })
+      : t('plants.alreadyDoneToday')),
     error: t('plants.careError'),
   })
 }

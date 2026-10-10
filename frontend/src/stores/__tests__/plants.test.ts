@@ -287,6 +287,22 @@ describe('plants store', () => {
     expect(s.careStatus[0].tasks[0].next_due_at).toBe('2024-03-17')
   })
 
+  it('completeCareTask: heute schon erledigt → Server-Stand übernehmen, kein Log (CASA-29)', async () => {
+    const s = usePlantsStore()
+    repo.fetchCareLog.mockResolvedValue([log({ id: 'first' })])
+    await s.fetchCareLog('p1')
+    s.careStatus = [status()]
+    const serverTask = task({ next_due_at: '2024-03-15', last_done_at: '2024-03-08' })
+    repo.completeCareTask.mockResolvedValue({ task: serverTask, log: null, changed: false })
+
+    await expect(s.completeCareTask('p1', 't1')).resolves.toBeNull()
+    expect(s.careStatus[0].tasks[0].next_due_at).toBe('2024-03-15')
+    expect(s.careLog.map(l => l.id)).toEqual(['first'])
+
+    // waterPlant liefert nur tatsächlich neue Einträge
+    await expect(s.waterPlant('p1')).resolves.toEqual([])
+  })
+
   it('completeCareTask rolls back tasks and status on failure', async () => {
     repo.completeCareTask.mockRejectedValue(new Error('fail'))
     repo.fetchCareTasks.mockResolvedValue([task()])

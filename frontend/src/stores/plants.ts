@@ -252,7 +252,10 @@ export const usePlantsStore = defineStore('plants', () => {
     return updated
   }
 
-  /** KERN-USECASE: Pflege erledigt (optimistic). Setzt Fälligkeit neu und schreibt einen Log-Eintrag. */
+  /**
+   * KERN-USECASE: Pflege erledigt (optimistic). Setzt Fälligkeit neu und schreibt einen Log-Eintrag.
+   * Liefert den Log-Eintrag; `null` = heute schon erledigt, der Server hat nichts geändert (CASA-29).
+   */
   async function completeCareTask(plantId: string, taskId: string, note?: string) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
@@ -294,9 +297,9 @@ export const usePlantsStore = defineStore('plants', () => {
       if (active()) {
         upsertCareTask(task)
         upsertStatusTask(task)
-        prependLog(log)
+        if (log) prependLog(log)
       }
-      return log
+      return log ?? null
     } catch (error) {
       if (active()) {
         const current = careTasks.value.find(task => task.id === taskId)
@@ -314,11 +317,12 @@ export const usePlantsStore = defineStore('plants', () => {
     }
   }
 
-  /** "Gegossen": erledigt alle Giessaufgaben der Pflanze. */
-  async function waterPlant(plantId: string) {
+  /** "Gegossen": erledigt alle Giessaufgaben der Pflanze. Liefert die neuen Log-Einträge. */
+  async function waterPlant(plantId: string): Promise<PlantCareLog[]> {
     const item = careStatus.value.find(s => s.plant_id === plantId)
     const waterTasks = item?.tasks.filter(t => t.care_type === 'water') ?? []
-    await Promise.all(waterTasks.map(t => completeCareTask(plantId, t.task_id)))
+    const logs = await Promise.all(waterTasks.map(t => completeCareTask(plantId, t.task_id)))
+    return logs.filter((log): log is PlantCareLog => !!log)
   }
 
   /** "Alle fälligen giessen". */

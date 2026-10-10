@@ -771,7 +771,9 @@ export interface PlantCareLog {
 
 export interface PlantCareCompleteResponse {
   task: PlantCareTask
-  log: PlantCareLog
+  /** null = heute schon erledigt (auch von jemand anderem) — kein zweiter Eintrag (CASA-29) */
+  log: PlantCareLog | null
+  changed: boolean
 }
 
 export interface PlantCareStatusTask {

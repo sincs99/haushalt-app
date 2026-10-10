@@ -879,7 +879,8 @@
     "taskDeleteError": "Pflegeaufgabe konnte nicht gelöscht werden",
     "deleteTaskHint": "Der Pflege-Verlauf bleibt erhalten.",
     "changePhoto": "Foto ändern",
-    "photoUploadErrorReason": "Foto konnte nicht hochgeladen werden: {reason}"
+    "photoUploadErrorReason": "Foto konnte nicht hochgeladen werden: {reason}",
+    "alreadyDoneToday": "Heute schon erledigt – nichts geändert"
   },
   "food": {
     "title": "Essen",

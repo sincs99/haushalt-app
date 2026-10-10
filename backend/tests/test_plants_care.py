@@ -1,10 +1,10 @@
-"""Pflege-Intervalle (Pflanzen und Tiere): Intervall-Änderung verschiebt die Fälligkeit (PD-P4 / E-2)."""
+"""Pflegeaufgaben: Intervall-Änderung (PD-P4 / E-2) und einmal pro Haushaltstag erledigen (CASA-29)."""
 
 import uuid
 import zoneinfo
 from datetime import date, datetime, timedelta, timezone
 
-from app.models import PlantCareTask
+from app.models import PlantCareLog, PlantCareTask
 
 
 def _h(token):
@@ -79,3 +79,54 @@ def test_pet_care_interval_change_recomputes_next_due(client, db, household_a, t
     assert resp.json()["next_due_at"] == str(last + timedelta(days=30))
     assert resp.json()["notified_at"] is None
 
+
+
+# ---------------------------------------------------------------------------
+# CASA-29: pro Aufgabe höchstens ein Log pro Haushaltstag
+# ---------------------------------------------------------------------------
+
+
+def test_complete_twice_same_day_logs_once(client, db, household_a, token_a, plant_a):
+    task = _task(db, plant_a, interval_days=5)
+    first = client.post(_url(plant_a, task, "/complete"), headers=_h(token_a))
+    assert first.status_code == 200
+    assert first.json()["changed"] is True
+    assert first.json()["log"] is not None
+
+    second = client.post(_url(plant_a, task, "/complete"), json={"note": "nochmal"}, headers=_h(token_a))
+    assert second.status_code == 200
+    assert second.json()["changed"] is False
+    assert second.json()["log"] is None
+    assert second.json()["task"]["next_due_at"] == str(_today() + timedelta(days=5))
+    assert db.query(PlantCareLog).filter_by(care_task_id=task.id).count() == 1
+
+
+def test_tag_scans_on_same_day_do_not_crash_or_log_twice(client, db, household_a, token_a, plant_a):
+    """Tags rufen den plants-Router direkt auf: zweiter Scan am selben Tag → changed=false."""
+    from app.models import Tag
+    from app.routers.tags import generate_tag_token
+
+    task = _task(db, plant_a)
+    tags = [
+        Tag(household_id=household_a.id, token=generate_tag_token(), label="W", target_type="plant",
+            target_id=plant_a.id, action="plant.water", enabled=True),
+        Tag(household_id=household_a.id, token=generate_tag_token(), label="C", target_type="plant_care_task",
+            target_id=task.id, action="plant.care_task.done", enabled=True),
+    ]
+    db.add_all(tags)
+    db.commit()
+    first = client.post(f"/api/tags/{tags[0].token}/execute", headers=_h(token_a))
+    assert first.status_code == 200 and first.json()["changed"] is True
+    for tag in tags:
+        again = client.post(f"/api/tags/{tag.token}/execute", headers=_h(token_a))
+        assert again.status_code == 200, again.text
+        assert again.json()["changed"] is False
+    assert db.query(PlantCareLog).count() == 1
+
+
+def test_water_all_twice_logs_once(client, db, household_a, token_a, plant_a):
+    _task(db, plant_a, next_due_at=_today() - timedelta(days=1))
+    first = client.post(_url(plant_a, suffix="/water-all"), headers=_h(token_a)).json()
+    second = client.post(_url(plant_a, suffix="/water-all"), headers=_h(token_a)).json()
+    assert len(first) == 1 and second == []
+    assert db.query(PlantCareLog).count() == 1

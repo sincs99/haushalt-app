@@ -263,7 +263,9 @@ async function handleSaveTask() {
 function handleComplete(taskId: string) {
   return run(() => plantsStore.completeCareTask(plantId.value, taskId), {
     key: `complete-${taskId}`,
-    success: () => {
+    success: (log) => {
+      // null: heute schon erledigt (auch von jemand anderem) → kein zweiter Eintrag (CASA-29)
+      if (log === null) return t('plants.alreadyDoneToday')
       const task = plantsStore.careTasks.find(c => c.id === taskId)
       return task ? t('plants.completed', { date: formatDate(task.next_due_at) }) : undefined
     },

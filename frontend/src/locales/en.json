@@ -879,7 +879,8 @@
     "taskDeleteError": "Couldn't delete the care task",
     "deleteTaskHint": "The care history is kept.",
     "changePhoto": "Change photo",
-    "photoUploadErrorReason": "Photo could not be uploaded: {reason}"
+    "photoUploadErrorReason": "Photo could not be uploaded: {reason}",
+    "alreadyDoneToday": "Already done today – nothing changed"
   },
   "food": {
     "title": "Food",

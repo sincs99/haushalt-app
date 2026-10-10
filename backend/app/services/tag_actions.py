@@ -414,7 +414,7 @@ def _execute_plant_water(ctx: TagContext, params: dict[str, Any]) -> dict[str, A
                 status_code=status.HTTP_409_CONFLICT,
                 detail=error_detail(ErrorCode.TAG_NOTHING_TO_DO, "Plant has no watering task"),
             )
-        logs = [
+        done = [
             complete_care_task(
                 household_id=household_id,
                 plant_id=ctx.target.id,
@@ -425,6 +425,8 @@ def _execute_plant_water(ctx: TagContext, params: dict[str, Any]) -> dict[str, A
             ).log
             for task in tasks
         ]
+        # log None = heute schon erledigt (CASA-29, plants-Router) → kein Eintrag
+        logs = [log for log in done if log is not None]
     else:
         logs = water_all(household_id=household_id, membership=ctx.membership, db=ctx.db)
     return {
@@ -484,9 +486,10 @@ def _execute_plant_care_task_done(ctx: TagContext, params: dict[str, Any]) -> di
         db=ctx.db,
     )
     return {
-        "changed": True,
+        # changed False = heute schon erledigt (CASA-29, plants-Router)
+        "changed": done.changed,
         "care_task": CareTaskResponse.model_validate(done.task).model_dump(mode="json"),
-        "log": CareLogResponse.model_validate(done.log).model_dump(mode="json"),
+        "log": CareLogResponse.model_validate(done.log).model_dump(mode="json") if done.log else None,
     }
 
 

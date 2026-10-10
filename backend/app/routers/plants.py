@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
@@ -135,7 +136,9 @@ class CareLogResponse(BaseModel):
 
 class CareCompleteResponse(BaseModel):
     task: CareTaskResponse
-    log: CareLogResponse
+    # None = heute schon erledigt, nichts geändert (CASA-29)
+    log: CareLogResponse | None
+    changed: bool = True
 
 
 class PlantCareStatusTask(BaseModel):
@@ -220,11 +223,37 @@ def _apply_completion(
     today: date,
     user_id: uuid.UUID,
     note: str | None = None,
-) -> PlantCareLog:
-    """Setzt Fälligkeit aus dem Intervall neu und schreibt einen Log-Eintrag."""
-    task.last_done_at = today
-    task.next_due_at = today + timedelta(days=task.interval_days)
-    task.notified_at = None
+    *,
+    only_due: bool = False,
+) -> PlantCareLog | None:
+    """Setzt Fälligkeit aus dem Intervall neu und schreibt einen Log-Eintrag.
+
+    Höchstens einmal pro Aufgabe und Haushaltstag (CASA-29): bedingtes UPDATE
+    ``… WHERE last_done_at IS DISTINCT FROM today``. Ein paralleler Request wartet
+    auf die Zeilensperre, sieht danach das neue ``last_done_at`` und ändert nichts
+    (READ COMMITTED wertet das WHERE neu aus). Rückgabe None = schon erledigt
+    (bzw. mit ``only_due`` nicht mehr fällig) — kein zweiter Log-Eintrag.
+    Der Aufrufer liest die Aufgabe nach dem Commit neu (``db.refresh``).
+    """
+    conditions = [
+        PlantCareTask.id == task.id,
+        or_(PlantCareTask.last_done_at.is_(None), PlantCareTask.last_done_at != today),
+    ]
+    if only_due:
+        conditions.append(PlantCareTask.next_due_at <= today)
+    claimed = db.execute(
+        update(PlantCareTask)
+        .where(*conditions)
+        .values(
+            last_done_at=today,
+            next_due_at=today + timedelta(days=task.interval_days),
+            notified_at=None,
+        )
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    if claimed != 1:
+        return None
+
     log = PlantCareLog(
         household_id=task.household_id,
         plant_id=task.plant_id,
@@ -345,6 +374,7 @@ def water_all(
 ):
     today = _get_household_today(db, household_id)
 
+    # Feste Reihenfolge: parallele water-all sperren die Zeilen gleich (kein Deadlock)
     due_tasks = (
         db.query(PlantCareTask)
         .filter(
@@ -352,13 +382,21 @@ def water_all(
             PlantCareTask.care_type == "water",
             PlantCareTask.next_due_at <= today,
         )
+        .order_by(PlantCareTask.id)
         .all()
     )
 
-    logs = [_apply_completion(db, task, today, membership.user_id) for task in due_tasks]
+    # Nur Aufgaben, die dieser Request tatsächlich erledigt hat (CASA-29)
+    done: list[PlantCareTask] = []
+    logs: list[PlantCareLog] = []
+    for task in due_tasks:
+        log = _apply_completion(db, task, today, membership.user_id, only_due=True)
+        if log is not None:
+            done.append(task)
+            logs.append(log)
     db.commit()
 
-    for task in due_tasks:
+    for task in done:
         db.refresh(task)
         emit_to_household_sync(
             household_id,
@@ -584,9 +622,13 @@ def complete_care_task(
     )
     db.commit()
     db.refresh(task)
-    db.refresh(log)
 
     task_data = CareTaskResponse.model_validate(task)
+    if log is None:
+        # Heute schon erledigt (auch parallel von jemand anderem): unverändert zurück
+        return CareCompleteResponse(task=task_data, log=None, changed=False)
+
+    db.refresh(log)
     log_data = CareLogResponse.model_validate(log)
     emit_to_household_sync(
         household_id, "plant_care_task_updated", task_data.model_dump(mode="json")

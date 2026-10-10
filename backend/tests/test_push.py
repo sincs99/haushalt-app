@@ -170,7 +170,7 @@ def test_due_reminder_sent_once_to_all_members(db, todo_a, user_a, user_a2, user
     assert push_service.process_todo_reminders(db, now) == 2
     payload = _payloads(mock_webpush)[0]
     assert payload["body"] == "Küche putzen"
-    assert payload["url"] == "/todos"
+    assert payload["url"] == f"/todos?hh={todo_a.household_id}"
     db.refresh(r)
     assert r.notified_at is not None
 
@@ -263,7 +263,7 @@ def test_pet_care_waits_for_morning(db, household_a, pet_a, user_a, mock_webpush
     assert push_service.process_pet_care_tasks(db, later) == 1
     payload = _payloads(mock_webpush)[0]
     assert payload["body"] == "Luna: Krallen schneiden"
-    assert payload["url"] == f"/pets/{pet_a.id}"
+    assert payload["url"] == f"/pets/{pet_a.id}?hh={pet_a.household_id}"
 
     mock_webpush.reset_mock()
     assert push_service.process_pet_care_tasks(db, later) == 0
@@ -305,7 +305,7 @@ def test_plant_care_waits_for_morning(db, household_a, plant_a, user_a, mock_web
     payload = _payloads(mock_webpush)[0]
     assert payload["title"] == "Pflanzenpflege fällig"
     assert payload["body"] == "Monstera: Gießen"
-    assert payload["url"] == f"/plants/{plant_a.id}"
+    assert payload["url"] == f"/plants/{plant_a.id}?hh={plant_a.household_id}"
 
     mock_webpush.reset_mock()
     assert push_service.process_plant_care_tasks(db, later) == 0
@@ -325,3 +325,10 @@ def test_plant_care_not_due_yet(db, plant_a, user_a, mock_webpush):
     _plant_task(db, plant_a, date(2026, 10, 1))
     now = datetime(2026, 9, 29, 10, 0, tzinfo=timezone.utc)
     assert push_service.process_plant_care_tasks(db, now) == 0
+
+
+def test_push_url_carries_household_query():
+    """CASA-40: Push-URLs tragen den Haushalt, damit die App beim Öffnen wechseln kann."""
+    hid = uuid.uuid4()
+    assert push_service._with_household("/todos", hid) == f"/todos?hh={hid}"
+    assert push_service._with_household("/x?tab=1", hid) == f"/x?tab=1&hh={hid}"

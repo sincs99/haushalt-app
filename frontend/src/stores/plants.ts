@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
+import { captureHousehold as captureSharedHousehold } from '../utils/householdGuard'
 import { createOnlinePlantsRepository } from '../repositories/plantsRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import { planAdvice, mergeCareNotes } from '../utils/plantCare'
@@ -62,7 +63,9 @@ export const usePlantsStore = defineStore('plants', () => {
 
   function captureHousehold(householdId: string) {
     const version = stateVersion
-    return () => version === stateVersion && useAuthStore().currentHouseholdId === householdId
+    // Gemeinsame Haushalts-/Sitzungs-Generation (Logout, Wechsel A → B → A; CASA-12)
+    const inScope = captureSharedHousehold(householdId)
+    return () => version === stateVersion && inScope()
   }
 
   function captureRequest(householdId: string, key: string) {

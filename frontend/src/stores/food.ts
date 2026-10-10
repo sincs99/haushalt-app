@@ -6,6 +6,7 @@ import type {
   Recipe, RecipeCreatePayload, RecipeUpdatePayload,
   MealPlanEntry, MealPlanAssignPayload, AddToShoppingResponse,
 } from '../types'
+import { captureHousehold, createRequestGuard } from '../utils/householdGuard'
 
 /**
  * Gibt den ISO-Datums-String des Montags der aktuellen Woche zurück.
@@ -35,13 +36,18 @@ export const useFoodStore = defineStore('food', () => {
   const currentWeekStart = ref(getMonday())
   const loading = ref(false)
 
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
+
   // ── Recipe Actions ──
 
   async function fetchRecipes() {
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'recipes')
 
-    recipes.value = await repo.fetchRecipes(householdId)
+    const result = await repo.fetchRecipes(householdId)
+    if (active()) recipes.value = result
   }
 
   async function createRecipe(payload: RecipeCreatePayload): Promise<Recipe | undefined> {
@@ -118,11 +124,12 @@ export const useFoodStore = defineStore('food', () => {
 
     const week = weekDate ?? currentWeekStart.value
     const requestId = ++weekRequestId
+    const inScope = captureHousehold(householdId)
     loading.value = true
     try {
       const plan = await repo.fetchWeekPlan(householdId, week)
-      // Veraltete Antwort verwerfen
-      if (requestId !== weekRequestId) return
+      // Veraltete Antwort verwerfen (neuere Woche angefragt oder Haushalt gewechselt)
+      if (requestId !== weekRequestId || !inScope()) return
       weekPlan.value = plan
     } catch (error) {
       // Fehler einer überholten Anfrage interessiert nicht mehr

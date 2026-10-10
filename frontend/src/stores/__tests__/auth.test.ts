@@ -419,6 +419,23 @@ describe('Haushalte', () => {
     expect(showToast).toHaveBeenCalledWith('household.switchedTo', 'info')
   })
 
+  test('jeder Haushaltswechsel leert die Stores — auch über null (CASA-12, R3)', async () => {
+    const { useShoppingStore } = await import('../shopping')
+    const store = useAuthStore()
+    store.currentHouseholdId = 'hh-1'
+    const shopping = useShoppingStore()
+
+    shopping.items = [{ id: 'a1', name: 'Privat A' } as any]
+    store.switchHousehold('hh-2')
+    expect(shopping.items).toEqual([])
+
+    // Letzten Haushalt verlassen (→ null), dann neuen anlegen/beitreten (null → hh-3)
+    store.currentHouseholdId = null
+    shopping.items = [{ id: 'x', name: 'Rest' } as any]
+    store.currentHouseholdId = 'hh-3'
+    expect(shopping.items).toEqual([])
+  })
+
   test('household_updated übernimmt Name und KI-Opt-in', async () => {
     api.get.mockResolvedValue(meResponse())
     const store = useAuthStore()
@@ -491,6 +508,33 @@ describe('logout', () => {
     await Promise.all([store.logout({ reason: 'user' }), store.logout({ reason: 'user' })])
 
     expect(axiosPost).toHaveBeenCalledTimes(1)
+  })
+
+  test('leert alle haushaltsbezogenen Stores und erhöht die Generation (CASA-12)', async () => {
+    const { useShoppingStore } = await import('../shopping')
+    const { useExpensesStore } = await import('../expenses')
+    const { useNotesStore } = await import('../notes')
+    const { useDashboardStore } = await import('../dashboard')
+    const { householdGeneration } = await import('../../utils/householdGuard')
+    const store = useAuthStore()
+    store.token = 'access'
+    store.currentHouseholdId = 'hh-1'
+    const shopping = useShoppingStore()
+    shopping.items = [{ id: 'i1', name: 'Privat' } as any]
+    const expenses = useExpensesStore()
+    expenses.balances = { balances: [], settlements: [], unassigned_rappen: 0 } as any
+    useNotesStore().items = [{ id: 'n1' } as any]
+    useDashboardStore().data = { greeting: 'x' } as any
+    const before = householdGeneration()
+    axiosPost.mockResolvedValue({ data: {} })
+
+    await store.logout({ reason: 'user' })
+
+    expect(householdGeneration()).toBeGreaterThan(before)
+    expect(shopping.items).toEqual([])
+    expect(expenses.balances).toBeNull()
+    expect(useNotesStore().items).toEqual([])
+    expect(useDashboardStore().data).toBeNull()
   })
 })
 

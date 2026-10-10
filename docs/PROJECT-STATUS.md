@@ -222,9 +222,9 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 
 | Datei | Zweck | Status |
 |---|---|---|
-| [`App.vue`](../frontend/src/App.vue) | App-Shell: Desktop-Top-Bar (6 Links), Mobile-Bottom-Nav (4 Tabs + „Mehr“), Socket-Binding und Handler für Echtzeit-Events, Offline-Banner, Sync-Status, Toasts | ✅ Fertig |
+| [`App.vue`](../frontend/src/App.vue) | App-Shell: Desktop-Top-Bar (6 Links), Mobile-Bottom-Nav (4 Tabs + „Mehr“), Offline-Banner, Sync-Status, Toasts; Echtzeit-Sitzung über `composables/useRealtimeSession.ts` | ✅ Fertig |
 | [`main.ts`](../frontend/src/main.ts) | App-Bootstrap, Pinia, Router, i18n, Theme-CSS-Import, PWA-Registrierung | ✅ Fertig |
-| [`pwa.ts`](../frontend/src/pwa.ts) | Service-Worker-Registrierung, Toast bei neuer Version | ✅ Fertig |
+| [`pwa.ts`](../frontend/src/pwa.ts) | Service-Worker-Registrierung, Toast + dauerhafter Eintrag „Update verfügbar“ im Mehr-Sheet, Update-Prüfung bei Rückkehr in die App und stündlich (`composables/usePwaUpdate.ts`, CASA-41) | ✅ Fertig |
 | [`i18n.ts`](../frontend/src/i18n.ts) | vue-i18n-Setup, detectLocale (localStorage → navigator.language → en) | ✅ Fertig |
 | [`env.d.ts`](../frontend/src/env.d.ts) | Typen für Vite-Umgebungsvariablen | ✅ Fertig |
 | [`api/client.ts`](../frontend/src/api/client.ts) | Axios-Client (`API_BASE`) mit JWT-Interceptor und 401 → Refresh → Retry | ✅ Fertig |
@@ -232,7 +232,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | **Services** | | |
 | [`services/tokenStorage.ts`](../frontend/src/services/tokenStorage.ts) | Token-Persistenz (localStorage hinter `TokenStorage`-Interface) | ✅ Fertig |
 | [`services/pushService.ts`](../frontend/src/services/pushService.ts) | Web-Push-Abo im Browser verwalten und mit dem Backend synchronisieren | ✅ Fertig |
-| [`public/push-sw.js`](../frontend/public/push-sw.js) | Service-Worker-Teil für Push-Benachrichtigungen | ✅ Fertig |
+| [`public/push-sw.js`](../frontend/public/push-sw.js) | Service-Worker-Teil für Push-Benachrichtigungen; Icon-Zahl nur für den Haushalt, den die App gerade zeigt (CASA-40) | ✅ Fertig |
 | **i18n** | | |
 | [`locales/de.json`](../frontend/src/locales/de.json) | Deutsche Übersetzungen (1173 Keys) | ✅ Fertig |
 | [`locales/en.json`](../frontend/src/locales/en.json) | Englische Übersetzungen (1173 Keys) | ✅ Fertig |
@@ -294,7 +294,9 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`utils/documents.ts`](../frontend/src/utils/documents.ts) | Ablaufstatus von Dokumenten (abgelaufen / läuft bald ab) | ✅ Fertig |
 | [`utils/categoryColors.ts`](../frontend/src/utils/categoryColors.ts) | Standard-Farbpalette für neue Kalender | ✅ Fertig |
 | **Composables** | | |
-| [`composables/useSocket.ts`](../frontend/src/composables/useSocket.ts) | Socket.IO Client-Wrapper, Token-Übergabe nach Refresh (`reauth`), Reconnect nach serverseitigem Sitzungsende | ✅ Fertig |
+| [`composables/useSocket.ts`](../frontend/src/composables/useSocket.ts) | Socket.IO Client-Wrapper, Token-Übergabe nach Refresh (`reauth`), Reconnect nach serverseitigem Sitzungsende, Room-Status mit Retry bei `error` (CASA-46), Filter für Payloads fremder Haushalte | ✅ Fertig |
+| [`composables/useRealtimeSession.ts`](../frontend/src/composables/useRealtimeSession.ts) | Echtzeit-Sitzung des App-Rahmens: Room des aktuellen Haushalts, Listener der Kern-Stores, Nachladen nur bei Anmeldung/Haushaltswechsel/Reconnect (CASA-44) | ✅ Fertig |
+| [`utils/householdGuard.ts`](../frontend/src/utils/householdGuard.ts) | Haushalts-/Sitzungs-Generation: Store-Fetches verwerfen Antworten nach Haushaltswechsel oder Logout (CASA-12) | ✅ Fertig |
 | [`composables/useConnectivity.ts`](../frontend/src/composables/useConnectivity.ts) | Online/Offline-Erkennung (navigator.onLine) | ✅ Fertig |
 | [`composables/useToast.ts`](../frontend/src/composables/useToast.ts) | App-weites Toast-System | ✅ Fertig |
 | [`composables/useTheme.ts`](../frontend/src/composables/useTheme.ts) | Theme-Einstellung (hell/dunkel/System), gespeichert in localStorage | ✅ Fertig |
@@ -523,9 +525,9 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 
 | Event | Richtung | Payload |
 |---|---|---|
-| `join_household` | Client → Server | `{ household_id }` |
+| `join_household` | Client → Server | `{ household_id }` → Ack (leer); kam vorher kein `error`, ist der Raum betreten |
 | `leave_household` | Client → Server | `{ household_id }` |
-| `error` | Server → Client | `{ message }` |
+| `error` | Server → Client | `{ message }` — Client zeigt den Sync-Punkt gelb und versucht den Beitritt erneut (2 s … 60 s, max. 5×) |
 | **Sitzung** | | |
 | `reauth` | Client → Server | `{ token }` → Ack `{ ok }` |
 | `session_ended` | Server → Client (eine Verbindung) | `{ reason: "expired" \| "logout" \| "revoked" }`, danach trennt der Server |
@@ -608,7 +610,7 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `document_updated` | Server → Room | `DocumentResponse` (auch bei Seiten-Änderungen) |
 | `document_deleted` | Server → Room | `{ id, file_ids }` |
 
-Der Client verarbeitet `budget_deleted`, `file_uploaded` und `file_deleted` nicht (kein Handler im Frontend). Web Push (Todo-Erinnerungen, Tier- und Pflanzenpflege, Putzplan, Dokument-Ablauf) läuft nicht über Socket.IO, sondern über `/api/push/…` und den Scheduler im Backend.
+Der Client verarbeitet `budget_deleted`, `file_uploaded` und `file_deleted` nicht (kein Handler im Frontend). Web Push (Todo-Erinnerungen, Tier- und Pflanzenpflege, Putzplan, Dokument-Ablauf) läuft nicht über Socket.IO, sondern über `/api/push/…` und den Scheduler im Backend. Push-URLs tragen den Haushalt (`?hh=<id>`); der Router wechselt beim Öffnen in diesen Haushalt (CASA-40).
 
 ### Lebensdauer einer Socket-Verbindung
 
@@ -621,6 +623,8 @@ Eine Verbindung gilt nur so lange wie das Access-Token (15 Min.), mit dem sie zu
 - **Abgelehnter Connect** (z. B. Token abgelaufen): höchstens ein Refresh-Versuch bis zur nächsten erfolgreichen Verbindung, kein Endlos-Loop.
 
 **Warum `exp` + Timer + `reauth` (und nicht nur eine Prüfung bei jedem Event):** Fast der ganze Verkehr läuft vom Server zum Client; ein Client, der nur zuhört, schickt nach `join_household` keine Events mehr und würde bei reiner Event-Prüfung nie getrennt. Ohne `reauth` wiederum müsste jede Verbindung alle 15 Minuten neu aufgebaut werden. Der Client erneuert sein Token ohnehin über den Axios-Interceptor; `reauth` gibt das Ergebnis nur an den Socket weiter.
+
+**Client (`composables/useRealtimeSession.ts`, `useSocket.ts`):** Ein Token-Refresh gibt nur das neue Token per `reauth` weiter; die Stores werden **nur** bei Anmeldung, Haushaltswechsel und Reconnect nachgeladen (CASA-44). Der Sync-Punkt zeigt „Verbunden“ erst, wenn auch `join_household` bestätigt ist (`useSyncStatus`, CASA-46). Payloads mit `household_id` eines anderen als des aktuellen Haushalts verwirft `useSocket.on` (CASA-12).
 
 **Grenze:** Ein Access-Token bleibt bis zu seinem Ablauf gültig (zustandsloses JWT). Wer es hat, kann sich nach dem Logout bis zu 15 Minuten lang neu verbinden, genau wie bei der REST-API. Danach endet jede Verbindung spätestens mit dem Ablauf des Tokens. Timer und Räume liegen im Prozessspeicher (ein Worker, siehe Abschnitt 8).
 | **Tags** | | |
@@ -762,6 +766,9 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 │  - pendingTempIds (Socket-Duplikat-Schutz)              │
 │  - pendingToggles (Rapid-Click-Mutex)                   │
 │  - Socket-Handler: Idempotent, Server gewinnt           │
+│  - Haushalts-/Sitzungs-Generation (utils/householdGuard)│
+│    verwirft Antworten nach Wechsel/Logout (CASA-12)     │
+│  - Create: Echo da → kein Rollback; Retry = gleiche ID  │
 └──────────────────────┬──────────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────────┐
@@ -773,6 +780,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 │  - SettlementsRepository Interface + Factory            │
 │  - ChoresRepository Interface + Factory                 │
 │  - JETZT: wraps Axios-Calls                             │
+│  - DELETE: 404 = schon gelöscht = Erfolg (CASA-45)      │
 │  - PHASE 2: IndexedDB + SyncQueue einhängbar            │
 └──────────────────────┬──────────────────────────────────┘
                        │

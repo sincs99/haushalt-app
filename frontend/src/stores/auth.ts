@@ -1,11 +1,14 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import axios from 'axios'
 import api, { API_BASE, authRequestConfig } from '../api/client'
 import type { UserInfo, HouseholdInfo, MeResponse } from '../types'
 import { sessionMarker, SESSION_MARKER_KEY, takeLegacyRefreshToken } from '../services/tokenStorage'
 import { useToast } from '../composables/useToast'
 import i18n from '../i18n'
+import { bumpHouseholdGeneration } from '../utils/householdGuard'
+// Zyklischer Import (householdScope → Stores → auth) ist unkritisch: nur zur Laufzeit genutzt
+import { resetHouseholdScopedStores } from './householdScope'
 
 const HOUSEHOLD_KEY = 'haushalt_household_id'
 
@@ -52,6 +55,11 @@ export const useAuthStore = defineStore('auth', () => {
   const authReady = new Promise<void>((resolve) => {
     _authReadyResolve = resolve
   })
+
+  // JEDER Wechsel des aktuellen Haushalts — auch von/nach null (letzten Haushalt verlassen,
+  // neuen anlegen/beitreten, Entfernung, Logout) — leert alle haushaltsbezogenen Stores und
+  // erhöht die Generation (CASA-12). Synchron, damit keine Antwort dazwischen landet.
+  watch(currentHouseholdId, () => resetHouseholdScopedStores(), { flush: 'sync' })
 
   // Getters
   const isAuthenticated = computed(() => !!token.value || hasOfflineSession.value)
@@ -285,6 +293,12 @@ export const useAuthStore = defineStore('auth', () => {
   // ── Internal: State zurücksetzen (async) ──
 
   async function _clearState() {
+    // Laufende Requests der alten Sitzung verwerfen und alle haushaltsbezogenen Stores
+    // leeren — auch wenn kein Haushalt gewählt war oder sich danach jemand im selben
+    // Haushalt anmeldet (gleiche ID, anderer User). Sonst sähe der nächste User auf diesem
+    // Gerät Saldo, Einkaufsliste, Ausgaben und Notizen des vorherigen (CASA-12).
+    bumpHouseholdGeneration()
+    resetHouseholdScopedStores()
     token.value = null
     hasOfflineSession.value = false
     user.value = null

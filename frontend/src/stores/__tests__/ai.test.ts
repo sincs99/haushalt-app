@@ -312,4 +312,37 @@ describe('ai store', () => {
     expect(store.recipeSuggestion).toBeNull()
     expect(store.plantAdvice).toBeNull()
   })
+
+  it('suggestion arriving after a household switch is dropped (CASA-34)', async () => {
+    let resolveSuggestion!: (v: AiRecipeSuggestion) => void
+    repo.suggestRecipe.mockReturnValue(new Promise(r => { resolveSuggestion = r }))
+    const store = useAiStore()
+    const pending = store.suggestRecipe({ ingredients: ['Reis'], servings: 2, preferences: [] })
+
+    mocks.auth.currentHouseholdId = 'h2'
+    await nextTick()
+    resolveSuggestion(suggestion())
+
+    expect(await pending).toBeNull()
+    expect(store.recipeSuggestion).toBeNull()
+    expect(store.recipeLoading).toBe(false)
+    // Nichts zu speichern im neuen Haushalt
+    expect(await store.saveSuggestedRecipe()).toBeUndefined()
+    expect(food.createRecipe).not.toHaveBeenCalled()
+  })
+
+  it('plant advice arriving after a household switch is dropped (CASA-34)', async () => {
+    let resolveAdvice!: (v: AiPlantCareAdvice) => void
+    repo.plantCare.mockReturnValue(new Promise(r => { resolveAdvice = r }))
+    const store = useAiStore()
+    const pending = store.fetchPlantCare('Monstera')
+
+    mocks.auth.currentHouseholdId = 'h2'
+    await nextTick()
+    resolveAdvice(advice())
+
+    expect(await pending).toBeNull()
+    expect(store.plantAdvice).toBeNull()
+    expect(store.plantLoading).toBe(false)
+  })
 })

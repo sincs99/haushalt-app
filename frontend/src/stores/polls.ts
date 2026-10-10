@@ -7,6 +7,7 @@ import type {
   PollCreatePayload,
   PollDecidePayload,
 } from '../types'
+import { createRequestGuard } from '../utils/householdGuard'
 
 export const usePollsStore = defineStore('polls', () => {
   // Repository
@@ -15,6 +16,8 @@ export const usePollsStore = defineStore('polls', () => {
   // State
   const polls = ref<EventPoll[]>([])
   const loading = ref(false)
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
 
   // Computed
   const openPolls = computed(() =>
@@ -30,12 +33,14 @@ export const usePollsStore = defineStore('polls', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'polls')
 
     loading.value = true
     try {
-      polls.value = await repo.fetchAll(householdId, status)
+      const result = await repo.fetchAll(householdId, status)
+      if (active()) polls.value = result
     } finally {
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 

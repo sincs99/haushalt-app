@@ -650,7 +650,9 @@
   },
   "pwa": {
     "updateAvailable": "A new version is available.",
-    "reload": "Reload"
+    "reload": "Reload",
+    "updateEntry": "Update available",
+    "updateEntrySub": "Tap to load the new version"
   },
   "offline": {
     "banner": "No connection – changes cannot be saved right now.",

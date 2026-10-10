@@ -5,6 +5,7 @@ import { useFinanceStore } from './finance'
 import { createOnlineExpensesRepository } from '../repositories/expensesRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import { translateApiError } from '../utils/apiErrors'
+import { createRequestGuard } from '../utils/householdGuard'
 import type { Expense, ExpenseCreatePayload, ExpenseUpdatePayload, BalancesResponse, HouseholdMemberInfo } from '../types'
 
 export const useExpensesStore = defineStore('expenses', () => {
@@ -22,6 +23,9 @@ export const useExpensesStore = defineStore('expenses', () => {
 
   // Debounce-Timer für Balances-Refetch
   let balancesTimer: ReturnType<typeof setTimeout> | null = null
+
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
 
   /**
    * Nach Änderungen an Ausgaben: Salden und Budget-Übersicht („Noch verfügbar“,
@@ -43,16 +47,18 @@ export const useExpensesStore = defineStore('expenses', () => {
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
+    const active = captureRequest(hid, 'expenses')
 
     loading.value = true
     error.value = null
     try {
-      expenses.value = await repo.fetchAll(hid)
+      const result = await repo.fetchAll(hid)
+      if (active()) expenses.value = result
     } catch (e: any) {
-      error.value = translateApiError(e)
+      if (active()) error.value = translateApiError(e)
       throw e
     } finally {
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -60,14 +66,17 @@ export const useExpensesStore = defineStore('expenses', () => {
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
+    const active = captureRequest(hid, 'balances')
 
     try {
-      balances.value = await repo.getBalances(hid)
+      const result = await repo.getBalances(hid)
+      if (!active()) return
+      balances.value = result
       balancesError.value = false
     } catch (e: any) {
       // Balances-Fehler nicht als Store-Error propagieren (nicht-kritisch),
       // aber merken, damit die Karte nicht still verschwindet
-      balancesError.value = true
+      if (active()) balancesError.value = true
       console.error('Failed to fetch balances:', e)
     }
   }
@@ -76,9 +85,11 @@ export const useExpensesStore = defineStore('expenses', () => {
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
+    const active = captureRequest(hid, 'members')
 
     try {
-      members.value = await householdRepo.fetchMembers(hid)
+      const result = await householdRepo.fetchMembers(hid)
+      if (active()) members.value = result
     } catch (e: any) {
       console.error('Failed to fetch members:', e)
     }

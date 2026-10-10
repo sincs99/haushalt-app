@@ -650,7 +650,9 @@
   },
   "pwa": {
     "updateAvailable": "Eine neue Version ist verfügbar.",
-    "reload": "Neu laden"
+    "reload": "Neu laden",
+    "updateEntry": "Update verfügbar",
+    "updateEntrySub": "Tippen, um die neue Version zu laden"
   },
   "offline": {
     "banner": "Kein Netz – Änderungen können aktuell nicht gespeichert werden.",

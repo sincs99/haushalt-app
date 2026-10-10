@@ -4,6 +4,7 @@ import { useAuthStore } from './auth'
 import { useExpensesStore } from './expenses'
 import { createOnlineSettlementsRepository } from '../repositories/settlementsRepository'
 import { translateApiError } from '../utils/apiErrors'
+import { createRequestGuard } from '../utils/householdGuard'
 import type { SettlementInfo, SettlementCreatePayload } from '../types'
 
 export const useSettlementsStore = defineStore('settlements', () => {
@@ -13,6 +14,9 @@ export const useSettlementsStore = defineStore('settlements', () => {
   const settlements = ref<SettlementInfo[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
 
   // Debounce-Helper: Balances im Expenses-Store refetchen
   let balancesTimer: ReturnType<typeof setTimeout> | null = null
@@ -31,16 +35,18 @@ export const useSettlementsStore = defineStore('settlements', () => {
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
+    const active = captureRequest(hid, 'settlements')
 
     loading.value = true
     error.value = null
     try {
-      settlements.value = await repo.fetchAll(hid)
+      const result = await repo.fetchAll(hid)
+      if (active()) settlements.value = result
     } catch (e: any) {
-      error.value = translateApiError(e)
+      if (active()) error.value = translateApiError(e)
       throw e
     } finally {
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 

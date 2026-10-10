@@ -5,6 +5,7 @@ import { useFoodStore } from './food'
 import { useShoppingStore } from './shopping'
 import { createOnlineAiRepository } from '../repositories/aiRepository'
 import i18n from '../i18n'
+import { captureHousehold } from '../utils/householdGuard'
 import type {
   AiLocale, AiPlantCareAdvice, AiRecipePreference, AiRecipeSuggestion, AiSettings, AiShoppingSuggestion,
   Recipe,
@@ -83,7 +84,10 @@ export const useAiStore = defineStore('ai', () => {
   async function fetchSettings() {
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
-    settings.value = await repo.fetchSettings(householdId)
+    const inScope = captureHousehold(householdId)
+    const result = await repo.fetchSettings(householdId)
+    if (!inScope()) return
+    settings.value = result
     available.value = settings.value.available
     statusError.value = false
     applyHouseholdFlag(householdId, settings.value.ai_enabled)
@@ -102,21 +106,26 @@ export const useAiStore = defineStore('ai', () => {
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId || recipeLoading.value) return null
 
+    // Haushalt während der (langen) KI-Anfrage gewechselt → Vorschlag verwerfen, sonst
+    // landet er im neuen Haushalt und könnte dort gespeichert werden (CASA-34)
+    const inScope = captureHousehold(householdId)
     recipeLoading.value = true
     recipeError.value = null
     recipeSuggestion.value = null
     try {
       const note = input.note?.trim()
-      recipeSuggestion.value = await repo.suggestRecipe(householdId, {
+      const suggestion = await repo.suggestRecipe(householdId, {
         ingredients: input.ingredients.map(i => i.trim()).filter(Boolean),
         servings: input.servings,
         preferences: input.preferences,
         note: note || null,
         locale: currentLocale(),
       })
+      if (!inScope()) return null
+      recipeSuggestion.value = suggestion
       return recipeSuggestion.value
     } catch (error) {
-      recipeError.value = errorCode(error)
+      if (inScope()) recipeError.value = errorCode(error)
       return null
     } finally {
       recipeLoading.value = false
@@ -171,18 +180,21 @@ export const useAiStore = defineStore('ai', () => {
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId || plantLoading.value || !plant.trim()) return null
 
+    const inScope = captureHousehold(householdId)
     plantLoading.value = true
     plantError.value = null
     plantAdvice.value = null
     try {
-      plantAdvice.value = await repo.plantCare(householdId, {
+      const advice = await repo.plantCare(householdId, {
         plant: plant.trim(),
         location: location?.trim() || null,
         locale: currentLocale(),
       })
+      if (!inScope()) return null
+      plantAdvice.value = advice
       return plantAdvice.value
     } catch (error) {
-      plantError.value = errorCode(error)
+      if (inScope()) plantError.value = errorCode(error)
       return null
     } finally {
       plantLoading.value = false

@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type {
   Recipe, RecipeCreatePayload, RecipeUpdatePayload,
   MealPlanEntry, MealPlanAssignPayload, AddToShoppingResponse,
@@ -53,7 +54,7 @@ export function createOnlineFoodRepository(): FoodRepository {
     },
 
     async deleteRecipe(householdId, recipeId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/recipes/${recipeId}`,
       )
     },
@@ -77,7 +78,7 @@ export function createOnlineFoodRepository(): FoodRepository {
     },
 
     async removeMeal(householdId, date) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/meal-plan/${date}`,
       )
     },

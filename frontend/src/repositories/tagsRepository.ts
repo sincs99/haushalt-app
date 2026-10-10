@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type {
   TagCreatePayload,
   TagExecuteResult,
@@ -53,7 +54,7 @@ export function createOnlineTagsRepository(): TagsRepository {
     },
 
     async remove(householdId, tagId) {
-      await api.delete(`${base(householdId)}${tagId}`)
+      await deleteIdempotent(`${base(householdId)}${tagId}`)
     },
 
     async resolve(token) {

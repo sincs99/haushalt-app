@@ -788,7 +788,10 @@
     "medicationHasHistoryTitle": "Medikament hat einen Verlauf",
     "medicationHasHistoryHint": "„{name}“ wurde schon gegeben. Damit der Verlauf erhalten bleibt, kann es nur deaktiviert werden.",
     "deactivateMedication": "Deaktivieren",
-    "medicationDeactivated": "Medikament deaktiviert"
+    "medicationDeactivated": "Medikament deaktiviert",
+    "unfeedOtherTitle": "Fütterung entfernen?",
+    "unfeedOtherHint": "{name} hat {pet} um {time} gefüttert. Wirklich als nicht gefüttert markieren?",
+    "unfeedOtherConfirm": "Entfernen"
   },
   "petCare": {
     "title": "Pflege & Termine",

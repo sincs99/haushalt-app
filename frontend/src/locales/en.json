@@ -788,7 +788,10 @@
     "medicationHasHistoryTitle": "Medication has a history",
     "medicationHasHistoryHint": "“{name}” has already been given. To keep its history it can only be deactivated.",
     "deactivateMedication": "Deactivate",
-    "medicationDeactivated": "Medication deactivated"
+    "medicationDeactivated": "Medication deactivated",
+    "unfeedOtherTitle": "Remove feeding?",
+    "unfeedOtherHint": "{name} fed {pet} at {time}. Really mark as not fed?",
+    "unfeedOtherConfirm": "Remove"
   },
   "petCare": {
     "title": "Care & Schedule",

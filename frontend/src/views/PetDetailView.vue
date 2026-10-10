@@ -11,7 +11,7 @@ import { useLoader } from '../composables/useLoader'
 import { localDateString } from '../utils/dates'
 import { imageUploadErrorReason } from '../utils/imageUpload'
 import { parseWeightKgToGrams } from '../utils/money'
-import { formatClock, isRecentDose, lastDose, MEDICATION_CONFIRM_HOURS } from '../utils/petCare'
+import { formatClock, isRecentDose, lastDose, MEDICATION_CONFIRM_HOURS, needsUnfeedConfirmation } from '../utils/petCare'
 import { useProtectedImage } from '../composables/useProtectedImage'
 import { usePhotoUpload } from '../composables/usePhotoUpload'
 import type {
@@ -245,7 +245,33 @@ function feedingSlotInfo(slot: FeedingSlot): string | null {
   })
 }
 
+// Fütterung einer anderen Person entfernen → erst nachfragen (wer, wann; CASA-30)
+const unfeedConfirmSlot = ref<FeedingSlot | null>(null)
+const unfeedConfirmText = computed(() => {
+  const entry = unfeedConfirmSlot.value ? feedingStatus.value?.[unfeedConfirmSlot.value] : null
+  if (!entry) return ''
+  return t('pets.unfeedOtherHint', {
+    name: getMemberName(entry.fed_by_user_id),
+    time: formatClock(entry.fed_at),
+    pet: pet.value?.name ?? '',
+  })
+})
+
 function handleToggleFeeding(slot: FeedingSlot) {
+  if (needsUnfeedConfirmation(feedingStatus.value?.[slot], authStore.user?.id)) {
+    unfeedConfirmSlot.value = slot
+    return
+  }
+  return toggleFeeding(slot)
+}
+
+function confirmUnfeed() {
+  const slot = unfeedConfirmSlot.value
+  unfeedConfirmSlot.value = null
+  if (slot) return toggleFeeding(slot)
+}
+
+function toggleFeeding(slot: FeedingSlot) {
   const id = petId.value
   const name = pet.value?.name ?? ''
   return run(async () => {
@@ -1149,6 +1175,25 @@ async function handleDeleteCareTask() {
           </BaseButton>
           <BaseButton v-else variant="danger" :loading="isPending('med-delete')" @click="handleDeleteMed">
             {{ $t('common.delete') }}
+          </BaseButton>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- ═══ Fütterung einer anderen Person entfernen (CASA-30) ═══ -->
+    <BaseDialog
+      :open="!!unfeedConfirmSlot"
+      :title="$t('pets.unfeedOtherTitle')"
+      @close="unfeedConfirmSlot = null"
+    >
+      <p class="dialog-hint">{{ unfeedConfirmText }}</p>
+      <template #footer>
+        <div class="dialog-actions">
+          <BaseButton variant="ghost" @click="unfeedConfirmSlot = null">
+            {{ $t('common.cancel') }}
+          </BaseButton>
+          <BaseButton variant="danger" @click="confirmUnfeed">
+            {{ $t('pets.unfeedOtherConfirm') }}
           </BaseButton>
         </div>
       </template>

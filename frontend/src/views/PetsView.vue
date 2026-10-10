@@ -9,7 +9,7 @@ import { useToast } from '../composables/useToast'
 import { useAsyncAction } from '../composables/useAsyncAction'
 import { useLoader } from '../composables/useLoader'
 import { parseWeightKgToGrams } from '../utils/money'
-import { activePets, archivedPets, hasHistory } from '../utils/petCare'
+import { activePets, archivedPets, formatClock, hasHistory, needsUnfeedConfirmation } from '../utils/petCare'
 import type { Pet, PetCreatePayload, PetHistory, FeedingSlot, FeedingLog } from '../types'
 import { PhCat, PhSun, PhMoon, PhPlus } from '@phosphor-icons/vue'
 import PetPhotoAvatar from '../components/PetPhotoAvatar.vue'
@@ -173,7 +173,32 @@ function handleFeedAll() {
 }
 
 // ── Toggle Feeding ──
+// Fütterung einer anderen Person entfernen → erst nachfragen (wer, wann; CASA-30)
+const unfeedConfirm = ref<{ petId: string; slot: FeedingSlot; petName: string; text: string } | null>(null)
+
 function handleToggleFeeding(petId: string, slot: FeedingSlot, petName: string) {
+  const existing = petsStore.feedingStatus.find(s => s.pet_id === petId)?.[slot]
+  if (existing && needsUnfeedConfirmation(existing, authStore.user?.id)) {
+    unfeedConfirm.value = {
+      petId, slot, petName,
+      text: t('pets.unfeedOtherHint', {
+        name: getMemberName(existing.fed_by_user_id),
+        time: formatClock(existing.fed_at),
+        pet: petName,
+      }),
+    }
+    return
+  }
+  return toggleFeeding(petId, slot, petName)
+}
+
+function confirmUnfeed() {
+  const pending = unfeedConfirm.value
+  unfeedConfirm.value = null
+  if (pending) return toggleFeeding(pending.petId, pending.slot, pending.petName)
+}
+
+function toggleFeeding(petId: string, slot: FeedingSlot, petName: string) {
   return run(async () => {
     const result = await petsStore.toggleFeeding(petId, slot)
     // 409: schon gefüttert (Status wurde neu geladen) → Hinweis, kein Fehler
@@ -556,6 +581,21 @@ function navigateToPet(petId: string) {
             :loading="formSaving"
           >
             {{ $t('common.save') }}
+          </BaseButton>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- Fütterung einer anderen Person entfernen (CASA-30) -->
+    <BaseDialog :open="!!unfeedConfirm" :title="$t('pets.unfeedOtherTitle')" @close="unfeedConfirm = null">
+      <p class="delete-hint">{{ unfeedConfirm?.text }}</p>
+      <template #footer>
+        <div class="dialog-actions">
+          <BaseButton variant="ghost" @click="unfeedConfirm = null">
+            {{ $t('common.cancel') }}
+          </BaseButton>
+          <BaseButton variant="danger" @click="confirmUnfeed">
+            {{ $t('pets.unfeedOtherConfirm') }}
           </BaseButton>
         </div>
       </template>

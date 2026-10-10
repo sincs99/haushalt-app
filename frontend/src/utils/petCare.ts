@@ -1,4 +1,4 @@
-import type { MedicationLog, Pet, PetHistory } from '../types'
+import type { FeedingLog, MedicationLog, Pet, PetHistory } from '../types'
 
 /**
  * Rückfrage vor einer weiteren Gabe, wenn die letzte weniger als so viele Stunden
@@ -41,4 +41,16 @@ export function archivedPets(pets: Pet[]): Pet[] {
 export function hasHistory(history: PetHistory | null | undefined): boolean {
   if (!history) return false
   return history.feedings + history.medication_logs + history.care_tasks + history.medications > 0
+}
+
+/**
+ * Entfernen einer Fütterung, die jemand anderes erfasst hat, braucht eine Rückfrage
+ * mit Name und Uhrzeit (CASA-30). Eigene Fütterungen bleiben ein Tap (Undo per Toast).
+ */
+export function needsUnfeedConfirmation(
+  feeding: FeedingLog | null | undefined,
+  currentUserId: string | null | undefined,
+): boolean {
+  if (!feeding || feeding.id === 'temp' || !currentUserId) return false
+  return feeding.fed_by_user_id !== currentUserId
 }

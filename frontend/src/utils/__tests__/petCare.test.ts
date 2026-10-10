@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { activePets, archivedPets, hasHistory, isRecentDose, lastDose, MEDICATION_CONFIRM_HOURS } from '../petCare'
+import { activePets, archivedPets, hasHistory, isRecentDose, lastDose, MEDICATION_CONFIRM_HOURS, needsUnfeedConfirmation } from '../petCare'
 
 const log = (id: string, givenAt: string, by = 'u1') => ({
   id, household_id: 'h', medication_id: 'm', given_at: givenAt, given_by_user_id: by, created_at: givenAt,
@@ -21,6 +21,21 @@ describe('Medikamentengabe (PD-P1)', () => {
     expect(isRecentDose(log('a', '2026-10-10T08:00:00Z'), now)).toBe(false)
     // Zweite Tagesdosis am Abend (2x täglich) → keine Rückfrage
     expect(isRecentDose(log('a', '2026-10-10T07:00:00Z'), new Date('2026-10-10T19:00:00Z'))).toBe(false)
+  })
+})
+
+describe('Fütterung entfernen (CASA-30)', () => {
+  const feeding = (by: string, id = 'f1') => ({
+    id, household_id: 'h', pet_id: 'p', slot: 'morning' as const, fed_at: '2026-10-10T07:00:00Z', fed_by_user_id: by, date: '2026-10-10',
+  })
+
+  it('fragt nur bei Fütterungen anderer Personen nach', () => {
+    expect(needsUnfeedConfirmation(null, 'me')).toBe(false)
+    expect(needsUnfeedConfirmation(feeding('me'), 'me')).toBe(false)
+    expect(needsUnfeedConfirmation(feeding('anna'), 'me')).toBe(true)
+    // Optimistischer Platzhalter (eigener Tap in Flight) → keine Rückfrage
+    expect(needsUnfeedConfirmation(feeding('anna', 'temp'), 'me')).toBe(false)
+    expect(needsUnfeedConfirmation(feeding('anna'), null)).toBe(false)
   })
 })
 

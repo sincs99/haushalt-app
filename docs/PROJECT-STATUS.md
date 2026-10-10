@@ -130,7 +130,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`app/services/care_schedule.py`](../backend/app/services/care_schedule.py) | Fälligkeit wiederkehrender Pflegeaufgaben (Tiere, Pflanzen): Intervall-Änderung setzt `next_due_at` neu (PD-P4 / E-2) | ✅ Fertig |
 | [`app/services/household_checks.py`](../backend/app/services/household_checks.py) | Prüfungen auf Haushaltsmitgliedschaft (Teilnehmer, Ausgleichs-Parteien, Ex-Mitglieder) | ✅ Fertig |
 | [`app/services/invite_code.py`](../backend/app/services/invite_code.py) | Eindeutige Invite-Code-Generierung mit Retry-Logik | ✅ Fertig |
-| [`app/services/push_service.py`](../backend/app/services/push_service.py) | Web-Push-Versand (Endpoint-Allowlist) und Scheduler für Todo-Erinnerungen, Tier- und Pflanzenpflege, Putzplan („Du bist dran“, materialisiert die heutigen Ämtli selbst) und Ablaufdaten von Dokumenten (30 Tage vorher und am Tag); jede Payload trägt die Zahl fürs App-Icon | ✅ Fertig |
+| [`app/services/push_service.py`](../backend/app/services/push_service.py) | Web-Push-Versand (Endpoint-Allowlist) und Scheduler für Todo- und Termin-Erinnerungen (an Teilnehmer, sonst alle; ganztägig 08:00 am Tag bzw. Vortag), Tier- und Pflanzenpflege, Putzplan („Du bist dran“, materialisiert die heutigen Ämtli selbst) und Ablaufdaten von Dokumenten (30 Tage vorher und am Tag); jede Payload trägt die Zahl fürs App-Icon | ✅ Fertig |
 | [`app/services/attention.py`](../backend/app/services/attention.py) | Was heute ansteht (Zahl am App-Icon und Liste fürs Widget): bis heute fällige offene Aufgaben und Ämtli (eigene oder niemandem zugewiesene), Tier- und Pflanzenpflege | ✅ Fertig |
 | [`app/routers/widget.py`](../backend/app/routers/widget.py) | Homescreen-Widget (Scriptable): Nur-Lese-Schlüssel verwalten (3 Endpoints) und Widget-Daten (`/api/widget/summary`) — siehe [`widget.md`](widget.md) | ✅ Fertig |
 | [`app/services/storage.py`](../backend/app/services/storage.py) | `LocalStorageService`: Dateien unter `UPLOAD_DIR/{household_id}/` | ✅ Fertig |
@@ -399,6 +399,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | POST | `/api/households/{id}/shopping-items/` | ✅ | Eintrag hinzufügen (Client-ID möglich, idempotent) |
 | GET | `/api/households/{id}/shopping-items/stores` | ✅ | Distinct Geschäfte (ohne Beachtung der Schreibweise) |
 | POST | `/api/households/{id}/shopping-items/reassign-store` | ✅ | Geschäft umbenennen/auflösen (Bulk-Update) |
+| POST | `/api/households/{id}/shopping-items/bulk-add` | ✅ | Mehrere Einträge auf `list_id` (aktive Liste); überspringt, was offen auf irgendeiner Liste steht (ohne Beachtung von Schreibweise und führender Menge), idempotent — „Fehlende Zutaten“ aus Rezept und KI |
 | PATCH | `/api/households/{id}/shopping-items/{item_id}` | ✅ | Eintrag aktualisieren |
 | DELETE | `/api/households/{id}/shopping-items/{item_id}` | ✅ | Eintrag löschen |
 | **Todos** | | | |
@@ -445,20 +446,20 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | GET | `/api/households/{id}/calendars/` | ✅ | Kalender-Liste |
 | POST | `/api/households/{id}/calendars/` | ✅ | Kalender erstellen |
 | PATCH | `/api/households/{id}/calendars/{calendar_id}` | ✅ | Kalender aktualisieren |
-| DELETE | `/api/households/{id}/calendars/{calendar_id}` | ✅ | Kalender löschen |
+| DELETE | `/api/households/{id}/calendars/{calendar_id}` | ✅ | Kalender löschen (nur leer, nie den letzten; gesperrt gegen parallele Termine) |
 | GET | `/api/households/{id}/events/` | ✅ | Termine im Zeitraum (`from_date`, `to_date` Pflicht) |
-| POST | `/api/households/{id}/events/` | ✅ | Termin erstellen |
+| POST | `/api/households/{id}/events/` | ✅ | Termin erstellen (`reminder`: none/15m/1h/1d; Teilnehmer = aktuelle Mitglieder; Zeit in der Sommerzeit-Lücke → 422 `EVENT_TIME_NONEXISTENT`) |
 | GET | `/api/households/{id}/events/{event_id}` | ✅ | Termin lesen |
 | PATCH | `/api/households/{id}/events/{event_id}` | ✅ | Termin aktualisieren |
 | DELETE | `/api/households/{id}/events/{event_id}` | ✅ | Termin löschen |
 | **Abstimmungen** | | | |
 | GET | `/api/households/{id}/polls/` | ✅ | Abstimmungen (Filter `status`) |
-| POST | `/api/households/{id}/polls/` | ✅ | Abstimmung erstellen (Termin- oder Essens-Umfrage) |
+| POST | `/api/households/{id}/polls/` | ✅ | Abstimmung erstellen (Termin- oder Essens-Umfrage; Termin-Optionen brauchen `starts_at`, Zeiten in Haushaltszeit) |
 | GET | `/api/households/{id}/polls/{poll_id}` | ✅ | Abstimmung lesen |
 | DELETE | `/api/households/{id}/polls/{poll_id}` | ✅ | Abstimmung löschen |
 | POST | `/api/households/{id}/polls/{poll_id}/vote` | ✅ | Abstimmen (eine Stimme pro Person und Abstimmung) |
 | POST | `/api/households/{id}/polls/{poll_id}/decide` | ✅ | Terminumfrage entscheiden → legt einen Termin an |
-| POST | `/api/households/{id}/polls/{poll_id}/meal-decide` | ✅ | Essensumfrage entscheiden → Wochenmenü-Eintrag |
+| POST | `/api/households/{id}/polls/{poll_id}/meal-decide` | ✅ | Essensumfrage entscheiden → Wochenmenü-Eintrag; belegter Tag → 409 `MEAL_PLAN_OCCUPIED` (mit `entry`), `replace: true` ersetzt |
 | **Haustiere** | | | |
 | GET | `/api/households/{id}/pets/` | ✅ | Haustiere |
 | POST | `/api/households/{id}/pets/` | ✅ | Haustier anlegen |
@@ -488,11 +489,11 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | POST | `/api/households/{id}/recipes/` | ✅ | Rezept anlegen |
 | GET | `/api/households/{id}/recipes/{recipe_id}` | ✅ | Rezept lesen |
 | PATCH | `/api/households/{id}/recipes/{recipe_id}` | ✅ | Rezept aktualisieren |
-| DELETE | `/api/households/{id}/recipes/{recipe_id}` | ✅ | Rezept löschen |
+| DELETE | `/api/households/{id}/recipes/{recipe_id}` | ✅ | Rezept löschen (geplante Mahlzeiten behalten den Namen als Freitext) |
 | GET | `/api/households/{id}/meal-plan/` | ✅ | Wochenmenü (`week`: beliebiges Datum der Woche) |
 | PUT | `/api/households/{id}/meal-plan/{entry_date}` | ✅ | Tageseintrag setzen (Rezept oder Freitext) |
 | DELETE | `/api/households/{id}/meal-plan/{entry_date}` | ✅ | Tageseintrag löschen |
-| POST | `/api/households/{id}/meal-plan/{entry_id}/add-missing-to-shopping` | ✅ | Fehlende Zutaten auf die Einkaufsliste setzen |
+| POST | `/api/households/{id}/meal-plan/{entry_id}/add-missing-to-shopping` | ✅ | Fehlende Zutaten auf die Einkaufsliste setzen (optional `{list_id}`, sonst erste Liste; gleiche Dedupe-Regel wie `bulk-add`) |
 | **Notizen** | | | |
 | GET | `/api/households/{id}/notes/` | ✅ | Notizen |
 | POST | `/api/households/{id}/notes/` | ✅ | Notiz erstellen |
@@ -584,11 +585,11 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `calendar_created` | Server → Room | `CalendarResponse` |
 | `calendar_updated` | Server → Room | `CalendarResponse` |
 | `calendar_deleted` | Server → Room | `{ id }` |
-| `event_created` | Server → Room | `EventResponse`; nach `decide` einer Umfrage `{ id, title }` |
+| `event_created` | Server → Room | `EventResponse` (auch nach `decide` einer Umfrage) |
 | `event_updated` | Server → Room | `EventResponse` |
 | `event_deleted` | Server → Room | `{ id }` |
 | **Abstimmungen** | | |
-| `poll_created` | Server → Room | `PollResponse` |
+| `poll_created` | Server → Room | `PollResponse` (Optionszeiten in Haushaltszeit) |
 | `poll_voted` | Server → Room | `PollResponse` |
 | `poll_decided` | Server → Room | `PollResponse` (Termin- und Essensumfragen) |
 | `poll_deleted` | Server → Room | `{ id }` |
@@ -609,7 +610,7 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `recipe_created` | Server → Room | `RecipeResponse` |
 | `recipe_updated` | Server → Room | `RecipeResponse` |
 | `recipe_deleted` | Server → Room | `{ id }` |
-| `meal_plan_updated` | Server → Room | `MealPlanEntryResponse`; nach `meal-decide` `{ date }` |
+| `meal_plan_updated` | Server → Room | `MealPlanEntryResponse` (auch nach `meal-decide`) |
 | `meal_plan_deleted` | Server → Room | `{ date }` |
 | **Notizen** | | |
 | `note_created` | Server → Room | `NoteResponse` |
@@ -622,7 +623,7 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `document_updated` | Server → Room | `DocumentResponse` (auch bei Seiten-Änderungen) |
 | `document_deleted` | Server → Room | `{ id, file_ids }` |
 
-Der Client verarbeitet `budget_deleted`, `file_uploaded` und `file_deleted` nicht (kein Handler im Frontend). Web Push (Todo-Erinnerungen, Tier- und Pflanzenpflege, Putzplan, Dokument-Ablauf) läuft nicht über Socket.IO, sondern über `/api/push/…` und den Scheduler im Backend. Push-URLs tragen den Haushalt (`?hh=<id>`); der Router wechselt beim Öffnen in diesen Haushalt (CASA-40).
+Der Client verarbeitet `file_uploaded` und `file_deleted` nicht (kein Handler im Frontend; Fotos und Dokumente kommen über ihre eigenen Events). Web Push (Todo- und Termin-Erinnerungen, Tier- und Pflanzenpflege, Putzplan, Dokument-Ablauf) läuft nicht über Socket.IO, sondern über `/api/push/…` und den Scheduler im Backend.
 
 ### Lebensdauer einer Socket-Verbindung
 
@@ -691,7 +692,7 @@ User ──< HouseholdMember >── Household
 | `chores` | `title`, `description`, `recurrence` (`weekly`/`biweekly`/`monthly`), `weekday`, `day_of_month`, `rotation_order` (JSON), `next_rotation_index`, `anchor_date`, `active` | |
 | `chore_assignments` | `chore_id` (CASCADE), `assigned_user_id`, `due_date`, `completed_at`, `completed_by_user_id` | `version`/`updated_at`; Unique `(chore_id, due_date)`; Index `(household_id, due_date)` |
 | `calendars` | `name`, `color`, `position` | |
-| `events` | `calendar_id` (CASCADE), `title`, `starts_at`, `ends_at`, `all_day`, `participant_ids`, `note` | Zeiten UTC, Wanduhrzeit in Haushalts-Zeitzone; Index `(household_id, starts_at)` |
+| `events` | `calendar_id` (RESTRICT), `title`, `starts_at`, `ends_at`, `all_day`, `participant_ids`, `note`, `reminder` (none/15m/1h/1d), `notified_at` | Zeiten UTC, Wanduhrzeit in Haushalts-Zeitzone (Sommerzeit-Lücke abgelehnt, doppelte Stunde = erstes Auftreten); Index `(household_id, starts_at)`; ein Kalender mit Terminen lässt sich nicht löschen |
 | `event_polls` | `question`, `status`, `poll_type` (`event`/`meal`), `decided_event_id`, `decided_meal_date` | |
 | `event_poll_options` | `poll_id` (CASCADE), `label`, `starts_at`, `recipe_id` | |
 | `event_poll_votes` | `poll_id`, `option_id` (CASCADE), `user_id` | Unique `(option_id, user_id)` und `(poll_id, user_id)` (eine Stimme pro Person und Abstimmung) |

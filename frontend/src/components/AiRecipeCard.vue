@@ -91,10 +91,12 @@ async function addMissing() {
   }
   addingMissing.value = true
   try {
-    const added = await aiStore.addMissingToShopping(suggestion.value.missing_ingredients)
+    const { added, skipped } = await aiStore.addMissingToShopping(suggestion.value.missing_ingredients)
     missingAdded.value = added
+    let text = t('ai.recipe.addedMissing', { n: added }, added)
+    if (skipped > 0) text += ` · ${t('food.skippedItems', { n: skipped })}`
     // Ergebnis liegt auf einer anderen Seite → Toast mit Link dorthin
-    showToast(t('ai.recipe.addedMissing', { n: added }, added), 'success', undefined, {
+    showToast(text, 'success', undefined, {
       label: t('food.goToShopping'),
       onAction: () => { router.push('/shopping') },
     })

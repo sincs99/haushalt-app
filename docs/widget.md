@@ -62,7 +62,7 @@ Antwort von `/api/widget/summary`:
 }
 ```
 
-`kind`: `todo`, `chore`, `pet`, `plant`. `time` ist `null` bei ganztägigen Terminen.
+`kind`: `todo`, `chore`, `pet`, `plant`. Termine: alle, die heute stattfinden — auch mehrtägige, die vorher begonnen haben. `time` ist `null` bei ganztägigen Terminen und bei solchen, die schon vor heute begonnen haben.
 
 ## Dateien
 

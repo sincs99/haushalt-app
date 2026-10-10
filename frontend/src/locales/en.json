@@ -155,7 +155,16 @@
     "deleted": "Event deleted",
     "prevWeek": "Previous week",
     "nextWeek": "Next week",
-    "noEventsDay": "No events on this day"
+    "noEventsDay": "No events on this day",
+    "reminderLabel": "Reminder",
+    "reminder": {
+      "none": "None",
+      "15m": "15 minutes before",
+      "1h": "1 hour before",
+      "1d": "1 day before"
+    },
+    "reminderAllDay": "All day: reminder at 08:00 on the day",
+    "reminderAllDayBefore": "All day: reminder at 08:00 the day before"
   },
   "calendars": {
     "manage": "Manage calendars",
@@ -245,7 +254,9 @@
     "listDeleted": "List deleted",
     "listName": "List name",
     "storeActions": "Actions for {store}",
-    "mergeStores": "Merge"
+    "mergeStores": "Merge",
+    "alreadyOnList": "«{name}» is already on the list",
+    "alreadyOnOtherList": "«{name}» is already on the list «{list}»"
   },
   "todos": {
     "title": "Tasks",
@@ -695,7 +706,11 @@
     "BILL_MONTH_OUT_OF_RANGE": "Bills can only be booked for the past 12 months.",
     "MEDICATION_INACTIVE": "The medication is deactivated",
     "MEDICATION_HAS_HISTORY": "The medication has been given already – deactivate it instead of deleting",
-    "PET_ARCHIVED": "The pet is archived"
+    "PET_ARCHIVED": "The pet is archived",
+    "MEAL_PLAN_OCCUPIED": "A meal is already planned for this day",
+    "EVENT_TIME_NONEXISTENT": "This time does not exist on that day because of the daylight saving change – please pick another",
+    "POLL_OPTION_TIME_REQUIRED": "Every option needs a date and time",
+    "SHOPPING_LIST_NOT_FOUND": "This shopping list no longer exists"
   },
   "push": {
     "title": "Notifications",
@@ -1000,7 +1015,33 @@
     "decideWinner": "“{option}” is in the lead ({n} vote) and goes into the meal plan. | “{option}” is in the lead ({n} votes) and goes into the meal plan.",
     "decideTie": "It's a tie – pick which meal it will be.",
     "decideHint": "This ends the poll for the whole household.",
-    "pollDecidedToast": "Decided: “{option}”"
+    "pollDecidedToast": "Decided: “{option}”",
+    "decideOccupied": "«{meal}» is already planned for {date}. Deciding replaces it.",
+    "decideReplace": "Replace and decide",
+    "minutes": "{n} min",
+    "showLess": "Show less",
+    "showAllRecipes": "Show all {n} recipes",
+    "editRecipe": "Edit recipe",
+    "tags": "Tags",
+    "tagsPlaceholder": "e.g. vegetarian, quick",
+    "ingredientsPlaceholder": "500 g flour\n1 egg",
+    "stepsPlaceholder": "Knead the dough\nBake",
+    "onePerLine": "One per line (max. {max})",
+    "recipeSaved": "Recipe saved",
+    "recipeCreated": "Recipe created",
+    "recipeSaveError": "Recipe could not be saved.",
+    "recipeDeleted": "«{name}» deleted",
+    "recipeDeleteError": "Recipe could not be deleted.",
+    "deleteRecipeHint": "Planned meals with this recipe stay in the week plan – with the name as text.",
+    "recipeError": {
+      "name": "Please enter a name (max. 150 characters)",
+      "servings": "Whole number from 1",
+      "cost": "Amount like 12.50",
+      "duration": "Whole number from 1",
+      "ingredients": "At most 100 ingredients, max. 200 characters each",
+      "steps": "At most 30 steps, max. 1000 characters each",
+      "tags": "At most 10 tags, max. 30 characters each"
+    }
   },
   "notes": {
     "title": "Notes",

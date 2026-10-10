@@ -727,15 +727,24 @@ class Calendar(Base):
     )
 
     household: Mapped["Household"] = relationship(back_populates="calendars")
+    # Kein ORM-Cascade: Ein Kalender mit Terminen darf nicht verschwinden (CASA-20).
+    # passive_deletes="all" überlässt das der DB (FK RESTRICT) — ein parallel
+    # angelegter Termin lässt das Löschen scheitern statt mitgelöscht zu werden.
     events: Mapped[list["Event"]] = relationship(
-        back_populates="calendar", cascade="all, delete-orphan"
+        back_populates="calendar", passive_deletes="all"
     )
+
+
+EVENT_REMINDERS = ("none", "15m", "1h", "1d")
 
 
 class Event(Base):
     __tablename__ = "events"
     __table_args__ = (
         Index("ix_events_household_starts", "household_id", "starts_at"),
+        CheckConstraint(
+            "reminder IN ('none', '15m', '1h', '1d')", name="ck_events_reminder"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -745,7 +754,7 @@ class Event(Base):
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
     )
     calendar_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("calendars.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("calendars.id", ondelete="RESTRICT"), nullable=False
     )
     title: Mapped[str] = mapped_column(String(150), nullable=False)
     starts_at: Mapped[datetime] = mapped_column(
@@ -762,6 +771,15 @@ class Event(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    # Push-Erinnerung (PD-K1): none | 15m | 1h | 1d vor Beginn; ganztägig 08:00 am Tag
+    # bzw. am Vortag. notified_at = Claim des Schedulers, zurückgesetzt bei Zeit-/
+    # Erinnerungsänderung.
+    reminder: Mapped[str] = mapped_column(
+        String(4), nullable=False, default="none", server_default="none"
+    )
+    notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     household: Mapped["Household"] = relationship(back_populates="events")

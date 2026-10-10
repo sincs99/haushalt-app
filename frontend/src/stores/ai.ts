@@ -147,26 +147,32 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   /**
-   * Fehlende Zutaten über den bestehenden Shopping-Endpunkt auf die aktive
-   * Einkaufsliste setzen (gibt es keine, wird eine angelegt).
-   * Liefert die Anzahl hinzugefügter Einträge.
+   * Fehlende Zutaten über den Bulk-Endpunkt auf die aktive Einkaufsliste setzen
+   * (gibt es keine, wird eine angelegt). Der Server überspringt, was schon offen
+   * auf einer Liste steht — auch beim Wiederholen nach einem Fehler (CASA-34, PD-M2).
+   * Der Haushalt wird zu Beginn festgehalten: Wechselt er während des Vorgangs,
+   * wird nichts in den neuen Haushalt geschrieben.
    */
-  async function addMissingToShopping(items: AiShoppingSuggestion[]): Promise<number> {
-    if (items.length === 0) return 0
+  async function addMissingToShopping(
+    items: AiShoppingSuggestion[],
+  ): Promise<{ added: number; skipped: number }> {
+    const none = { added: 0, skipped: 0 }
+    if (items.length === 0) return none
+    const auth = useAuthStore()
+    const householdId = auth.currentHouseholdId
     const shopping = useShoppingStore()
     if (!shopping.activeListId) await shopping.fetchLists()
-    if (!shopping.activeListId) {
+    if (!shopping.activeListId && auth.currentHouseholdId === householdId) {
       await shopping.createList(i18n.global.t('ai.recipe.defaultListName'))
       await shopping.fetchLists()
     }
-    if (!shopping.activeListId) return 0
+    if (!shopping.activeListId || auth.currentHouseholdId !== householdId) return none
 
-    let added = 0
-    for (const item of items) {
-      await shopping.addItem(item.name, item.quantity ?? undefined)
-      added++
-    }
-    return added
+    // Menge vorne wie bei Rezept-Zutaten ("50 g Parmesan"); der Dedupe ignoriert sie
+    const names = items.map(i => (i.quantity ? `${i.quantity} ${i.name}` : i.name))
+    const result = await shopping.bulkAddItems(names, shopping.activeListId)
+    if (!result) return none
+    return { added: result.added.length, skipped: result.skipped.length }
   }
 
   function clearRecipe() {

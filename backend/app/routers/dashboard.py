@@ -34,7 +34,7 @@ from app.models import (
 from app.services.attention import CHORE_LOOKBACK, attention_count
 from app.services.balance_service import compute_user_saldo
 from app.services.chore_scheduler import today_in_tz
-from app.services.event_times import to_household_time
+from app.services.event_times import on_day, to_household_time
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -163,7 +163,6 @@ def get_dashboard(
     # Tagesgrenzen in Haushaltszeit, explizit nach UTC (Termine und Fälligkeiten sind
     # in UTC gespeichert; SQLite würde den Offset beim Vergleich sonst verwerfen)
     today_start = datetime.combine(today, dt_time.min, tzinfo=tz).astimezone(timezone.utc)
-    today_end = datetime.combine(today, dt_time.max, tzinfo=tz).astimezone(timezone.utc)
 
     # ------------------------------------------------------------------
     # 1. Todos
@@ -283,8 +282,8 @@ def get_dashboard(
         db.query(Event)
         .filter(
             Event.household_id == household_id,
-            Event.starts_at >= today_start,
-            Event.starts_at <= today_end,
+            # Auch mehrtägige Termine, die heute noch laufen (PD-K3)
+            on_day(today, tz),
         )
         .order_by(Event.starts_at.asc())
         .limit(5)

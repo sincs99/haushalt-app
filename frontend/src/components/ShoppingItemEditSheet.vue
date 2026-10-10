@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import type { ShoppingItem } from '../types'
 import BaseDialog from './ui/BaseDialog.vue'
 import { findCanonicalStore, normalizeStoreName, storesEqual } from '../utils/storeName'
+import { changedItemFields, type ShoppingItemEdit } from '../utils/shoppingEdit'
 
 const props = defineProps<{
   item: ShoppingItem | null
@@ -17,7 +18,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   delete: []
-  save: [data: { name: string; quantity: string | null; store: string | null; category: string | null }]
+  /** Nur geänderte Felder (CASA-09); leer = nichts geändert */
+  save: [data: Partial<ShoppingItemEdit>]
 }>()
 
 const { t } = useI18n()
@@ -64,13 +66,13 @@ function handleNewStoreInput() {
 }
 
 function handleSubmit() {
-  if (!canSave.value || props.saving) return
-  emit('save', {
+  if (!canSave.value || props.saving || !props.item) return
+  emit('save', changedItemFields(props.item, {
     name: name.value.trim(),
     quantity: quantity.value.trim() || null,
     store: store.value,
     category: category.value.trim() || null,
-  })
+  }))
 }
 </script>
 

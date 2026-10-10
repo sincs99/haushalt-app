@@ -1,16 +1,20 @@
+import re
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func
+from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
+from app.core.error_codes import ErrorCode, error_detail
 from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import HouseholdMember, ShoppingItem, ShoppingList
 from app.services.client_ids import commit_or_get_existing, get_existing_by_client_id
+from app.services.locking import lock_household, lock_row
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -97,6 +101,37 @@ def resolve_store(
         return None
     canonical = canonical_stores(db, household_id, exclude_item_id=exclude_item_id)
     return canonical.get(store_key(normalized), normalized)
+
+
+# ---------------------------------------------------------------------------
+# Dedupe von Zutaten ("Fehlende Zutaten", PD-M2)
+# ---------------------------------------------------------------------------
+# Zutaten sind Freitext inkl. Menge ("500 g Mehl", PD-S2). Für den Vergleich mit
+# offenen Items zählt nur das Produkt: führende Mengen und Einheiten werden
+# entfernt, Gross-/Kleinschreibung ignoriert. Bewusste Grenze: "Mehl (Weissmehl)"
+# und "Weissmehl" bleiben verschieden — Freitext lässt sich nicht sicher zuordnen.
+
+_QUANTITY_UNITS = (
+    "g|gr|gramm|kg|kilo|mg|l|liter|litre|dl|cl|ml|el|tl|msp|stk|stück|stueck|st|pck|pkg|"
+    "päckchen|packung|packungen|prise|prisen|bund|dose|dosen|becher|glas|gläser|tasse|tassen|"
+    "scheibe|scheiben|zehe|zehen|zweig|zweige|handvoll|beutel|flasche|flaschen|x|"
+    "oz|lb|lbs|cup|cups|tbsp|tsp|pinch|can|cans|piece|pieces|slice|slices|clove|cloves"
+)
+# Zahl (auch 1,5 / 1/2 / 2-3), dann Einheit + Leerzeichen ODER nur Leerzeichen
+# ("7Up" bleibt "7Up")
+_LEADING_QUANTITY = re.compile(
+    r"^(?:ca\.?\s*|etwa\s+|approx\.?\s*)?"
+    r"\d+(?:[.,/]\d+)?(?:\s*-\s*\d+(?:[.,/]\d+)?)?"
+    rf"(?:\s*(?:{_QUANTITY_UNITS})\.?\s+|\s+)",
+    re.IGNORECASE,
+)
+
+
+def ingredient_key(value: str) -> str:
+    """Vergleichsschlüssel einer Zutat/eines Items: ohne führende Menge, klein, Whitespace normalisiert."""
+    text = " ".join(value.split())
+    stripped = _LEADING_QUANTITY.sub("", text, count=1).strip()
+    return (stripped or text).lower()
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +266,25 @@ class ShoppingItemResponse(BaseModel):
     version: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BulkAddRequest(BaseModel):
+    list_id: uuid.UUID
+    items: list[str] = Field(..., min_length=1, max_length=100)
+
+    @field_validator("items")
+    @classmethod
+    def validate_items(cls, v: list[str]) -> list[str]:
+        for i, item in enumerate(v):
+            if len(item) > 200:
+                raise ValueError(f"Item at index {i} exceeds 200 characters")
+        return v
+
+
+class BulkAddResponse(BaseModel):
+    added: list[ShoppingItemResponse]
+    skipped: list[str]
+    list_id: uuid.UUID
 
 
 class ReassignStoreRequest(BaseModel):
@@ -530,6 +584,96 @@ def reassign_store(
     return ReassignStoreResponse(updated=len(affected_items), to_store=target_store)
 
 
+def _list_not_found() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=error_detail(ErrorCode.SHOPPING_LIST_NOT_FOUND, "Shopping list not found"),
+    )
+
+
+def bulk_add_items(
+    db: Session,
+    household_id: uuid.UUID,
+    shopping_list: ShoppingList,
+    names: list[str],
+    user_id: uuid.UUID,
+) -> tuple[list[ShoppingItem], list[str]]:
+    """Legt Items auf ``shopping_list`` an, ausser sie stehen schon offen auf einer
+    Liste des Haushalts (oder doppelt in ``names``). Liefert (angelegt, übersprungen).
+
+    Der Aufrufer muss den Haushalt gesperrt haben (Dedupe über alle Listen) und
+    committen. Wiederholte Aufrufe legen nichts doppelt an (idempotent).
+    """
+    open_keys = {
+        ingredient_key(name)
+        for (name,) in db.query(ShoppingItem.name).filter(
+            ShoppingItem.household_id == household_id,
+            ShoppingItem.is_checked == False,  # noqa: E712
+        )
+    }
+    added: list[ShoppingItem] = []
+    skipped: list[str] = []
+    for raw in names:
+        name = raw.strip()[:200]
+        if not name:
+            continue
+        key = ingredient_key(name)
+        if key in open_keys:
+            skipped.append(name)
+            continue
+        open_keys.add(key)
+        item = ShoppingItem(
+            household_id=household_id,
+            list_id=shopping_list.id,
+            name=name,
+            added_by_user_id=user_id,
+        )
+        db.add(item)
+        added.append(item)
+    db.flush()
+    return added, skipped
+
+
+def emit_items_created(household_id: uuid.UUID, items: list[ShoppingItem]) -> None:
+    for item in items:
+        emit_to_household_sync(
+            household_id,
+            "shopping_item_created",
+            ShoppingItemResponse.model_validate(item).model_dump(mode="json"),
+        )
+
+
+# ---------------------------------------------------------------------------
+# POST /bulk-add  — Mehrere Items auf eine Liste ("Fehlende Zutaten", PD-M2)
+# ---------------------------------------------------------------------------
+@router.post("/bulk-add", response_model=BulkAddResponse)
+def bulk_add_shopping_items(
+    household_id: uuid.UUID,
+    body: BulkAddRequest,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    # Haushalt sperren: Dedupe läuft über alle Listen, parallele Aufrufe (zwei
+    # Geräte, Doppeltipp, Retry) dürfen nicht beide "noch nicht vorhanden" sehen
+    # (CASA-53). Danach die Zielliste — ein paralleles Löschen wartet bzw. → 404.
+    lock_household(db, household_id)
+    shopping_list = lock_row(db, ShoppingList, body.list_id)
+    if shopping_list is None or shopping_list.household_id != household_id:
+        raise _list_not_found()
+
+    added, skipped = bulk_add_items(db, household_id, shopping_list, body.items, membership.user_id)
+    db.commit()
+    for item in added:
+        db.refresh(item)
+
+    emit_items_created(household_id, added)
+    return BulkAddResponse(
+        added=[ShoppingItemResponse.model_validate(i) for i in added],
+        skipped=skipped,
+        list_id=shopping_list.id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # POST /  — Neues Item erstellen
 # ---------------------------------------------------------------------------
@@ -547,9 +691,15 @@ def create_shopping_item(
         response.status_code = status.HTTP_200_OK
         return existing
 
-    # Konsistenz-Check: list_id muss zu einer Liste des gleichen Haushalts gehören
-    shopping_list = db.get(ShoppingList, body.list_id)
-    if shopping_list is None or shopping_list.household_id != household_id:
+    # Konsistenz-Check: list_id muss zu einer Liste des gleichen Haushalts gehören.
+    # FOR KEY SHARE: parallele Creates laufen weiter, ein paralleles Löschen der Liste
+    # wartet — oder die Liste ist schon weg → 404 statt FK-Fehler/500 (CASA-24)
+    shopping_list = db.get(
+        ShoppingList, body.list_id, with_for_update={"key_share": True}, populate_existing=True
+    )
+    if shopping_list is None:
+        raise _list_not_found()
+    if shopping_list.household_id != household_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="list_id does not belong to this household",
@@ -588,7 +738,11 @@ def create_shopping_item(
     if existing is not None:
         response.status_code = status.HTTP_200_OK
         return existing
-    db.refresh(item)
+    try:
+        db.refresh(item)
+    except InvalidRequestError:
+        # Liste wurde direkt nach dem Commit gelöscht (force) — Item mit ihr
+        raise _list_not_found() from None
 
     emit_to_household_sync(
         household_id,

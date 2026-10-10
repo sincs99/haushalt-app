@@ -30,7 +30,7 @@ import { useCalendarStore } from '../calendar'
 
 const makeEvent = (o: Partial<CalendarEvent> = {}): CalendarEvent => ({
   id: 'e1', household_id: HOUSEHOLD_ID, title: 'Zahnarzt', starts_at: '2026-03-02T10:00:00Z',
-  ends_at: null, all_day: false, calendar_id: 'c1', participant_ids: [], note: null,
+  ends_at: null, all_day: false, calendar_id: 'c1', participant_ids: [], note: null, reminder: 'none',
   created_by_user_id: USER_ID, created_at: '2026-01-01T00:00:00Z', ...o,
 })
 const makeCal = (o: Partial<CalendarInfo> = {}): CalendarInfo => ({
@@ -121,6 +121,23 @@ describe('Events: Optimistic CRUD', () => {
     pending.resolve(server)
     await p
     expect(store.events).toEqual([server])
+  })
+
+  test('addEvent übernimmt die Erinnerung (Default none) und sendet sie mit (PD-K1)', async () => {
+    const store = useCalendarStore()
+    const pending = deferred<CalendarEvent>()
+    repo.create.mockReturnValue(pending.promise)
+    const payload = { title: 'Zahnarzt', starts_at: '2026-03-03T09:00:00', calendar_id: 'c1', reminder: '1h' as const }
+    const p = store.addEvent(payload)
+    expect(store.events[0].reminder).toBe('1h')
+    expect(repo.create).toHaveBeenCalledWith(HOUSEHOLD_ID, payload)
+    pending.resolve(makeEvent({ id: 'srv', reminder: '1h' }))
+    await p
+
+    repo.create.mockResolvedValue(makeEvent({ id: 'srv2' }))
+    const q = store.addEvent({ title: 'x', starts_at: '2026-03-04T09:00:00', calendar_id: 'c1' })
+    expect(store.events.find(e => e.title === 'x')?.reminder).toBe('none')
+    await q
   })
 
   test('addEvent: Rollback bei Fehler', async () => {

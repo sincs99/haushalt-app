@@ -2,11 +2,12 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlineShoppingRepository } from '../repositories/shoppingRepository'
-import type { ShoppingItem, ShoppingList, ShoppingListUpdatePayload } from '../types'
+import type { BulkAddResponse, ShoppingItem, ShoppingList, ShoppingListUpdatePayload } from '../types'
 import { upsertVersioned } from '../utils/syncVersion'
 import { findCanonicalStore, storesEqual } from '../utils/storeName'
 import { createRequestGuard } from '../utils/householdGuard'
 import { createRetryIds } from '../utils/clientIds'
+import { ingredientKey } from '../utils/ingredientKey'
 
 // ── localStorage-Persistenz für aktive Liste ──
 
@@ -288,6 +289,31 @@ export const useShoppingStore = defineStore('shopping', () => {
   }
 
   /**
+   * Mehrere Artikel auf eine Liste setzen ("Fehlende Zutaten" aus Rezept oder KI, PD-M2).
+   * Der Server überspringt, was schon offen auf irgendeiner Liste steht (auch mit
+   * Mengenangabe davor) — ein Retry legt nichts doppelt an. Ziel: übergebene oder
+   * aktive Liste. Nach einem Haushaltswechsel wird die Antwort nicht mehr eingemischt.
+   */
+  async function bulkAddItems(names: string[], listId?: string): Promise<BulkAddResponse | undefined> {
+    const householdId = useAuthStore().currentHouseholdId
+    const targetListId = listId ?? activeListId.value
+    if (!householdId || !targetListId || names.length === 0) return
+
+    const result = await repo.bulkAdd(householdId, targetListId, names)
+    if (useAuthStore().currentHouseholdId === householdId) {
+      for (const item of result.added) upsertVersioned(items.value, item, true)
+    }
+    return result
+  }
+
+  /** Offene Artikel (alle Listen), deren Produkt dem Namen entspricht (PD-S1-Hinweis). */
+  function findOpenDuplicates(name: string): ShoppingItem[] {
+    const key = ingredientKey(name)
+    if (!key) return []
+    return items.value.filter(i => !i.is_checked && ingredientKey(i.name) === key)
+  }
+
+  /**
    * Stellt gelöschte Artikel vollständig wieder her (Undo): in ihrer ursprünglichen
    * Liste, mit Menge, Abteilung, Geschäft, Zuweisung und Abgehakt-Status.
    * Neue IDs, damit verspätete Lösch-Events der alten IDs nichts entfernen.
@@ -521,6 +547,8 @@ export const useShoppingStore = defineStore('shopping', () => {
     // Actions (Items)
     fetchItems,
     addItem,
+    bulkAddItems,
+    findOpenDuplicates,
     toggleChecked,
     deleteItem,
     deleteItems,

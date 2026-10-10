@@ -16,7 +16,7 @@ export interface FoodRepository {
   fetchWeekPlan(householdId: string, week: string): Promise<MealPlanEntry[]>
   assignMeal(householdId: string, date: string, data: MealPlanAssignPayload): Promise<MealPlanEntry>
   removeMeal(householdId: string, date: string): Promise<void>
-  addMissingToShopping(householdId: string, entryId: string): Promise<AddToShoppingResponse>
+  addMissingToShopping(householdId: string, entryId: string, listId?: string): Promise<AddToShoppingResponse>
 }
 
 export function createOnlineFoodRepository(): FoodRepository {
@@ -83,9 +83,11 @@ export function createOnlineFoodRepository(): FoodRepository {
       )
     },
 
-    async addMissingToShopping(householdId, entryId) {
+    async addMissingToShopping(householdId, entryId, listId) {
       const { data } = await api.post<AddToShoppingResponse>(
         `/api/households/${householdId}/meal-plan/${entryId}/add-missing-to-shopping`,
+        // Zielliste = aktive Liste im Client; ohne → erste Liste des Haushalts
+        listId ? { list_id: listId } : undefined,
       )
       return data
     },

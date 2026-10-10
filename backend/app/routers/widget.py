@@ -17,7 +17,7 @@ Doku: docs/widget.md
 import secrets
 import uuid
 import zoneinfo
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
@@ -37,7 +37,7 @@ from app.models import (
     WidgetToken,
 )
 from app.services.attention import due_items, household_today
-from app.services.event_times import to_household_time
+from app.services.event_times import on_day, to_household_time
 from app.services.locking import lock_household
 from app.services.membership import locked_membership
 
@@ -247,14 +247,12 @@ def widget_summary(
     )
     shopping_items = shopping_query.order_by(ShoppingItem.created_at.asc()).limit(MAX_SHOPPING_ITEMS).all()
 
-    day_start = datetime.combine(today, time.min, tzinfo=tz).astimezone(timezone.utc)
-    day_end = datetime.combine(today, time.max, tzinfo=tz).astimezone(timezone.utc)
     events = (
         db.query(Event)
         .filter(
             Event.household_id == household.id,
-            Event.starts_at >= day_start,
-            Event.starts_at <= day_end,
+            # Auch mehrtägige Termine, die heute noch laufen (PD-K3)
+            on_day(today, tz),
         )
         .order_by(Event.all_day.desc(), Event.starts_at.asc())
         .limit(MAX_EVENTS)
@@ -280,7 +278,10 @@ def widget_summary(
         events=[
             WidgetEvent(
                 title=e.title,
-                time=None if e.all_day else to_household_time(e.starts_at, tz).strftime("%H:%M"),
+                # Ganztägig oder seit einem früheren Tag laufend → keine Startzeit
+                time=None
+                if e.all_day or to_household_time(e.starts_at, tz).date() != today
+                else to_household_time(e.starts_at, tz).strftime("%H:%M"),
             )
             for e in events
         ],

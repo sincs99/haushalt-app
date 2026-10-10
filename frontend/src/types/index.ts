@@ -475,9 +475,13 @@ export interface CalendarEvent {
   calendar_id: string
   participant_ids: string[]  // leer = ganzer Haushalt
   note: string | null
+  /** Push-Erinnerung vor Beginn (ganztägig: 08:00 am Tag bzw. Vortag) */
+  reminder: EventReminder
   created_by_user_id: string
   created_at: string
 }
+
+export type EventReminder = 'none' | '15m' | '1h' | '1d'
 
 export interface CalendarEventCreatePayload {
   title: string
@@ -487,6 +491,7 @@ export interface CalendarEventCreatePayload {
   calendar_id: string
   participant_ids?: string[]
   note?: string | null
+  reminder?: EventReminder
 }
 
 export type CalendarEventUpdatePayload = Partial<CalendarEventCreatePayload>
@@ -545,6 +550,8 @@ export interface PollDecidePayload {
 
 export interface MealDecidePayload {
   option_id: string
+  /** Belegten Tag ersetzen; ohne → 409 MEAL_PLAN_OCCUPIED (PD-M1) */
+  replace?: boolean
 }
 
 // ── Pets ──
@@ -804,8 +811,8 @@ export interface Recipe {
 export interface RecipeCreatePayload {
   name: string
   servings?: number
-  cost_rappen?: number
-  duration_min?: number
+  cost_rappen?: number | null
+  duration_min?: number | null
   ingredients?: string[]
   steps?: string[]
   tags?: string[]
@@ -818,6 +825,8 @@ export interface RecipeUpdatePayload {
   cost_rappen?: number | null
   duration_min?: number | null
   ingredients?: string[]
+  steps?: string[]
+  tags?: string[]
   is_favorite?: boolean
 }
 
@@ -837,6 +846,13 @@ export interface MealPlanAssignPayload {
 
 export interface AddToShoppingResponse {
   added: string[]
+  skipped: string[]
+  list_id: string
+}
+
+/** POST /shopping-items/bulk-add (PD-M2): angelegte Items + übersprungene Namen */
+export interface BulkAddResponse {
+  added: ShoppingItem[]
   skipped: string[]
   list_id: string
 }

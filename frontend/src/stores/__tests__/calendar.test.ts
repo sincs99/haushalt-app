@@ -30,7 +30,7 @@ import { useCalendarStore } from '../calendar'
 
 const makeEvent = (o: Partial<CalendarEvent> = {}): CalendarEvent => ({
   id: 'e1', household_id: HOUSEHOLD_ID, title: 'Zahnarzt', starts_at: '2026-03-02T10:00:00Z',
-  ends_at: null, all_day: false, calendar_id: 'c1', participant_ids: [], note: null,
+  ends_at: null, all_day: false, calendar_id: 'c1', participant_ids: [], note: null, reminder: 'none',
   created_by_user_id: USER_ID, created_at: '2026-01-01T00:00:00Z', ...o,
 })
 const makeCal = (o: Partial<CalendarInfo> = {}): CalendarInfo => ({

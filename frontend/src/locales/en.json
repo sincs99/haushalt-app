@@ -631,7 +631,11 @@
     "notFound": "Not found – it may have been deleted",
     "IMAGE_TOO_MANY_PIXELS": "Image has too many pixels (max. 25 megapixels)",
     "imageUnreadable": "Could not read the image – supported are JPEG, PNG, WebP and iPhone photos (HEIC)",
-    "WIDGET_TOKEN_INVALID": "Invalid widget key"
+    "WIDGET_TOKEN_INVALID": "Invalid widget key",
+    "MEAL_PLAN_OCCUPIED": "A meal is already planned for this day",
+    "EVENT_TIME_NONEXISTENT": "This time does not exist on that day because of the daylight saving change – please pick another",
+    "POLL_OPTION_TIME_REQUIRED": "Every option needs a date and time",
+    "SHOPPING_LIST_NOT_FOUND": "This shopping list no longer exists"
   },
   "push": {
     "title": "Notifications",
@@ -905,7 +909,9 @@
     "decideWinner": "“{option}” is in the lead ({n} vote) and goes into the meal plan. | “{option}” is in the lead ({n} votes) and goes into the meal plan.",
     "decideTie": "It's a tie – pick which meal it will be.",
     "decideHint": "This ends the poll for the whole household.",
-    "pollDecidedToast": "Decided: “{option}”"
+    "pollDecidedToast": "Decided: “{option}”",
+    "decideOccupied": "«{meal}» is already planned for {date}. Deciding replaces it.",
+    "decideReplace": "Replace and decide"
   },
   "notes": {
     "title": "Notes",

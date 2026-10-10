@@ -80,7 +80,19 @@ export const useFoodStore = defineStore('food', () => {
     if (!householdId) return
 
     await repo.deleteRecipe(householdId, id)
+    removeRecipeLocally(id)
+  }
+
+  /**
+   * Rezept entfernen; geplante Mahlzeiten behalten den Namen als Freitext — wie der
+   * Server beim Löschen (PD-M3, CASA-52).
+   */
+  function removeRecipeLocally(id: string) {
+    const name = recipes.value.find(r => r.id === id)?.name
     recipes.value = recipes.value.filter(r => r.id !== id)
+    weekPlan.value = weekPlan.value.map(e => (e.recipe_id === id
+      ? { ...e, recipe_id: null, recipe: null, free_text: e.recipe?.name ?? name ?? e.free_text }
+      : e))
   }
 
   /** Favorit optimistisch umschalten (Liste und eingebettete Rezepte im Wochenplan), Rollback bei Fehler. */
@@ -163,11 +175,12 @@ export const useFoodStore = defineStore('food', () => {
     return assignMeal(entry.date, { recipe_id: entry.recipe_id ?? null, free_text: entry.free_text ?? null })
   }
 
-  async function addMissingToShopping(entryId: string): Promise<AddToShoppingResponse | undefined> {
+  /** Fehlende Zutaten auf die Liste `listId` (aktive Liste) setzen; Dedupe macht der Server (PD-M2). */
+  async function addMissingToShopping(entryId: string, listId?: string | null): Promise<AddToShoppingResponse | undefined> {
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
-    return repo.addMissingToShopping(householdId, entryId)
+    return repo.addMissingToShopping(householdId, entryId, listId ?? undefined)
   }
 
   function navigateWeek(direction: -1 | 1) {
@@ -202,10 +215,16 @@ export const useFoodStore = defineStore('food', () => {
   }
 
   function handleRecipeDeleted(data: { id: string }) {
-    recipes.value = recipes.value.filter(r => r.id !== data.id)
+    removeRecipeLocally(data.id)
   }
 
   function handleMealPlanUpdated(data: MealPlanEntry) {
+    // Unvollständige Payload (ältere Server senden nach einem Abstimmungs-Entscheid
+    // nur {date}) nicht übernehmen — der Tag erschiene sonst leer (CASA-19): neu laden
+    if (!data?.id) {
+      fetchWeekPlan().catch(() => {})
+      return
+    }
     const idx = weekPlan.value.findIndex(e => e.date === data.date)
     if (idx !== -1) {
       weekPlan.value[idx] = data

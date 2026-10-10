@@ -631,7 +631,11 @@
     "notFound": "Nicht gefunden – wurde vielleicht gelöscht",
     "IMAGE_TOO_MANY_PIXELS": "Bild hat zu viele Pixel (max. 25 Megapixel)",
     "imageUnreadable": "Bild konnte nicht gelesen werden – unterstützt sind JPEG, PNG, WebP und iPhone-Fotos (HEIC)",
-    "WIDGET_TOKEN_INVALID": "Widget-Schlüssel ungültig"
+    "WIDGET_TOKEN_INVALID": "Widget-Schlüssel ungültig",
+    "MEAL_PLAN_OCCUPIED": "Für diesen Tag ist schon ein Essen geplant",
+    "EVENT_TIME_NONEXISTENT": "Diese Uhrzeit gibt es wegen der Zeitumstellung an diesem Tag nicht – bitte eine andere wählen",
+    "POLL_OPTION_TIME_REQUIRED": "Jede Option braucht Datum und Uhrzeit",
+    "SHOPPING_LIST_NOT_FOUND": "Diese Einkaufsliste gibt es nicht mehr"
   },
   "push": {
     "title": "Benachrichtigungen",
@@ -905,7 +909,9 @@
     "decideWinner": "«{option}» liegt vorne ({n} Stimme) und kommt in den Wochenplan. | «{option}» liegt vorne ({n} Stimmen) und kommt in den Wochenplan.",
     "decideTie": "Gleichstand – wähle, welches Gericht es gibt.",
     "decideHint": "Die Abstimmung wird damit für den ganzen Haushalt beendet.",
-    "pollDecidedToast": "Entschieden: «{option}»"
+    "pollDecidedToast": "Entschieden: «{option}»",
+    "decideOccupied": "Für {date} ist schon «{meal}» geplant. Beim Entscheiden wird es ersetzt.",
+    "decideReplace": "Ersetzen und entscheiden"
   },
   "notes": {
     "title": "Notizen",

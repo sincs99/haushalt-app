@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
     fetchLists: vi.fn(),
     createList: vi.fn(),
     addItem: vi.fn(),
+    bulkAddItems: vi.fn(),
   },
 }))
 
@@ -84,6 +85,7 @@ describe('ai store', () => {
     shopping.fetchLists.mockReset()
     shopping.createList.mockReset()
     shopping.addItem.mockReset()
+    shopping.bulkAddItems.mockReset()
     shopping.activeListId = null
     const state = reactive({
       currentHouseholdId: 'h1' as string | null,
@@ -248,27 +250,42 @@ describe('ai store', () => {
     })
   })
 
-  it('addMissingToShopping adds items to the active list', async () => {
+  it('addMissingToShopping sends one bulk request to the active list (quantity in front)', async () => {
     shopping.fetchLists.mockImplementation(async () => { shopping.activeListId = 'l1' })
+    shopping.bulkAddItems.mockResolvedValue({ added: [{ id: 'i1' }], skipped: ['Zitrone'], list_id: 'l1' })
     const store = useAiStore()
 
-    const added = await store.addMissingToShopping(suggestion().missing_ingredients)
+    const result = await store.addMissingToShopping(suggestion().missing_ingredients)
 
-    expect(added).toBe(2)
+    expect(result).toEqual({ added: 1, skipped: 1 })
     expect(shopping.createList).not.toHaveBeenCalled()
-    expect(shopping.addItem).toHaveBeenNthCalledWith(1, 'Parmesan', '50 g')
-    expect(shopping.addItem).toHaveBeenNthCalledWith(2, 'Zitrone', undefined)
+    expect(shopping.addItem).not.toHaveBeenCalled()
+    expect(shopping.bulkAddItems).toHaveBeenCalledTimes(1)
+    expect(shopping.bulkAddItems).toHaveBeenCalledWith(['50 g Parmesan', 'Zitrone'], 'l1')
   })
 
   it('addMissingToShopping creates a list when the household has none', async () => {
     let lists = 0
     shopping.createList.mockImplementation(async () => { lists++ })
     shopping.fetchLists.mockImplementation(async () => { if (lists) shopping.activeListId = 'new' })
+    shopping.bulkAddItems.mockResolvedValue({ added: [{ id: 'i1' }], skipped: [], list_id: 'new' })
     const store = useAiStore()
 
-    expect(await store.addMissingToShopping([{ name: 'Milch', quantity: null }])).toBe(1)
+    expect(await store.addMissingToShopping([{ name: 'Milch', quantity: null }])).toEqual({ added: 1, skipped: 0 })
     expect(shopping.createList).toHaveBeenCalledWith('Einkaufsliste')
-    expect(await store.addMissingToShopping([])).toBe(0)
+    expect(await store.addMissingToShopping([])).toEqual({ added: 0, skipped: 0 })
+  })
+
+  it('addMissingToShopping writes nothing after a household switch', async () => {
+    shopping.fetchLists.mockImplementation(async () => {
+      mocks.auth.currentHouseholdId = 'h2'
+      shopping.activeListId = 'other-household-list'
+    })
+    const store = useAiStore()
+
+    expect(await store.addMissingToShopping([{ name: 'Milch', quantity: null }])).toEqual({ added: 0, skipped: 0 })
+    expect(shopping.bulkAddItems).not.toHaveBeenCalled()
+    expect(shopping.createList).not.toHaveBeenCalled()
   })
 
   // ── Pflanzenpflege ──

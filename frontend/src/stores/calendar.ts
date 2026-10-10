@@ -213,6 +213,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       calendar_id: payload.calendar_id,
       participant_ids: payload.participant_ids ?? [],
       note: payload.note ?? null,
+      reminder: payload.reminder ?? 'none',
       created_by_user_id: authStore.user?.id ?? '',
       created_at: new Date().toISOString(),
     }

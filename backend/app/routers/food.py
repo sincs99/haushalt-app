@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func
+from sqlalchemy import func, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ from app.models import (
     ShoppingList,
 )
 from app.services.household_time import household_today
+from app.services.locking import lock_row
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -378,9 +379,22 @@ def delete_recipe(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    recipe = _get_recipe_or_404(db, recipe_id, household_id)
+    # Gesperrt: ein parallel geplanter Eintrag wartet und scheitert danach am FK,
+    # statt nach dem Löschen ohne Rezept und ohne Text dazustehen
+    recipe = lock_row(db, Recipe, recipe_id)
+    if recipe is None or recipe.household_id != household_id:
+        _get_recipe_or_404(db, recipe_id, household_id)  # → 404
+
+    # Geplante Mahlzeiten behalten den Rezeptnamen als Freitext (PD-M3, CASA-52)
+    db.execute(
+        update(MealPlanEntry)
+        .where(MealPlanEntry.household_id == household_id, MealPlanEntry.recipe_id == recipe.id)
+        .values(recipe_id=None, free_text=recipe.name[:150])
+        .execution_options(synchronize_session=False)
+    )
     db.delete(recipe)
     db.commit()
+    db.expire_all()
 
     emit_to_household_sync(
         household_id,

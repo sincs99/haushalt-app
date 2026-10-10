@@ -4,7 +4,8 @@ Jede Feature-Anfrage durchläuft:
 1. Mitgliedschaft (``verify_household_access``)
 2. Schlüssel konfiguriert (sonst 503 ``AI_NOT_CONFIGURED``)
 3. Opt-in des Haushalts ``ai_enabled`` (sonst 403 ``AI_NOT_ENABLED``)
-4. IP-Limit (slowapi, 10/min) und Tageslimit des Haushalts (429 ``AI_DAILY_LIMIT_REACHED``)
+4. IP-Limit (slowapi, 10/min), Tageslimit des Haushalts (429 ``AI_DAILY_LIMIT_REACHED``)
+   und der Person über alle Haushalte (429 ``AI_USER_DAILY_LIMIT_REACHED``, PD-A2)
 
 Ergebnisse werden nicht gespeichert; das Frontend übernimmt sie über die
 bestehenden Endpunkte (Rezepte, Einkaufsliste).
@@ -34,6 +35,7 @@ from app.services.ai.errors import (
     AiPlantNotRecognized,
     AiRefused,
     AiUnavailable,
+    AiUserDailyLimitReached,
 )
 from app.services.ai.schemas import (
     PlantCareAdvice,
@@ -53,6 +55,7 @@ AI_RATE_LIMIT = "10/minute"
 class AiStatusResponse(BaseModel):
     enabled: bool
     daily_limit: int
+    user_daily_limit: int
 
 
 class AiSettingsResponse(BaseModel):
@@ -60,6 +63,9 @@ class AiSettingsResponse(BaseModel):
     available: bool
     calls_today: int
     daily_limit: int
+    # Persönliches Limit der anfragenden Person (über alle Haushalte)
+    user_calls_today: int
+    user_daily_limit: int
 
 
 class AiSettingsUpdate(BaseModel):
@@ -81,6 +87,7 @@ def get_ai_status(current_user: User = Depends(get_current_user)):
     return AiStatusResponse(
         enabled=settings.ai_available,
         daily_limit=settings.ai_daily_limit_per_household,
+        user_daily_limit=settings.ai_daily_limit_per_user,
     )
 
 
@@ -94,12 +101,14 @@ def _get_household(db: Session, household_id: uuid.UUID) -> Household:
     return household
 
 
-def _settings_response(db: Session, household: Household) -> AiSettingsResponse:
+def _settings_response(db: Session, household: Household, user_id: uuid.UUID) -> AiSettingsResponse:
     return AiSettingsResponse(
         ai_enabled=household.ai_enabled,
         available=settings.ai_available,
         calls_today=usage.calls_today(db, household.id),
         daily_limit=settings.ai_daily_limit_per_household,
+        user_calls_today=usage.user_calls_today(db, user_id),
+        user_daily_limit=settings.ai_daily_limit_per_user,
     )
 
 
@@ -109,7 +118,7 @@ def get_ai_settings(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    return _settings_response(db, _get_household(db, household_id))
+    return _settings_response(db, _get_household(db, household_id), membership.user_id)
 
 
 @router.put("/settings", response_model=AiSettingsResponse)
@@ -128,7 +137,7 @@ def update_ai_settings(
         "household_updated",
         {"id": str(household.id), "name": household.name, "ai_enabled": household.ai_enabled},
     )
-    return _settings_response(db, household)
+    return _settings_response(db, household, membership.user_id)
 
 
 def require_ai_enabled(
@@ -154,6 +163,7 @@ def require_ai_enabled(
 _ERROR_MAP: list[tuple[type[AiError], int, str, str]] = [
     (AiNotConfigured, 503, ErrorCode.AI_NOT_CONFIGURED, "AI assistant is not configured"),
     (AiDailyLimitReached, 429, ErrorCode.AI_DAILY_LIMIT_REACHED, "Daily AI limit reached for this household"),
+    (AiUserDailyLimitReached, 429, ErrorCode.AI_USER_DAILY_LIMIT_REACHED, "Your personal daily AI limit is reached"),
     (AiRefused, 422, ErrorCode.AI_REFUSED, "The AI declined this request"),
     (AiPlantNotRecognized, 422, ErrorCode.AI_PLANT_NOT_RECOGNIZED, "The input was not recognized as a plant"),
     (AiInvalidOutput, 502, ErrorCode.AI_INVALID_OUTPUT, "The AI returned an unusable answer"),
@@ -179,13 +189,14 @@ ResT = TypeVar("ResT")
 def _run_feature(
     db: Session,
     household_id: uuid.UUID,
+    user_id: uuid.UUID,
     feature: Callable[[ReqT], tuple[ResT, object]],
     body: ReqT,
 ) -> ResT:
-    """Tageslimit reservieren → Feature aufrufen → Tokens verbuchen."""
+    """Tageslimits reservieren → Feature aufrufen → Tokens verbuchen."""
     try:
-        day = usage.reserve_call(db, household_id)
-    except AiDailyLimitReached as exc:
+        day = usage.reserve_call(db, household_id, user_id)
+    except (AiDailyLimitReached, AiUserDailyLimitReached) as exc:
         raise _to_http(exc)
 
     try:
@@ -194,8 +205,13 @@ def _run_feature(
         if exc.usage is not None:
             usage.record_tokens(db, household_id, day, exc.usage)
         elif isinstance(exc, _NOT_BILLED):
-            usage.release_call(db, household_id, day)
+            usage.release_call(db, household_id, user_id, day)
         raise _to_http(exc)
+    except Exception:
+        # Unerwarteter Fehler (Bug, unbekannte SDK-Ausnahme): keine verwertbare Antwort →
+        # Reservierung zurückgeben statt das Limit still zu verbrauchen (CASA-33)
+        usage.release_call(db, household_id, user_id, day)
+        raise
 
     usage.record_tokens(db, household_id, day, call_usage)
     return result
@@ -207,10 +223,11 @@ def suggest_recipe(
     request: Request,
     body: RecipeSuggestionRequest,
     household_id: uuid.UUID = Depends(require_ai_enabled),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Rezeptvorschlag aus vorhandenen Zutaten. Wird nicht gespeichert."""
-    return _run_feature(db, household_id, recipe.generate_recipe, body)
+    return _run_feature(db, household_id, current_user.id, recipe.generate_recipe, body)
 
 
 @router.post("/plant-care", response_model=PlantCareAdvice)
@@ -219,7 +236,8 @@ def suggest_plant_care(
     request: Request,
     body: PlantCareRequest,
     household_id: uuid.UUID = Depends(require_ai_enabled),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Pflegehinweise zu einer Pflanze (unabhängig von einem Pflanzen-Modell)."""
-    return _run_feature(db, household_id, plant_care.get_plant_care, body)
+    return _run_feature(db, household_id, current_user.id, plant_care.get_plant_care, body)

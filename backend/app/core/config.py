@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     # Kostenschutz: Aufrufe pro Haushalt und Tag (UTC), zusätzlich zum IP-Limit
     ai_daily_limit_per_household: int = 50
+    # Zusätzlich pro Person über alle Haushalte (PD-A2) — mehrere Haushalte vervielfachen nichts
+    ai_daily_limit_per_user: int = 20
     # Timeout pro API-Versuch in Sekunden; das SDK wiederholt höchstens einmal
     ai_request_timeout_seconds: float = 90.0
     # Gleichzeitige KI-Aufrufe im Prozess (jeder belegt einen Worker-Thread)

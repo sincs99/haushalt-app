@@ -22,7 +22,7 @@ services:
     build: ./backend
     restart: unless-stopped
     # .env.prod liefert u. a. JWT_SECRET_KEY und optional ANTHROPIC_API_KEY /
-    # AI_DAILY_LIMIT_PER_HOUSEHOLD für den KI-Assistenten (leer = ausgeblendet)
+    # AI_DAILY_LIMIT_PER_HOUSEHOLD / AI_DAILY_LIMIT_PER_USER für den KI-Assistenten (leer = ausgeblendet)
     env_file: .env.prod
     depends_on:
       postgres:

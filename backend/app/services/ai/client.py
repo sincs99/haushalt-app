@@ -106,6 +106,11 @@ def call_structured(
         # 401/403 (Schlüssel), 400 (Request), 5xx (nach Retry) — Details nur ins Log
         logger.error("AI API error status=%s request_id=%s", exc.status_code, exc.request_id)
         raise AiUnavailable(f"Provider error {exc.status_code}")
+    except anthropic.APIError as exc:
+        # Übrige SDK-Fehler, z. B. APIResponseValidationError (Antwort passt nicht zum
+        # SDK-Modell) — sonst roher 500 mit verbrauchter Reservierung (CASA-33)
+        logger.error("AI SDK error %s", type(exc).__name__)
+        raise AiUnavailable(f"SDK error {type(exc).__name__}")
     finally:
         _slots.release()
 

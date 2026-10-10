@@ -40,6 +40,7 @@ services:
       # KI-Assistent (optional): ohne Schlüssel sind alle KI-Funktionen ausgeblendet
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_DAILY_LIMIT_PER_HOUSEHOLD: ${AI_DAILY_LIMIT_PER_HOUSEHOLD:-50}
+      AI_DAILY_LIMIT_PER_USER: ${AI_DAILY_LIMIT_PER_USER:-20}
     # Nur lokal (API-Debugging); das Frontend erreicht das Backend über das Docker-Netz
     ports:
       - "127.0.0.1:8000:8000"

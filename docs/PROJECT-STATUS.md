@@ -114,7 +114,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`app/routers/calendars.py`](../backend/app/routers/calendars.py) | 4 Endpoints: Kalender (Name/Farbe/Position) | ✅ Fertig |
 | [`app/routers/events.py`](../backend/app/routers/events.py) | 5 Endpoints: Termine (CRUD, Zeitraum-Abfrage in Haushaltszeit) | ✅ Fertig |
 | [`app/routers/polls.py`](../backend/app/routers/polls.py) | 7 Endpoints: Abstimmungen (Termin- und Essens-Umfragen, Stimme, Entscheidung) | ✅ Fertig |
-| [`app/routers/pets.py`](../backend/app/routers/pets.py) | 20 Endpoints: Haustiere, Fütterung, Medikamente (inkl. Verabreichungs-Log), Pflegeaufgaben | ✅ Fertig |
+| [`app/routers/pets.py`](../backend/app/routers/pets.py) | 23 Endpoints: Haustiere (inkl. Archiv), Fütterung, Medikamente (inkl. Verabreichungs-Log), Pflegeaufgaben | ✅ Fertig |
 | [`app/routers/food.py`](../backend/app/routers/food.py) | 9 Endpoints: Rezepte (`recipe_router`) und Wochenmenü (`meal_plan_router`, inkl. „Fehlende Zutaten zur Einkaufsliste“) | ✅ Fertig |
 | [`app/routers/notes.py`](../backend/app/routers/notes.py) | 4 Endpoints: Notizen (CRUD, angepinnt, Tag) | ✅ Fertig |
 | [`app/routers/files.py`](../backend/app/routers/files.py) | 3 Endpoints: Upload (Bild-Resize, Magic-Byte-Prüfung, Speicher-Limit), geschützter Download, Löschen (mit `FILE_IN_USE`-Schutz) | ✅ Fertig |
@@ -126,7 +126,8 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`app/services/locking.py`](../backend/app/services/locking.py) | Zeilensperren für Check-then-Act: `lock_household(db, id)`, `lock_row(db, Model, id)` (`SELECT … FOR UPDATE`, auf SQLite No-Op) | ✅ Fertig |
 | [`app/services/client_ids.py`](../backend/app/services/client_ids.py) | Vom Client erzeugte IDs: idempotentes Anlegen (Offline-Meilenstein M0) | ✅ Fertig |
 | [`app/services/event_times.py`](../backend/app/services/event_times.py) | Termin-Zeiten als Wanduhrzeit in der Haushalts-Zeitzone (Speicherung UTC) | ✅ Fertig |
-| [`app/services/file_cleanup.py`](../backend/app/services/file_cleanup.py) | Periodisches Aufräumen verwaister Uploads | ✅ Fertig |
+| [`app/services/file_cleanup.py`](../backend/app/services/file_cleanup.py) | Periodisches Aufräumen verwaister Uploads (gesperrt geprüft, nie zugeordnete Dateien) und von Dateien im Storage ohne DB-Zeile (älter als 24 h) | ✅ Fertig |
+| [`app/services/care_schedule.py`](../backend/app/services/care_schedule.py) | Fälligkeit wiederkehrender Pflegeaufgaben (Tiere, Pflanzen): Intervall-Änderung setzt `next_due_at` neu (PD-P4 / E-2) | ✅ Fertig |
 | [`app/services/household_checks.py`](../backend/app/services/household_checks.py) | Prüfungen auf Haushaltsmitgliedschaft (Teilnehmer, Ausgleichs-Parteien, Ex-Mitglieder) | ✅ Fertig |
 | [`app/services/invite_code.py`](../backend/app/services/invite_code.py) | Eindeutige Invite-Code-Generierung mit Retry-Logik | ✅ Fertig |
 | [`app/services/push_service.py`](../backend/app/services/push_service.py) | Web-Push-Versand (Endpoint-Allowlist) und Scheduler für Todo-Erinnerungen, Tier- und Pflanzenpflege, Putzplan („Du bist dran“, materialisiert die heutigen Ämtli selbst) und Ablaufdaten von Dokumenten (30 Tage vorher und am Tag); jede Payload trägt die Zahl fürs App-Icon | ✅ Fertig |
@@ -453,21 +454,24 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | GET | `/api/households/{id}/pets/` | ✅ | Haustiere |
 | POST | `/api/households/{id}/pets/` | ✅ | Haustier anlegen |
 | GET | `/api/households/{id}/pets/feeding-status` | ✅ | Fütterungsstatus aller Tiere (heute) |
-| POST | `/api/households/{id}/pets/feed-all` | ✅ | Alle Tiere füttern |
+| POST | `/api/households/{id}/pets/feed-all` | ✅ | Alle aktiven Tiere füttern; Savepoint pro Tier, liefert genau die selbst angelegten Fütterungen (CASA-13) |
 | GET | `/api/households/{id}/pets/{pet_id}` | ✅ | Haustier lesen |
 | PATCH | `/api/households/{id}/pets/{pet_id}` | ✅ | Haustier aktualisieren (inkl. `photo_file_id`) |
-| DELETE | `/api/households/{id}/pets/{pet_id}` | ✅ | Haustier löschen |
-| POST | `/api/households/{id}/pets/{pet_id}/feedings` | ✅ | Fütterung erfassen |
+| DELETE | `/api/households/{id}/pets/{pet_id}` | ✅ | Haustier endgültig löschen (inkl. Verlauf; die App bietet zuerst „Archivieren“ an und warnt mit den Zahlen aus `/history`) |
+| POST | `/api/households/{id}/pets/{pet_id}/archive` | ✅ | Tier archivieren (verstorben/abgegeben): Verlauf bleibt, raus aus Fütterung, Dashboard, Badge, Push, Tag-Zielen (PD-P2/P3) |
+| POST | `/api/households/{id}/pets/{pet_id}/unarchive` | ✅ | Tier wieder aktivieren |
+| GET | `/api/households/{id}/pets/{pet_id}/history` | ✅ | Umfang des Verlaufs: `feedings`, `medications`, `medication_logs`, `care_tasks` |
+| POST | `/api/households/{id}/pets/{pet_id}/feedings` | ✅ | Fütterung erfassen (409 `FEEDING_DUPLICATE`; archiviertes Tier → 422 `PET_ARCHIVED`) |
 | DELETE | `/api/households/{id}/pets/{pet_id}/feedings/{feeding_id}` | ✅ | Fütterung löschen |
 | GET | `/api/households/{id}/pets/{pet_id}/medications` | ✅ | Medikamente |
 | POST | `/api/households/{id}/pets/{pet_id}/medications` | ✅ | Medikament anlegen |
 | PATCH | `/api/households/{id}/pets/{pet_id}/medications/{medication_id}` | ✅ | Medikament aktualisieren |
-| DELETE | `/api/households/{id}/pets/{pet_id}/medications/{medication_id}` | ✅ | Medikament löschen |
-| POST | `/api/households/{id}/pets/{pet_id}/medications/{medication_id}/give` | ✅ | Verabreichung erfassen |
+| DELETE | `/api/households/{id}/pets/{pet_id}/medications/{medication_id}` | ✅ | Medikament löschen — nur ohne Gaben; mit Verlauf 409 `MEDICATION_HAS_HISTORY` (deaktivieren statt löschen) |
+| POST | `/api/households/{id}/pets/{pet_id}/medications/{medication_id}/give` | ✅ | Verabreichung erfassen — immer möglich (auch mehrmals täglich); optional Body `{"id": <client-uuid>}` (Retry → 200 mit bestehender Gabe); deaktiviert → 422 `MEDICATION_INACTIVE` |
 | GET | `/api/households/{id}/pets/{pet_id}/medications/{medication_id}/log` | ✅ | Verabreichungs-Log |
 | GET | `/api/households/{id}/pets/{pet_id}/care-tasks/` | ✅ | Pflegeaufgaben |
 | POST | `/api/households/{id}/pets/{pet_id}/care-tasks/` | ✅ | Pflegeaufgabe anlegen |
-| PATCH | `/api/households/{id}/pets/{pet_id}/care-tasks/{task_id}` | ✅ | Pflegeaufgabe aktualisieren |
+| PATCH | `/api/households/{id}/pets/{pet_id}/care-tasks/{task_id}` | ✅ | Pflegeaufgabe aktualisieren (neues Intervall → `next_due_at` = letzte Erledigung bzw. heute + Intervall, `notified_at` zurück; PD-P4) |
 | DELETE | `/api/households/{id}/pets/{pet_id}/care-tasks/{task_id}` | ✅ | Pflegeaufgabe löschen |
 | POST | `/api/households/{id}/pets/{pet_id}/care-tasks/{task_id}/complete` | ✅ | Pflegeaufgabe erledigen (nächste Fälligkeit wird berechnet) |
 | **Essen** | | | |
@@ -486,9 +490,9 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | PATCH | `/api/households/{id}/notes/{note_id}` | ✅ | Notiz aktualisieren |
 | DELETE | `/api/households/{id}/notes/{note_id}` | ✅ | Notiz löschen |
 | **Dateien** | | | |
-| POST | `/api/households/{id}/files/` | ✅ | Datei hochladen (JPEG/PNG/WebP/HEIC/HEIF/PDF, max. 10 MB; Bilder vor dem Decode auf 25 MP geprüft und auf 1600 px verkleinert; Speicher-Limit pro Haushalt) |
+| POST | `/api/households/{id}/files/` | ✅ | Datei hochladen (JPEG/PNG/WebP/HEIC/HEIF/PDF, max. 10 MB; Bilder vor dem Decode auf 25 MP geprüft und auf 1600 px verkleinert; Speicher-Limit pro Haushalt, unter Haushaltssperre geprüft — CASA-26; scheitert der Commit, wird die Datei wieder entfernt) |
 | GET | `/api/households/{id}/files/{file_id}` | ✅ | Datei herunterladen (JWT-geschützt) |
-| DELETE | `/api/households/{id}/files/{file_id}` | ✅ | Datei löschen (204; `FILE_IN_USE`, wenn noch referenziert) |
+| DELETE | `/api/households/{id}/files/{file_id}` | ✅ | Datei löschen (204; `FILE_IN_USE`, wenn noch referenziert). Zuordnungen (Dokument, Tier-/Pflanzenfoto) und Löschen sperren die Datei-Zeile; parallele Zuordnung derselben Datei → 422 `FILE_IN_USE` (CASA-28) |
 | **Dokumente** | | | |
 | GET | `/api/households/{id}/documents/` | ✅ | Dokumente (`category`, Suche `q`, `limit`/`offset`) |
 | POST | `/api/households/{id}/documents/` | ✅ | Dokument aus bereits hochgeladenen Dateien anlegen (max. 30 Dateien) |
@@ -580,14 +584,14 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `poll_deleted` | Server → Room | `{ id }` |
 | **Haustiere** | | |
 | `pet_created` | Server → Room | `PetResponse` |
-| `pet_updated` | Server → Room | `PetResponse` |
+| `pet_updated` | Server → Room | `PetResponse` (auch beim Archivieren/Reaktivieren; `archived`, `archived_at`) |
 | `pet_deleted` | Server → Room | `{ id, household_id }` |
-| `feeding_created` | Server → Room | `FeedingLogResponse` (auch bei „Alle füttern“) |
+| `feeding_created` | Server → Room | `FeedingLogResponse` (auch bei „Alle füttern“, nur für tatsächlich angelegte Fütterungen) |
 | `feeding_deleted` | Server → Room | `{ id, pet_id, household_id }` |
 | `medication_created` | Server → Room | `MedicationResponse` |
 | `medication_updated` | Server → Room | `MedicationResponse` |
-| `medication_deleted` | Server → Room | `{ id, pet_id, … }` |
-| `medication_given` | Server → Room | `MedicationLogResponse` |
+| `medication_deleted` | Server → Room | `{ id, pet_id, … }` (nur Medikamente ohne Gaben) |
+| `medication_given` | Server → Room | `MedicationLogResponse` (nicht beim Retry mit derselben Client-ID) |
 | `pet_care_task_created` | Server → Room | `CareTaskResponse` |
 | `pet_care_task_updated` | Server → Room | `CareTaskResponse` (auch beim Erledigen) |
 | `pet_care_task_deleted` | Server → Room | `{ id, pet_id }` |
@@ -678,7 +682,7 @@ User ──< HouseholdMember >── Household
 | `event_polls` | `question`, `status`, `poll_type` (`event`/`meal`), `decided_event_id`, `decided_meal_date` | |
 | `event_poll_options` | `poll_id` (CASCADE), `label`, `starts_at`, `recipe_id` | |
 | `event_poll_votes` | `poll_id`, `option_id` (CASCADE), `user_id` | Unique `(option_id, user_id)` und `(poll_id, user_id)` (eine Stimme pro Person und Abstimmung) |
-| `pets` | `name`, `species`, `breed`, `birthdate`, `weight_grams`, `photo_url`, `photo_file_id`, `chip_number`, `insurance`, `vet_name`, `food_notes`, `health_entries`, `notes` | `photo_file_id` → `stored_files` (SET NULL) |
+| `pets` | `name`, `species`, `breed`, `birthdate`, `weight_grams`, `photo_url`, `photo_file_id`, `chip_number`, `insurance`, `vet_name`, `food_notes`, `health_entries`, `notes`, `archived`, `archived_at` | `photo_file_id` → `stored_files` (SET NULL) |
 | `feeding_logs` | `pet_id` (CASCADE), `slot`, `date`, `fed_at`, `fed_by_user_id` | Unique `(pet_id, date, slot)` |
 | `medications` | `pet_id` (CASCADE), `name`, `dosage`, `schedule`, `active` | |
 | `medication_logs` | `medication_id` (CASCADE), `given_at`, `given_by_user_id` | |
@@ -1105,6 +1109,12 @@ Die Nummerierung ist die der Dokumentation und nicht identisch mit den „Epic-N
 - **Frontend:** PetsView.vue (Übersicht mit Fütterungs-Widget), PetDetailView.vue (Profil, Medikamente, Gesundheitseinträge), `stores/pets.ts`, `repositories/petsRepository.ts`
 - **Tests:** `test_pet_scoping.py`, `test_feeding_scoping.py`, `test_medication_scoping.py`
 - **i18n:** `pets.*` Keys (50+ Keys inkl. Medikamente, Gesundheit, Profil)
+- **Audit-Fixes (2026-10, CASA-13/14/15/30, PD-P1–P4):**
+  - „Alle gefüttert“ (`feed-all`): Savepoint pro Tier — eine parallele Einzelfütterung lässt die übrigen Tiere nicht mehr ungefüttert; die App meldet „Alle gefüttert“ nur, wenn der neu geladene Status das bestätigt
+  - Archiv statt Verlust: `pets.archived`/`archived_at` (Migration `pet1a2b3c4d5`), `POST …/archive` / `…/unarchive`, `GET …/history`; archivierte Tiere fehlen in Fütterungsstatus, feed-all, Einzelfütterung (422 `PET_ARCHIVED`), Dashboard-Pflege, Badge, Pflege-Push und Tag-Zielen. Endgültiges Löschen bleibt möglich; PetsView bietet zuerst „Archivieren“ an und nennt die Zahl der Fütterungen, Gaben und Pflegeaufgaben, die verloren gehen. Archiv-Liste mit „Wieder aktivieren“ unter den Tierkarten
+  - Medikamente: Löschen mit Gaben → 409 `MEDICATION_HAS_HISTORY`, Dialog bietet „Deaktivieren“; Gabe auf deaktiviertes Medikament → 422; „Jetzt geben“ bleibt immer sichtbar („Nochmals geben“), Anzeige „Zuletzt gegeben um HH:MM von X“, Rückfrage, wenn die letzte Gabe weniger als 4 h zurückliegt (`MEDICATION_CONFIRM_HOURS`); Client-ID macht Retries idempotent
+  - Fütterung einer anderen Person entfernen → Rückfrage mit Name und Uhrzeit (CASA-30)
+  - Intervall-Änderung einer Pflegeaufgabe verschiebt die Fälligkeit (PD-P4 / E-2, `services/care_schedule.py`)
 
 ### Epic 15: Essen (Wochenmenü + Rezepte) ✅
 - **Abgeschlossen:** 2026-08-08
@@ -1283,6 +1293,10 @@ Die Nummerierung ist die der Dokumentation und nicht identisch mit den „Epic-N
 - **Frontend:** `stores/plants.ts`, `repositories/plantsRepository.ts`, `utils/plantCare.ts`, `components/PlantPhotoAvatar.vue`, `PlantsView.vue`, `PlantDetailView.vue`, `DashboardView.vue`, `App.vue` (Socket-Registrierung), `MoreSheet.vue`
 - **Tests:** `test_plants.py` (31: CRUD, Cross-Household 403/404, Pflege-Log setzt Fälligkeit, Status-Endpunkt, `water-all`, Foto), +3 in `test_push.py`, +2 in `test_dashboard_scoping.py`; Frontend `stores/__tests__/plants.test.ts` (19) und `utils/__tests__/plantCare.test.ts` (4)
 - **i18n:** `plants.*` (DE + EN), `nav.plants`, `moreSheet.plantsSub`, `dashboard.plantsWaterTitle`, Error-Codes `PLANT_NOT_FOUND`, `PLANT_CARE_TASK_NOT_FOUND` → 765 Keys total
+- **Audit-Fixes (2026-10, CASA-29, PD-P4/P5):**
+  - Pro Aufgabe höchstens ein Log pro Haushaltstag: Erledigen und `water-all` setzen die Fälligkeit per bedingtem `UPDATE … WHERE last_done_at IS DISTINCT FROM heute`; ist die Aufgabe heute schon erledigt, liefert `…/complete` `{"task", "log": null, "changed": false}` ohne Event, `water-all` nur die selbst geschriebenen Logs
+  - Intervall-Änderung (auch per KI-Vorschlag) setzt `next_due_at = (last_done_at oder heute) + Intervall` und `notified_at` zurück (PD-P4)
+  - KI-Vorschlag: Vorschau „alt → neu“ pro Aufgabe mit Häkchen; übernommen wird nur, was angehakt ist (PD-P5)
 - **Nicht enthalten:** NFC/QR-Tags und KI-Pflegehinweise (getrennte Vorhaben)
 
 ### Epic 32: Tags (NFC-Chips / QR-Sticker) ✅

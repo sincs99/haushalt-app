@@ -112,7 +112,7 @@ def test_chore_notifies_assignee_once_in_the_morning(db, zurich, user_a, user_a2
         payload = _payloads(mock_webpush)[0]
         assert payload["title"] == "Du bist dran"
         assert payload["body"] == "Bad putzen"
-        assert payload["url"] == "/chores"
+        assert payload["url"] == f"/chores?hh={zurich.id}"
         assert payload["badge"] == 1
 
         mock_webpush.reset_mock()
@@ -194,7 +194,7 @@ def test_document_lead_warning_then_due_day(db, zurich, user_a, user_a2, mock_we
     payload = _payloads(mock_webpush)[0]
     assert payload["title"] == "Dokument läuft bald ab"
     assert payload["body"] == "Garantie Waschmaschine · 29.10.2026"
-    assert payload["url"] == "/documents"
+    assert payload["url"] == f"/documents?hh={zurich.id}"
     assert "badge" in payload
 
     mock_webpush.reset_mock()

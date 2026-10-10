@@ -155,6 +155,12 @@ def _format_date(locale: str, d: date) -> str:
     return d.strftime("%d.%m.%Y") if locale == "de" else d.isoformat()
 
 
+def _with_household(url: str, household_id: uuid.UUID) -> str:
+    """Hängt `hh=<household_id>` an eine App-URL an (Router wechselt dann den Haushalt)."""
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}hh={household_id}"
+
+
 def send_to_users(
     db: Session,
     user_ids: list[uuid.UUID],
@@ -164,7 +170,9 @@ def send_to_users(
     """Sendet an alle Subscriptions der User; Payload wird pro Locale gebaut.
 
     Mit household_id bekommt jede Payload die Zahl fürs App-Icon (`badge`,
-    siehe services/attention.py), damit der Service Worker sie setzen kann.
+    siehe services/attention.py), damit der Service Worker sie setzen kann, und die
+    URL trägt den Haushalt (`?hh=<id>`): Ein Tippen öffnet die Seite im richtigen
+    Haushalt, auch wenn die App gerade einen anderen zeigt (CASA-40).
     """
     if not user_ids:
         return 0
@@ -174,6 +182,8 @@ def send_to_users(
     sent = 0
     for sub in subs:
         payload = build_payload(sub.locale)
+        if household_id is not None and payload.get("url"):
+            payload = {**payload, "url": _with_household(payload["url"], household_id)}
         if household is not None:
             if sub.user_id not in badges:
                 badges[sub.user_id] = attention_count(db, household, sub.user_id)

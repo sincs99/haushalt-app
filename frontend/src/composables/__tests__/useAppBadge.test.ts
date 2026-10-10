@@ -81,3 +81,21 @@ test('does nothing without Badging API support', async () => {
   await badge.refreshAppBadge()
   expect(api.get).not.toHaveBeenCalled()
 })
+
+test('tells the service worker the current household (CASA-40)', async () => {
+  const postMessage = vi.fn()
+  vi.stubGlobal('navigator', {
+    setAppBadge,
+    clearAppBadge,
+    serviceWorker: { ready: Promise.resolve({ active: { postMessage } }) },
+  })
+  api.get.mockResolvedValue({ data: { count: 1 } })
+  const badge = await load()
+
+  badge.setAppBadgeHousehold(HOUSEHOLD)
+  await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith({ type: 'casa:current-household', householdId: HOUSEHOLD }))
+  badge.setAppBadgeHousehold(HOUSEHOLD) // unverändert → keine weitere Nachricht
+  badge.setAppBadgeHousehold(null)
+  await vi.waitFor(() => expect(postMessage).toHaveBeenLastCalledWith({ type: 'casa:current-household', householdId: null }))
+  expect(postMessage).toHaveBeenCalledTimes(2)
+})

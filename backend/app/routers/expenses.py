@@ -143,6 +143,8 @@ class BalanceEntry(BaseModel):
     settled_out_rappen: int   # Summe von Settlements, in denen dieser User FROM ist (hat gezahlt)
     settled_in_rappen: int    # Summe von Settlements, in denen dieser User TO ist (hat empfangen)
     saldo_rappen: int     # paid - owed + settled_out - settled_in
+    is_member: bool = True  # False = ehemaliges Mitglied mit Ledger-Einträgen (PD-F2)
+    display_name: str | None = None
 
 
 class SettlementEntry(BaseModel):

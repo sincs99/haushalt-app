@@ -352,6 +352,8 @@
       "settlementTitle": "Ausgleich",
       "pays": "zahlt",
       "unassignedHint": "{amount} von ehemaligen Mitgliedern nicht zuordenbar",
+      "formerMemberBadge": "ehemaliges Mitglied",
+      "formerMemberHint": "Ehemalige Mitglieder sehen den Haushalt nicht mehr. Offene Beträge lassen sich trotzdem hier ausgleichen.",
       "loadError": "Salden konnten nicht geladen werden."
     },
     "category": "Kategorie",

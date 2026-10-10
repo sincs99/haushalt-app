@@ -7,6 +7,7 @@ import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatRappen, parseAmountToRappen } from '../utils/money'
 import { householdDateString } from '../utils/dates'
+import { balanceUserName, settlementParties, splitBalances } from '../utils/balances'
 import BaseCard from './ui/BaseCard.vue'
 import BaseButton from './ui/BaseButton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
@@ -21,9 +22,24 @@ const { notifySuccess, notifyError, notifyInfo } = useToast()
 const { t } = useI18n()
 
 function resolveUserName(userId: string): string {
-  const member = expensesStore.members.find(m => m.id === userId)
-  return member?.display_name ?? t('common.formerMember')
+  return balanceUserName(userId, expensesStore.members, expensesStore.balances?.balances ?? [])
+    ?? t('common.formerMember')
 }
+
+// Ehemalige Mitglieder getrennt und gekennzeichnet (PD-F2)
+const balanceGroups = computed(() =>
+  splitBalances(expensesStore.balances?.balances ?? [], expensesStore.members),
+)
+const formerWithSaldo = computed(() => balanceGroups.value.former.some(e => e.saldo_rappen !== 0))
+// Ausgleich mit ehemaligen Mitgliedern bleibt möglich: auch sie im Dialog wählbar
+const parties = computed(() =>
+  settlementParties(expensesStore.members, expensesStore.balances?.balances ?? []).map(p => ({
+    id: p.id,
+    label: p.former
+      ? `${p.display_name ?? t('common.formerMember')} (${t('expenses.balance.formerMemberBadge')})`
+      : (p.display_name ?? ''),
+  })),
+)
 
 const hasExpenses = computed(() => expensesStore.expenses.length > 0)
 const hasSettlements = computed(() => (expensesStore.balances?.settlements.length ?? 0) > 0)
@@ -152,7 +168,7 @@ async function confirmSettlement() {
     <div class="balance-summary">
       <!-- Salden pro Mitglied -->
       <div
-        v-for="entry in expensesStore.balances.balances"
+        v-for="entry in balanceGroups.current"
         :key="entry.user_id"
         class="balance-row"
       >
@@ -163,6 +179,27 @@ async function confirmSettlement() {
         <span class="balance-row__saldo" :style="{ color: saldoColor(entry.saldo_rappen) }">
           {{ formatSaldo(entry.saldo_rappen) }}
         </span>
+      </div>
+
+      <!-- Ehemalige Mitglieder: Saldo bleibt, sie sehen den Haushalt aber nicht mehr (PD-F2) -->
+      <div v-if="balanceGroups.former.length > 0" class="former-section">
+        <div
+          v-for="entry in balanceGroups.former"
+          :key="entry.user_id"
+          class="balance-row"
+        >
+          <div class="balance-row__left">
+            <BaseAvatar :name="resolveUserName(entry.user_id)" :user-id="entry.user_id" size="sm" />
+            <span class="balance-row__name">{{ resolveUserName(entry.user_id) }}</span>
+            <span class="former-badge">{{ $t('expenses.balance.formerMemberBadge') }}</span>
+          </div>
+          <span class="balance-row__saldo" :style="{ color: saldoColor(entry.saldo_rappen) }">
+            {{ formatSaldo(entry.saldo_rappen) }}
+          </span>
+        </div>
+        <p v-if="formerWithSaldo" class="former-hint">
+          {{ $t('expenses.balance.formerMemberHint') }}
+        </p>
       </div>
 
       <!-- Ausgleich-Sektion -->
@@ -216,13 +253,13 @@ async function confirmSettlement() {
       <label class="dialog-label">
         {{ $t('settlements.from') }}
         <select v-model="dialogFrom" class="dialog-select">
-          <option v-for="m in expensesStore.members" :key="m.id" :value="m.id">{{ m.display_name }}</option>
+          <option v-for="p in parties" :key="p.id" :value="p.id">{{ p.label }}</option>
         </select>
       </label>
       <label class="dialog-label">
         {{ $t('settlements.to') }}
         <select v-model="dialogTo" class="dialog-select">
-          <option v-for="m in expensesStore.members" :key="m.id" :value="m.id">{{ m.display_name }}</option>
+          <option v-for="p in parties" :key="p.id" :value="p.id">{{ p.label }}</option>
         </select>
       </label>
       <label class="dialog-label">
@@ -286,6 +323,30 @@ async function confirmSettlement() {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.former-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-warning-soft);
+  border-radius: var(--radius-sm);
+}
+
+.former-badge {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-warning-strong);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.former-hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-warning-strong);
 }
 
 .balance-row__name {

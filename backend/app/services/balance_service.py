@@ -12,7 +12,7 @@ import uuid
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import Expense, ExpenseShare, HouseholdMember, Settlement
+from app.models import Expense, ExpenseShare, HouseholdMember, Settlement, User
 
 # ---------------------------------------------------------------------------
 # Interne Hilfsfunktionen
@@ -110,7 +110,7 @@ def compute_all_balances(db: Session, household_id: uuid.UUID) -> dict:
 
     Gibt dict zurück mit keys: balances, settlements, unassigned_rappen.
     balances ist eine Liste von dicts mit user_id, paid_rappen, owed_rappen,
-    settled_out_rappen, settled_in_rappen, saldo_rappen.
+    settled_out_rappen, settled_in_rappen, saldo_rappen, is_member (aktuelles Mitglied?), display_name.
     settlements ist eine Liste von dicts mit from_user_id, to_user_id, amount_rappen.
     """
     from app.routers.expenses import compute_settlements
@@ -125,13 +125,19 @@ def compute_all_balances(db: Session, household_id: uuid.UUID) -> dict:
         .filter(HouseholdMember.household_id == household_id)
         .all()
     )
+    member_ids = {m.user_id for m in member_rows}
     all_user_ids = (
-        {m.user_id for m in member_rows}
+        member_ids
         | set(paid_map.keys())
         | set(owed_map.keys())
         | set(settled_out_map.keys())
         | set(settled_in_map.keys())
     )
+
+    # Namen auch für ehemalige Mitglieder (das Frontend kennt nur aktuelle)
+    names = dict(
+        db.query(User.id, User.display_name).filter(User.id.in_(all_user_ids)).all()
+    ) if all_user_ids else {}
 
     # BalanceEntries berechnen
     balances = []
@@ -150,6 +156,9 @@ def compute_all_balances(db: Session, household_id: uuid.UUID) -> dict:
             "settled_out_rappen": s_out,
             "settled_in_rappen": s_in,
             "saldo_rappen": saldo,
+            # Ehemalige Mitglieder (PD-F2): Saldo bleibt, UI kennzeichnet sie
+            "is_member": uid in member_ids,
+            "display_name": names.get(uid),
         })
 
     # Settlements berechnen

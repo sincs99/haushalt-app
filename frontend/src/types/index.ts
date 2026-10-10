@@ -233,6 +233,9 @@ export interface BalanceEntry {
   settled_out_rappen: number
   settled_in_rappen: number
   saldo_rappen: number
+  /** false = ehemaliges Mitglied mit Ledger-Einträgen (PD-F2); fehlt bei älterer API */
+  is_member?: boolean
+  display_name?: string | null
 }
 
 export interface SettlementEntry {

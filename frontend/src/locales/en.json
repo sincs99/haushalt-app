@@ -352,6 +352,8 @@
       "settlementTitle": "Settlements",
       "pays": "pays",
       "unassignedHint": "{amount} from former members unassignable",
+      "formerMemberBadge": "former member",
+      "formerMemberHint": "Former members can no longer see the household. Open amounts can still be settled here.",
       "loadError": "Couldn't load balances."
     },
     "category": "Category",

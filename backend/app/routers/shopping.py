@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import HouseholdMember, ShoppingItem, ShoppingList
 from app.services.client_ids import commit_or_get_existing, get_existing_by_client_id
@@ -117,7 +118,10 @@ class ShoppingListCreate(BaseModel):
         return v.strip()
 
 
-class ShoppingListUpdate(BaseModel):
+class ShoppingListUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von ShoppingList → 422 (app/core/patch_schema.py)
+    __orm_model__ = ShoppingList
+
     name: str | None = Field(None, min_length=1, max_length=100)
     icon: str | None = Field(None, max_length=50)
     position: int | None = None
@@ -179,7 +183,10 @@ class ShoppingItemCreate(BaseModel):
         return normalize_store(v)
 
 
-class ShoppingItemUpdate(BaseModel):
+class ShoppingItemUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von ShoppingItem → 422 (app/core/patch_schema.py)
+    __orm_model__ = ShoppingItem
+
     name: str | None = Field(None, min_length=1, max_length=200)
     quantity: str | None = Field(None, max_length=50)
     category: str | None = Field(None, max_length=50)

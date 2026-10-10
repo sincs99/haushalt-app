@@ -3,11 +3,12 @@ import zoneinfo
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import (
     PLANT_CARE_TYPES,
@@ -51,19 +52,16 @@ class PlantCreate(BaseModel):
     care_notes: str | None = Field(None, max_length=2000)
 
 
-class PlantUpdate(BaseModel):
+class PlantUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Plant → 422 (app/core/patch_schema.py)
+    __orm_model__ = Plant
+
     name: str | None = Field(None, min_length=1, max_length=80)
     species: str | None = Field(None, max_length=80)
     location: str | None = Field(None, max_length=80)
     notes: str | None = Field(None, max_length=1000)
     care_notes: str | None = Field(None, max_length=2000)
     photo_file_id: uuid.UUID | None = None
-
-    @model_validator(mode="after")
-    def _name_not_null(self):
-        if "name" in self.model_fields_set and self.name is None:
-            raise ValueError("name must not be null")
-        return self
 
 
 class PlantResponse(BaseModel):
@@ -92,17 +90,13 @@ class CareTaskCreate(BaseModel):
         return _validate_care_type(v)
 
 
-class CareTaskUpdate(BaseModel):
+class CareTaskUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von PlantCareTask → 422 (app/core/patch_schema.py)
+    __orm_model__ = PlantCareTask
+
     label: str | None = Field(None, max_length=100)
     interval_days: int | None = Field(None, ge=1, le=3650)
     next_due_at: date | None = None
-
-    @model_validator(mode="after")
-    def _not_null(self):
-        for key in ("interval_days", "next_due_at"):
-            if key in self.model_fields_set and getattr(self, key) is None:
-                raise ValueError(f"{key} must not be null")
-        return self
 
 
 class CareTaskResponse(BaseModel):

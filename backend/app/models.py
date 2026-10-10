@@ -22,6 +22,10 @@ from sqlalchemy.orm import Mapped, mapped_column, object_session, relationship
 
 from app.database import Base
 
+# NOT-NULL-JSON-Spalten: Python-None wird SQL-NULL (verletzt den Constraint → Fehler)
+# statt des JSON-Literals 'null', das NOT NULL erfüllt und Lesepfade bricht (CASA-04).
+NonNullJSON = JSON(none_as_null=True)
+
 
 class SyncVersionMixin:
     """Änderungs-Metadaten für Offline-Sync (docs/offline-first-phase2.md, B2).
@@ -359,7 +363,7 @@ class Todo(SyncVersionMixin, Base):
     done_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, server_default="[]")
+    tags: Mapped[list[str]] = mapped_column(NonNullJSON, nullable=False, server_default="[]")
 
     household: Mapped["Household"] = relationship(back_populates="todos")
     reminders: Mapped[list["TodoReminder"]] = relationship(
@@ -605,7 +609,7 @@ class Chore(Base):
     )
     weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)
     day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    rotation_order: Mapped[list] = mapped_column(JSON, nullable=False)
+    rotation_order: Mapped[list] = mapped_column(NonNullJSON, nullable=False)
     next_rotation_index: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0"
     )
@@ -710,7 +714,7 @@ class Event(Base):
         DateTime(timezone=True), nullable=True
     )
     all_day: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    participant_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    participant_ids: Mapped[list] = mapped_column(NonNullJSON, nullable=False, default=list)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_by_user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False
@@ -1091,9 +1095,9 @@ class Recipe(Base):
     servings: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2")
     cost_rappen: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    ingredients: Mapped[list] = mapped_column(JSON, nullable=False, server_default="[]")
-    steps: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
-    tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
+    ingredients: Mapped[list] = mapped_column(NonNullJSON, nullable=False, server_default="[]")
+    steps: Mapped[list] = mapped_column(NonNullJSON, nullable=False, default=list, server_default="[]")
+    tags: Mapped[list] = mapped_column(NonNullJSON, nullable=False, default=list, server_default="[]")
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

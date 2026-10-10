@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import HouseholdMember, Todo, TodoReminder
 from app.services.client_ids import commit_or_get_existing, get_existing_by_client_id
@@ -77,7 +78,10 @@ class TodoCreate(BaseModel):
         return v
 
 
-class TodoUpdate(BaseModel):
+class TodoUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Todo → 422 (app/core/patch_schema.py)
+    __orm_model__ = Todo
+
     title: str | None = Field(None, min_length=1, max_length=200)
     description: str | None = None
     assigned_to_user_id: uuid.UUID | None = None

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Expense, ExpenseShare, Household, HouseholdMember
 from app.services.household_checks import assert_users_allowed, assert_users_in_household
@@ -55,7 +56,10 @@ class ExpenseCreate(BaseModel):
         return self
 
 
-class ExpenseUpdate(BaseModel):
+class ExpenseUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Expense → 422 (app/core/patch_schema.py)
+    __orm_model__ = Expense
+
     description: str | None = Field(None, min_length=1, max_length=200)
     amount_rappen: int | None = Field(None, gt=0)
     currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")

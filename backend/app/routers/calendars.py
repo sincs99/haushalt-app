@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Calendar, Event, HouseholdMember
 from app.socket_manager import emit_to_household_sync
@@ -37,7 +38,10 @@ class CalendarCreate(BaseModel):
         return v
 
 
-class CalendarUpdate(BaseModel):
+class CalendarUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Calendar → 422 (app/core/patch_schema.py)
+    __orm_model__ = Calendar
+
     name: str | None = Field(None, min_length=1, max_length=50)
     color: str | None = Field(None, max_length=7)
     position: int | None = Field(None, ge=0)

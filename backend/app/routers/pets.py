@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import (
     FeedingLog,
@@ -58,7 +59,10 @@ class PetCreate(BaseModel):
     health_entries: list[HealthEntrySchema] | None = Field(None, max_length=50)
 
 
-class PetUpdate(BaseModel):
+class PetUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Pet → 422 (app/core/patch_schema.py)
+    __orm_model__ = Pet
+
     name: str | None = Field(None, min_length=1, max_length=80)
     species: str | None = Field(None, max_length=30)
     breed: str | None = Field(None, max_length=80)
@@ -143,7 +147,10 @@ class CareTaskCreate(BaseModel):
     next_due_at: date
 
 
-class CareTaskUpdate(BaseModel):
+class CareTaskUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von PetCareTask → 422 (app/core/patch_schema.py)
+    __orm_model__ = PetCareTask
+
     name: str | None = Field(None, min_length=1, max_length=100)
     interval_days: int | None = Field(None, ge=1, le=3650)
     next_due_at: date | None = None
@@ -170,7 +177,10 @@ class MedicationCreate(BaseModel):
     active: bool = True
 
 
-class MedicationUpdate(BaseModel):
+class MedicationUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Medication → 422 (app/core/patch_schema.py)
+    __orm_model__ = Medication
+
     name: str | None = Field(None, min_length=1, max_length=100)
     dosage: str | None = Field(None, max_length=50)
     schedule: str | None = Field(None, max_length=100)

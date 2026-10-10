@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Expense, ExpenseShare, Household, HouseholdMember, RecurringBill
 from app.routers.expenses import ExpenseResponse, split_evenly
@@ -31,7 +32,10 @@ class RecurringBillCreate(BaseModel):
     paid_by_user_id: uuid.UUID | None = None
 
 
-class RecurringBillUpdate(BaseModel):
+class RecurringBillUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von RecurringBill → 422 (app/core/patch_schema.py)
+    __orm_model__ = RecurringBill
+
     name: str | None = Field(None, min_length=1, max_length=100)
     amount_rappen: int | None = Field(None, gt=0)
     day_of_month: int | None = Field(None, ge=1, le=28)

@@ -24,11 +24,12 @@ from fastapi import (
     status,
 )
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Document, DocumentFile, HouseholdMember, StoredFile
@@ -110,7 +111,10 @@ class DocumentFilesBody(BaseModel):
         return _unique_ids(v)
 
 
-class DocumentUpdate(BaseModel):
+class DocumentUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Document → 422 (app/core/patch_schema.py)
+    __orm_model__ = Document
+
     title: str | None = Field(None, min_length=1, max_length=150)
     category: DocumentCategory | None = None
     notes: str | None = Field(None, max_length=2000)
@@ -126,13 +130,6 @@ class DocumentUpdate(BaseModel):
     @classmethod
     def normalize_empty_notes(cls, v):
         return _normalize_notes(v)
-
-    @model_validator(mode="after")
-    def required_fields_not_null(self):
-        for name in ("title", "category"):
-            if name in self.model_fields_set and getattr(self, name) is None:
-                raise ValueError(f"{name} must not be null")
-        return self
 
 
 class DocumentResponse(BaseModel):

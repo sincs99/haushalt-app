@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Calendar, Event, Household, HouseholdMember
 from app.services.event_times import household_tz, range_bounds, to_household_time, to_utc
@@ -42,7 +43,10 @@ class EventCreate(BaseModel):
         return v
 
 
-class EventUpdate(BaseModel):
+class EventUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Event → 422 (app/core/patch_schema.py)
+    __orm_model__ = Event
+
     title: str | None = Field(None, min_length=1, max_length=150)
     starts_at: datetime | None = None
     ends_at: datetime | None = None

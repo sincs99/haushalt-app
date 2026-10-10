@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Chore, ChoreAssignment, Household, HouseholdMember
 from app.services.chore_scheduler import (
@@ -40,7 +41,10 @@ class ChoreCreate(BaseModel):
         return v
 
 
-class ChoreUpdate(BaseModel):
+class ChoreUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Chore → 422 (app/core/patch_schema.py)
+    __orm_model__ = Chore
+
     title: str | None = Field(None, min_length=1, max_length=100)
     description: str | None = Field(None, max_length=500)
     recurrence: str | None = None

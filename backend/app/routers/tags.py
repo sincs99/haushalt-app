@@ -34,6 +34,7 @@ from app.core.deps import (
     verify_household_admin,
 )
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Household, HouseholdMember, Tag, User
@@ -79,7 +80,10 @@ class TagCreate(BaseModel):
         return v.strip()
 
 
-class TagUpdate(BaseModel):
+class TagUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Tag → 422 (app/core/patch_schema.py)
+    __orm_model__ = Tag
+
     label: str | None = Field(None, min_length=1, max_length=80)
     enabled: bool | None = None
     # Chip neu zuordnen, ohne ihn neu zu beschreiben — wird zusammen validiert

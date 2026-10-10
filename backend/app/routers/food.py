@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import (
     HouseholdMember,
@@ -68,7 +69,10 @@ class RecipeCreate(BaseModel):
         return v
 
 
-class RecipeUpdate(BaseModel):
+class RecipeUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Recipe → 422 (app/core/patch_schema.py)
+    __orm_model__ = Recipe
+
     name: str | None = Field(None, min_length=1, max_length=150)
     servings: int | None = Field(None, ge=1)
     cost_rappen: int | None = Field(None, ge=0)
@@ -91,9 +95,10 @@ class RecipeUpdate(BaseModel):
 
     @field_validator("ingredients")
     @classmethod
-    def validate_ingredients(cls, v: list[str] | None) -> list[str] | None:
+    def validate_ingredients(cls, v: list[str] | None) -> list[str]:
+        # null → leere Liste wie bei steps/tags (Spalte ist NOT NULL, CASA-04)
         if v is None:
-            return v
+            return []
         for i, item in enumerate(v):
             if len(item) > 200:
                 raise ValueError(f"Ingredient at index {i} exceeds 200 characters")

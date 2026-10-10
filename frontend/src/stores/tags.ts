@@ -4,6 +4,7 @@ import { useAuthStore } from './auth'
 import { createOnlineTagsRepository } from '../repositories/tagsRepository'
 import type {
   TagCreatePayload,
+  TagExecuteParams,
   TagExecuteResult,
   TagInfo,
   TagResolveResult,
@@ -121,7 +122,7 @@ export const useTagsStore = defineStore('tags', () => {
     return repo.resolve(token)
   }
 
-  function executeToken(token: string, params?: { slot?: 'morning' | 'evening' }): Promise<TagExecuteResult> {
+  function executeToken(token: string, params?: TagExecuteParams): Promise<TagExecuteResult> {
     return repo.execute(token, params)
   }
 

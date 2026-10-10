@@ -39,7 +39,6 @@ from app.routers import (
     settlements,
     shopping,
     tags,
-    tasks,
     todos,
     widget,
 )
@@ -177,7 +176,6 @@ app.include_router(expenses.router)
 app.include_router(settlements.router)
 app.include_router(chores.router)
 app.include_router(dashboard.router)
-app.include_router(tasks.router)
 app.include_router(budgets.router)
 app.include_router(recurring_bills.router)
 app.include_router(events.router)

@@ -99,8 +99,8 @@ const combinedTasks = computed<DashboardTodoItem[]>(() => {
     ? data.value.chores.items.slice(0, remaining).map(c => ({
         id: c.id,
         title: c.title,
-        due_date: null,
-        is_overdue: false,
+        due_date: c.due_date,
+        is_overdue: c.is_overdue,
         type: 'chore' as const,
       }))
     : []
@@ -110,8 +110,10 @@ const combinedTasks = computed<DashboardTodoItem[]>(() => {
 
 // ── Overdue Badge ──
 const overdueBadge = computed(() => {
-  if (!data.value || data.value.todos.overdue_count === 0) return ''
-  return t('dashboard.overdueCount', { n: data.value.todos.overdue_count })
+  if (!data.value) return ''
+  // Todos und Ämtli: dieselbe Zählung wie die Liste darunter (CASA-43)
+  const n = data.value.todos.overdue_count + (data.value.chores.overdue_count ?? 0)
+  return n === 0 ? '' : t('dashboard.overdueCount', { n })
 })
 
 // ── Finance ──

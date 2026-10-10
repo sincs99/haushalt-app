@@ -13,6 +13,7 @@ import { useAuthStore } from '../stores/auth'
 import { useTagsStore } from '../stores/tags'
 import { formatDateShort } from '../utils/dates'
 import {
+  executeParams,
   moduleRouteFor,
   nextScanStep,
   plantWaterLines,
@@ -120,7 +121,8 @@ const detailLines = computed<string[]>(() => {
       }
       break
     case 'todo.done':
-      if (d.due_date) lines.push(t('tags.scan.dueDate', { date: formatDateShort(d.due_date) }))
+      // Todo-Fälligkeit ist ein Kalendertag (00:00 UTC gespeichert)
+      if (d.due_date) lines.push(t('tags.scan.dueDate', { date: formatDateShort(String(d.due_date).substring(0, 10)) }))
       if (d.assigned_user_name) lines.push(t('tags.scan.assignedTo', { name: d.assigned_user_name }))
       break
   }
@@ -170,8 +172,8 @@ async function execute() {
   if (!result.value || state.value !== 'confirm') return
   state.value = 'executing'
   try {
-    const params = result.value.action === 'pet.feed' ? { slot: slot.value } : undefined
-    execResult.value = await store.executeToken(token.value, params)
+    // confirm aus resolve mitschicken: execute ändert nur, was angezeigt wurde
+    execResult.value = await store.executeToken(token.value, executeParams(result.value, slot.value))
     state.value = 'done'
   } catch (err) {
     errorKind.value = scanErrorKind(err)
@@ -274,10 +276,10 @@ onMounted(resolve)
         <h1 class="scan-title">{{ $t(`tags.scan.errors.${errorKind}`) }}</h1>
         <div class="scan-actions">
           <BaseButton
-            v-if="errorKind === 'offline' || errorKind === 'rate_limited' || errorKind === 'unknown'"
+            v-if="errorKind === 'offline' || errorKind === 'rate_limited' || errorKind === 'unknown' || errorKind === 'stale'"
             @click="resolve"
           >
-            {{ $t('tags.scan.retry') }}
+            {{ errorKind === 'stale' ? $t('tags.scan.reload') : $t('tags.scan.retry') }}
           </BaseButton>
           <BaseButton variant="secondary" @click="goHome">{{ $t('tags.scan.toDashboard') }}</BaseButton>
         </div>

@@ -99,3 +99,9 @@ test('tells the service worker the current household (CASA-40)', async () => {
   await vi.waitFor(() => expect(postMessage).toHaveBeenLastCalledWith({ type: 'casa:current-household', householdId: null }))
   expect(postMessage).toHaveBeenCalledTimes(2)
 })
+
+test('refreshes after pet deletion and removed chore assignments (CASA-43)', async () => {
+  const badge = await load()
+  expect(badge.BADGE_EVENTS).toContain('pet_deleted')
+  expect(badge.BADGE_EVENTS).toContain('chore_assignments_deleted')
+})

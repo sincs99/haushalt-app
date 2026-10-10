@@ -105,7 +105,6 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`app/routers/households.py`](../backend/app/routers/households.py) | 9 Endpoints: Haushalt erstellen/umbenennen/beitreten/verlassen, Mitglieder, Einladungscode (anzeigen/erneuern, mit Ablaufdatum), Mitglied entfernen, Finanz-Zusammenfassung; Beitritt mit Rate-Limit | ✅ Fertig |
 | [`app/routers/shopping.py`](../backend/app/routers/shopping.py) | 10 Endpoints: Einkaufslisten (`list_router`) und Einkaufseinträge inkl. Geschäfts-Verwaltung (`router`) + Socket-Events | ✅ Fertig |
 | [`app/routers/todos.py`](../backend/app/routers/todos.py) | 7 Endpoints: Todos (CRUD, Claim) und Erinnerungen + Socket-Events | ✅ Fertig |
-| [`app/routers/tasks.py`](../backend/app/routers/tasks.py) | 1 Endpoint: vereinte Aufgabenliste (Todos + Putzplan-Zuweisungen) | ✅ Fertig |
 | [`app/routers/expenses.py`](../backend/app/routers/expenses.py) | 5 Endpoints: Ausgaben (CRUD, Split even/custom) und Salden; Pydantic-Schemas inline | ✅ Fertig |
 | [`app/routers/settlements.py`](../backend/app/routers/settlements.py) | 3 Endpoints: Ausgleichszahlungen (GET/POST/DELETE) + Socket-Events | ✅ Fertig |
 | [`app/routers/chores.py`](../backend/app/routers/chores.py) | 8 Endpoints: Ämtli (CRUD) und Zuweisungen (Liste, abhaken, rückgängig, neu zuweisen) + Socket-Events | ✅ Fertig |
@@ -255,7 +254,6 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`stores/auth.ts`](../frontend/src/stores/auth.ts) | Login, Register (+ Invite-Code), Token-Persistenz und -Refresh, fetchMe, Haushalt-Wechsel, Socket-Handler (`household_*`) | ✅ Fertig |
 | [`stores/shopping.ts`](../frontend/src/stores/shopping.ts) | Einkauf: Listen und Einträge, Optimistic Updates, Race-Condition-Schutz, Geschäfts-Verwaltung | ✅ Fertig |
 | [`stores/todos.ts`](../frontend/src/stores/todos.ts) | Todos: CRUD, Claim, Erinnerungen, Optimistic Updates | ✅ Fertig |
-| [`stores/tasks.ts`](../frontend/src/stores/tasks.ts) | Vereinte Aufgabenliste (Todos + Putzplan) | ✅ Fertig |
 | [`stores/chores.ts`](../frontend/src/stores/chores.ts) | Ämtli: CRUD, Optimistic Updates, Toggle-Mutex, Socket-Handler | ✅ Fertig |
 | [`stores/expenses.ts`](../frontend/src/stores/expenses.ts) | Ausgaben: CRUD, Socket-Handler, debounced Balances-Refetch | ✅ Fertig |
 | [`stores/settlements.ts`](../frontend/src/stores/settlements.ts) | Ausgleichszahlungen: CRUD, Socket-Handler | ✅ Fertig |
@@ -270,7 +268,6 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | **Repositories** (Offline-Ready Seam, aktuell nur Online-Variante) | | |
 | [`repositories/shoppingRepository.ts`](../frontend/src/repositories/shoppingRepository.ts) | Einkaufslisten, Einträge, Geschäfte | ✅ Fertig |
 | [`repositories/todosRepository.ts`](../frontend/src/repositories/todosRepository.ts) | Todos und Erinnerungen | ✅ Fertig |
-| [`repositories/tasksRepository.ts`](../frontend/src/repositories/tasksRepository.ts) | Vereinte Aufgabenliste | ✅ Fertig |
 | [`repositories/householdsRepository.ts`](../frontend/src/repositories/householdsRepository.ts) | Beitreten, Einladungscode, Mitglieder, Erstellen, Umbenennen, Verlassen, Entfernen | ✅ Fertig |
 | [`repositories/expensesRepository.ts`](../frontend/src/repositories/expensesRepository.ts) | Ausgaben (CRUD + Balances) | ✅ Fertig |
 | [`repositories/settlementsRepository.ts`](../frontend/src/repositories/settlementsRepository.ts) | Ausgleichszahlungen | ✅ Fertig |
@@ -382,11 +379,10 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | DELETE | `/api/households/{id}/members/{user_id}` | ✅ Admin | Mitglied entfernen (204) |
 | GET | `/api/households/{id}/finance-summary` | ✅ | Finanz-Zusammenfassung eines Monats (`month`, Default aktueller Monat) |
 | **Dashboard und Aufgaben** | | | |
-| GET | `/api/households/{id}/dashboard` | ✅ | Aggregierte Startseite (Aufgaben, Einkauf, Finanzen) |
+| GET | `/api/households/{id}/dashboard` | ✅ | Aggregierte Startseite (Aufgaben, Ämtli heute + überfällig wie die Badge-Zahl, Einkauf, Finanzen) |
 | GET | `/api/households/{id}/dashboard/badge` | ✅ | Zahl am App-Icon für die aufrufende Person (`{count}`) |
 | GET/POST/DELETE | `/api/households/{id}/widget-token` | ✅ | Nur-Lese-Schlüssel fürs Homescreen-Widget anzeigen/erzeugen/widerrufen |
 | GET | `/api/widget/summary` | Widget-Schlüssel | Widget-Daten (fällig heute, Einkauf, Termine) — [`widget.md`](widget.md) |
-| GET | `/api/households/{id}/tasks` | ✅ | Vereinte Aufgabenliste (Todos + Putzplan-Zuweisungen) |
 | **Einkauf** | | | |
 | GET | `/api/households/{id}/shopping-lists/` | ✅ | Einkaufslisten |
 | POST | `/api/households/{id}/shopping-lists/` | ✅ | Liste erstellen |
@@ -404,7 +400,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | PATCH | `/api/households/{id}/todos/{todo_id}` | ✅ | Todo aktualisieren |
 | DELETE | `/api/households/{id}/todos/{todo_id}` | ✅ | Todo löschen |
 | POST | `/api/households/{id}/todos/{todo_id}/claim` | ✅ | Todo übernehmen |
-| POST | `/api/households/{id}/todos/{todo_id}/reminders/` | ✅ | Erinnerung anlegen (maximal 5 pro Todo) |
+| POST | `/api/households/{id}/todos/{todo_id}/reminders/` | ✅ | Erinnerung anlegen (maximal 5 pro Todo; nicht an erledigte Todos → 422 `TODO_IS_DONE`; `remind_at` ohne Offset = Wanduhrzeit des Haushalts, wie bei Terminen; Vergangenheit → 422 `REMINDER_IN_PAST`). Erledigen markiert Erinnerungen nicht mehr; Wiedereröffnen schaltet künftige wieder scharf |
 | DELETE | `/api/households/{id}/todos/{todo_id}/reminders/{reminder_id}` | ✅ | Erinnerung löschen |
 | **Expenses** | | | |
 | GET | `/api/households/{id}/expenses/` | ✅ | Ausgaben-Liste (nach Datum absteigend, `limit`/`offset`) |
@@ -428,7 +424,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | **Chores** | | | |
 | GET | `/api/households/{id}/chores/` | ✅ | Ämtli-Liste (inkl. inaktive) |
 | POST | `/api/households/{id}/chores/` | ✅ | Ämtli erstellen (Validierung, `anchor_date`) |
-| PATCH | `/api/households/{id}/chores/{chore_id}` | ✅ | Ämtli aktualisieren (Schedule-Änderung → zukünftige Zuweisungen gelöscht) |
+| PATCH | `/api/households/{id}/chores/{chore_id}` | ✅ | Ämtli aktualisieren. Zeitplanänderung → offene künftige Zuweisungen gelöscht, neu ab `anchor_date` (nie überfällig); Pausieren → offene Zuweisungen ab heute gelöscht (Rotationsplätze zurück); Reaktivieren → neuer `anchor_date` ab heute, kein Nachholen (PD-C1) |
 | DELETE | `/api/households/{id}/chores/{chore_id}` | ✅ | Ämtli + Zuweisungen löschen |
 | GET | `/api/households/{id}/chores/assignments` | ✅ | Zuweisungen (`from`/`to`; triggert Materialisierung, Fenster max. 92 Tage) |
 | POST | `/api/households/{id}/chores/assignments/{assignment_id}/complete` | ✅ | Zuweisung abhaken (idempotent) |
@@ -515,8 +511,8 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | PATCH | `/api/households/{id}/tags/{tag_id}` | ✅ Admin | Bezeichnung, aktiv/deaktiviert, Ziel/Aktion neu zuordnen |
 | POST | `/api/households/{id}/tags/{tag_id}/regenerate-token` | ✅ Admin | Neuer Token, alter Chip/QR-Code wird wirkungslos |
 | DELETE | `/api/households/{id}/tags/{tag_id}` | ✅ Admin | Tag löschen |
-| POST | `/api/tags/resolve/{token}` | ✅ Mitglied | Was der Tag tut (keine Mutation; 30/min/IP) |
-| POST | `/api/tags/{token}/execute` | ✅ Mitglied | Aktion ausführen (30/min/IP) |
+| POST | `/api/tags/resolve/{token}` | ✅ Mitglied | Was der Tag tut (keine Mutation; 30/min/IP); liefert `confirm` (angezeigte Zuweisung bzw. Gießaufgaben) |
+| POST | `/api/tags/{token}/execute` | ✅ Mitglied | Aktion ausführen (30/min/IP). `chore.assignment.done` und `plant.water` verlangen `confirm` aus resolve (fehlt → 422 `TAG_CONFIRMATION_REQUIRED`, veraltet → 409 `TAG_CONFIRMATION_STALE`). Idempotent pro Haushaltstag: schon erledigt → `changed=false`, `reason=ALREADY_DONE` |
 | **Health** | | | |
 | GET | `/api/health` | ❌ | Health-Check mit DB-Prüfung |
 
@@ -547,7 +543,7 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `shopping_items_bulk_updated` | Server → Room | `{ item_ids, changes: { store } }` |
 | **Todos** | | |
 | `todo_created` | Server → Room | `TodoItem` |
-| `todo_updated` | Server → Room | `TodoItem` (auch bei Claim und Erinnerungen) |
+| `todo_updated` | Server → Room | `TodoItem` (auch bei Claim und Erinnerungen; Erinnerung anlegen/löschen erhöht `version`) |
 | `todo_deleted` | Server → Room | `{ id }` |
 | **Expenses** | | |
 | `expense_created` | Server → Room | `ExpenseResponse` (inkl. shares; auch beim Buchen einer Rechnung) |
@@ -567,8 +563,9 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `chore_created` | Server → Room | `ChoreResponse` |
 | `chore_updated` | Server → Room | `ChoreResponse` |
 | `chore_deleted` | Server → Room | `{ id, household_id }` |
-| `chore_assignment_created` | Server → Room | `ChoreAssignmentResponse` |
+| `chore_assignment_created` | Server → Room | `ChoreAssignmentResponse` — bei jeder Materialisierung (Putzplan, Tag-Scan, Push-Scheduler, Zeitplanänderung) |
 | `chore_assignment_updated` | Server → Room | `ChoreAssignmentResponse` (abhaken, rückgängig, neu zuweisen) |
+| `chore_assignments_deleted` | Server → Room | `{chore_id, household_id, ids}` — Zeitplanänderung oder Pause hat offene Zuweisungen gelöscht; Clients entfernen sie |
 | **Kalender** | | |
 | `calendar_created` | Server → Room | `CalendarResponse` |
 | `calendar_updated` | Server → Room | `CalendarResponse` |
@@ -1081,7 +1078,7 @@ Die Nummerierung ist die der Dokumentation und nicht identisch mit den „Epic-N
 ### Epic 11: Aufgaben 2.0 – Unified Tasks ✅
 - **Abgeschlossen:** 2026-08-07
 - **Umfang:** Aufgaben-View vereinigt Todos + Chore-Assignments in einer Timeline-Ansicht (Überfällig / Heute / Diese Woche / Später). Todo-Tags, Todo-Claim, Personen-Filter (PillTabs)
-- **Backend:** `app/routers/tasks.py` – Unified Tasks Endpoint (merges todos + chore assignments), `Todo.tags` JSON-Feld, Claim-Endpoint
+- **Backend:** `app/routers/tasks.py` – Unified Tasks Endpoint (merges todos + chore assignments), `Todo.tags` JSON-Feld, Claim-Endpoint (2026-10: entfernt — nicht genutzt, PD-C2)
 - **Migration:** `e6cbf2921e48` (add_tags_to_todos)
 - **Frontend:** `TodosView.vue` (komplett neu als Unified Tasks), `stores/tasks.ts`, `repositories/tasksRepository.ts`, UnifiedTask-Type
 - **Tests:** `test_todo_tags.py`, `test_todo_claim.py`
@@ -1299,7 +1296,7 @@ Die Nummerierung ist die der Dokumentation und nicht identisch mit den „Epic-N
 ### Epic 32: Tags (NFC-Chips / QR-Sticker) ✅
 - **Abgeschlossen:** 2026-10-06 (Branch `claude/nfc-qr-tags`)
 - **Umfang:** Physische Tags, die beim Scannen eine Ein-Tipp-Aktion auslösen. Auf Chip bzw. QR-Code steht nur `https://<host>/t/<token>`; das Betriebssystem öffnet die URL in der installierten PWA (iOS kann Web NFC nicht, liest NFC-URLs aber nativ). Ziel und Aktion liegen in der Datenbank.
-- **Aktionen (Registry `app/services/tag_actions.py`):** `pet.feed` (ein Tier oder alle; Slot nach Tageszeit, ab 14 Uhr Abend, auf der Bestätigungsseite umschaltbar), `pet.care_task.done`, `chore.assignment.done` (jüngste offene Zuweisung bis heute, sonst die nächste innerhalb von 6 Tagen; ältere offene bleiben), `shopping_list.open` (nur Navigation), `todo.done` (idempotent). Mutationen rufen die bestehenden Endpoint-Funktionen der Module auf (gleiche Validierung und Socket-Events). Keine Lösch-Aktionen. Ein neuer Zieltyp (z. B. `plant.water`) braucht nur einen Registry-Eintrag plus i18n-Keys; Anleitung im Modulkopf.
+- **Aktionen (Registry `app/services/tag_actions.py`):** `pet.feed` (ein Tier oder alle; Slot nach Tageszeit, ab 14 Uhr Abend, auf der Bestätigungsseite umschaltbar), `pet.care_task.done`, `chore.assignment.done` (Zuweisung der laufenden Periode = jüngste bis heute seit `anchor_date`, erledigt oder nicht, sonst die nächste innerhalb von 6 Tagen; ist sie erledigt → „schon erledigt“, Rückstand und nächste Periode bleiben unangetastet), `shopping_list.open` (nur Navigation), `todo.done` (idempotent). Mutationen rufen die bestehenden Endpoint-Funktionen der Module auf (gleiche Validierung und Socket-Events). Keine Lösch-Aktionen. Ein neuer Zieltyp (z. B. `plant.water`) braucht nur einen Registry-Eintrag plus i18n-Keys; Anleitung im Modulkopf.
 - **Geschäftsregeln:**
   - Anlegen, Ändern, Deaktivieren, Token neu erzeugen und Löschen nur für Admins; Liste und Ausführen für alle Mitglieder
   - Scan ohne Login → Login mit `redirect` zurück auf `/t/<token>`; die Aktion läuft erst nach Tipp auf der Bestätigungsseite (`*.open` navigiert direkt)

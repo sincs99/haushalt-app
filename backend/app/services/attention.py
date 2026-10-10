@@ -92,6 +92,7 @@ def due_items(db: Session, household: Household, user_id: uuid.UUID, locale: str
         .filter(
             ChoreAssignment.household_id == household.id,
             ChoreAssignment.completed_at.is_(None),
+            Chore.active.is_(True),  # pausierte Ämtli zählen nicht (CASA-17)
             ChoreAssignment.due_date <= today,
             ChoreAssignment.due_date >= today - CHORE_LOOKBACK,
             or_(

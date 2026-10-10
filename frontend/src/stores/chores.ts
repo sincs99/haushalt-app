@@ -95,13 +95,18 @@ export const useChoresStore = defineStore('chores', () => {
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    const updated = await repo.updateChore(householdId, choreId, payload)
     const idx = chores.value.findIndex(c => c.id === choreId)
+    const previous = idx !== -1 ? { ...chores.value[idx] } : null
+    const updated = await repo.updateChore(householdId, choreId, payload)
     if (idx !== -1) {
       chores.value[idx] = updated
     }
-    // Bei Schedule-Änderung: Assignments neu laden
-    if (payload.recurrence || payload.weekday !== undefined || payload.day_of_month !== undefined) {
+    // Zeitplan geändert, pausiert oder reaktiviert: der Server hat künftige Einträge
+    // gelöscht/neu angelegt → Assignments neu laden. Das UI sendet immer alle Felder,
+    // deshalb zählt nur eine echte Wertänderung.
+    const changed = (key: 'recurrence' | 'weekday' | 'day_of_month' | 'active') =>
+      payload[key] !== undefined && (!previous || previous[key] !== payload[key])
+    if (changed('recurrence') || changed('weekday') || changed('day_of_month') || changed('active')) {
       await fetchAssignments()
     }
     return updated
@@ -251,6 +256,12 @@ export const useChoresStore = defineStore('chores', () => {
     upsertVersioned(assignments.value, serverAssignment, false)
   }
 
+  /** Zeitplanänderung/Pause auf einem anderen Gerät: diese Einträge gibt es nicht mehr */
+  function handleAssignmentsDeleted(data: { chore_id: string; ids: string[] }) {
+    const gone = new Set(data.ids)
+    assignments.value = assignments.value.filter(a => !gone.has(a.id))
+  }
+
   return {
     // State
     chores,
@@ -273,5 +284,6 @@ export const useChoresStore = defineStore('chores', () => {
     handleChoreDeleted,
     handleAssignmentCreated,
     handleAssignmentUpdated,
+    handleAssignmentsDeleted,
   }
 })

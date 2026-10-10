@@ -10,8 +10,10 @@ from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.patch_schema import PatchModel
 from app.database import get_db
-from app.models import HouseholdMember, Todo, TodoReminder
+from app.models import Household, HouseholdMember, Todo, TodoReminder
 from app.services.client_ids import commit_or_get_existing, get_existing_by_client_id
+from app.services.event_times import household_tz, to_utc
+from app.services.household_checks import assert_users_allowed, assert_users_in_household
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -30,19 +32,9 @@ class TodoReminderResponse(BaseModel):
 
 
 class ReminderCreate(BaseModel):
+    # Mit Offset (das Frontend sendet ISO mit "Z") oder ohne: dann Wanduhrzeit des
+    # Haushalts — dieselbe Regel wie bei Termin-Uhrzeiten (services/event_times.py)
     remind_at: datetime
-
-    @field_validator("remind_at")
-    @classmethod
-    def remind_at_must_be_future(cls, v: datetime) -> datetime:
-        # Timezone-aware machen falls nötig
-        if v.tzinfo is None:
-            from datetime import timezone as tz
-
-            v = v.replace(tzinfo=tz.utc)
-        if v <= datetime.now(timezone.utc):
-            raise ValueError("remind_at must be in the future")
-        return v
 
 
 class TodoCreate(BaseModel):
@@ -197,6 +189,11 @@ def create_todo(
         response.status_code = status.HTTP_200_OK
         return existing
 
+    # Zuständige Person muss Mitglied sein (CASA-21; sonst 500 bei unbekannter ID
+    # bzw. eine Aufgabe, die niemandem zählt)
+    if body.assigned_to_user_id is not None:
+        assert_users_in_household(db, household_id, [body.assigned_to_user_id])
+
     todo = Todo(
         household_id=household_id,
         title=body.title,
@@ -245,19 +242,35 @@ def update_todo(
 
     update_data = body.model_dump(exclude_unset=True)
 
+    # Neue zuständige Person muss Mitglied sein; ein Ex-Mitglied, das schon
+    # eingetragen ist, darf beim Speichern stehen bleiben (CASA-21)
+    if update_data.get("assigned_to_user_id") is not None:
+        on_record = {item.assigned_to_user_id} if item.assigned_to_user_id else set()
+        assert_users_allowed(db, household_id, [update_data["assigned_to_user_id"]], on_record)
+
+    was_done = item.is_done
     for field, value in update_data.items():
         setattr(item, field, value)
 
-    # done_at Logik
+    # done_at Logik. Erinnerungen werden beim Erledigen NICHT als gesendet markiert
+    # (der Scheduler überspringt erledigte Todos) — sonst wären sie nach „Rückgängig“
+    # still verloren (CASA-06).
     if "is_done" in update_data:
         if update_data["is_done"] is True:
-            item.done_at = datetime.now(timezone.utc)
-            # F-04 Fix: Offene Reminders als notified markieren
-            for reminder in item.reminders:
-                if reminder.notified_at is None:
-                    reminder.notified_at = datetime.now(timezone.utc)
+            if not was_done:
+                item.done_at = datetime.now(timezone.utc)
         else:
             item.done_at = None
+            if was_done:
+                # Wiedereröffnet: künftige Erinnerungen wieder scharf schalten
+                # (auch solche, die ältere Versionen beim Erledigen markiert haben)
+                now = datetime.now(timezone.utc)
+                for reminder in item.reminders:
+                    remind_at = reminder.remind_at
+                    if remind_at.tzinfo is None:
+                        remind_at = remind_at.replace(tzinfo=timezone.utc)
+                    if reminder.notified_at is not None and remind_at > now:
+                        reminder.notified_at = None
 
     db.commit()
     db.refresh(item)
@@ -362,24 +375,43 @@ def create_reminder(
             detail=error_detail(ErrorCode.TODO_NOT_FOUND, "Todo not found"),
         )
 
-    # 2. Max 5 prüfen
+    # 2. Erledigte Aufgabe: Erinnerung würde nie gesendet (CASA-51)
+    if todo.is_done:
+        raise HTTPException(
+            status_code=422,
+            detail=error_detail(ErrorCode.TODO_IS_DONE, "Cannot add a reminder to a done todo"),
+        )
+
+    # 3. Zeitpunkt: ohne Offset = Wanduhrzeit des Haushalts; muss in der Zukunft liegen
+    household = db.get(Household, household_id)
+    remind_at = to_utc(body.remind_at, household_tz(household.timezone if household else None))
+    if remind_at <= datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=422,
+            detail=error_detail(ErrorCode.REMINDER_IN_PAST, "remind_at must be in the future"),
+        )
+
+    # 4. Max 5 prüfen
     if len(todo.reminders) >= 5:
         raise HTTPException(
             status_code=422,
             detail=error_detail(ErrorCode.TOO_MANY_REMINDERS, "Maximum 5 reminders per todo"),
         )
 
-    # 3. Erstellen
+    # 5. Erstellen; Todo-Version erhöhen, damit andere Clients das todo_updated-Event
+    # nicht als veraltet verwerfen (CASA-46)
     reminder = TodoReminder(
         household_id=household_id,
         todo_id=todo_id,
-        remind_at=body.remind_at,
+        remind_at=remind_at,
     )
     db.add(reminder)
+    todo.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(reminder)
 
-    # 4. Todo neu laden für Socket-Event
+    # 6. Todo neu laden für Socket-Event
+    db.refresh(todo)
     db.refresh(todo, attribute_names=["reminders"])
     emit_to_household_sync(household_id, "todo_updated", _todo_response(todo))
 
@@ -417,10 +449,12 @@ def delete_reminder(
             detail=error_detail(ErrorCode.REMINDER_NOT_FOUND, "Reminder not found"),
         )
 
-    # 3. Löschen
+    # 3. Löschen (Todo-Version erhöhen, siehe create_reminder)
     db.delete(reminder)
+    todo.updated_at = datetime.now(timezone.utc)
     db.commit()
 
     # 4. Todo neu laden
+    db.refresh(todo)
     db.refresh(todo, attribute_names=["reminders"])
     emit_to_household_sync(household_id, "todo_updated", _todo_response(todo))

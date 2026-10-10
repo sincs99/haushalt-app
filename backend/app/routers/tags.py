@@ -150,11 +150,15 @@ class TagResolveResponse(BaseModel):
     details: dict[str, Any]
     can_execute: bool
     reason: str | None
+    # Bei execute unverändert mitschicken (CASA-18): angezeigte Zuweisung/Aufgaben
+    confirm: dict[str, Any] | None = None
 
 
 class TagExecuteRequest(BaseModel):
     # pet.feed: Slot überschreiben (Default nach Tageszeit)
     slot: Literal["morning", "evening"] | None = None
+    # Das ``confirm``-Objekt aus resolve (Pflicht bei chore.assignment.done, plant.water)
+    confirm: dict[str, Any] | None = None
 
 
 class TagExecuteResponse(BaseModel):
@@ -163,6 +167,8 @@ class TagExecuteResponse(BaseModel):
     household_id: uuid.UUID
     target_name: str | None
     changed: bool
+    # z. B. ALREADY_DONE, wenn ein wiederholter Scan nichts geändert hat
+    reason: str | None = None
     result: dict[str, Any]
 
 
@@ -482,6 +488,7 @@ def resolve_tag(
         details=description.details,
         can_execute=description.can_execute and not action.navigate_only,
         reason=description.reason,
+        confirm=description.confirm if description.can_execute else None,
     )
 
 
@@ -503,6 +510,15 @@ def execute_tag(
         )
 
     params = body.model_dump(exclude_none=True) if body else {}
+    if action.requires_confirm and not params.get("confirm"):
+        # Ohne Bestätigung aus resolve wüsste execute nicht, was angezeigt wurde
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.TAG_CONFIRMATION_REQUIRED,
+                "Resolve the tag first and send its 'confirm' object",
+            ),
+        )
     result = action.execute(ctx, params)
     target_name = _target_display_name(ctx.target) if ctx.target is not None else None
     _record_use(db, tag)
@@ -513,5 +529,6 @@ def execute_tag(
         household_id=household.id,
         target_name=target_name,
         changed=bool(result.get("changed", True)),
+        reason=result.get("reason"),
         result=result,
     )

@@ -203,9 +203,19 @@ describe('todos store', () => {
       expect(id).not.toBe('t1')
       expect(repo.create.mock.calls[0][1]).toMatchObject({ title: 'Alt', tags: ['x'] })
       expect(repo.update).toHaveBeenCalledWith('h1', id, { is_done: true })
-      // Nur die zukünftige Erinnerung wird wieder angelegt
+      // Nur die zukünftige Erinnerung wird wieder angelegt — vor dem Erledigt-Status
+      // (an erledigte Aufgaben lehnt der Server Erinnerungen ab)
       expect(repo.addReminder).toHaveBeenCalledTimes(1)
       expect(repo.addReminder).toHaveBeenCalledWith('h1', id, '2999-01-01T00:00:00Z')
+      expect(repo.addReminder.mock.invocationCallOrder[0]).toBeLessThan(repo.update.mock.invocationCallOrder[0])
+    })
+
+    it('does not restore reminders that were already sent', async () => {
+      const s = useTodosStore()
+      repo.create.mockImplementation(async (_h: string, p: { id: string; title: string }) => todo({ id: p.id, title: p.title }))
+      const sent = { ...reminder('r1', '2999-01-01T00:00:00Z'), notified_at: '2026-01-01T00:00:00Z' }
+      await s.restoreTodo(todo({ reminders: [sent] }))
+      expect(repo.addReminder).not.toHaveBeenCalled()
     })
 
     it('rethrows when the todo cannot be created', async () => {

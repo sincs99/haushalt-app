@@ -14,6 +14,14 @@ Regeln für alle Aktionen:
   (gleiche Validierung, gleiche Socket-Events) — keine eigene Logik hier.
 - **Keine Lösch-Aktionen.** Ein Tag kann von jedem gelesen werden, der den
   Sticker in die Hand bekommt; er darf höchstens etwas abhaken oder loggen.
+- **Idempotent pro Haushaltstag** (PD-T1): Ist das Ziel heute schon erledigt,
+  liefert execute ``changed=False`` mit ``reason="ALREADY_DONE"`` statt etwas
+  anderes (z. B. einen älteren Rückstand) abzuhaken. Parallele Scans werden über
+  Zeilensperren serialisiert (``services/locking.py``).
+- **Bestätigung angeheftet** (CASA-18): Aktionen mit ``requires_confirm`` liefern
+  bei resolve ein ``confirm``-Objekt (z. B. die angezeigte Zuweisung), das execute
+  mitschicken muss. Hat sich das Ziel seither geändert → 409
+  ``TAG_CONFIRMATION_STALE``; fehlt es → 422 ``TAG_CONFIRMATION_REQUIRED``.
 
 Neuen Zieltyp ergänzen (Beispiel: Pflanzen, ``plant.water``):
 
@@ -62,6 +70,7 @@ from app.models import (
     Todo,
     User,
 )
+from app.services.locking import lock_row
 
 # ---------------------------------------------------------------------------
 # Datentypen
@@ -99,6 +108,8 @@ class TagDescription:
     can_execute: bool = True
     # Maschinenlesbarer Grund für can_execute=False (z. B. ALREADY_DONE)
     reason: str | None = None
+    # Was execute zurückschicken muss (requires_confirm), z. B. {"assignment_id": …}
+    confirm: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -114,6 +125,8 @@ class TagAction:
     target_optional: bool = False
     # Frontend-Route für Navigations-Aktionen; erhält den Kontext
     navigate_to: Callable[[TagContext], str] | None = None
+    # execute verlangt das ``confirm``-Objekt aus resolve (CASA-18)
+    requires_confirm: bool = False
 
     @property
     def navigate_only(self) -> bool:
@@ -145,6 +158,40 @@ def _iso(value: date | datetime | None) -> str | None:
 
 def _household_now(household: Household) -> datetime:
     return datetime.now(zoneinfo.ZoneInfo(household.timezone or "Europe/Zurich"))
+
+
+def _already_done(**result: Any) -> dict[str, Any]:
+    """Ergebnis eines wiederholten Scans: nichts geändert (PD-T1)."""
+    return {"changed": False, "reason": "ALREADY_DONE", **result}
+
+
+def _confirm_ids(params: dict[str, Any], key: str) -> list[uuid.UUID]:
+    """IDs aus dem ``confirm``-Objekt von resolve; fehlt es → 422."""
+    confirm = params.get("confirm") or {}
+    raw = confirm.get(key) if isinstance(confirm, dict) else None
+    values = raw if isinstance(raw, list) else [raw]
+    try:
+        if raw is None:
+            raise ValueError
+        return [uuid.UUID(str(v)) for v in values]
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.TAG_CONFIRMATION_REQUIRED,
+                f"confirm.{key} from resolve is required",
+            ),
+        )
+
+
+def _stale() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=error_detail(
+            ErrorCode.TAG_CONFIRMATION_STALE,
+            "The target changed since the tag was scanned; scan again",
+        ),
+    )
 
 
 # Ab dieser Stunde (Haushalts-Zeitzone) loggt ein Fütterungs-Tag die Abendfütterung
@@ -213,10 +260,16 @@ def _describe_pet_feed(ctx: TagContext) -> TagDescription:
         }
         for p in pets
     ]
+    # Jede noch offene Mahlzeit ist erlaubt (PD-T2): Vorschlag nach Tageszeit,
+    # sonst die andere, falls dort noch ein Tier ungefüttert ist
+    unfed_slots = [s for s in ("morning", "evening") if any(not r[f"{s}_fed"] for r in pet_rows)]
+    if slot not in unfed_slots and unfed_slots:
+        slot = unfed_slots[0]
     unfed = [row for row in pet_rows if not row[f"{slot}_fed"]]
 
     details = {
         "slot": slot,
+        "unfed_slots": unfed_slots,
         "pets": pet_rows,
         "last_fed_at": _iso(last.fed_at) if last else None,
         "last_fed_slot": last.slot if last else None,
@@ -288,26 +341,39 @@ def _load_care_task(db: Session, household_id: uuid.UUID, target_id: uuid.UUID):
     return _get_scoped(db, PetCareTask, household_id, target_id)
 
 
+def _pet_today(ctx: TagContext) -> date:
+    from app.routers.pets import _get_household_today
+
+    return _get_household_today(ctx.db, ctx.household.id)
+
+
 def _describe_care_task_done(ctx: TagContext) -> TagDescription:
     task: PetCareTask = ctx.target
     pet = ctx.db.get(Pet, task.pet_id)
     pet_name = pet.name if pet else None
+    details = {
+        "pet_id": str(task.pet_id),
+        "pet_name": pet_name,
+        "interval_days": task.interval_days,
+        "next_due_at": _iso(task.next_due_at),
+        "last_done_at": _iso(task.last_done_at),
+    }
+    if task.last_done_at == _pet_today(ctx):
+        return TagDescription(task.name, f"'{task.name}' was already done today", details, False, "ALREADY_DONE")
     return TagDescription(
         target_name=task.name,
         description=f"Mark '{task.name}' as done" + (f" for {pet_name}" if pet_name else ""),
-        details={
-            "pet_id": str(task.pet_id),
-            "pet_name": pet_name,
-            "interval_days": task.interval_days,
-            "next_due_at": _iso(task.next_due_at),
-            "last_done_at": _iso(task.last_done_at),
-        },
+        details=details,
     )
 
 
 def _execute_care_task_done(ctx: TagContext, params: dict[str, Any]) -> dict[str, Any]:
     from app.routers.pets import CareTaskResponse, complete_care_task
 
+    # Sperre: parallele Scans laufen nacheinander, der zweite sieht „heute erledigt“
+    locked = lock_row(ctx.db, PetCareTask, ctx.target.id)
+    if locked is not None and locked.last_done_at == _pet_today(ctx):
+        return _already_done(care_task=CareTaskResponse.model_validate(locked).model_dump(mode="json"))
     task = complete_care_task(
         household_id=ctx.household.id,
         pet_id=ctx.target.pet_id,
@@ -365,8 +431,40 @@ def _status_row(item) -> dict[str, Any]:
     }
 
 
+def _plant_today(ctx: TagContext) -> date:
+    from app.routers.plants import _get_household_today
+
+    return _get_household_today(ctx.db, ctx.household.id)
+
+
+def _water_tasks_to_do(ctx: TagContext) -> tuple[list[PlantCareTask], bool]:
+    """Gießaufgaben, die ein Scan erledigen würde (PD-T1), und ob heute schon gegossen wurde.
+
+    Mit Ziel: die fälligen/überfälligen Gießaufgaben der Pflanze; ist keine fällig,
+    die früheste — ausser es wurde heute schon gegossen. Ohne Ziel: alle fälligen
+    Gießaufgaben des Haushalts.
+    """
+    today = _plant_today(ctx)
+    query = ctx.db.query(PlantCareTask).filter(
+        PlantCareTask.household_id == ctx.household.id,
+        PlantCareTask.care_type == "water",
+    )
+    if ctx.target is not None:
+        query = query.filter(PlantCareTask.plant_id == ctx.target.id)
+    tasks = query.order_by(PlantCareTask.next_due_at.asc(), PlantCareTask.id.asc()).all()
+    done_today = any(t.last_done_at == today for t in tasks)
+    due = [t for t in tasks if t.next_due_at <= today and t.last_done_at != today]
+    if due or ctx.target is None:
+        return due, done_today
+    if tasks and not done_today:
+        return [tasks[0]], done_today
+    return [], done_today
+
+
 def _describe_plant_water(ctx: TagContext) -> TagDescription:
     rows = [_status_row(item) for item in _plant_care_status(ctx)]
+    to_do, _ = _water_tasks_to_do(ctx)
+    confirm = {"task_ids": [str(t.id) for t in to_do]}
     if ctx.target is not None:
         row = next((r for r in rows if r["id"] == str(ctx.target.id)), None)
         details = {
@@ -378,53 +476,67 @@ def _describe_plant_water(ctx: TagContext) -> TagDescription:
         name = ctx.target.name
         if row is None or not row["has_water_task"]:
             return TagDescription(name, f"'{name}' has no watering task", details, False, "NO_WATER_TASK")
-        return TagDescription(name, f"Water {name}", details)
+        if not to_do:
+            return TagDescription(name, f"'{name}' was already watered today", details, False, "ALREADY_DONE")
+        return TagDescription(name, f"Water {name}", details, confirm=confirm)
 
     due = [r for r in rows if r["due"]]
     details = {"plants": rows, "due_count": len(due)}
     if not rows:
         return TagDescription(None, "No plants in this household", details, False, "NO_PLANTS")
-    if not due:
+    if not to_do:
         return TagDescription(None, "No plant needs water today", details, False, "NOTHING_DUE")
-    return TagDescription(None, "Water all plants that are due", details)
+    return TagDescription(None, "Water all plants that are due", details, confirm=confirm)
 
 
 def _execute_plant_water(ctx: TagContext, params: dict[str, Any]) -> dict[str, Any]:
-    from app.routers.plants import CareLogResponse, complete_care_task, water_all
+    """Gießt genau die bei resolve angezeigten Aufgaben (CASA-18), jede höchstens einmal pro Tag."""
+    from app.routers.plants import CareLogResponse, complete_care_task
 
     household_id = ctx.household.id
     if ctx.target is not None:
-        tasks = (
-            ctx.db.query(PlantCareTask)
+        has_water_task = (
+            ctx.db.query(PlantCareTask.id)
             .filter(
                 PlantCareTask.household_id == household_id,
                 PlantCareTask.plant_id == ctx.target.id,
                 PlantCareTask.care_type == "water",
             )
-            .all()
+            .first()
         )
-        if not tasks:
+        if has_water_task is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=error_detail(ErrorCode.TAG_NOTHING_TO_DO, "Plant has no watering task"),
             )
-        logs = [
-            complete_care_task(
-                household_id=household_id,
-                plant_id=ctx.target.id,
-                task_id=task.id,
-                body=None,
-                membership=ctx.membership,
-                db=ctx.db,
-            ).log
-            for task in tasks
-        ]
-    else:
-        logs = water_all(household_id=household_id, membership=ctx.membership, db=ctx.db)
-    return {
-        "changed": bool(logs),
-        "logs": [CareLogResponse.model_validate(log).model_dump(mode="json") for log in logs],
-    }
+
+    today = _plant_today(ctx)
+    logs = []
+    # Feste Reihenfolge der Sperren → keine Deadlocks zwischen parallelen Scans
+    for task_id in sorted(set(_confirm_ids(params, "task_ids")), key=str):
+        task = lock_row(ctx.db, PlantCareTask, task_id)
+        if (
+            task is None
+            or task.household_id != household_id
+            or task.care_type != "water"
+            or (ctx.target is not None and task.plant_id != ctx.target.id)
+        ):
+            continue
+        if task.last_done_at == today:
+            continue  # schon gegossen (anderer Scan, App) → nicht doppelt loggen
+        done = complete_care_task(
+            household_id=household_id,
+            plant_id=task.plant_id,
+            task_id=task.id,
+            body=None,
+            membership=ctx.membership,
+            db=ctx.db,
+        )
+        logs.append(done.log)
+    result = {"logs": [CareLogResponse.model_validate(log).model_dump(mode="json") for log in logs]}
+    if not logs:
+        return _already_done(**result)
+    return {"changed": True, **result}
 
 
 # ---------------------------------------------------------------------------
@@ -452,23 +564,30 @@ def _describe_plant_care_task_done(ctx: TagContext) -> TagDescription:
     plant = ctx.db.get(Plant, task.plant_id)
     plant_name = plant.name if plant else None
     name = _plant_task_name(task)
+    details = {
+        "plant_id": str(task.plant_id),
+        "plant_name": plant_name,
+        "care_type": task.care_type,
+        "interval_days": task.interval_days,
+        "next_due_at": _iso(task.next_due_at),
+        "last_done_at": _iso(task.last_done_at),
+    }
+    if task.last_done_at == _plant_today(ctx):
+        return TagDescription(name, f"'{name}' was already done today", details, False, "ALREADY_DONE")
     return TagDescription(
         target_name=name,
         description=f"Mark '{name}' as done" + (f" for {plant_name}" if plant_name else ""),
-        details={
-            "plant_id": str(task.plant_id),
-            "plant_name": plant_name,
-            "care_type": task.care_type,
-            "interval_days": task.interval_days,
-            "next_due_at": _iso(task.next_due_at),
-            "last_done_at": _iso(task.last_done_at),
-        },
+        details=details,
     )
 
 
 def _execute_plant_care_task_done(ctx: TagContext, params: dict[str, Any]) -> dict[str, Any]:
     from app.routers.plants import CareLogResponse, CareTaskResponse, complete_care_task
 
+    # Sperre: parallele Scans laufen nacheinander, der zweite sieht „heute erledigt“
+    locked = lock_row(ctx.db, PlantCareTask, ctx.target.id)
+    if locked is not None and locked.last_done_at == _plant_today(ctx):
+        return _already_done(care_task=CareTaskResponse.model_validate(locked).model_dump(mode="json"))
     done = complete_care_task(
         household_id=ctx.household.id,
         plant_id=ctx.target.plant_id,
@@ -506,32 +625,44 @@ def _load_chore(db: Session, household_id: uuid.UUID, target_id: uuid.UUID):
     return _get_scoped(db, Chore, household_id, target_id)
 
 
-def current_chore_assignment(ctx: TagContext) -> ChoreAssignment | None:
-    """Die Zuweisung, die ein Scan abhakt.
-
-    Materialisiert zuerst fällige Zuweisungen (wie GET /chores/assignments,
-    inkl. Socket-Events). „Aktuell“ ist die jüngste offene Zuweisung mit
-    Fälligkeit bis heute (laufende Periode, auch wenn überfällig); gibt es
-    keine, die nächste offene in den kommenden ``CHORE_EARLY_DAYS`` Tagen
-    (vorzeitig erledigt). Ältere offene Zuweisungen bleiben unangetastet.
-    """
+def _materialize_chore_assignments(ctx: TagContext) -> None:
+    """Fällige Zuweisungen anlegen (wie GET /chores/assignments, inkl. Socket-Events)."""
     from app.routers.chores import list_assignments
     from app.services.chore_scheduler import today_in_tz
 
-    household = ctx.household
-    today = today_in_tz(household.timezone)
-    # Fenster wie im Standard-Aufruf der Ansicht; materialisiert und emittiert
+    today = today_in_tz(ctx.household.timezone)
     list_assignments(
-        household_id=household.id,
+        household_id=ctx.household.id,
         from_date=today - timedelta(days=14),
         to_date=today + timedelta(days=CHORE_EARLY_DAYS),
         membership=ctx.membership,
         db=ctx.db,
     )
-    base = ctx.db.query(ChoreAssignment).filter(
-        ChoreAssignment.household_id == household.id,
-        ChoreAssignment.chore_id == ctx.target.id,
-        ChoreAssignment.completed_at.is_(None),
+
+
+def current_chore_assignment(ctx: TagContext, *, materialize: bool = True) -> ChoreAssignment | None:
+    """Die Zuweisung der laufenden Periode — erledigt oder nicht (CASA-05).
+
+    „Aktuell“ ist die jüngste Zuweisung mit Fälligkeit bis heute (auch wenn
+    überfällig oder schon erledigt); gibt es keine, die nächste in den kommenden
+    ``CHORE_EARLY_DAYS`` Tagen (vorzeitig erledigen). Ist sie erledigt, meldet der
+    Scan „schon erledigt“ — ältere offene Zuweisungen bleiben unangetastet, und
+    die nächste Periode wird nicht vorzeitig abgehakt. Zuweisungen vor dem
+    ``anchor_date`` (alter Zeitplan, vor einer Pause) zählen nicht.
+    """
+    from app.services.chore_scheduler import today_in_tz
+
+    if materialize:
+        _materialize_chore_assignments(ctx)
+    today = today_in_tz(ctx.household.timezone)
+    base = (
+        ctx.db.query(ChoreAssignment)
+        .filter(
+            ChoreAssignment.household_id == ctx.household.id,
+            ChoreAssignment.chore_id == ctx.target.id,
+            ChoreAssignment.due_date >= ctx.target.anchor_date,
+        )
+        .execution_options(populate_existing=True)
     )
     current = (
         base.filter(ChoreAssignment.due_date <= today)
@@ -574,7 +705,14 @@ def _describe_chore_done(ctx: TagContext) -> TagDescription:
         return TagDescription(chore.title, f"'{chore.title}' is paused", details, False, "CHORE_INACTIVE")
     if assignment is None:
         return TagDescription(chore.title, f"Nothing due for '{chore.title}'", details, False, "NOTHING_DUE")
-    return TagDescription(chore.title, f"Mark '{chore.title}' as done", details)
+    if assignment.completed_at is not None:
+        return TagDescription(chore.title, f"'{chore.title}' is already done", details, False, "ALREADY_DONE")
+    return TagDescription(
+        chore.title,
+        f"Mark '{chore.title}' as done",
+        details,
+        confirm={"assignment_id": str(assignment.id)},
+    )
 
 
 def _execute_chore_done(ctx: TagContext, params: dict[str, Any]) -> dict[str, Any]:
@@ -585,15 +723,33 @@ def _execute_chore_done(ctx: TagContext, params: dict[str, Any]) -> dict[str, An
             status_code=status.HTTP_409_CONFLICT,
             detail=error_detail(ErrorCode.TAG_NOTHING_TO_DO, "Chore is paused"),
         )
-    assignment = current_chore_assignment(ctx)
-    if assignment is None:
+    confirmed_id = _confirm_ids(params, "assignment_id")[0]
+
+    # Erst materialisieren (sperrt/committet selbst), dann Ämtli und bestätigte
+    # Zuweisung sperren: parallele Scans laufen nacheinander (CASA-05)
+    _materialize_chore_assignments(ctx)
+    chore = lock_row(ctx.db, Chore, ctx.target.id)
+    if chore is None or not chore.active:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=error_detail(ErrorCode.TAG_NOTHING_TO_DO, "No open assignment for this chore"),
+            detail=error_detail(ErrorCode.TAG_NOTHING_TO_DO, "Chore is paused"),
         )
+    ctx.target = chore
+    confirmed = lock_row(ctx.db, ChoreAssignment, confirmed_id)
+    if confirmed is None or confirmed.chore_id != chore.id:
+        raise _stale()
+    if confirmed.completed_at is not None:
+        # Wiederholter oder paralleler Scan: nichts anderes abhaken
+        return _already_done(assignment=ChoreAssignmentResponse.model_validate(confirmed).model_dump(mode="json"))
+
+    current = current_chore_assignment(ctx, materialize=False)
+    if current is None or current.id != confirmed.id:
+        # Angezeigt war eine andere Periode (z. B. Mitternacht, Zeitplan geändert)
+        raise _stale()
+
     done = complete_assignment(
         household_id=ctx.household.id,
-        assignment_id=assignment.id,
+        assignment_id=confirmed.id,
         membership=ctx.membership,
         db=ctx.db,
     )
@@ -665,10 +821,11 @@ def _describe_todo_done(ctx: TagContext) -> TagDescription:
 def _execute_todo_done(ctx: TagContext, params: dict[str, Any]) -> dict[str, Any]:
     from app.routers.todos import TodoUpdate, _todo_response, update_todo
 
-    todo: Todo = ctx.target
+    # Sperre: parallele Scans laufen nacheinander, der zweite sieht is_done (CASA-29)
+    todo = lock_row(ctx.db, Todo, ctx.target.id) or ctx.target
     if todo.is_done:
-        # Idempotent: zweiter Scan ändert nichts (done_at bleibt)
-        return {"changed": False, "todo": _todo_response(todo)}
+        # Idempotent: zweiter Scan ändert nichts (done_at bleibt, kein weiteres Event)
+        return _already_done(todo=_todo_response(todo))
     updated = update_todo(
         household_id=ctx.household.id,
         todo_id=todo.id,
@@ -711,6 +868,7 @@ TAG_ACTIONS: dict[str, TagAction] = {
             describe=_describe_plant_water,
             execute=_execute_plant_water,
             target_optional=True,  # leer = alle fälligen Gießaufgaben (water-all)
+            requires_confirm=True,  # Gießaufgaben aus resolve (CASA-18)
         ),
         TagAction(
             key="plant.care_task.done",
@@ -727,6 +885,7 @@ TAG_ACTIONS: dict[str, TagAction] = {
             load_target=_load_chore,
             describe=_describe_chore_done,
             execute=_execute_chore_done,
+            requires_confirm=True,  # angezeigte Zuweisung (CASA-18)
         ),
         TagAction(
             key="shopping_list.open",

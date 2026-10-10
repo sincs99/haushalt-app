@@ -176,13 +176,17 @@ export const useTodosStore = defineStore('todos', () => {
       snapshot.tags?.length ? [...snapshot.tags] : undefined,
     )
     if (!newId) return newId
+    // Erinnerungen: nur ausstehende, best effort (Aufgabe ist bereits zurück).
+    // Vor dem Erledigt-Status anlegen — an erledigte Aufgaben lehnt der Server
+    // Erinnerungen ab (422); beim Wiedereröffnen sind sie dann noch da.
+    const now = Date.now()
+    const future = (snapshot.reminders ?? []).filter(
+      r => !r.notified_at && new Date(r.remind_at).getTime() > now,
+    )
+    await Promise.allSettled(future.map(r => addReminder(newId, r.remind_at)))
     if (snapshot.is_done) {
       await setDone(newId, true)
     }
-    // Erinnerungen: nur zukünftige, best effort (Aufgabe ist bereits zurück)
-    const now = Date.now()
-    const future = (snapshot.reminders ?? []).filter(r => new Date(r.remind_at).getTime() > now)
-    await Promise.allSettled(future.map(r => addReminder(newId, r.remind_at)))
     return newId
   }
 

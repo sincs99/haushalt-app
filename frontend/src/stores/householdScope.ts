@@ -25,7 +25,6 @@ import { usePetsStore } from './pets'
 import { usePlantsStore } from './plants'
 import { useNotesStore } from './notes'
 import { useFoodStore } from './food'
-import { useTasksStore } from './tasks'
 import { useAiStore } from './ai'
 import { useDocumentsStore } from './documents'
 import { useTagsStore } from './tags'
@@ -70,7 +69,6 @@ export function resetHouseholdScopedStores(): void {
   usePlantsStore().reset()
   useNotesStore().reset()
   useFoodStore().reset()
-  useTasksStore().reset()
   useAiStore().reset()
   useDocumentsStore().reset()
   useTagsStore().$reset()

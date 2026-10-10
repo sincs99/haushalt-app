@@ -18,7 +18,7 @@ import { useExpensesStore } from '../stores/expenses'
 import { useSettlementsStore } from '../stores/settlements'
 import { useChoresStore } from '../stores/chores'
 import { useFinanceStore } from '../stores/finance'
-import { useDashboardStore } from '../stores/dashboard'
+import { DASHBOARD_EXTRA_EVENTS, useDashboardStore } from '../stores/dashboard'
 import { usePollsStore } from '../stores/polls'
 import { usePetsStore } from '../stores/pets'
 import { usePlantsStore } from '../stores/plants'
@@ -61,6 +61,7 @@ export function useRealtimeSession(): { stop: () => void } {
     ['chore_deleted', choresStore.handleChoreDeleted],
     ['chore_assignment_created', choresStore.handleAssignmentCreated],
     ['chore_assignment_updated', choresStore.handleAssignmentUpdated],
+    ['chore_assignments_deleted', choresStore.handleAssignmentsDeleted],
     ['budget_updated', financeStore.handleBudgetUpdated],
     ['recurring_bill_created', financeStore.handleBillCreated],
     ['recurring_bill_updated', financeStore.handleBillUpdated],
@@ -94,6 +95,7 @@ export function useRealtimeSession(): { stop: () => void } {
       'pet_care_task_created', 'pet_care_task_updated', 'pet_care_task_deleted',
       'plant_care_task_created', 'plant_care_task_updated', 'plant_care_task_deleted',
       'plant_care_logged', 'plant_created', 'plant_deleted',
+      ...DASHBOARD_EXTRA_EVENTS,
     ].map((event): [string, () => void] => [event, dashboardStore.invalidate]),
     // Zahl am App-Icon aktuell halten
     ...BADGE_EVENTS.map((event): [string, () => void] => [event, refreshAppBadgeSoon]),

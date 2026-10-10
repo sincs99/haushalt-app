@@ -4,7 +4,7 @@
  * TagScanView ruft resolve auf und entscheidet hier, ob direkt navigiert,
  * eine Bestätigung gezeigt oder ein Hinweis angezeigt wird.
  */
-import type { TagResolveResult } from '../types'
+import type { TagExecuteParams, TagResolveResult } from '../types'
 
 export type ScanErrorKind =
   | 'not_found'
@@ -14,6 +14,7 @@ export type ScanErrorKind =
   | 'unsupported'
   | 'already_done'
   | 'nothing_to_do'
+  | 'stale'
   | 'rate_limited'
   | 'offline'
   | 'unknown'
@@ -57,6 +58,7 @@ export function scanErrorKind(err: any): ScanErrorKind {
     case 410:
       return 'disabled'
     case 409:
+      if (code === 'TAG_CONFIRMATION_STALE') return 'stale'
       return code === 'FEEDING_DUPLICATE' ? 'already_done' : 'nothing_to_do'
     case 422:
       return code === 'TAG_ACTION_INVALID' || code === 'TAG_NOT_EXECUTABLE' ? 'unsupported' : 'unknown'
@@ -65,6 +67,17 @@ export function scanErrorKind(err: any): ScanErrorKind {
     default:
       return 'unknown'
   }
+}
+
+/**
+ * Parameter für execute: die Bestätigung aus resolve (welche Zuweisung bzw.
+ * welche Gießaufgaben angezeigt wurden, CASA-18) und beim Füttern der Slot.
+ */
+export function executeParams(result: TagResolveResult, slot: 'morning' | 'evening'): TagExecuteParams {
+  const params: TagExecuteParams = {}
+  if (result.action === 'pet.feed') params.slot = slot
+  if (result.confirm) params.confirm = result.confirm
+  return params
 }
 
 /** URL, die auf Chip bzw. QR-Code kommt. */

@@ -45,7 +45,6 @@ import { usePollsStore } from '../polls'
 import { useCalendarStore } from '../calendar'
 import { useNotesStore } from '../notes'
 import { useFoodStore } from '../food'
-import { useTasksStore } from '../tasks'
 import { useTagsStore } from '../tags'
 import { useDocumentsStore } from '../documents'
 import { useAiStore } from '../ai'
@@ -105,8 +104,6 @@ const cases: Array<[string, () => Case]> = [
   ['notes.fetchMembers', () => { const s = useNotesStore(); return { name: 'members', fetch: () => s.fetchMembers(), read: () => s.members, data: list } }],
   ['food.fetchRecipes', () => { const s = useFoodStore(); return { name: 'recipes', fetch: () => s.fetchRecipes(), read: () => s.recipes, data: list } }],
   ['food.fetchWeekPlan', () => { const s = useFoodStore(); return { name: 'weekPlan', fetch: () => s.fetchWeekPlan('2026-10-05'), read: () => s.weekPlan, data: list } }],
-  ['tasks.fetchTasks', () => { const s = useTasksStore(); return { name: 'tasks', fetch: () => s.fetchTasks(), read: () => s.items, data: list } }],
-  ['tasks.fetchMembers', () => { const s = useTasksStore(); return { name: 'members', fetch: () => s.fetchMembers(), read: () => s.members, data: list } }],
   ['tags.fetchTags', () => { const s = useTagsStore(); return { name: 'tags', fetch: () => s.fetchTags(), read: () => s.items, data: list } }],
   ['tags.fetchTargets', () => { const s = useTagsStore(); return { name: 'targets', fetch: () => s.fetchTargets(), read: () => s.targets, data: list } }],
   ['documents.fetchDocuments', () => { const s = useDocumentsStore(); return { name: 'documents', fetch: () => s.fetchDocuments(), read: () => s.items, data: (hh) => ({ items: list(hh), total: 1 }) } }],

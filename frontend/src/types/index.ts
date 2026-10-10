@@ -89,18 +89,6 @@ export interface NoteItem {
   updated_at: string
 }
 
-// ── Unified Tasks ──
-
-export interface UnifiedTask {
-  type: 'todo' | 'chore'
-  id: string
-  title: string
-  due_date: string | null
-  assigned_to_user_id: string | null
-  tags: string[]
-  recurring: boolean
-}
-
 export interface UserInfo {
   id: string
   email: string
@@ -277,6 +265,7 @@ export interface HouseholdInfo {
   role: string
   currency: string  // z.B. "CHF" — vom Backend via GET /api/auth/me
   ai_enabled?: boolean  // Opt-in für den KI-Assistenten (nur Admins schalten um)
+  timezone?: string  // IANA-Zeitzone des Haushalts (z.B. "Europe/Zurich") — „heute“ für Fälligkeiten
 }
 
 export interface HouseholdMemberInfo {
@@ -372,10 +361,14 @@ export interface DashboardChoreItem {
   id: string
   title: string
   assigned_user_id: string | null
+  due_date: string            // "YYYY-MM-DD"
+  is_overdue: boolean
 }
 
 export interface DashboardChoreSection {
+  /** Heute fällig und überfällig (wie die Zahl am App-Icon), Überfällige zuerst */
   items: DashboardChoreItem[]
+  overdue_count: number
 }
 
 export interface DashboardShoppingSection {
@@ -1025,6 +1018,13 @@ export interface TagResolveResult {
   details: Record<string, any>
   can_execute: boolean
   reason: string | null
+  /** Bei execute unverändert zurückschicken (angezeigte Zuweisung/Aufgaben, CASA-18) */
+  confirm?: Record<string, unknown> | null
+}
+
+export interface TagExecuteParams {
+  slot?: 'morning' | 'evening'
+  confirm?: Record<string, unknown> | null
 }
 
 export interface TagExecuteResult {
@@ -1033,5 +1033,7 @@ export interface TagExecuteResult {
   household_id: string
   target_name: string | null
   changed: boolean
+  /** z. B. ALREADY_DONE: wiederholter Scan, nichts geändert */
+  reason?: string | null
   result: Record<string, any>
 }

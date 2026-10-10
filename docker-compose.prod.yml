@@ -18,18 +18,37 @@ services:
       timeout: 3s
       retries: 5
 
+  # Rate-Limit-Zähler und Socket.IO-Message-Queue für mehrere Backend-Prozesse.
+  # Nur flüchtige Daten (keine Persistenz, kein Volume).
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   backend:
     build: ./backend
     restart: unless-stopped
     # .env.prod liefert u. a. JWT_SECRET_KEY und optional ANTHROPIC_API_KEY /
-    # AI_DAILY_LIMIT_PER_HOUSEHOLD für den KI-Assistenten (leer = ausgeblendet)
+    # AI_DAILY_LIMIT_PER_HOUSEHOLD für den KI-Assistenten (leer = ausgeblendet),
+    # SMTP_* für E-Mails, BILLING_ENABLED/STRIPE_* für Tarife, SENTRY_DSN
     env_file: .env.prod
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://haushalt:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt in .env.prod}@postgres:5432/haushalt
       UPLOAD_DIR: /app/data/uploads
+      RATE_LIMIT_STORAGE_URI: ${RATE_LIMIT_STORAGE_URI:-redis://redis:6379/0}
+      SOCKETIO_MESSAGE_QUEUE: ${SOCKETIO_MESSAGE_QUEUE:-redis://redis:6379/1}
+      # Mehr als 1 Worker ist dank Redis möglich (CPU-Kerne beachten)
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
     volumes:
       - uploaddata:/app/data/uploads
     # Kein ports: — Backend nur über Frontend-Nginx erreichbar

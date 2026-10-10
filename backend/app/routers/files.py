@@ -20,12 +20,15 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.config import (
+    settings,  # noqa: F401 — Tests patchen settings.household_storage_quota_mb hierüber
+)
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Document, DocumentFile, HouseholdMember, Pet, Plant, StoredFile
+from app.services import entitlements
 from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
 
@@ -234,18 +237,20 @@ def household_storage_used(db: Session, household_id: uuid.UUID) -> int:
     )
 
 
-def household_storage_quota() -> int:
-    return settings.household_storage_quota_mb * 1024 * 1024
+def household_storage_quota(db: Session, household_id: uuid.UUID) -> int:
+    """Speicher-Limit des Haushalts in Bytes (abhängig vom Tarif, services/entitlements.py)."""
+    return entitlements.limits_for_household_id(db, household_id).storage_bytes
 
 
 def check_storage_quota(db: Session, household_id: uuid.UUID, incoming_bytes: int) -> None:
     """Wirft STORAGE_QUOTA_EXCEEDED, wenn die neue Datei die Quota sprengen würde."""
-    if household_storage_used(db, household_id) + incoming_bytes > household_storage_quota():
+    quota = household_storage_quota(db, household_id)
+    if household_storage_used(db, household_id) + incoming_bytes > quota:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=error_detail(
                 ErrorCode.STORAGE_QUOTA_EXCEEDED,
-                f"Household storage quota of {settings.household_storage_quota_mb} MB exceeded",
+                f"Household storage quota of {quota // (1024 * 1024)} MB exceeded",
             ),
         )
 

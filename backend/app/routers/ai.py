@@ -24,6 +24,7 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Household, HouseholdMember, User
+from app.services import entitlements
 from app.services.ai import plant_care, recipe, usage
 from app.services.ai.errors import (
     AiBusy,
@@ -99,7 +100,7 @@ def _settings_response(db: Session, household: Household) -> AiSettingsResponse:
         ai_enabled=household.ai_enabled,
         available=settings.ai_available,
         calls_today=usage.calls_today(db, household.id),
-        daily_limit=settings.ai_daily_limit_per_household,
+        daily_limit=usage.daily_limit(db, household.id),
     )
 
 
@@ -142,7 +143,14 @@ def require_ai_enabled(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=error_detail(ErrorCode.AI_NOT_CONFIGURED, "AI assistant is not configured"),
         )
-    if not _get_household(db, household_id).ai_enabled:
+    household = _get_household(db, household_id)
+    # Tarif-Schranke nur im SaaS-Betrieb; Self-Hosting mit Limit 0 meldet weiterhin 429
+    if settings.billing_enabled and not entitlements.limits_for_household(household).ai_included:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=error_detail(ErrorCode.PLAN_UPGRADE_REQUIRED, "AI assistant is not included in this plan"),
+        )
+    if not household.ai_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=error_detail(ErrorCode.AI_NOT_ENABLED, "AI assistant is not enabled for this household"),

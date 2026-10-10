@@ -24,8 +24,15 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except (JWTError, KeyError, ValueError):
         raise credentials_exception
 
-    if user is None:
+    if user is None or user.deleted_at is not None:
         raise credentials_exception
+    if not user.is_active:
+        # Gesperrt (Plattform-Admin): 401, damit der Client die Sitzung beendet —
+        # der Refresh-Token wurde beim Sperren widerrufen
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail(ErrorCode.ACCOUNT_DISABLED, "Account is disabled"),
+        )
     return user
 
 

@@ -33,6 +33,29 @@ const router = createRouter({
       component: () => import('../views/RegisterView.vue'),
     },
     {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: () => import('../views/ForgotPasswordView.vue'),
+    },
+    {
+      // Ziel des Links aus der «Passwort vergessen»-Mail
+      path: '/reset-password',
+      name: 'reset-password',
+      component: () => import('../views/ResetPasswordView.vue'),
+    },
+    {
+      // Ziel des Links aus der Bestätigungs-Mail (mit und ohne Login erreichbar)
+      path: '/verify-email',
+      name: 'verify-email',
+      component: () => import('../views/VerifyEmailView.vue'),
+    },
+    {
+      // Impressum, Datenschutz, AGB — ohne Login erreichbar (Pflicht vor der Anmeldung)
+      path: '/legal/:page(imprint|privacy|terms)',
+      name: 'legal',
+      component: () => import('../views/LegalView.vue'),
+    },
+    {
       path: '/no-household',
       name: 'no-household',
       component: () => import('../views/NoHouseholdView.vue'),
@@ -114,6 +137,13 @@ const router = createRouter({
       path: '/household',
       name: 'household',
       component: () => import('../views/HouseholdView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      // Betreiber-Ansicht; die View leitet Nicht-Admins zum Start um
+      path: '/admin',
+      name: 'admin',
+      component: () => import('../views/AdminView.vue'),
       meta: { requiresAuth: true },
     },
     {

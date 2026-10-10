@@ -280,7 +280,7 @@ def get_storage_usage(
 ):
     return {
         "used_bytes": household_storage_used(db, household_id),
-        "quota_bytes": household_storage_quota(),
+        "quota_bytes": household_storage_quota(db, household_id),
     }
 
 

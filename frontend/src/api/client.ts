@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig } from 'axios'
+import { isNativeApp } from '../services/platform'
 
 export const API_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -20,6 +21,11 @@ export const CSRF_HEADER_VALUE = 'casa'
  * Dev-Setup auf einem anderen Origin läuft) plus CSRF-Header.
  */
 export function authRequestConfig(extraHeaders: Record<string, string> = {}): AxiosRequestConfig {
+  if (isNativeApp()) {
+    // Native App: kein Cookie-Jar → ohne den Header liefert das Backend den
+    // Refresh-Token im Body (services/tokenStorage.ts, nativeRefreshToken)
+    return { headers: { ...extraHeaders } }
+  }
   return {
     withCredentials: true,
     headers: { [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE, ...extraHeaders },
@@ -29,12 +35,18 @@ export function authRequestConfig(extraHeaders: Record<string, string> = {}): Ax
 // URLs die NICHT refresht werden sollen (kein Retry bei 401)
 const AUTH_URLS = ['/api/auth/login', '/api/auth/refresh', '/api/auth/logout']
 
-// Request-Interceptor: JWT als Bearer-Token
+// Request-Interceptor: JWT als Bearer-Token + UI-Sprache (für System-Mails des Backends)
 api.interceptors.request.use(async (config) => {
   const { useAuthStore } = await import('../stores/auth')
   const authStore = useAuthStore()
   if (authStore.token) {
     config.headers.Authorization = `Bearer ${authStore.token}`
+  }
+  try {
+    const { default: i18n } = await import('../i18n')
+    config.headers['Accept-Language'] = i18n.global.locale.value
+  } catch {
+    // i18n nicht verfügbar (Tests) — Header weglassen
   }
   return config
 })

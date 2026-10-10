@@ -12,6 +12,8 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Budget, Calendar, Expense, Household, HouseholdMember, RecurringBill, User
+from app.services import entitlements
+from app.services import membership as membership_service
 from app.services.household_time import household_today
 from app.services.invite_code import (
     generate_unique_invite_code,
@@ -19,10 +21,7 @@ from app.services.invite_code import (
     new_invite_code_expiry,
     rotate_household_invite_code,
 )
-from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
-
-_storage = LocalStorageService()
 
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
@@ -173,42 +172,8 @@ def leave_household(
     """
     user_id = membership.user_id
 
-    # Alle Mitglieder dieses Haushalts zählen
-    all_members = (
-        db.query(HouseholdMember)
-        .filter(HouseholdMember.household_id == household_id)
-        .all()
-    )
-
-    if len(all_members) <= 1:
-        # Letztes Mitglied → Haushalt löschen
-        household = db.get(Household, household_id)
-        if household:
-            db.delete(household)  # CASCADE löscht members, expenses, etc.
-        db.commit()
-        # Hochgeladene Dateien (Dokumente, Fotos) mitlöschen — die DB-Einträge
-        # verschwinden per CASCADE, die Dateien auf der Platte sonst nie
-        try:
-            _storage.delete_household(str(household_id))
-        except Exception:
-            pass  # Best-effort, DB ist konsistent
+    if membership_service.leave(db, membership).household_deleted:
         return  # Kein Event nötig bei Löschung
-
-    # Prüfe ob Admin-Promotion nötig
-    is_admin = membership.role == "admin"
-    remaining = [m for m in all_members if m.id != membership.id]
-
-    if is_admin:
-        # Gibt es andere Admins?
-        other_admins = [m for m in remaining if m.role == "admin"]
-        if not other_admins:
-            # Kein anderer Admin → dienstältestes Mitglied promoten
-            # Sortierung: joined_at ASC, dann user_id ASC (deterministic tiebreaker)
-            promoted = sorted(remaining, key=lambda m: (m.joined_at, str(m.user_id)))[0]
-            promoted.role = "admin"
-
-    db.delete(membership)
-    db.commit()
 
     # Socket-Event NACH Commit; danach verlassen alle Verbindungen des Users
     # serverseitig den Room (REST ist bereits durch verify_household_access dicht)
@@ -518,6 +483,11 @@ def join_household(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=error_detail(ErrorCode.ALREADY_MEMBER, "Already a member of this household"),
+        )
+    if not entitlements.can_add_member(db, household):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=error_detail(ErrorCode.PLAN_MEMBER_LIMIT_REACHED, "This household has reached its member limit"),
         )
 
     # Membership anlegen

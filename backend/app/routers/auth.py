@@ -3,7 +3,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy import func
@@ -23,6 +23,7 @@ from app.core.security import (
 )
 from app.database import get_db
 from app.models import Household, HouseholdMember, RefreshToken, User
+from app.services import entitlements
 from app.services.invite_code import (
     generate_unique_invite_code,
     is_invite_code_expired,
@@ -70,6 +71,8 @@ class RegisterRequest(BaseModel):
     display_name: str
     household_name: str | None = None
     invite_code: str | None = None
+    # Zustimmung zu Nutzungsbedingungen und Datenschutz (Pflicht bei LEGAL_TERMS_REQUIRED)
+    accept_terms: bool = False
 
     @model_validator(mode="after")
     def exactly_one_household_method(self):
@@ -105,12 +108,16 @@ class HouseholdOut(BaseModel):
     role: str
     currency: str
     ai_enabled: bool = False
+    # Geltender Tarif (free/premium; "selfhosted" ohne BILLING_ENABLED)
+    plan: str = "selfhosted"
 
 
 class MeResponse(BaseModel):
     id: uuid.UUID
     email: str
     display_name: str
+    email_verified: bool = False
+    is_platform_admin: bool = False
     households: list[HouseholdOut]
 
 
@@ -253,22 +260,24 @@ def register(
     request: Request,
     response: Response,
     data: RegisterRequest,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
+    if settings.legal_terms_required and not data.accept_terms:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.TERMS_ACCEPTANCE_REQUIRED, "Terms of service and privacy policy must be accepted"
+            ),
+        )
     existing = db.query(User).filter_by(email=data.email).first()
     if existing:
         raise HTTPException(status_code=400, detail=error_detail(ErrorCode.EMAIL_ALREADY_REGISTERED, "Email already registered"))
 
-    user = User(
-        email=data.email,
-        password_hash=hash_password(data.password),
-        display_name=data.display_name,
-    )
-    db.add(user)
-    db.flush()
-
+    # Haushalt zuerst prüfen (Einladungscode, Ablauf, Mitglieder-Limit), damit bei einem
+    # Fehler kein halb angelegtes Konto zurückbleibt
+    household: Household | None = None
     if data.invite_code:
-        # ── Pfad B: Mit Einladungscode beitreten ──
         code = data.invite_code.strip().upper()
         household = (
             db.query(Household)
@@ -285,6 +294,27 @@ def register(
                 status_code=status.HTTP_410_GONE,
                 detail=error_detail(ErrorCode.INVITE_CODE_EXPIRED, "Invite code has expired"),
             )
+        if not entitlements.can_add_member(db, household):
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=error_detail(
+                    ErrorCode.PLAN_MEMBER_LIMIT_REACHED, "This household has reached its member limit"
+                ),
+            )
+
+    user = User(
+        email=data.email,
+        password_hash=hash_password(data.password),
+        display_name=data.display_name,
+    )
+    if data.accept_terms:
+        user.terms_accepted_at = datetime.now(timezone.utc)
+        user.terms_version = settings.legal_terms_version
+    db.add(user)
+    db.flush()
+
+    if household is not None:
+        # ── Pfad B: Mit Einladungscode beitreten ──
         membership = HouseholdMember(household_id=household.id, user_id=user.id, role="member")
     else:
         # ── Pfad A: Neuen Haushalt erstellen (Standard, wie bisher) ──
@@ -300,6 +330,13 @@ def register(
 
     db.add(membership)
     db.flush()
+
+    # Bestätigungs-Mail (nur wenn Versand konfiguriert ist; die App bleibt ohne nutzbar)
+    if settings.mail_enabled:
+        from app.routers.account import send_verification_mail
+        from app.services.mail_templates import request_language
+
+        send_verification_mail(db, user, request_language(request), background)
 
     pair, _ = _create_token_pair(str(user.id), db)
     return _deliver(pair, request, response)
@@ -318,8 +355,13 @@ def login(
     # Antwortzeit nicht verrät, ob ein Account existiert (User-Enumeration).
     password_hash = user.password_hash if user else _DUMMY_PASSWORD_HASH
     password_ok = verify_password(form_data.password, password_hash)
-    if not user or not password_ok:
+    if not user or not password_ok or user.deleted_at is not None:
         raise HTTPException(status_code=401, detail=error_detail(ErrorCode.INVALID_CREDENTIALS, "Incorrect email or password"))
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_detail(ErrorCode.ACCOUNT_DISABLED, "Account is disabled"),
+        )
 
     pair, _ = _create_token_pair(str(user.id), db)
     return _deliver(pair, request, response)
@@ -404,7 +446,12 @@ def refresh_endpoint(
     if expires_at < datetime.now(timezone.utc):
         raise _refresh_rejected(ErrorCode.REFRESH_TOKEN_EXPIRED, "Refresh token expired", from_cookie)
 
-    # 4) Alles OK → alten Token revoken, neues Paar erstellen
+    # 4) Konto gesperrt oder gelöscht → kein neues Paar
+    owner = db.get(User, old_token.user_id)
+    if owner is None or owner.deleted_at is not None or not owner.is_active:
+        raise _refresh_rejected(ErrorCode.ACCOUNT_DISABLED, "Account is disabled", from_cookie)
+
+    # 5) Alles OK → alten Token revoken, neues Paar erstellen
     old_token.revoked_at = datetime.now(timezone.utc)
     db.flush()
 
@@ -412,7 +459,7 @@ def refresh_endpoint(
     old_token.replaced_by_id = new_rt.id
     db.commit()
 
-    # 5) Lazy Cleanup: alte Tokens dieses Users aufräumen
+    # 6) Lazy Cleanup: alte Tokens dieses Users aufräumen
     try:
         _cleanup_expired_tokens(old_token.user_id, db)
     except Exception:
@@ -469,6 +516,7 @@ def get_me(
             role=m.role,
             currency=m.household.currency,
             ai_enabled=m.household.ai_enabled,
+            plan=entitlements.effective_plan(m.household),
         )
         for m in memberships
     ]
@@ -477,5 +525,7 @@ def get_me(
         id=current_user.id,
         email=current_user.email,
         display_name=current_user.display_name,
+        email_verified=current_user.email_verified_at is not None,
+        is_platform_admin=current_user.is_platform_admin,
         households=households,
     )

@@ -1,6 +1,6 @@
 # Haushalt-App — Aktueller Projektstand
 
-**Stand:** 2026-10-07 (Audit-Korrekturen, aktuelle lokale Test- und Locale-Zahlen, HEIC/HEIF und Build-Prüfung nachgeführt; die OpenAPI-Doku des Backends unter `/docs` bleibt für API-Details maßgeblich)
+**Stand:** 2026-10-09 (Branch `claude/epic-heisenberg-tm8oyk`: Monetarisierungs-Grundlagen, siehe unten); zuvor 2026-10-07 (Audit-Korrekturen, aktuelle lokale Test- und Locale-Zahlen, HEIC/HEIF und Build-Prüfung nachgeführt; die OpenAPI-Doku des Backends unter `/docs` bleibt für API-Details maßgeblich)
 **Autor:** Tech Lead (automatisch generiert)
 
 ---
@@ -46,6 +46,8 @@ Alle Änderungen kamen per Pull Request auf `master`:
 | Branch `claude/plants-ai-tags-integration` | Pflanzen × KI × Tags: KI-Pflegehinweise im Pflanzen-Formular und in der Detailansicht; Tag-Aktionen `plant.water` und `plant.care_task.done` (Epic 34) |
 | Branch `claude/ai-assistant` | KI-Assistent Etappe 1: Rezeptvorschlag und Pflanzenpflege, Opt-in pro Haushalt, Tageslimit; Rezepte erhalten Zubereitungsschritte und Tags (Epic 33, `docs/ai-assistant.md`) |
 | Branch `claude/logic-review` | Logik-Review der Geschäftsregeln (`docs/qa/logic-review.md`): Kalenderdaten der Finanzen in Haushaltszeit (`services/household_time.py`), gebuchte Rechnungen immer `even`, `decide` sendet den vollständigen Termin, Dashboard zählt heute fällige Todos nicht als überfällig, Ämtli mit Ex-Mitglied in der Rotation bleibt bearbeitbar, Tierpflege-Erinnerung nach Verschieben der Fälligkeit, Haushaltswechsel leert alle Stores, Rolle nach Auto-Beförderung wird sofort geladen; 10 offene Produktentscheidungen |
+
+| Branch `claude/epic-heisenberg-tm8oyk` | Grundlagen für Monetarisierung und native Apps: E-Mail-Versand mit Passwort-Reset, E-Mail-Bestätigung, Passwort ändern und Konto löschen (`routers/account.py`, `user_tokens`); Tarife pro Haushalt mit Limits (`services/entitlements.py`), Stripe-Checkout/-Portal/-Webhook ohne SDK (`routers/billing.py`, `subscriptions`, `billing_events`), Plattform-Admin (`routers/admin.py`, `/admin`, `scripts/make_platform_admin`); Redis für Rate-Limits und Socket.IO mit Kontrollkanal, Sentry, `UVICORN_WORKERS`; Rechtstexte als Markdown-Vorlagen mit Betreiberangaben und Zustimmung bei der Registrierung (`/legal/…`); native Token-Ablage und Capacitor-Konfiguration (`docs/mobile-apps.md`, `docs/monetization.md`) |
 
 **Kennzahlen (lokaler Reparaturstand vom 7. Oktober 2026):** Backend 837 Tests in 62 Dateien, Coverage 94 %; Frontend 473 Tests in 33 Dateien, Coverage 77,49 % (Statements), 72,14 % (Branches), Statement-Schwelle 66 %; 1173 i18n-Schlüssel; 37 Alembic-Migrationen (einziger Kopf `y1z2a3b4c5d6`).
 

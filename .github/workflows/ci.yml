@@ -89,6 +89,18 @@ jobs:
       - name: Downgrade one revision and upgrade again
         run: alembic downgrade -1 && alembic upgrade head
 
+      # CASA-07 / PD-D2: Backup → Update → Restore (scripts/restore-db.sh) → exakter
+      # Tabellenvergleich → alembic upgrade head; Gegenprobe mit kaputtem Dump
+      - name: Install PostgreSQL client (pg_dump/pg_restore/psql)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Restore drill
+        working-directory: .
+        env:
+          PG_ADMIN_URL: postgresql://casa:casa@localhost:5432/postgres
+          PYTHON: python
+        run: scripts/restore-drill.sh
+
   frontend:
     name: Frontend (locales, typecheck, vitest)
     runs-on: ubuntu-latest

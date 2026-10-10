@@ -74,4 +74,5 @@ Tests ohne Parallelität weiterhin in die SQLite-Lane.
 ## CI
 
 Job `backend-postgres` in `.github/workflows/ci.yml`: `postgres:16`-Service,
-`alembic upgrade head`, `pytest -m pg`, danach `alembic downgrade -1 && alembic upgrade head`.
+`alembic upgrade head`, `pytest -m pg`, danach `alembic downgrade -1 && alembic upgrade head` und der
+Restore-Drill `scripts/restore-drill.sh` (Backup → Update → Restore → Vergleich → Upgrade, CASA-07).

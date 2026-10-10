@@ -211,12 +211,13 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 
 | Datei | Zweck | Status |
 |---|---|---|
-| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | GitHub Actions: Jobs `backend` (ruff, pytest mit Coverage), `backend-postgres` (postgres:16, `alembic upgrade head`, `pytest -m pg`, `alembic downgrade -1 && upgrade head`), `frontend` (Locale-Check, Typecheck, Vitest mit Coverage), `dependency-audit` (pip-audit, npm audit) | ✅ Fertig |
+| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | GitHub Actions: Jobs `backend` (ruff, pytest mit Coverage), `backend-postgres` (postgres:16, `alembic upgrade head`, `pytest -m pg`, `alembic downgrade -1 && upgrade head`, Restore-Drill `scripts/restore-drill.sh`), `frontend` (Locale-Check, Typecheck, Vitest mit Coverage), `dependency-audit` (pip-audit, npm audit) | ✅ Fertig |
 | [`docker-compose.yml`](../docker-compose.yml) | Entwicklungs-Setup (Datenbank, Backend, Frontend; Ports nur lokal gebunden) | ✅ Fertig |
 | [`docker-compose.prod.yml`](../docker-compose.prod.yml) | Produktion hinter Nginx Proxy Manager (Healthchecks, keine veröffentlichten Ports) | ✅ Fertig |
 | [`.env.example`](../.env.example), [`.env.prod.example`](../.env.prod.example) | Vorlagen für Umgebungsvariablen | ✅ Fertig |
 | [`backend/Dockerfile`](../backend/Dockerfile), [`frontend/Dockerfile`](../frontend/Dockerfile), [`frontend/nginx.conf`](../frontend/nginx.conf), [`frontend/nginx/security-headers.conf`](../frontend/nginx/security-headers.conf) | Container-Images, Nginx-Konfiguration und Security-Header fürs Frontend | ✅ Fertig |
-| [`scripts/backup-db.ps1`](../scripts/backup-db.ps1), [`scripts/restore-db.ps1`](../scripts/restore-db.ps1) | Backup/Restore von Datenbank und Uploads (PowerShell) | ✅ Fertig |
+| [`scripts/backup-db.ps1`](../scripts/backup-db.ps1), [`scripts/restore-db.ps1`](../scripts/restore-db.ps1) | Backup/Restore von Datenbank und Uploads (PowerShell). Restore: Backend stoppen, Dump in frische DB (`--single-transaction --exit-on-error`), Tausch, Uploads, Backend starten + Health-Check (CASA-07) | ✅ Fertig |
+| [`scripts/restore-db.sh`](../scripts/restore-db.sh), [`scripts/restore-drill.sh`](../scripts/restore-drill.sh) | Restore für Linux-Hosts (gleiche Logik, auch direkt gegen eine DB-URL) und Restore-Drill für CI/Betrieb | ✅ Fertig |
 
 ### Frontend (`frontend/src/`)
 

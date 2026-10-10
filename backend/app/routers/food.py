@@ -4,6 +4,8 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
@@ -206,6 +208,52 @@ def _get_meal_plan_entry_or_404(
     return entry
 
 
+def upsert_meal_plan_entry(
+    db: Session,
+    household_id: uuid.UUID,
+    entry_date: date,
+    recipe_id: uuid.UUID | None,
+    free_text: str | None,
+    overwrite: bool = True,
+) -> MealPlanEntry | None:
+    """Menüplan-Eintrag atomar anlegen/ersetzen (``INSERT … ON CONFLICT``, CASA-19/24).
+
+    Zwei gleichzeitige Schreiber auf denselben Tag liefen beim Check-then-Insert in
+    den Unique-Constraint (500). ``overwrite=False`` legt nur an, wenn der Tag frei
+    ist, und liefert sonst None (Entscheid einer Essens-Abstimmung, PD-M1).
+    Committet NICHT.
+    """
+    insert = pg_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
+    stmt = insert(MealPlanEntry).values(
+        id=uuid.uuid4(),
+        household_id=household_id,
+        date=entry_date,
+        recipe_id=recipe_id,
+        free_text=free_text,
+    )
+    conflict = ["household_id", "date"]
+    if overwrite:
+        stmt = stmt.on_conflict_do_update(
+            index_elements=conflict,
+            set_={"recipe_id": recipe_id, "free_text": free_text},
+        )
+    else:
+        stmt = stmt.on_conflict_do_nothing(index_elements=conflict)
+    if db.execute(stmt).rowcount != 1:
+        return None
+    return (
+        db.query(MealPlanEntry)
+        .filter(MealPlanEntry.household_id == household_id, MealPlanEntry.date == entry_date)
+        .populate_existing()
+        .one()
+    )
+
+
+def meal_plan_entry_payload(entry: MealPlanEntry) -> dict:
+    """Vollständiger Eintrag für Socket-Events (meal_plan_updated)."""
+    return MealPlanEntryResponse.model_validate(entry).model_dump(mode="json")
+
+
 def _week_bounds(ref: date) -> tuple[date, date]:
     """Berechne Montag und Sonntag der Woche, die *ref* enthält."""
     monday = ref - timedelta(days=ref.weekday())  # weekday() 0=Mo
@@ -397,38 +445,12 @@ def upsert_meal_plan(
     if body.recipe_id is not None:
         _get_recipe_or_404(db, body.recipe_id, household_id)
 
-    # Upsert: existierenden Eintrag suchen
-    entry = (
-        db.query(MealPlanEntry)
-        .filter(
-            MealPlanEntry.household_id == household_id,
-            MealPlanEntry.date == entry_date,
-        )
-        .first()
-    )
-
-    if entry is not None:
-        # Update
-        entry.recipe_id = body.recipe_id
-        entry.free_text = body.free_text
-    else:
-        # Create
-        entry = MealPlanEntry(
-            household_id=household_id,
-            date=entry_date,
-            recipe_id=body.recipe_id,
-            free_text=body.free_text,
-        )
-        db.add(entry)
-
+    # Upsert atomar (ON CONFLICT) — parallele PUTs auf denselben Tag ohne 500
+    entry = upsert_meal_plan_entry(db, household_id, entry_date, body.recipe_id, body.free_text)
     db.commit()
     db.refresh(entry)
 
-    emit_to_household_sync(
-        household_id,
-        "meal_plan_updated",
-        MealPlanEntryResponse.model_validate(entry).model_dump(mode="json"),
-    )
+    emit_to_household_sync(household_id, "meal_plan_updated", meal_plan_entry_payload(entry))
     return entry
 
 

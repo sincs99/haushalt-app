@@ -22,6 +22,7 @@ from app.models import (
     Recipe,
 )
 from app.routers.events import _event_response
+from app.routers.food import meal_plan_entry_payload, upsert_meal_plan_entry
 from app.services.event_times import (
     all_day_start_utc,
     household_tz,
@@ -96,6 +97,8 @@ class DecideRequest(BaseModel):
 
 class MealDecideRequest(BaseModel):
     option_id: uuid.UUID
+    # Belegten Tag überschreiben (PD-M1); ohne → 409 MEAL_PLAN_OCCUPIED
+    replace: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -528,33 +531,30 @@ def meal_decide_poll(
     # Atomar schließen: nur ein gleichzeitiger Request darf entscheiden
     _claim_poll(db, poll_id)
 
-    # MealPlanEntry erzeugen (Upsert: wenn Datum schon belegt, updaten)
+    # MealPlanEntry atomar anlegen (ON CONFLICT). Belegter Tag ohne replace → Claim
+    # zurückrollen und 409 mit dem bestehenden Eintrag; die UI fragt nach (PD-M1).
     meal_date = poll.decided_meal_date or household_today(db, household_id)
-
-    existing = (
-        db.query(MealPlanEntry)
-        .filter(
-            MealPlanEntry.household_id == household_id,
-            MealPlanEntry.date == meal_date,
-        )
-        .first()
+    recipe_id = chosen_option.recipe_id
+    free_text = chosen_option.label if not recipe_id else None
+    entry = upsert_meal_plan_entry(
+        db, household_id, meal_date, recipe_id, free_text, overwrite=body.replace
     )
-
-    if existing:
-        existing.recipe_id = chosen_option.recipe_id
-        existing.free_text = chosen_option.label if not chosen_option.recipe_id else None
-    else:
-        entry = MealPlanEntry(
-            household_id=household_id,
-            date=meal_date,
-            recipe_id=chosen_option.recipe_id,
-            free_text=chosen_option.label if not chosen_option.recipe_id else None,
+    if entry is None:
+        db.rollback()
+        existing = (
+            db.query(MealPlanEntry)
+            .filter(MealPlanEntry.household_id == household_id, MealPlanEntry.date == meal_date)
+            .first()
         )
-        db.add(entry)
+        detail = error_detail(ErrorCode.MEAL_PLAN_OCCUPIED, "A meal is already planned for this date")
+        if existing is not None:
+            detail["entry"] = meal_plan_entry_payload(existing)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
     # Poll schließen (Status wurde bereits atomar gesetzt)
     poll.decided_meal_date = meal_date
     db.commit()
+    entry_payload = meal_plan_entry_payload(entry)
 
     # Reload
     poll = _get_poll_or_404(poll_id, household_id, db)
@@ -566,10 +566,8 @@ def meal_decide_poll(
         "poll_decided",
         response.model_dump(mode="json"),
     )
-    emit_to_household_sync(
-        str(household_id),
-        "meal_plan_updated",
-        {"date": str(meal_date)},
-    )
+    # Vollständiger Eintrag wie bei PUT /meal-plan — sonst zeigen andere Geräte
+    # den Tag als leer an (CASA-19a)
+    emit_to_household_sync(str(household_id), "meal_plan_updated", entry_payload)
 
     return response

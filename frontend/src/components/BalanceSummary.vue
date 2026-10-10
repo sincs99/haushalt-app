@@ -1,18 +1,20 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useAuthStore } from '../stores/auth'
 import { useExpensesStore } from '../stores/expenses'
 import { useSettlementsStore } from '../stores/settlements'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatRappen, parseAmountToRappen } from '../utils/money'
-import { localDateString } from '../utils/dates'
+import { householdDateString } from '../utils/dates'
 import BaseCard from './ui/BaseCard.vue'
 import BaseButton from './ui/BaseButton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseDialog from './ui/BaseDialog.vue'
 import BaseErrorState from './ui/BaseErrorState.vue'
-import type { SettlementEntry } from '../types'
+import type { SettlementEntry, SettlementWarning } from '../types'
 
+const authStore = useAuthStore()
 const expensesStore = useExpensesStore()
 const settlementsStore = useSettlementsStore()
 const { notifySuccess, notifyError, notifyInfo } = useToast()
@@ -49,6 +51,22 @@ const dialogDate = ref('')
 const dialogNote = ref('')
 const settlementSaving = ref(false)
 const settlementFormId = `settlement-form-${Math.random().toString(36).slice(2, 9)}`
+// Client-ID pro geöffnetem Dialog: Retry/Doppelklick legt keinen zweiten Ausgleich an (CASA-08)
+const dialogClientId = ref('')
+// Plausibilitätswarnungen (PD-F3): einmal anzeigen, zweiter Klick speichert trotzdem
+const dialogWarnings = ref<SettlementWarning[]>([])
+const dialogOpenDebt = ref(0)
+const acknowledgedKey = ref('')
+
+// Eingaben geändert → Warnungen gelten nicht mehr
+watch([dialogFrom, dialogTo, dialogAmount], () => {
+  dialogWarnings.value = []
+  acknowledgedKey.value = ''
+})
+
+function warningText(w: SettlementWarning): string {
+  return t(`settlements.warnings.${w}`, { amount: formatRappen(dialogOpenDebt.value) })
+}
 
 // Salden erneut laden (nach Ladefehler)
 const retryingBalances = ref(false)
@@ -65,9 +83,12 @@ function openSettlementDialog(s: SettlementEntry) {
   dialogFrom.value = s.from_user_id
   dialogTo.value = s.to_user_id
   dialogAmount.value = (s.amount_rappen / 100).toFixed(2)
-  // Lokales Datum (toISOString() wäre nachts noch „gestern“)
-  dialogDate.value = localDateString()
+  // Haushaltsdatum (Zeitzone aus /me), sonst lokales Gerätedatum (CASA-39)
+  dialogDate.value = householdDateString(authStore.currentHousehold?.timezone)
   dialogNote.value = ''
+  dialogClientId.value = crypto.randomUUID()
+  dialogWarnings.value = []
+  acknowledgedKey.value = ''
   showSettlementDialog.value = true
 }
 
@@ -88,16 +109,35 @@ async function confirmSettlement() {
     return
   }
 
+  const payload = {
+    id: dialogClientId.value || undefined,
+    from_user_id: dialogFrom.value,
+    to_user_id: dialogTo.value,
+    amount_rappen: rappen,
+    settled_date: dialogDate.value || undefined,
+    note: dialogNote.value.trim() || undefined,
+  }
+  const key = `${payload.from_user_id}|${payload.to_user_id}|${rappen}`
+
   settlementSaving.value = true
   try {
-    await settlementsStore.create({
-      from_user_id: dialogFrom.value,
-      to_user_id: dialogTo.value,
-      amount_rappen: rappen,
-      settled_date: dialogDate.value || undefined,
-      note: dialogNote.value.trim() || undefined,
-    })
-    notifySuccess(t('settlements.created'))
+    // Erst prüfen (doppelt erfasst? mehr als die offene Schuld?) — warnen, nicht verbieten
+    if (acknowledgedKey.value !== key) {
+      const check = await settlementsStore.check(payload)
+      if (check && check.warnings.length > 0) {
+        dialogWarnings.value = check.warnings
+        dialogOpenDebt.value = check.open_debt_rappen
+        acknowledgedKey.value = key
+        return
+      }
+    }
+    const created = await settlementsStore.create(payload)
+    // Gleichzeitig von der Gegenseite erfasst → gespeichert, aber deutlich darauf hinweisen
+    if (created?.warnings?.includes('DUPLICATE_RECENT') && !dialogWarnings.value.includes('DUPLICATE_RECENT')) {
+      notifyInfo(t('settlements.createdWithWarning'))
+    } else {
+      notifySuccess(t('settlements.created'))
+    }
     showSettlementDialog.value = false
   } catch (e) {
     notifyError(t('settlements.saveError'), e)
@@ -197,15 +237,38 @@ async function confirmSettlement() {
         {{ $t('settlements.note') }}
         <input v-model="dialogNote" type="text" maxlength="200" class="dialog-input" :placeholder="$t('settlements.notePlaceholder')" />
       </label>
+
+      <!-- Plausibilitätswarnungen (PD-F3) -->
+      <div v-if="dialogWarnings.length > 0" class="settlement-warning" role="alert">
+        <strong>{{ $t('settlements.warningTitle') }}</strong>
+        <ul>
+          <li v-for="w in dialogWarnings" :key="w">{{ warningText(w) }}</li>
+        </ul>
+      </div>
     </form>
     <template #footer>
       <BaseButton variant="ghost" size="sm" @click="showSettlementDialog = false">{{ $t('common.cancel') }}</BaseButton>
-      <BaseButton variant="primary" size="sm" type="submit" :form="settlementFormId" :loading="settlementSaving">{{ $t('settlements.confirm') }}</BaseButton>
+      <BaseButton variant="primary" size="sm" type="submit" :form="settlementFormId" :loading="settlementSaving">
+        {{ dialogWarnings.length > 0 ? $t('settlements.saveAnyway') : $t('settlements.confirm') }}
+      </BaseButton>
     </template>
   </BaseDialog>
 </template>
 
 <style scoped>
+.settlement-warning {
+  padding: var(--space-3);
+  background: var(--color-warning-soft);
+  border-radius: var(--radius-sm);
+  color: var(--color-warning-strong);
+  font-size: var(--text-sm);
+}
+
+.settlement-warning ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+}
+
 .balance-summary {
   display: flex;
   flex-direction: column;

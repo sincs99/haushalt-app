@@ -354,7 +354,29 @@
       "uncategorized": "Ohne Kategorie"
     },
     "saved": "Ausgabe gespeichert",
-    "deleteLabel": "Ausgabe «{name}» löschen"
+    "deleteLabel": "Ausgabe «{name}» löschen",
+    "retroWarning": "Diese Ausgabe liegt vor dem letzten Ausgleich zwischen den Beteiligten – Salden ändern sich nachträglich.",
+    "deleteRetroTitle": "Bereits ausgeglichen",
+    "deleteAnyway": "Trotzdem löschen",
+    "conflictReloaded": "Die Ausgabe wurde inzwischen von {name} geändert. Die aktuellen Werte sind geladen – bitte prüfen und erneut speichern.",
+    "deletedMeanwhile": "Die Ausgabe wurde inzwischen gelöscht.",
+    "createdBy": "Erfasst von {name}",
+    "updatedBy": "Zuletzt geändert von {name}",
+    "loadMore": "Ältere Ausgaben laden",
+    "restoreConflict": "Die Rechnung wurde für diesen Monat inzwischen neu gebucht – die gelöschte Buchung kann nicht wiederhergestellt werden.",
+    "history": {
+      "show": "Gelöschte Einträge anzeigen",
+      "hide": "Gelöschte Einträge ausblenden",
+      "title": "Verlauf: gelöschte Einträge",
+      "empty": "Keine gelöschten Einträge",
+      "deletedBy": "Gelöscht von {name} am {date}",
+      "restore": "Wiederherstellen",
+      "restoreLabel": "«{name}» wiederherstellen",
+      "restored": "Wiederhergestellt",
+      "restoreError": "Konnte nicht wiederhergestellt werden.",
+      "loadError": "Verlauf konnte nicht geladen werden.",
+      "settlementName": "Zahlung {from} → {to}"
+    }
   },
   "finance": {
     "available": "Noch verfügbar",
@@ -385,7 +407,27 @@
     "spentThisMonth": "Ausgegeben diesen Monat",
     "allBooked": "Alle Rechnungen für diesen Monat sind gebucht.",
     "budgetSaveError": "Budget konnte nicht gespeichert werden.",
-    "bookError": "Rechnung konnte nicht gebucht werden."
+    "bookError": "Rechnung konnte nicht gebucht werden.",
+    "bookMonth": "Monat",
+    "bookMonthCurrent": "{month} (aktueller Monat)",
+    "choosePayer": "Bitte wählen …",
+    "noDefaultPayerHint": "Für diese Rechnung ist kein Standard-Zahler hinterlegt – bitte wähle, wer bezahlt hat.",
+    "manageBills": "Rechnungen verwalten",
+    "billsEmpty": "Noch keine wiederkehrenden Rechnungen",
+    "editBill": "Rechnung bearbeiten",
+    "newBill": "Neue Rechnung",
+    "billNamePlaceholder": "z. B. Miete",
+    "billDefaultPayer": "Standard-Zahler",
+    "billNoDefaultPayer": "Keiner (beim Buchen wählen)",
+    "billActive": "Aktiv (erscheint unter „Anstehende Rechnungen“)",
+    "billPaused": "Pausiert",
+    "billMeta": "{amount} · am {day}. · {payer}",
+    "billDeleteTitle": "Rechnung löschen?",
+    "billDeleteConfirm": "Rechnung «{name}» löschen? Bereits gebuchte Ausgaben bleiben erhalten.",
+    "billSaveError": "Rechnung konnte nicht gespeichert werden.",
+    "billDeleteError": "Rechnung konnte nicht gelöscht werden.",
+    "billDayInvalid": "Bitte einen Tag zwischen 1 und 28 wählen.",
+    "billEditLabel": "Rechnung «{name}» bearbeiten"
   },
   "settlements": {
     "title": "Ausgleichszahlungen",
@@ -405,7 +447,16 @@
     "sameUser": "Von und An dürfen nicht identisch sein.",
     "flow": "{from} → {to}",
     "saveError": "Zahlung konnte nicht gespeichert werden.",
-    "deleteLabel": "Ausgleichszahlung löschen"
+    "deleteLabel": "Ausgleichszahlung löschen",
+    "createdBy": "erfasst von {name}",
+    "warningTitle": "Bitte prüfen",
+    "warnings": {
+      "DUPLICATE_RECENT": "Eine gleiche Zahlung wurde in den letzten 10 Minuten bereits erfasst.",
+      "EXCEEDS_OPEN_DEBT": "Der Betrag ist höher als die offene Schuld ({amount})."
+    },
+    "saveAnyway": "Trotzdem erfassen",
+    "createdWithWarning": "Gespeichert – eine gleiche Zahlung wurde eben schon erfasst. Bitte prüfen.",
+    "loadMore": "Ältere Zahlungen laden"
   },
   "chores": {
     "title": "Ämtli",
@@ -631,7 +682,12 @@
     "notFound": "Nicht gefunden – wurde vielleicht gelöscht",
     "IMAGE_TOO_MANY_PIXELS": "Bild hat zu viele Pixel (max. 25 Megapixel)",
     "imageUnreadable": "Bild konnte nicht gelesen werden – unterstützt sind JPEG, PNG, WebP und iPhone-Fotos (HEIC)",
-    "WIDGET_TOKEN_INVALID": "Widget-Schlüssel ungültig"
+    "WIDGET_TOKEN_INVALID": "Widget-Schlüssel ungültig",
+    "EXPENSE_VERSION_CONFLICT": "Die Ausgabe wurde inzwischen geändert.",
+    "EXPENSE_DELETED": "Die Ausgabe wurde inzwischen gelöscht.",
+    "SETTLEMENT_DELETED": "Die Zahlung wurde inzwischen gelöscht.",
+    "DATE_OUT_OF_RANGE": "Das Datum liegt zu weit in der Vergangenheit oder Zukunft.",
+    "BILL_MONTH_OUT_OF_RANGE": "Nachbuchen ist nur für die letzten 12 Monate möglich."
   },
   "push": {
     "title": "Benachrichtigungen",

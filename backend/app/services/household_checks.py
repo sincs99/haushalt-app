@@ -38,13 +38,23 @@ def assert_users_allowed(
 
 
 def _ledger_user_ids(db: Session, household_id: uuid.UUID) -> set[uuid.UUID]:
-    """Alle User, die im Haushalts-Ledger vorkommen (Zahler, Anteile, Ausgleiche)."""
+    """Alle User, die im (nicht gelöschten) Haushalts-Ledger vorkommen (Zahler, Anteile, Ausgleiche)."""
     payers = db.query(Expense.paid_by_user_id).filter(
-        Expense.household_id == household_id, Expense.paid_by_user_id.isnot(None)
+        Expense.household_id == household_id,
+        Expense.paid_by_user_id.isnot(None),
+        Expense.deleted_at.is_(None),
     )
-    sharers = db.query(ExpenseShare.user_id).filter(ExpenseShare.household_id == household_id)
-    senders = db.query(Settlement.from_user_id).filter(Settlement.household_id == household_id)
-    receivers = db.query(Settlement.to_user_id).filter(Settlement.household_id == household_id)
+    sharers = (
+        db.query(ExpenseShare.user_id)
+        .join(Expense, Expense.id == ExpenseShare.expense_id)
+        .filter(ExpenseShare.household_id == household_id, Expense.deleted_at.is_(None))
+    )
+    senders = db.query(Settlement.from_user_id).filter(
+        Settlement.household_id == household_id, Settlement.deleted_at.is_(None)
+    )
+    receivers = db.query(Settlement.to_user_id).filter(
+        Settlement.household_id == household_id, Settlement.deleted_at.is_(None)
+    )
     return {row[0] for q in (payers, sharers, senders, receivers) for row in q.all()}
 
 

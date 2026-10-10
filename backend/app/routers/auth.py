@@ -105,6 +105,8 @@ class HouseholdOut(BaseModel):
     role: str
     currency: str
     ai_enabled: bool = False
+    # IANA-Zeitzone: Clients rechnen "heute"/Monat in Haushaltszeit statt Gerätezeit (CASA-39)
+    timezone: str | None = None
 
 
 class MeResponse(BaseModel):
@@ -469,6 +471,7 @@ def get_me(
             role=m.role,
             currency=m.household.currency,
             ai_enabled=m.household.ai_enabled,
+            timezone=m.household.timezone,
         )
         for m in memberships
     ]

@@ -12,6 +12,7 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Budget, Calendar, Expense, Household, HouseholdMember, RecurringBill, User
+from app.services.finance_rules import add_months, validate_month
 from app.services.household_time import household_today
 from app.services.invite_code import (
     generate_unique_invite_code,
@@ -318,17 +319,12 @@ def get_finance_summary(
     today = household_today(db, household_id)
     if month is None:
         month = date(today.year, today.month, 1)
-    elif month.day != 1:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail(ErrorCode.INVALID_MONTH, "month must be the first day of a month"),
-        )
+    else:
+        # Erster des Monats, höchstens ±10 Jahre (9999-12-01 → sonst 500, CASA-36)
+        validate_month(month, today)
 
     # Nächsten Monat berechnen
-    if month.month == 12:
-        first_of_next_month = date(month.year + 1, 1, 1)
-    else:
-        first_of_next_month = date(month.year, month.month + 1, 1)
+    first_of_next_month = add_months(month, 1)
 
     # 2. Budget laden
     budget = (
@@ -345,6 +341,7 @@ def get_finance_summary(
             Expense.household_id == household_id,
             Expense.expense_date >= month,
             Expense.expense_date < first_of_next_month,
+            Expense.deleted_at.is_(None),
         )
         .scalar()
     )
@@ -357,6 +354,7 @@ def get_finance_summary(
             Expense.household_id == household_id,
             Expense.expense_date >= month,
             Expense.expense_date < first_of_next_month,
+            Expense.deleted_at.is_(None),
         )
         .group_by(Expense.category)
         .all()
@@ -399,6 +397,7 @@ def get_finance_summary(
             Expense.household_id == household_id,
             Expense.recurring_bill_id.isnot(None),
             Expense.booked_month == month,
+            Expense.deleted_at.is_(None),
         )
         .all()
     )

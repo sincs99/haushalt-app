@@ -1,9 +1,10 @@
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
@@ -11,8 +12,18 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Expense, ExpenseShare, Household, HouseholdMember
+from app.services.finance_rules import (
+    MAX_AMOUNT_RAPPEN,
+    add_months,
+    assert_date_in_range,
+    is_before_last_settlement,
+    last_settlement_by_pair,
+    parse_if_match,
+    validate_month,
+)
 from app.services.household_checks import assert_users_allowed, assert_users_in_household
 from app.services.household_time import household_today
+from app.services.locking import lock_row
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -22,12 +33,12 @@ from app.socket_manager import emit_to_household_sync
 
 class ExpenseShareInput(BaseModel):
     user_id: uuid.UUID
-    amount_rappen: int = Field(..., ge=0)
+    amount_rappen: int = Field(..., ge=0, le=MAX_AMOUNT_RAPPEN)
 
 
 class ExpenseCreate(BaseModel):
     description: str = Field(..., min_length=1, max_length=200)
-    amount_rappen: int = Field(..., gt=0)
+    amount_rappen: int = Field(..., gt=0, le=MAX_AMOUNT_RAPPEN)
     currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     paid_by_user_id: uuid.UUID
     expense_date: date | None = None  # Default: heute (server-seitig)
@@ -61,7 +72,7 @@ class ExpenseUpdate(PatchModel):
     __orm_model__ = Expense
 
     description: str | None = Field(None, min_length=1, max_length=200)
-    amount_rappen: int | None = Field(None, gt=0)
+    amount_rappen: int | None = Field(None, gt=0, le=MAX_AMOUNT_RAPPEN)
     currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
     paid_by_user_id: uuid.UUID | None = None
     expense_date: date | None = None
@@ -108,9 +119,19 @@ class ExpenseResponse(BaseModel):
     expense_date: date
     category: str | None
     recurring_bill_id: uuid.UUID | None
+    booked_month: date | None = None
     created_at: datetime
     updated_at: datetime
     shares: list[ExpenseShareResponse]
+    # Optimistic Locking + Nachvollziehbarkeit (PD-F1/PD-F7)
+    version: int
+    created_by_user_id: uuid.UUID | None = None
+    updated_by_user_id: uuid.UUID | None = None
+    deleted_at: datetime | None = None
+    deleted_by_user_id: uuid.UUID | None = None
+    # Datiert auf/vor dem letzten Ausgleich zwischen Beteiligten → Ändern/Löschen
+    # verschiebt bereits ausgeglichene Salden (PD-F2, UI warnt)
+    before_last_settlement: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -226,25 +247,88 @@ router = APIRouter(
 )
 
 
+def _not_found() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=error_detail(ErrorCode.EXPENSE_NOT_FOUND, "Expense not found in this household"),
+    )
+
+
+def expense_response(
+    expense: Expense, pairs: dict | None = None, db: Session | None = None
+) -> ExpenseResponse:
+    """Response inkl. ``before_last_settlement`` (pairs vorab laden oder db mitgeben)."""
+    if pairs is None and db is not None:
+        pairs = last_settlement_by_pair(db, expense.household_id)
+    data = ExpenseResponse.model_validate(expense)
+    data.before_last_settlement = expense.deleted_at is None and is_before_last_settlement(
+        expense, pairs or {}
+    )
+    return data
+
+
+def _emit_payload(expense: Expense, db: Session) -> dict:
+    return expense_response(expense, db=db).model_dump(mode="json")
+
+
+def _load_locked(db: Session, household_id: uuid.UUID, expense_id: uuid.UUID) -> Expense:
+    """Ausgabe sperren (SELECT … FOR UPDATE) und frisch lesen — serialisiert parallele
+    Änderungen derselben Ausgabe; ohne Sperre entstanden doppelte Anteile (CASA-01)."""
+    expense = lock_row(db, Expense, expense_id)
+    if expense is None or expense.household_id != household_id:
+        raise _not_found()
+    return expense
+
+
+def _check_version(expense: Expense, if_match: str | None, db: Session) -> None:
+    expected = parse_if_match(if_match)
+    if expected is not None and expected != expense.version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                **error_detail(
+                    ErrorCode.EXPENSE_VERSION_CONFLICT,
+                    "The expense was changed in the meantime",
+                ),
+                # Aktueller Stand, damit der Client ohne zweiten Request neu laden kann
+                "current": expense_response(expense, db=db).model_dump(mode="json"),
+            },
+        )
+
+
+def _touch(expense: Expense, user_id: uuid.UUID) -> None:
+    """Version + Bearbeiter setzen (auch wenn sich nur Anteile geändert haben)."""
+    expense.version = (expense.version or 1) + 1
+    expense.updated_at = datetime.now(timezone.utc)
+    expense.updated_by_user_id = user_id
+
+
 # ---------------------------------------------------------------------------
-# GET  /  — Liste aller Ausgaben
+# GET  /  — Liste der Ausgaben (seitenweise)
 # ---------------------------------------------------------------------------
 @router.get("/", response_model=list[ExpenseResponse])
 def list_expenses(
     household_id: uuid.UUID,
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    month: date | None = Query(None, description="Nur Ausgaben dieses Monats (YYYY-MM-01)"),
+    deleted: bool = Query(False, description="true: nur gelöschte Ausgaben (Verlauf)"),
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    return (
-        db.query(Expense)
-        .filter(Expense.household_id == household_id)
-        .order_by(Expense.expense_date.desc(), Expense.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    q = db.query(Expense).filter(Expense.household_id == household_id)
+    if month is not None:
+        validate_month(month, household_today(db, household_id))
+        q = q.filter(Expense.expense_date >= month, Expense.expense_date < add_months(month, 1))
+    if deleted:
+        q = q.filter(Expense.deleted_at.isnot(None)).order_by(Expense.deleted_at.desc())
+    else:
+        q = q.filter(Expense.deleted_at.is_(None)).order_by(
+            Expense.expense_date.desc(), Expense.created_at.desc(), Expense.id
+        )
+    rows = q.offset(offset).limit(limit).all()
+    pairs = last_settlement_by_pair(db, household_id)
+    return [expense_response(e, pairs) for e in rows]
 
 
 # Kein separates balances_updated-Event: Das Frontend refetcht GET /balances
@@ -263,6 +347,22 @@ def get_balances(
 
     result = compute_all_balances(db, household_id)
     return BalancesResponse(**result)
+
+
+# ---------------------------------------------------------------------------
+# GET  /{expense_id}  — Einzelne Ausgabe (auch gelöscht; z. B. Neu laden nach 409)
+# ---------------------------------------------------------------------------
+@router.get("/{expense_id}", response_model=ExpenseResponse)
+def get_expense(
+    household_id: uuid.UUID,
+    expense_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    expense = db.get(Expense, expense_id)
+    if expense is None or expense.household_id != household_id:
+        raise _not_found()
+    return expense_response(expense, db=db)
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +385,8 @@ def create_expense(
                 f"Currency {body.currency} does not match household currency {household.currency}",
             ),
         )
+    today = household_today(db, household)
+    assert_date_in_range(body.expense_date, today, "expense_date")
 
     # 1. paid_by_user_id muss Mitglied sein
     assert_users_in_household(db, household_id, [body.paid_by_user_id])
@@ -318,9 +420,10 @@ def create_expense(
         amount_rappen=body.amount_rappen,
         currency=household.currency,
         paid_by_user_id=body.paid_by_user_id,
-        expense_date=body.expense_date or household_today(db, household),
+        expense_date=body.expense_date or today,
         split_type=body.split_type,
         category=body.category,
+        created_by_user_id=membership.user_id,
     )
     db.add(expense)
     db.flush()  # ID generieren
@@ -337,12 +440,9 @@ def create_expense(
     db.commit()
     db.refresh(expense)
 
-    emit_to_household_sync(
-        household_id,
-        "expense_created",
-        ExpenseResponse.model_validate(expense).model_dump(mode="json"),
-    )
-    return expense
+    payload = _emit_payload(expense, db)
+    emit_to_household_sync(household_id, "expense_created", payload)
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -353,15 +453,17 @@ def update_expense(
     household_id: uuid.UUID,
     expense_id: uuid.UUID,
     body: ExpenseUpdate,
+    if_match: str | None = Header(None, alias="If-Match"),
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    expense = db.get(Expense, expense_id)
-    if expense is None or expense.household_id != household_id:
+    expense = _load_locked(db, household_id, expense_id)
+    if expense.deleted_at is not None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=error_detail(ErrorCode.EXPENSE_NOT_FOUND, "Expense not found in this household"),
+            status_code=status.HTTP_409_CONFLICT,
+            detail=error_detail(ErrorCode.EXPENSE_DELETED, "The expense has been deleted"),
         )
+    _check_version(expense, if_match, db)
 
     update_data = body.model_dump(exclude_unset=True)
 
@@ -376,6 +478,8 @@ def update_expense(
                     f"Currency {body.currency} does not match household currency {household.currency}",
                 ),
             )
+    if "expense_date" in update_data:
+        assert_date_in_range(body.expense_date, household_today(db, household_id), "expense_date")
 
     # Personen, die schon auf der Ausgabe stehen, dürfen inzwischen Ex-Mitglieder sein —
     # sonst ließe sich eine alte Ausgabe nicht einmal mehr umbenennen
@@ -447,7 +551,7 @@ def update_expense(
             validate_custom_shares(amount, shares_input)
             share_map = {s.user_id: s.amount_rappen for s in shares_input}
 
-        # Alte Shares löschen
+        # Alte Shares löschen (unter der Zeilensperre: es sind sicher die aktuellen)
         expense.shares.clear()
         db.flush()
 
@@ -461,39 +565,108 @@ def update_expense(
             )
             db.add(share)
 
+    _touch(expense, membership.user_id)
     db.commit()
     db.refresh(expense)
 
-    emit_to_household_sync(
-        household_id,
-        "expense_updated",
-        ExpenseResponse.model_validate(expense).model_dump(mode="json"),
-    )
-    return expense
+    payload = _emit_payload(expense, db)
+    emit_to_household_sync(household_id, "expense_updated", payload)
+    return payload
 
 
 # ---------------------------------------------------------------------------
-# DELETE /{expense_id}  — Ausgabe löschen
+# DELETE /{expense_id}  — Ausgabe löschen (Soft Delete, wiederherstellbar)
 # ---------------------------------------------------------------------------
 @router.delete("/{expense_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_expense(
     household_id: uuid.UUID,
     expense_id: uuid.UUID,
+    if_match: str | None = Header(None, alias="If-Match"),
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    expense = db.get(Expense, expense_id)
-    if expense is None or expense.household_id != household_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=error_detail(ErrorCode.EXPENSE_NOT_FOUND, "Expense not found in this household"),
-        )
+    expense = _load_locked(db, household_id, expense_id)
+    if expense.deleted_at is not None:
+        # Wiederholtes Löschen (Retry, zweites Gerät): bereits erledigt
+        return
+    _check_version(expense, if_match, db)
 
-    db.delete(expense)
+    # Anteile und Rechnungsbezug bleiben erhalten — nur so kann "Rückgängig" exakt
+    # wiederherstellen (inkl. Ex-Mitgliedern und gebuchtem Monat, CASA-03)
+    expense.deleted_at = datetime.now(timezone.utc)
+    expense.deleted_by_user_id = membership.user_id
+    _touch(expense, membership.user_id)
     db.commit()
 
     emit_to_household_sync(
         household_id,
         "expense_deleted",
-        {"id": str(expense_id), "household_id": str(household_id)},
+        {
+            "id": str(expense_id),
+            "household_id": str(household_id),
+            "deleted_by_user_id": str(membership.user_id),
+            "version": expense.version,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /{expense_id}/restore  — Gelöschte Ausgabe wiederherstellen (Undo, Verlauf)
+# ---------------------------------------------------------------------------
+@router.post("/{expense_id}/restore", response_model=ExpenseResponse)
+def restore_expense(
+    household_id: uuid.UUID,
+    expense_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    """Stellt exakt den gelöschten Datensatz wieder her (Anteile, Ex-Mitglieder,
+    recurring_bill_id/booked_month). Keine erneute Mitgliedschaftsprüfung.
+
+    Rechnungsbuchungen: Eine gelöschte Buchung gibt ihren Monat frei. Wurde der Monat
+    inzwischen neu gebucht, scheitert das Wiederherstellen mit 409 BILL_ALREADY_BOOKED —
+    sonst wäre die Rechnung doppelt gebucht.
+    """
+    expense = _load_locked(db, household_id, expense_id)
+    if expense.deleted_at is None:
+        return expense_response(expense, db=db)  # idempotent
+
+    if expense.recurring_bill_id is not None and expense.booked_month is not None:
+        rebooked = (
+            db.query(Expense.id)
+            .filter(
+                Expense.recurring_bill_id == expense.recurring_bill_id,
+                Expense.booked_month == expense.booked_month,
+                Expense.deleted_at.is_(None),
+                Expense.id != expense.id,
+            )
+            .first()
+        )
+        if rebooked:
+            raise _bill_month_taken()
+
+    expense.deleted_at = None
+    expense.deleted_by_user_id = None
+    _touch(expense, membership.user_id)
+    try:
+        db.commit()
+    except IntegrityError:
+        # Paralleles Buchen desselben Monats (partieller Unique-Index)
+        db.rollback()
+        raise _bill_month_taken() from None
+    db.refresh(expense)
+
+    # Für alle Clients wie eine neue Ausgabe (Listen-Upsert, Salden/Budget neu laden)
+    payload = _emit_payload(expense, db)
+    emit_to_household_sync(household_id, "expense_created", payload)
+    return payload
+
+
+def _bill_month_taken() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=error_detail(
+            ErrorCode.BILL_ALREADY_BOOKED,
+            "The bill has been booked again for this month; the deleted booking cannot be restored",
+        ),
     )

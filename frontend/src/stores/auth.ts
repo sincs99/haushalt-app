@@ -82,8 +82,11 @@ export const useAuthStore = defineStore('auth', () => {
         await fetchMe()
       } catch (err: any) {
         if (isAuthRejection(err)) {
-          // Cookie fehlt/abgelaufen/revoked (Backend hat ihn gelöscht) → ausgeloggt
+          // Cookie fehlt/abgelaufen/revoked (Backend hat ihn gelöscht) → ausgeloggt.
+          // Gerät auch vom Push abmelden, sonst zeigt der Sperrbildschirm weiter die
+          // Erinnerungen dieses Users (CASA-47)
           await _clearState()
+          await _unsubscribePushLocally()
           sessionExpired.value = true
         } else if (!token.value) {
           // Netzwerkfehler beim Refresh → Sitzung vermutlich noch gültig, "offline eingeloggt"
@@ -282,6 +285,19 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * Push-Subscription dieses Browsers abmelden, ohne das Backend zu fragen (kein gültiger
+   * Access-Token mehr). Das Backend räumt den Endpoint beim nächsten Versand auf (410).
+   */
+  async function _unsubscribePushLocally() {
+    try {
+      const { disablePush } = await import('../services/pushService')
+      await disablePush({ notifyBackend: false })
+    } catch {
+      // Best-effort
+    }
+  }
+
   // ── Internal: State zurücksetzen (async) ──
 
   async function _clearState() {
@@ -309,6 +325,9 @@ export const useAuthStore = defineStore('auth', () => {
         // Anderer Tab hat sich abgemeldet (Cookie ist weg) → lokalen Zustand verwerfen
         if (!isAuthenticated.value) return
         _clearState()
+        // Die Push-Subscription gehört dem Browser, nicht dem Tab: sicherstellen, dass
+        // sie weg ist, auch wenn der andere Tab sie nicht abmelden konnte (CASA-47)
+        void _unsubscribePushLocally()
         // Navigiere zu /login OHNE redirect und OHNE Backend-Logout-Call
         import('../router').then(({ default: router }) => {
           router.push('/login')

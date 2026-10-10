@@ -177,6 +177,18 @@ describe('initialize', () => {
     expect(localStorage.getItem(HOUSEHOLD_KEY)).toBeNull()
     expect(api.get).not.toHaveBeenCalled()
     expect(store.isInitialized).toBe(true)
+    // Stille abgelaufene Sitzung: Gerät lokal vom Push abmelden (CASA-47)
+    expect(disablePush).toHaveBeenCalledWith({ notifyBackend: false })
+  })
+
+  test('Netzwerkfehler beim Start meldet Push NICHT ab (Sitzung vermutlich gültig)', async () => {
+    markSession()
+    axiosPost.mockRejectedValue(networkError())
+    const store = useAuthStore()
+
+    await store.initialize()
+
+    expect(disablePush).not.toHaveBeenCalled()
   })
 
   test('Netzwerkfehler beim Refresh: "offline eingeloggt", Marker bleibt, kein Access-Token', async () => {
@@ -527,6 +539,8 @@ describe('Cross-Tab-Sync über den Sitzungs-Marker', () => {
     expect(store.isAuthenticated).toBe(false)
     expect(store.user).toBeNull()
     expect(axiosPost).not.toHaveBeenCalled()
+    // Push-Subscription gehört dem Browser: auch hier lokal abmelden (CASA-47)
+    await vi.waitFor(() => expect(disablePush).toHaveBeenCalledWith({ notifyBackend: false }))
   })
 
   test('Login in anderem Tab: Sitzung über den gemeinsamen Cookie übernehmen', async () => {

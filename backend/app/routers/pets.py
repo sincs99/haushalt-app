@@ -397,9 +397,12 @@ def feed_all(
 ):
     today = _get_household_today(db, household_id)
 
+    # Feste Reihenfolge: parallele feed-all-Requests sperren die Unique-Einträge in
+    # derselben Reihenfolge (kein Deadlock)
     pets = (
         db.query(Pet)
         .filter(Pet.household_id == household_id)
+        .order_by(Pet.id)
         .all()
     )
 
@@ -415,6 +418,9 @@ def feed_all(
         .all()
     }
 
+    # Savepoint pro Tier (CASA-13): Kollidiert eine parallele Einzelfütterung mit dem
+    # Unique (pet, date, slot), fällt nur dieses Tier weg — die übrigen werden trotzdem
+    # gefüttert. Zurückgegeben wird genau das, was dieser Request angelegt hat.
     created = []
     for pet in pets:
         if pet.id in already_fed_pet_ids:
@@ -428,15 +434,17 @@ def feed_all(
             fed_by_user_id=membership.user_id,
             date=today,
         )
-        db.add(feeding)
+        savepoint = db.begin_nested()
+        try:
+            db.add(feeding)
+            db.flush()
+        except IntegrityError:
+            savepoint.rollback()
+            continue
+        savepoint.commit()
         created.append(feeding)
 
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        # Bei Race-Condition: einfach leere Liste zurückgeben, Client refetcht
-        return []
+    db.commit()
 
     for feeding in created:
         db.refresh(feeding)

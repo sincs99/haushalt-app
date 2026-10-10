@@ -760,7 +760,8 @@
     "medicationSaveError": "Couldn't save the medication",
     "medicationDeleteError": "Couldn't delete the medication",
     "changePhoto": "Change photo",
-    "photoUploadErrorReason": "Could not upload photo: {reason}"
+    "photoUploadErrorReason": "Could not upload photo: {reason}",
+    "notAllFed": "{fed} of {total} fed – please check the status"
   },
   "petCare": {
     "title": "Care & Schedule",

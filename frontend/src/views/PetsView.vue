@@ -144,14 +144,16 @@ const showFeedAllButton = computed(() => {
 
 function handleFeedAll() {
   return run(async () => {
-    const created = await petsStore.feedAll(currentSlot.value)
+    const result = await petsStore.feedAll(currentSlot.value)
+    // „Alle gefüttert“ nur, wenn der neu geladene Status das bestätigt (CASA-13)
+    if (!result.allFed) notifyInfo(t('pets.notAllFed', { fed: result.fed, total: result.total }))
     // Jemand anderes war schneller: Hinweis statt Erfolg
-    if (created.length === 0) notifyInfo(t('pets.allAlreadyFed'))
-    return created
+    else if (result.created.length === 0) notifyInfo(t('pets.allAlreadyFed'))
+    return result
   }, {
     key: 'feed-all',
-    success: (created) => (created.length > 0 ? t('pets.allFedToast') : undefined),
-    undo: (created) => petsStore.undoFeedings(created),
+    success: (result) => (result.allFed && result.created.length > 0 ? t('pets.allFedToast') : undefined),
+    undo: (result) => petsStore.undoFeedings(result.created),
     error: t('pets.feedError'),
   })
 }

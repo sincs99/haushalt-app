@@ -760,7 +760,8 @@
     "medicationSaveError": "Medikament konnte nicht gespeichert werden",
     "medicationDeleteError": "Medikament konnte nicht gelöscht werden",
     "changePhoto": "Foto ändern",
-    "photoUploadErrorReason": "Foto konnte nicht hochgeladen werden: {reason}"
+    "photoUploadErrorReason": "Foto konnte nicht hochgeladen werden: {reason}",
+    "notAllFed": "{fed} von {total} gefüttert – bitte Status prüfen"
   },
   "petCare": {
     "title": "Pflege & Termine",

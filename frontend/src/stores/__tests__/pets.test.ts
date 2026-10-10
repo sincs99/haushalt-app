@@ -185,11 +185,25 @@ describe('toggleFeeding', () => {
   test('feedAll lädt den Status danach neu — auch bei Fehler, und reicht den Fehler weiter', async () => {
     const store = usePetsStore()
     repo.feedAll.mockResolvedValue([feeding('f1')])
-    repo.fetchFeedingStatus.mockResolvedValue([])
-    await expect(store.feedAll('morning')).resolves.toEqual([feeding('f1')])
+    repo.fetchFeedingStatus.mockResolvedValue([status('p1', { morning: feeding('f1') })])
+    await expect(store.feedAll('morning')).resolves.toEqual({ created: [feeding('f1')], allFed: true, fed: 1, total: 1 })
     repo.feedAll.mockRejectedValue(new Error('x'))
     await expect(store.feedAll('evening')).rejects.toThrow('x')
     expect(repo.fetchFeedingStatus).toHaveBeenCalledTimes(2)
+  })
+
+  test('feedAll: „alle gefüttert“ nur, wenn der neu geladene Status das bestätigt (CASA-13)', async () => {
+    const store = usePetsStore()
+    // Race: Server legte nichts an (andere Person war schneller), Status zeigt aber 1 von 2
+    repo.feedAll.mockResolvedValue([])
+    repo.fetchFeedingStatus.mockResolvedValue([status('p1', { evening: feeding('x', 'evening') }), status('p2')])
+    await expect(store.feedAll('evening')).resolves.toMatchObject({ created: [], allFed: false, fed: 1, total: 2 })
+
+    // Status-Refetch scheitert: eigene Fütterungen sind trotzdem im Status
+    store.feedingStatus = [status('p1'), status('p2')]
+    repo.feedAll.mockResolvedValue([feeding('a', 'morning', 'p1'), feeding('b', 'morning', 'p2')])
+    repo.fetchFeedingStatus.mockRejectedValue(new Error('offline'))
+    await expect(store.feedAll('morning')).resolves.toMatchObject({ allFed: true, fed: 2, total: 2 })
   })
 
   test('undoFeedings löscht die angelegten Fütterungen und lädt den Status neu', async () => {

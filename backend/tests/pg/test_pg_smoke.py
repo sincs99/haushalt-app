@@ -22,16 +22,16 @@ def test_migrations_applied_to_head(pg_url, db):
 
 
 def _structural_diffs(diffs):
-    """Nur strukturelle Unterschiede (Tabellen, Spalten, Typen, FKs, Indizes, Constraints).
+    """Strukturelle Unterschiede inkl. Nullability (Tabellen, Spalten, Typen, FKs, Indizes …).
 
-    Bekannte, bewusst offene Drift (CASA-56) wird ignoriert: DB-seitige Server-Defaults
-    und ``created_at``-Spalten, die in der DB nullable, im Modell aber NOT NULL sind.
+    Ignoriert wird nur Server-Default-Drift (CASA-56: DB-seitige Defaults ohne
+    Modell-Pendant) — die verändert kein Verhalten der App.
     """
     out = []
     for d in diffs:
         # modify_*-Diffs kommen als Liste von Tupeln pro Spalte
         if isinstance(d, list):
-            out.extend(x for x in d if x[0] not in ("modify_default", "modify_nullable"))
+            out.extend(x for x in d if x[0] != "modify_default")
         else:
             out.append(d)
     return out

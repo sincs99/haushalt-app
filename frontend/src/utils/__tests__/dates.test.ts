@@ -2,7 +2,7 @@
  * Unit-Tests für Termin-Zeiten in Haushaltszeit und die Tages-Expansion.
  */
 import type {} from 'vitest'
-import { eventDate, eventTime, expandEventToDays, householdDateString, localDateString, todoDueDay } from '../dates'
+import { eventDate, eventTime, expandEventToDays, householdDateString, localDateString, todayEventLabel, todoDueDay } from '../dates'
 
 // dates.ts lädt i18n, das beim Import localStorage liest (in Node nicht vorhanden)
 vi.hoisted(() => {
@@ -70,5 +70,26 @@ describe('todoDueDay (CASA-39)', () => {
     expect(todoDueDay('2026-10-10T00:00:00Z')).toBe('2026-10-10')
     expect(todoDueDay('2026-10-10')).toBe('2026-10-10')
     expect(todoDueDay(null)).toBeNull()
+  })
+})
+
+describe('todayEventLabel (Dashboard "Heute")', () => {
+  const today = '2026-10-07'
+
+  test('heute beginnender Termin zeigt die Startzeit', () => {
+    expect(todayEventLabel({ starts_at: '2026-10-07T09:00:00+02:00', all_day: false }, today))
+      .toEqual({ kind: 'time', time: '09:00' })
+  })
+
+  test('ganztägig bleibt ganztägig, auch wenn mehrtägig und vor heute begonnen', () => {
+    expect(todayEventLabel({ starts_at: '2026-10-07T00:00:00+02:00', all_day: true }, today))
+      .toEqual({ kind: 'allDay' })
+    expect(todayEventLabel({ starts_at: '2026-10-05T00:00:00+02:00', all_day: true }, today))
+      .toEqual({ kind: 'allDay' })
+  })
+
+  test('vor heute begonnener Termin zeigt "läuft seit" statt der (gestrigen) Startzeit', () => {
+    expect(todayEventLabel({ starts_at: '2026-10-06T20:00:00+02:00', all_day: false }, today))
+      .toEqual({ kind: 'since', date: '2026-10-06', time: '20:00' })
   })
 })

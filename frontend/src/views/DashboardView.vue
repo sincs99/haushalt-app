@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { eventTime } from '../utils/dates'
+import { formatDateShort, householdDateString, todayEventLabel } from '../utils/dates'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -140,9 +140,14 @@ const todayEvents = computed(() => {
 })
 
 function formatEventTime(item: DashboardEventItem): string {
-  if (item.all_day) return t('calendar.allDay')
-  // Haushaltszeit direkt aus dem String (siehe utils/dates eventTime)
-  return eventTime(item.starts_at)
+  // Haushaltszeit direkt aus dem String (siehe utils/dates eventTime);
+  // mehrtägige Termine von gestern: "läuft seit …" statt Startzeit
+  const label = todayEventLabel(item, householdDateString(authStore.currentHousehold?.timezone))
+  if (label.kind === 'allDay') return t('calendar.allDay')
+  if (label.kind === 'since') {
+    return t('dashboard.eventRunningSince', { date: formatDateShort(label.date), time: label.time })
+  }
+  return label.time
 }
 
 // ── Handlers ──

@@ -104,6 +104,24 @@ export function eventDate(iso: string): string {
   return iso.substring(0, 10)
 }
 
+/** Anzeige eines Termins in der Dashboard-Karte "Heute" (PD-K3) */
+export type TodayEventLabel =
+  | { kind: 'allDay' }
+  | { kind: 'time'; time: string }
+  | { kind: 'since'; date: string; time: string }
+
+/**
+ * Wie ein heutiger Termin im Dashboard beschriftet wird. Mehrtägige Termine, die
+ * vor `today` (Haushaltsdatum) begonnen haben, zeigen nicht die Startzeit von
+ * gestern, sondern "läuft seit …" — ganztägige bleiben "ganztägig" (wie im Kalender).
+ */
+export function todayEventLabel(ev: { starts_at: string; all_day: boolean }, today: string): TodayEventLabel {
+  if (ev.all_day) return { kind: 'allDay' }
+  const startDate = eventDate(ev.starts_at)
+  if (startDate < today) return { kind: 'since', date: startDate, time: eventTime(ev.starts_at) }
+  return { kind: 'time', time: eventTime(ev.starts_at) }
+}
+
 /**
  * Lokales Kalenderdatum als YYYY-MM-DD. Nicht `toISOString()` verwenden:
  * das liefert UTC, in der Schweiz zwischen 00:00 und 01:00/02:00 also gestern.

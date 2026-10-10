@@ -83,6 +83,7 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "eventRunningSince": "läuft seit {date}, {time}",
     "greetingMorning": "Guten Morgen",
     "greetingAfternoon": "Guten Tag",
     "greetingEvening": "Guten Abend",

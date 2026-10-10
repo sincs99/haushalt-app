@@ -12,6 +12,7 @@ from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Calendar, Event, Household, HouseholdMember
 from app.services.event_times import household_tz, range_bounds, to_household_time, to_utc
+from app.services.household_checks import assert_users_allowed
 from app.services.locking import lock_row
 from app.socket_manager import emit_to_household_sync
 
@@ -90,6 +91,22 @@ class EventResponse(BaseModel):
 def _tz(db: Session, household_id: uuid.UUID):
     household = db.get(Household, household_id)
     return household_tz(household.timezone if household else None)
+
+
+def _dedupe(ids: list[uuid.UUID]) -> list[uuid.UUID]:
+    """Doppelte Teilnehmer entfernen, Reihenfolge behalten."""
+    return list(dict.fromkeys(ids))
+
+
+def _validated_participants(
+    db: Session, household_id: uuid.UUID, ids: list[uuid.UUID], on_record: list[str] | None = None
+) -> list[str]:
+    """Teilnehmer prüfen (CASA-21): neue müssen aktuelle Mitglieder sein; wer schon auf
+    dem Termin steht, darf auch Ex-Mitglied sein (wie bei Ausgaben, L-05)."""
+    ids = _dedupe(ids)
+    already = {uuid.UUID(str(p)) for p in (on_record or [])}
+    assert_users_allowed(db, household_id, ids, already)
+    return [str(pid) for pid in ids]
 
 
 def _event_response(event: Event, tz) -> EventResponse:
@@ -173,7 +190,7 @@ def create_event(
         starts_at=starts_at,
         ends_at=ends_at,
         all_day=body.all_day,
-        participant_ids=[str(pid) for pid in body.participant_ids],
+        participant_ids=_validated_participants(db, household_id, body.participant_ids),
         note=body.note,
         created_by_user_id=membership.user_id,
     )
@@ -253,9 +270,11 @@ def update_event(
                 detail=error_detail(ErrorCode.CALENDAR_MISMATCH, "Calendar does not belong to this household"),
             )
 
-    # participant_ids als String-Liste speichern
+    # participant_ids prüfen und als String-Liste speichern
     if "participant_ids" in update_data and update_data["participant_ids"] is not None:
-        update_data["participant_ids"] = [str(pid) for pid in update_data["participant_ids"]]
+        update_data["participant_ids"] = _validated_participants(
+            db, household_id, update_data["participant_ids"], item.participant_ids
+        )
 
     for field, value in update_data.items():
         setattr(item, field, value)

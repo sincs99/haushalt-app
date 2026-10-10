@@ -203,23 +203,23 @@ def create_poll(
     db.add(poll)
     db.flush()
 
-    # F-1 FIX: Validiere, dass alle recipe_ids zum Household gehören
-    if body.poll_type == "meal":
-        recipe_ids = [opt.recipe_id for opt in body.options if opt.recipe_id is not None]
-        if recipe_ids:
-            valid_count = (
-                db.query(func.count(Recipe.id))
-                .filter(Recipe.id.in_(recipe_ids), Recipe.household_id == household_id)
-                .scalar()
+    # F-1 / CASA-21: recipe_ids müssen zum Household gehören — für ALLE Typen, sonst
+    # hängt eine Termin-Abstimmung an einem fremden Rezept (Löschen dort setzt hier NULL)
+    recipe_ids = {opt.recipe_id for opt in body.options if opt.recipe_id is not None}
+    if recipe_ids:
+        valid_count = (
+            db.query(func.count(Recipe.id))
+            .filter(Recipe.id.in_(recipe_ids), Recipe.household_id == household_id)
+            .scalar()
+        )
+        if valid_count != len(recipe_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_detail(
+                    ErrorCode.POLL_OPTION_INVALID,
+                    "One or more recipe_ids do not belong to this household",
+                ),
             )
-            if valid_count != len(set(recipe_ids)):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=error_detail(
-                        ErrorCode.POLL_OPTION_INVALID,
-                        "One or more recipe_ids do not belong to this household",
-                    ),
-                )
 
     # Optionszeiten ohne Offset gelten wie bei Terminen als Haushaltszeit
     tz = household_tz(db.get(Household, household_id).timezone)

@@ -425,7 +425,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | **Chores** | | | |
 | GET | `/api/households/{id}/chores/` | ✅ | Ämtli-Liste (inkl. inaktive) |
 | POST | `/api/households/{id}/chores/` | ✅ | Ämtli erstellen (Validierung, `anchor_date`) |
-| PATCH | `/api/households/{id}/chores/{chore_id}` | ✅ | Ämtli aktualisieren (Schedule-Änderung → zukünftige Zuweisungen gelöscht) |
+| PATCH | `/api/households/{id}/chores/{chore_id}` | ✅ | Ämtli aktualisieren. Zeitplanänderung → offene künftige Zuweisungen gelöscht, neu ab `anchor_date` (nie überfällig); Pausieren → offene Zuweisungen ab heute gelöscht (Rotationsplätze zurück); Reaktivieren → neuer `anchor_date` ab heute, kein Nachholen (PD-C1) |
 | DELETE | `/api/households/{id}/chores/{chore_id}` | ✅ | Ämtli + Zuweisungen löschen |
 | GET | `/api/households/{id}/chores/assignments` | ✅ | Zuweisungen (`from`/`to`; triggert Materialisierung, Fenster max. 92 Tage) |
 | POST | `/api/households/{id}/chores/assignments/{assignment_id}/complete` | ✅ | Zuweisung abhaken (idempotent) |
@@ -564,8 +564,9 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `chore_created` | Server → Room | `ChoreResponse` |
 | `chore_updated` | Server → Room | `ChoreResponse` |
 | `chore_deleted` | Server → Room | `{ id, household_id }` |
-| `chore_assignment_created` | Server → Room | `ChoreAssignmentResponse` |
+| `chore_assignment_created` | Server → Room | `ChoreAssignmentResponse` — bei jeder Materialisierung (Putzplan, Tag-Scan, Push-Scheduler, Zeitplanänderung) |
 | `chore_assignment_updated` | Server → Room | `ChoreAssignmentResponse` (abhaken, rückgängig, neu zuweisen) |
+| `chore_assignments_deleted` | Server → Room | `{chore_id, household_id, ids}` — Zeitplanänderung oder Pause hat offene Zuweisungen gelöscht; Clients entfernen sie |
 | **Kalender** | | |
 | `calendar_created` | Server → Room | `CalendarResponse` |
 | `calendar_updated` | Server → Room | `CalendarResponse` |

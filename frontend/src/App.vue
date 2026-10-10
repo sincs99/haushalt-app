@@ -8,7 +8,7 @@ import { useExpensesStore } from './stores/expenses'
 import { useSettlementsStore } from './stores/settlements'
 import { useChoresStore } from './stores/chores'
 import { useFinanceStore } from './stores/finance'
-import { useDashboardStore } from './stores/dashboard'
+import { DASHBOARD_EXTRA_EVENTS, useDashboardStore } from './stores/dashboard'
 import { usePollsStore } from './stores/polls'
 import { usePetsStore } from './stores/pets'
 import { usePlantsStore } from './stores/plants'
@@ -107,6 +107,7 @@ watch(
     off('chore_deleted', choresStore.handleChoreDeleted)
     off('chore_assignment_created', choresStore.handleAssignmentCreated)
     off('chore_assignment_updated', choresStore.handleAssignmentUpdated)
+    off('chore_assignments_deleted', choresStore.handleAssignmentsDeleted)
     off('budget_updated', financeStore.handleBudgetUpdated)
     off('recurring_bill_created', financeStore.handleBillCreated)
     off('recurring_bill_updated', financeStore.handleBillUpdated)
@@ -157,6 +158,7 @@ watch(
     off('plant_care_logged', dashboardStore.invalidate)
     off('plant_created', dashboardStore.invalidate)
     off('plant_deleted', dashboardStore.invalidate)
+    DASHBOARD_EXTRA_EVENTS.forEach((event) => off(event, dashboardStore.invalidate))
     BADGE_EVENTS.forEach((event) => off(event, refreshAppBadgeSoon))
 
     // Wenn Token weg (Logout): Socket disconnecten, Zahl am App-Icon entfernen
@@ -204,6 +206,7 @@ watch(
       on('chore_deleted', choresStore.handleChoreDeleted)
       on('chore_assignment_created', choresStore.handleAssignmentCreated)
       on('chore_assignment_updated', choresStore.handleAssignmentUpdated)
+      on('chore_assignments_deleted', choresStore.handleAssignmentsDeleted)
       on('budget_updated', financeStore.handleBudgetUpdated)
       on('recurring_bill_created', financeStore.handleBillCreated)
       on('recurring_bill_updated', financeStore.handleBillUpdated)
@@ -256,6 +259,9 @@ watch(
       on('plant_care_logged', dashboardStore.invalidate)
       on('plant_created', dashboardStore.invalidate)
       on('plant_deleted', dashboardStore.invalidate)
+
+      DASHBOARD_EXTRA_EVENTS.forEach((event) => on(event, dashboardStore.invalidate))
+
 
       // Zahl am App-Icon aktuell halten
       BADGE_EVENTS.forEach((event) => on(event, refreshAppBadgeSoon))
@@ -319,6 +325,7 @@ onUnmounted(() => {
   off('chore_deleted', choresStore.handleChoreDeleted)
   off('chore_assignment_created', choresStore.handleAssignmentCreated)
   off('chore_assignment_updated', choresStore.handleAssignmentUpdated)
+  off('chore_assignments_deleted', choresStore.handleAssignmentsDeleted)
   off('budget_updated', financeStore.handleBudgetUpdated)
   off('recurring_bill_created', financeStore.handleBillCreated)
   off('recurring_bill_updated', financeStore.handleBillUpdated)
@@ -366,6 +373,7 @@ onUnmounted(() => {
   off('plant_care_logged', dashboardStore.invalidate)
   off('plant_created', dashboardStore.invalidate)
   off('plant_deleted', dashboardStore.invalidate)
+  DASHBOARD_EXTRA_EVENTS.forEach((event) => off(event, dashboardStore.invalidate))
   BADGE_EVENTS.forEach((event) => off(event, refreshAppBadgeSoon))
   offReconnect(handleReconnect)
   setTokenRefresher(null)

@@ -4,6 +4,22 @@ import { useAuthStore } from './auth'
 import { createOnlineDashboardRepository } from '../repositories/dashboardRepository'
 import type { DashboardResponse } from '../types'
 
+/**
+ * Weitere Socket-Events, nach denen das Dashboard neu lädt (CASA-43): Ämtli
+ * angelegt/geändert/pausiert/gelöscht, Tiere (Pflegeaufgaben hängen am Tier) und
+ * Kalender (Löschen entfernt seine Termine). Die übrigen Quellen bindet App.vue einzeln.
+ */
+export const DASHBOARD_EXTRA_EVENTS = [
+  'chore_created',
+  'chore_updated',
+  'chore_deleted',
+  'chore_assignments_deleted',
+  'pet_created',
+  'pet_updated',
+  'pet_deleted',
+  'calendar_deleted',
+] as const
+
 export const useDashboardStore = defineStore('dashboard', () => {
   const repo = createOnlineDashboardRepository()
 

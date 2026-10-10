@@ -36,7 +36,7 @@ from app.models import (
     TodoReminder,
 )
 from app.services.attention import attention_count
-from app.services.chore_scheduler import materialize_due_assignments
+from app.services.chore_scheduler import materialize_and_emit
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -319,7 +319,7 @@ def _ensure_chore_assignments(db: Session, now: datetime) -> None:
         if local_now.hour < CHORE_NOTIFY_HOUR or _chores_materialized.get(household.id) == local_now.date():
             continue
         try:
-            materialize_due_assignments(db, household)
+            materialize_and_emit(db, household)
             _chores_materialized[household.id] = local_now.date()
         except Exception:
             db.rollback()
@@ -336,6 +336,8 @@ def process_chore_assignments(db: Session, now: datetime) -> int:
         .filter(
             ChoreAssignment.notified_at.is_(None),
             ChoreAssignment.completed_at.is_(None),
+            # Pausierte Ämtli melden nicht (CASA-17)
+            Chore.active == True,  # noqa: E712
             # Grobfilter (±1 Tag für Zeitzonen), exakt pro Household unten
             ChoreAssignment.due_date >= (now - timedelta(days=1)).date(),
             ChoreAssignment.due_date <= (now + timedelta(days=1)).date(),

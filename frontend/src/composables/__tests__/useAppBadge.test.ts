@@ -81,3 +81,9 @@ test('does nothing without Badging API support', async () => {
   await badge.refreshAppBadge()
   expect(api.get).not.toHaveBeenCalled()
 })
+
+test('refreshes after pet deletion and removed chore assignments (CASA-43)', async () => {
+  const badge = await load()
+  expect(badge.BADGE_EVENTS).toContain('pet_deleted')
+  expect(badge.BADGE_EVENTS).toContain('chore_assignments_deleted')
+})

@@ -922,7 +922,31 @@
     "decideHint": "This ends the poll for the whole household.",
     "pollDecidedToast": "Decided: “{option}”",
     "decideOccupied": "«{meal}» is already planned for {date}. Deciding replaces it.",
-    "decideReplace": "Replace and decide"
+    "decideReplace": "Replace and decide",
+    "minutes": "{n} min",
+    "showLess": "Show less",
+    "showAllRecipes": "Show all {n} recipes",
+    "editRecipe": "Edit recipe",
+    "tags": "Tags",
+    "tagsPlaceholder": "e.g. vegetarian, quick",
+    "ingredientsPlaceholder": "500 g flour\n1 egg",
+    "stepsPlaceholder": "Knead the dough\nBake",
+    "onePerLine": "One per line (max. {max})",
+    "recipeSaved": "Recipe saved",
+    "recipeCreated": "Recipe created",
+    "recipeSaveError": "Recipe could not be saved.",
+    "recipeDeleted": "«{name}» deleted",
+    "recipeDeleteError": "Recipe could not be deleted.",
+    "deleteRecipeHint": "Planned meals with this recipe stay in the week plan – with the name as text.",
+    "recipeError": {
+      "name": "Please enter a name (max. 150 characters)",
+      "servings": "Whole number from 1",
+      "cost": "Amount like 12.50",
+      "duration": "Whole number from 1",
+      "ingredients": "At most 100 ingredients, max. 200 characters each",
+      "steps": "At most 30 steps, max. 1000 characters each",
+      "tags": "At most 10 tags, max. 30 characters each"
+    }
   },
   "notes": {
     "title": "Notes",

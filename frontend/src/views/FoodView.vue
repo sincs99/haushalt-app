@@ -24,6 +24,7 @@ import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseErrorState from '../components/ui/BaseErrorState.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 import AiRecipeCard from '../components/AiRecipeCard.vue'
+import RecipeManager from '../components/RecipeManager.vue'
 import { useAiStore } from '../stores/ai'
 
 const foodStore = useFoodStore()
@@ -229,6 +230,20 @@ async function switchToAssign() {
   await nextTick()
   await waitForOverlayBack()
   openAssignDialog(date)
+}
+
+// ── Rezept aus dem Detail-Dialog bearbeiten ──
+const recipeManager = ref<InstanceType<typeof RecipeManager> | null>(null)
+
+async function editDetailRecipe() {
+  const recipe = detailEntry.value?.recipe
+  if (!recipe) return
+  // Aktuelle Fassung aus der Rezeptliste (der Eintrag kann ein älteres Objekt tragen)
+  const current = foodStore.recipes.find(r => r.id === recipe.id) ?? recipe
+  closeDetailDialog()
+  await nextTick()
+  await waitForOverlayBack()
+  recipeManager.value?.openEdit(current)
 }
 
 async function doAddToShopping() {
@@ -598,6 +613,9 @@ async function doCreateMealPoll() {
     <!-- ── KI-Rezeptvorschlag (nur mit Server-Schlüssel und Opt-in des Haushalts) ── -->
     <AiRecipeCard v-if="aiStore.enabledForHousehold" />
 
+    <!-- ── Rezepte verwalten (erstellen, bearbeiten, löschen) ── -->
+    <RecipeManager ref="recipeManager" />
+
     <!-- ── Create Meal Poll Dialog ── -->
     <BaseDialog
       :open="showCreateMealPoll"
@@ -798,6 +816,9 @@ async function doCreateMealPoll() {
         <div class="dialog-actions">
           <BaseButton variant="secondary" size="sm" @click="switchToAssign">
             {{ t('food.assignTitle') }}
+          </BaseButton>
+          <BaseButton v-if="detailEntry?.recipe" variant="ghost" size="sm" @click="editDetailRecipe">
+            {{ t('food.editRecipe') }}
           </BaseButton>
           <div class="dialog-actions__spacer" />
           <BaseButton variant="ghost" size="sm" @click="closeDetailDialog">

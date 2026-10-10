@@ -922,7 +922,31 @@
     "decideHint": "Die Abstimmung wird damit für den ganzen Haushalt beendet.",
     "pollDecidedToast": "Entschieden: «{option}»",
     "decideOccupied": "Für {date} ist schon «{meal}» geplant. Beim Entscheiden wird es ersetzt.",
-    "decideReplace": "Ersetzen und entscheiden"
+    "decideReplace": "Ersetzen und entscheiden",
+    "minutes": "{n} Min.",
+    "showLess": "Weniger anzeigen",
+    "showAllRecipes": "Alle {n} Rezepte anzeigen",
+    "editRecipe": "Rezept bearbeiten",
+    "tags": "Tags",
+    "tagsPlaceholder": "z. B. vegetarisch, schnell",
+    "ingredientsPlaceholder": "500 g Mehl\n1 Ei",
+    "stepsPlaceholder": "Teig kneten\nBacken",
+    "onePerLine": "Eine pro Zeile (max. {max})",
+    "recipeSaved": "Rezept gespeichert",
+    "recipeCreated": "Rezept angelegt",
+    "recipeSaveError": "Rezept konnte nicht gespeichert werden.",
+    "recipeDeleted": "«{name}» gelöscht",
+    "recipeDeleteError": "Rezept konnte nicht gelöscht werden.",
+    "deleteRecipeHint": "Geplante Mahlzeiten mit diesem Rezept bleiben im Wochenplan – mit dem Namen als Text.",
+    "recipeError": {
+      "name": "Bitte einen Namen eingeben (max. 150 Zeichen)",
+      "servings": "Ganze Zahl ab 1",
+      "cost": "Betrag wie 12.50",
+      "duration": "Ganze Zahl ab 1",
+      "ingredients": "Höchstens 100 Zutaten, je max. 200 Zeichen",
+      "steps": "Höchstens 30 Schritte, je max. 1000 Zeichen",
+      "tags": "Höchstens 10 Tags, je max. 30 Zeichen"
+    }
   },
   "notes": {
     "title": "Notizen",

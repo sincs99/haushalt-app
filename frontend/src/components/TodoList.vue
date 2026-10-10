@@ -15,6 +15,7 @@ import BaseSkeleton from './ui/BaseSkeleton.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
 import BaseCheckCircle from './ui/BaseCheckCircle.vue'
 import BaseErrorState from './ui/BaseErrorState.vue'
+import { changedTodoFields } from '../utils/editDiff'
 
 const todosStore = useTodosStore()
 const authStore = useAuthStore()
@@ -237,8 +238,12 @@ async function handleDelete(todoId: string) {
 }
 
 // Bearbeitung starten
+// Stand beim Start der Bearbeitung: Vergleichsbasis für Teil-Updates (CASA-09)
+let editOriginal: TodoItem | null = null
+
 function startEdit(todo: TodoItem) {
   editingId.value = todo.id
+  editOriginal = { ...todo }
   editTitle.value = todo.title
   editDescription.value = todo.description ?? ''
   editDueDate.value = todoDueDay(todo.due_date) ?? ''
@@ -272,13 +277,20 @@ async function saveEdit(todoId: string) {
 
   editSaving.value = true
   try {
-    const ok = await run(() => todosStore.updateTodo(todoId, {
+    const edit = {
       title,
       description: editDescription.value.trim() || null,
       due_date: editDueDate.value || null,
       assigned_to_user_id: editAssignedTo.value || null,
-    }), { key: `save:${todoId}`, error: t('todos.saveError') })
-    if (!ok) return
+    }
+    // Nur geänderte Felder senden (CASA-09); nichts geändert → kein Request
+    const changes = editOriginal?.id === todoId ? changedTodoFields(editOriginal, edit) : edit
+    if (Object.keys(changes).length > 0) {
+      const ok = await run(() => todosStore.updateTodo(todoId, changes), {
+        key: `save:${todoId}`, error: t('todos.saveError'),
+      })
+      if (!ok) return
+    }
 
     // Neue Reminders hinzufügen
     await addReminders(todoId, editNewReminders.value.filter(r => r.trim() !== ''))

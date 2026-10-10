@@ -32,7 +32,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Install test and lint dependencies
-        run: pip install pytest httpx pytest-cov ruff
+        run: pip install pytest httpx pytest-cov ruff hypothesis
 
       - name: Lint (ruff)
         run: ruff check .
@@ -78,7 +78,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest httpx
+        run: pip install -r requirements.txt pytest httpx hypothesis
 
       - name: Migrate fresh database (alembic upgrade head)
         run: alembic upgrade head

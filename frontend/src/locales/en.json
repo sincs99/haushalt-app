@@ -155,7 +155,16 @@
     "deleted": "Event deleted",
     "prevWeek": "Previous week",
     "nextWeek": "Next week",
-    "noEventsDay": "No events on this day"
+    "noEventsDay": "No events on this day",
+    "reminderLabel": "Reminder",
+    "reminder": {
+      "none": "None",
+      "15m": "15 minutes before",
+      "1h": "1 hour before",
+      "1d": "1 day before"
+    },
+    "reminderAllDay": "All day: reminder at 08:00 on the day",
+    "reminderAllDayBefore": "All day: reminder at 08:00 the day before"
   },
   "calendars": {
     "manage": "Manage calendars",

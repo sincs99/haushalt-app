@@ -123,6 +123,23 @@ describe('Events: Optimistic CRUD', () => {
     expect(store.events).toEqual([server])
   })
 
+  test('addEvent übernimmt die Erinnerung (Default none) und sendet sie mit (PD-K1)', async () => {
+    const store = useCalendarStore()
+    const pending = deferred<CalendarEvent>()
+    repo.create.mockReturnValue(pending.promise)
+    const payload = { title: 'Zahnarzt', starts_at: '2026-03-03T09:00:00', calendar_id: 'c1', reminder: '1h' as const }
+    const p = store.addEvent(payload)
+    expect(store.events[0].reminder).toBe('1h')
+    expect(repo.create).toHaveBeenCalledWith(HOUSEHOLD_ID, payload)
+    pending.resolve(makeEvent({ id: 'srv', reminder: '1h' }))
+    await p
+
+    repo.create.mockResolvedValue(makeEvent({ id: 'srv2' }))
+    const q = store.addEvent({ title: 'x', starts_at: '2026-03-04T09:00:00', calendar_id: 'c1' })
+    expect(store.events.find(e => e.title === 'x')?.reminder).toBe('none')
+    await q
+  })
+
   test('addEvent: Rollback bei Fehler', async () => {
     const store = useCalendarStore()
     const existing = makeEvent()

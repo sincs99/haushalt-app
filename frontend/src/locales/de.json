@@ -155,7 +155,16 @@
     "deleted": "Termin gelöscht",
     "prevWeek": "Vorherige Woche",
     "nextWeek": "Nächste Woche",
-    "noEventsDay": "Keine Termine an diesem Tag"
+    "noEventsDay": "Keine Termine an diesem Tag",
+    "reminderLabel": "Erinnerung",
+    "reminder": {
+      "none": "Keine",
+      "15m": "15 Minuten vorher",
+      "1h": "1 Stunde vorher",
+      "1d": "1 Tag vorher"
+    },
+    "reminderAllDay": "Ganztägig: Erinnerung am Tag um 08:00",
+    "reminderAllDayBefore": "Ganztägig: Erinnerung am Vortag um 08:00"
   },
   "calendars": {
     "manage": "Kalender verwalten",

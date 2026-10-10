@@ -17,8 +17,10 @@ import zoneinfo
 from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import HTTPException
+from sqlalchemy import and_, func
 
 from app.core.error_codes import ErrorCode, error_detail
+from app.models import Event
 
 DEFAULT_TZ = "Europe/Zurich"
 
@@ -86,3 +88,17 @@ def range_bounds(
 def all_day_start_utc(day: date, tz: zoneinfo.ZoneInfo) -> datetime:
     """Beginn eines ganztägigen Termins (00:00 Haushaltszeit) in UTC."""
     return to_utc(datetime.combine(day, time.min), tz)
+
+
+def overlaps_range(start: datetime, end: datetime):
+    """SQL-Filter: Termin überschneidet [start, end) — auch mehrtägige, die vorher
+    beginnen und hineinreichen. Gleiche Regel für Kalender, Dashboard und Widget (PD-K3)."""
+    return and_(
+        Event.starts_at < end,
+        func.coalesce(Event.ends_at, Event.starts_at) >= start,
+    )
+
+
+def on_day(day: date, tz: zoneinfo.ZoneInfo):
+    """SQL-Filter: Termin findet (auch teilweise) am Haushaltstag ``day`` statt."""
+    return overlaps_range(*range_bounds(day, day, tz))

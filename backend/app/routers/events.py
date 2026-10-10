@@ -3,7 +3,6 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
@@ -11,7 +10,13 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Calendar, Event, Household, HouseholdMember
-from app.services.event_times import household_tz, range_bounds, to_household_time, wall_time_to_utc
+from app.services.event_times import (
+    household_tz,
+    overlaps_range,
+    range_bounds,
+    to_household_time,
+    wall_time_to_utc,
+)
 from app.services.household_checks import assert_users_allowed
 from app.services.locking import lock_row
 from app.socket_manager import emit_to_household_sync
@@ -145,9 +150,8 @@ def list_events(
         db.query(Event)
         .filter(
             Event.household_id == household_id,
-            Event.starts_at < range_end,
             # Mehrtägige Termine, die vor dem Bereich beginnen, aber hineinreichen
-            func.coalesce(Event.ends_at, Event.starts_at) >= range_start,
+            overlaps_range(range_start, range_end),
         )
         .order_by(Event.starts_at.asc())
         .all()

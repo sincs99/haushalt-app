@@ -11,6 +11,7 @@ import { useLoader } from '../composables/useLoader'
 import { DEFAULT_CALENDAR_PALETTE } from '../utils/categoryColors'
 import { expandEventToDays, eventTime, eventDate } from '../utils/dates'
 import type { ExpandedEventDay } from '../utils/dates'
+import { changedEventFields } from '../utils/eventEdit'
 import type { CalendarEvent, CalendarEventCreatePayload, CalendarInfo, EventPoll, EventReminder, PollOption } from '../types'
 import CalendarMonthGrid from '../components/CalendarMonthGrid.vue'
 
@@ -508,8 +509,14 @@ async function submitForm() {
     reminder: formReminder.value,
   }
   const editing = editingEvent.value
+  // Bearbeiten: nur geänderte Felder senden (CASA-09); nichts geändert → kein Request
+  const changes = editing ? changedEventFields(editing, payload) : null
+  if (changes && Object.keys(changes).length === 0) {
+    closeDialog()
+    return
+  }
   const ok = await run(
-    () => editing ? store.updateEvent(editing.id, payload) : store.addEvent(payload),
+    () => editing && changes ? store.updateEvent(editing.id, changes) : store.addEvent(payload),
     {
       key: 'event-form',
       // Termin ausserhalb der sichtbaren Woche/des Monats (oder im ausgeblendeten

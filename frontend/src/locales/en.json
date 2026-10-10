@@ -569,6 +569,7 @@
     "BILL_PAYER_REQUIRED": "Please choose who paid the bill",
     "BILL_ALREADY_BOOKED": "This bill has already been booked",
     "ENTITY_ID_CONFLICT": "This ID is already in use",
+    "CONFLICT_RETRY": "Someone changed this at the same time – please try again",
     "AI_NOT_CONFIGURED": "The AI assistant is not set up on this server",
     "AI_NOT_ENABLED": "The AI assistant is not turned on for this household",
     "AI_DAILY_LIMIT_REACHED": "This household has reached its daily limit of AI requests – try again tomorrow",

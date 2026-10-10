@@ -31,5 +31,10 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        # Explizit zurückrollen: Exception-Handler (z. B. IntegrityError → 409) sollen
+        # nie eine halb geschriebene Transaktion hinterlassen
+        db.rollback()
+        raise
     finally:
         db.close()

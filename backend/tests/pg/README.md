@@ -58,6 +58,19 @@ def test_parallel_first_budget_never_500(client, household):
 Konventionen: Concurrency-Regressionstests gehören hierher (`test_<bereich>_*.py`), fachliche
 Tests ohne Parallelität weiterhin in die SQLite-Lane.
 
+## Sperren und Konflikte (F0-2)
+
+- `app.services.locking.lock_household(db, household_id)` — `SELECT … FOR UPDATE` auf die
+  `households`-Zeile; serialisiert haushaltsweite Check-then-Act-Abläufe (Mitgliedschaft,
+  Kalender, Quota …). Immer zuerst sperren, danach weitere Zeilen.
+- `lock_row(db, Model, id)` — Sperre auf eine einzelne Zeile. Beide lesen die Zeile unter der
+  Sperre neu (`populate_existing`) und sind auf SQLite ein normales SELECT.
+- Globaler Handler (`app/core/db_errors.py`): `IntegrityError`, `StaleDataError` und
+  PostgreSQL-Deadlock/Serialisierung/Lock-Timeout (`40P01`, `40001`, `55P03`) →
+  `409 {"detail": {"code": "CONFLICT_RETRY"}}`; `get_db` rollt die Session dabei zurück.
+  Das ist ein Netz — bekannte Races gezielt sperren und fachlich beantworten.
+- Sperr-Timeout im Test erzwingen: `db.execute(text("SET LOCAL lock_timeout = '200ms'"))`.
+
 ## CI
 
 Job `backend-postgres` in `.github/workflows/ci.yml`: `postgres:16`-Service,

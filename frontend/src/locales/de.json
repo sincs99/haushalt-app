@@ -569,6 +569,7 @@
     "BILL_PAYER_REQUIRED": "Bitte wähle aus, wer die Rechnung bezahlt hat",
     "BILL_ALREADY_BOOKED": "Rechnung wurde bereits gebucht",
     "ENTITY_ID_CONFLICT": "Diese ID wird bereits verwendet",
+    "CONFLICT_RETRY": "Jemand hat das gerade gleichzeitig geändert – bitte versuche es noch einmal",
     "AI_NOT_CONFIGURED": "Der KI-Assistent ist auf diesem Server nicht eingerichtet",
     "AI_NOT_ENABLED": "Der KI-Assistent ist für diesen Haushalt nicht eingeschaltet",
     "AI_DAILY_LIMIT_REACHED": "Das Tageslimit für KI-Anfragen in diesem Haushalt ist erreicht – morgen geht es weiter",

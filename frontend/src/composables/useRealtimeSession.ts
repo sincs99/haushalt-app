@@ -72,6 +72,8 @@ export function useRealtimeSession(): { stop: () => void } {
     ['household_member_joined', authStore.handleMemberJoined],
     ['household_member_left', authStore.handleMemberLeft],
     ['household_member_removed', authStore.handleMemberRemoved],
+    // Server lehnt join_household ab / reauth findet keine Mitgliedschaft mehr (CASA-48/49)
+    ['error', authStore.handleSocketError],
     ['poll_created', pollsStore.handleSocketCreated],
     ['poll_voted', pollsStore.handleSocketVoted],
     ['poll_decided', pollsStore.handleSocketDecided],
@@ -191,6 +193,8 @@ export function useRealtimeSession(): { stop: () => void } {
       refreshAllStores()
       void refreshAppBadge()
     }
+    // Entfernung oder Rollenwechsel verpasst, solange die Verbindung weg war (CASA-49)
+    void authStore.revalidateMembership()
   }
 
   onReconnect(handleReconnect)

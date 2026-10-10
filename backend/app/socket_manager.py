@@ -180,7 +180,37 @@ async def reauth(sid, data):
     session["exp"] = exp
     await sio.save_session(sid, session)
     _schedule_expiry(sid, exp)
+
+    # Mitgliedschaft neu prüfen (CASA-48): Wurde der User inzwischen aus einem Haushalt
+    # entfernt, dessen Raum diese Verbindung noch hält (z.B. Eviction verpasst), endet
+    # der Empfang hier spätestens.
+    for room in list(sio.manager.get_rooms(sid, "/")):
+        if not isinstance(room, str) or not room.startswith("household_"):
+            continue
+        try:
+            household_id = uuid.UUID(room.removeprefix("household_"))
+            is_member = await run_in_threadpool(_is_household_member, household_id, uid)
+        except Exception:
+            logger.warning("Socket reauth – membership check failed (sid=%s, room=%s)", sid, room, exc_info=True)
+            continue
+        if not is_member:
+            await sio.leave_room(sid, room)
+            await sio.emit("error", _not_member_error(household_id), to=sid)
+            logger.info("Socket reauth – left room %s, no longer a member (sid=%s)", room, sid)
     return {"ok": True}
+
+
+def _not_member_error(household_id: uuid.UUID) -> dict:
+    """Payload des ``error``-Events, wenn der User nicht (mehr) Mitglied ist.
+
+    ``code`` wie bei REST (403 NOT_HOUSEHOLD_MEMBER): der Client lädt /me neu und
+    behandelt den Haushalt als verlassen (CASA-49).
+    """
+    return {
+        "message": "Not a member of this household",
+        "code": "NOT_HOUSEHOLD_MEMBER",
+        "household_id": str(household_id),
+    }
 
 
 @sio.event
@@ -229,14 +259,24 @@ async def join_household(sid, data):
         return
 
     if not is_member:
-        await sio.emit(
-            "error",
-            {"message": "Not a member of this household"},
-            to=sid,
-        )
+        await sio.emit("error", _not_member_error(household_id), to=sid)
         return
 
     await sio.enter_room(sid, _household_room(household_id))
+
+    # Erneut prüfen (CASA-48): Zwischen Prüfung und enter_room kann eine Entfernung
+    # samt Eviction gelaufen sein — die Eviction hätte diese sid dann noch nicht im
+    # Raum gefunden. Nach dem Beitritt ist jede spätere Eviction wirksam.
+    try:
+        still_member = await run_in_threadpool(_is_household_member, household_id, user_id)
+    except Exception:
+        logger.error("join_household – DB error on re-check (sid=%s)", sid, exc_info=True)
+        still_member = False
+    if not still_member:
+        await sio.leave_room(sid, _household_room(household_id))
+        await sio.emit("error", _not_member_error(household_id), to=sid)
+        return
+
     logger.info(
         "User %s joined room household_%s (sid=%s)", user_id, household_id, sid
     )

@@ -1,4 +1,6 @@
 """Tests für Register mit invite_code / household_name."""
+from unittest.mock import patch
+
 from app.core.error_codes import ErrorCode
 from app.models import HouseholdMember, User
 
@@ -24,14 +26,15 @@ class TestRegisterWithHouseholdName:
 
 
 class TestRegisterWithInviteCode:
-    def test_register_with_valid_code(self, client, db, household_a):
+    def test_register_with_valid_code(self, client, db, household_a, user_a):
         """Registrierung mit gültigem Invite-Code → Member in bestehendem Haushalt."""
-        resp = client.post("/api/auth/register", json={
-            "email": "invited@test.com",
-            "password": "password123",
-            "display_name": "Invited",
-            "invite_code": household_a.invite_code,
-        })
+        with patch("app.routers.auth.emit_to_household_sync") as emit:
+            resp = client.post("/api/auth/register", json={
+                "email": "invited@test.com",
+                "password": "password123",
+                "display_name": "Invited",
+                "invite_code": household_a.invite_code,
+            })
         assert resp.status_code == 200
         assert "access_token" in resp.json()
 
@@ -42,6 +45,18 @@ class TestRegisterWithInviteCode:
         ).first()
         assert m is not None
         assert m.role == "member"
+
+        # Andere Mitglieder erfahren davon wie bei POST /households/join (CASA-46)
+        emit.assert_called_once_with(
+            household_a.id,
+            "household_member_joined",
+            {
+                "household_id": str(household_a.id),
+                "user_id": str(user.id),
+                "display_name": "Invited",
+                "role": "member",
+            },
+        )
 
     def test_register_with_invalid_code(self, client, db):
         """Registrierung mit ungültigem Invite-Code → 404."""

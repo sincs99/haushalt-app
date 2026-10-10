@@ -7,7 +7,7 @@ import { nextTick, reactive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 const mocks = vi.hoisted(() => ({
-  auth: null as unknown as { token: string | null; currentHouseholdId: string | null; user: { id: string } | null },
+  auth: null as unknown as { token: string | null; currentHouseholdId: string | null; user: { id: string } | null; revalidateMembership: () => Promise<void> },
   get: vi.fn(),
   socket: {
     updateToken: vi.fn(),
@@ -39,7 +39,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
   vi.clearAllMocks()
   mocks.get.mockResolvedValue({ data: [] })
-  mocks.auth = reactive({ token: 't1', currentHouseholdId: 'hh-A', user: { id: 'u1' } })
+  mocks.auth = reactive({ token: 't1', currentHouseholdId: 'hh-A', user: { id: 'u1' }, revalidateMembership: vi.fn(async () => {}) })
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
@@ -87,6 +87,8 @@ test('Reconnect: Room neu betreten und nachladen', () => {
 
   expect(socket.joinHousehold).toHaveBeenLastCalledWith('hh-A')
   expect(mocks.get).toHaveBeenCalled()
+  // Verpasste Entfernung während der Trennung (CASA-49)
+  expect(mocks.auth.revalidateMembership).toHaveBeenCalled()
   session.stop()
 })
 

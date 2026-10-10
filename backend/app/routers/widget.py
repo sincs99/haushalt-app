@@ -6,8 +6,9 @@ Zwei Router:
   widerrufen — pro Person und Haushalt höchstens einer.
 - ``router``: ``GET /api/widget/summary`` mit ``Authorization: Bearer hw_…``.
   Der Schlüssel erlaubt nur diesen einen Lese-Endpoint, läuft nicht ab und
-  ist an Person und Haushalt gebunden. Verlässt die Person den Haushalt,
-  wird er beim nächsten Aufruf ungültig (und gelöscht).
+  ist an Person und Haushalt gebunden. Verlässt die Person den Haushalt (oder
+  wird entfernt), wird er im selben Commit gelöscht (PD-H1); als Rückfall prüft
+  jeder Abruf die Mitgliedschaft.
 
 Gespeichert wird nur der SHA-256-Hash; der Klartext erscheint einmal beim Erzeugen.
 Doku: docs/widget.md
@@ -37,6 +38,8 @@ from app.models import (
 )
 from app.services.attention import due_items, household_today
 from app.services.event_times import to_household_time
+from app.services.locking import lock_household
+from app.services.membership import locked_membership
 
 TOKEN_PREFIX = "hw_"
 MAX_DUE_ITEMS = 8
@@ -107,7 +110,18 @@ def create_widget_token(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    """Erzeugt einen neuen Schlüssel; ein bestehender wird dabei ungültig."""
+    """Erzeugt einen neuen Schlüssel; ein bestehender wird dabei ungültig.
+
+    Parallele Aufrufe (Doppelklick, zwei Geräte) laufen unter der Haushaltssperre
+    nacheinander (CASA-24): jeder ersetzt den vorherigen, am Ende gilt genau ein
+    Schlüssel — der zuletzt ausgegebene. Die Sperre serialisiert auch mit
+    Austritt/Entfernen, die den Schlüssel löschen (PD-H1).
+    """
+    if lock_household(db, household_id) is None or locked_membership(db, household_id, membership.user_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_detail(ErrorCode.NOT_HOUSEHOLD_MEMBER, "Not a member of this household"),
+        )
     existing = _own_token(db, membership)
     if existing is not None:
         db.delete(existing)
@@ -121,9 +135,12 @@ def create_widget_token(
         token_prefix=plain[:10],
     )
     db.add(token)
+    db.flush()
+    # Antwort vor dem Commit bauen: Danach kann ein paralleler Aufruf den Schlüssel
+    # schon ersetzt haben (ein refresh() fände die Zeile nicht mehr)
+    result = WidgetTokenCreated(token=plain, token_prefix=token.token_prefix, created_at=token.created_at)
     db.commit()
-    db.refresh(token)
-    return WidgetTokenCreated(token=plain, token_prefix=token.token_prefix, created_at=token.created_at)
+    return result
 
 
 @manage_router.delete("", status_code=status.HTTP_204_NO_CONTENT)

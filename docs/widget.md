@@ -31,8 +31,9 @@ Ohne Netz zeigt das Widget den letzten Stand mit Uhrzeit („Offline – Stand 0
 | Rechte | Nur `GET /api/widget/summary`. Mit dem Schlüssel lässt sich nichts ändern und keine andere API aufrufen (andere Endpoints erwarten ein Login-JWT) |
 | Bindung | Eine Person in einem Haushalt; höchstens ein Schlüssel pro Person und Haushalt |
 | Speicherung | Nur SHA-256-Hash in `widget_tokens`; Klartext (`hw_…`, 256 Bit) wird einmal angezeigt |
-| Laufzeit | Kein Ablauf; „Neuen Schlüssel erzeugen“ ersetzt, „Widerrufen“ löscht ihn |
-| Haushalt verlassen | Schlüssel wird beim nächsten Abruf ungültig und gelöscht; beim Löschen von Person oder Haushalt per `ON DELETE CASCADE` |
+| Laufzeit | Kein Ablauf; „Neuen Schlüssel erzeugen“ ersetzt, „Widerrufen“ löscht ihn. Gleichzeitiges Erzeugen (Doppelklick, zwei Geräte) läuft unter der Haushaltssperre nacheinander — am Ende gilt genau ein Schlüssel, der zuletzt ausgegebene |
+| Haushalt verlassen / entfernt werden | Schlüssel wird im selben Commit wie der Austritt gelöscht (PD-H1) — auch nach erneutem Beitritt gilt er nicht mehr. Als Rückfall prüft jeder Abruf die Mitgliedschaft (sonst 401 und Löschung); beim Löschen von Person oder Haushalt per `ON DELETE CASCADE` |
+| Zuständigkeit | „Mir zugewiesen“ zählt nur Zuweisungen an aktuelle Mitglieder; Aufgaben/Ämtli eines Ex-Mitglieds zählen wie „niemandem zugewiesen“ |
 | Missbrauch | Rate-Limit 30/min pro IP; Antwort mit `Cache-Control: no-store`; `last_used_at` sichtbar in der App |
 
 Der Schlüssel steht im Skript auf dem iPhone. Synchronisiert Scriptable seine Skripte über iCloud Drive, liegt er auch dort. Wer das Skript hat, kann die Widget-Daten lesen (Titel von Aufgaben, Ämtli, Einkäufen, Terminen von heute), bis der Schlüssel widerrufen wird.

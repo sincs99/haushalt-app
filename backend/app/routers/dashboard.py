@@ -238,11 +238,16 @@ def get_dashboard(
         .all()
     )
 
+    # Zuweisung an ein Ex-Mitglied gilt als "niemand" (PD-H1, wie Badge/Widget)
+    member_ids = {
+        row[0]
+        for row in db.query(HouseholdMember.user_id).filter(HouseholdMember.household_id == household_id)
+    }
     chore_items = [
         DashboardChoreItem(
             id=assignment.id,
             title=title,
-            assigned_user_id=assignment.assigned_user_id,
+            assigned_user_id=assignment.assigned_user_id if assignment.assigned_user_id in member_ids else None,
             due_date=assignment.due_date,
             is_overdue=assignment.due_date < today,
         )

@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.error_codes import ErrorCode, error_detail
@@ -29,6 +30,21 @@ def is_invite_code_expired(household: Household) -> bool:
     if expires_at.tzinfo is None:  # SQLite liefert naive Werte
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     return expires_at <= datetime.now(timezone.utc)
+
+
+def find_household_by_invite_code(db: Session, raw_code: str) -> Household:
+    """Haushalt zum Einladungscode (case-insensitiv). 404, wenn unbekannt.
+
+    Ablauf und "Haushalt noch belegt" prüft der Aufrufer — unter ``lock_household``.
+    """
+    code = raw_code.strip().upper()
+    household = db.query(Household).filter(func.upper(Household.invite_code) == code).first()
+    if household is None:
+        raise HTTPException(
+            status_code=404,
+            detail=error_detail(ErrorCode.INVITE_CODE_NOT_FOUND, "Invite code not found"),
+        )
+    return household
 
 
 def rotate_household_invite_code(db: Session, household: Household) -> None:

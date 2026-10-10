@@ -10,7 +10,7 @@ import { useLoader } from '../composables/useLoader'
 import { useNfcWriter } from '../composables/useNfcWriter'
 import { formatDateShort } from '../utils/dates'
 import { qrSvgDataUrl } from '../utils/qr'
-import { tagUrl } from '../utils/tagScan'
+import { localizedTargetName, localizedTargetOption, tagUrl } from '../utils/tagScan'
 import type { TagInfo } from '../types'
 
 import PageHeader from '../components/ui/PageHeader.vue'
@@ -50,7 +50,7 @@ function noTargetLabel(type: string): string {
 
 function targetText(tag: TagInfo): string {
   if (tag.target_missing) return t('tags.targetMissing')
-  return tag.target_name ?? noTargetLabel(tag.target_type)
+  return localizedTargetName(tag, t) ?? noTargetLabel(tag.target_type)
 }
 
 function usageText(tag: TagInfo): string {
@@ -316,7 +316,7 @@ watch(() => authStore.currentHouseholdId, () => {
               {{ targetOptional ? noTargetLabel(createType) : $t('tags.targetChoose') }}
             </option>
             <option v-for="opt in selectedType.options" :key="opt.id" :value="opt.id">
-              {{ opt.name }}
+              {{ localizedTargetOption(opt, t) }}
             </option>
           </select>
           <span v-if="selectedType.options.length === 0 && !targetOptional" class="field__hint">

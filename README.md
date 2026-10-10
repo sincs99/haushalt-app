@@ -17,7 +17,7 @@ Homescreen-Widget fürs iPhone (über die App Scriptable): [`docs/widget.md`](do
 | Frontend | Vue 3, TypeScript, Vite, Pinia, vue-i18n, PWA (`vite-plugin-pwa`) |
 | Auth | JWT-Access-Token (15 Min.) + rotierender Refresh-Token als HttpOnly-Cookie, bcrypt |
 | KI (optional) | Anthropic-API (Claude Opus 5.5) über das offizielle `anthropic`-SDK |
-| Tests | Backend: pytest (SQLite in-memory, kein Postgres nötig); Frontend: Vitest |
+| Tests | Backend: pytest (SQLite in-memory, kein Postgres nötig) plus PostgreSQL-Lane `tests/pg/` (Marker `pg`, nur mit `TEST_PG_URL`); Frontend: Vitest |
 | Betrieb | Docker Compose (Dev und Produktion hinter Nginx Proxy Manager) |
 
 Exakte Versionen: `backend/requirements.txt` und `frontend/package-lock.json`.
@@ -80,9 +80,11 @@ Die CI (`.github/workflows/ci.yml`) führt bei jedem Push auf `master` und bei j
 
 ```bash
 # Backend (im Ordner backend/)
-pip install -r requirements.txt pytest httpx pytest-cov ruff
+pip install -r requirements.txt pytest httpx pytest-cov ruff hypothesis
 ruff check .
 pytest -q --cov=app
+# PostgreSQL-Lane (Job backend-postgres; Admin-URL eines PostgreSQL-16-Servers)
+TEST_PG_URL=postgresql://user:pass@localhost:5432/postgres pytest -m pg -q
 
 # Frontend (im Ordner frontend/)
 npm ci
@@ -97,7 +99,9 @@ cd frontend && npm audit --omit=dev --audit-level=high
 
 `npm run typecheck` prüft die Anwendung mit `vue-tsc -p tsconfig.app.json --noEmit`; `npm run build` führt diese Prüfung ebenfalls aus.
 
-Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` selbst und brauchen keine laufende Datenbank. Die Tests des KI-Assistenten mocken den Anthropic-Client und brauchen keinen API-Schlüssel. Wer `DATABASE_URL` in der Shell gesetzt hat, sollte sie vor `pytest` entfernen, sonst laufen die Tests gegen diese Datenbank.
+Stand 2026-10-10: Backend 1159 Tests (1093 auf SQLite, 66 in der PostgreSQL-Lane), Coverage 95 %; Frontend 727 Tests in 56 Dateien, Coverage 83,4 % (Statements); 1312 i18n-Schlüssel; 46 Alembic-Revisionen (Kopf `cal1a2b3c4d5`). Details: [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md).
+
+Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` selbst und brauchen keine laufende Datenbank; nur die PostgreSQL-Lane (`backend/tests/pg/README.md`) legt mit `TEST_PG_URL` eine frische Test-Datenbank an (`alembic upgrade head`) und wird sonst übersprungen. Die Tests des KI-Assistenten mocken den Anthropic-Client und brauchen keinen API-Schlüssel. Wer `DATABASE_URL` in der Shell gesetzt hat, sollte sie vor `pytest` entfernen, sonst laufen die Tests gegen diese Datenbank.
 
 ## Produktion
 

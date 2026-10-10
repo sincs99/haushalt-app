@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
+import { captureHousehold as captureSharedHousehold } from '../utils/householdGuard'
 import { createOnlinePetsRepository } from '../repositories/petsRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import { localDateString } from '../utils/dates'
 import type {
-  Pet, PetCreatePayload, PetUpdatePayload, PetFeedingStatus, FeedingLog, FeedingSlot,
+  Pet, PetCreatePayload, PetUpdatePayload, PetFeedingStatus, PetHistory, FeedingLog, FeedingSlot,
   HouseholdMemberInfo, Medication, MedicationCreatePayload, MedicationUpdatePayload, MedicationLog,
   PetCareTask, PetCareTaskCreatePayload, PetCareTaskUpdatePayload,
 } from '../types'
@@ -15,6 +16,14 @@ export type Clearable<T> = { [K in keyof T]?: T[K] | null }
 
 /** Ergebnis eines Fütterungs-Toggles. `duplicate` = jemand anderes hat schon gefüttert (409). */
 export type FeedingToggleResult = 'fed' | 'unfed' | 'duplicate'
+
+/** Ergebnis von „Alle gefüttert“: eigene Fütterungen + bestätigter Status nach dem Refetch. */
+export interface FeedAllResult {
+  created: FeedingLog[]
+  allFed: boolean
+  fed: number
+  total: number
+}
 
 function isFeedingDuplicate(err: unknown): boolean {
   const e = err as { response?: { status?: number; data?: { detail?: { code?: string } } } }
@@ -50,7 +59,9 @@ export const usePetsStore = defineStore('pets', () => {
 
   function captureHousehold(householdId: string) {
     const version = stateVersion
-    return () => version === stateVersion && useAuthStore().currentHouseholdId === householdId
+    // Gemeinsame Haushalts-/Sitzungs-Generation (Logout, Wechsel A → B → A; CASA-12)
+    const inScope = captureSharedHousehold(householdId)
+    return () => version === stateVersion && inScope()
   }
 
   function captureRequest(householdId: string, key: string) {
@@ -140,7 +151,8 @@ export const usePetsStore = defineStore('pets', () => {
     return updated
   }
 
-  async function removePet(petId: string) {
+  /** `force`: erst nach ausdrücklicher Bestätigung mit den Verlaufszahlen (PD-P2) */
+  async function removePet(petId: string, options: { force?: boolean } = {}) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -154,7 +166,7 @@ export const usePetsStore = defineStore('pets', () => {
     feedingStatus.value = feedingStatus.value.filter(s => s.pet_id !== petId)
 
     try {
-      await repo.remove(householdId, petId)
+      await repo.remove(householdId, petId, options.force ?? false)
     } catch (error) {
       // Rollback
       if (active()) {
@@ -163,6 +175,39 @@ export const usePetsStore = defineStore('pets', () => {
       }
       throw error
     }
+  }
+
+  /**
+   * Tier archivieren (verstorben/abgegeben, PD-P2): Verlauf bleibt, das Tier fällt aus
+   * Fütterung, Dashboard und Erinnerungen. Rückgängig über `unarchivePet`.
+   */
+  async function archivePet(petId: string) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+    const active = captureHousehold(householdId)
+
+    const updated = await repo.archive(householdId, petId)
+    if (active()) handlePetUpdated(updated)
+    return updated
+  }
+
+  async function unarchivePet(petId: string) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+    const active = captureHousehold(householdId)
+
+    const updated = await repo.unarchive(householdId, petId)
+    if (active()) handlePetUpdated(updated)
+    return updated
+  }
+
+  /** Umfang des Verlaufs (Fütterungen, Gaben, Pflegeaufgaben) für die Lösch-Warnung. */
+  async function fetchPetHistory(petId: string): Promise<PetHistory | undefined> {
+    const householdId = useAuthStore().currentHouseholdId
+    if (!householdId) return
+    return repo.fetchHistory(householdId, petId)
   }
 
   /**
@@ -226,19 +271,30 @@ export const usePetsStore = defineStore('pets', () => {
     }
   }
 
-  /** Alle Tiere für den Slot füttern. Liefert die neu angelegten Fütterungen (für Undo). */
-  async function feedAll(slot: FeedingSlot): Promise<FeedingLog[]> {
+  /**
+   * Alle Tiere für den Slot füttern. Liefert die neu angelegten Fütterungen (für Undo)
+   * und — aus dem danach neu geladenen Status — ob wirklich alle Tiere gefüttert sind
+   * (CASA-13: „Alle gefüttert“ nur melden, wenn der Server-Status das bestätigt).
+   */
+  async function feedAll(slot: FeedingSlot): Promise<FeedAllResult> {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
-    if (!householdId) return []
+    if (!householdId) return { created: [], allFed: false, fed: 0, total: 0 }
+    const active = captureHousehold(householdId)
 
+    let created: FeedingLog[] = []
     try {
-      const created = await repo.feedAll(householdId, slot)
-      return Array.isArray(created) ? created : []
+      const result = await repo.feedAll(householdId, slot)
+      created = Array.isArray(result) ? result : []
+      // Eigene Fütterungen sofort übernehmen (falls der Status-Refetch scheitert)
+      if (active()) created.forEach(handleFeedingCreated)
     } finally {
       // Server-Wahrheit (auch bei Fehler)
       await fetchFeedingStatus()
     }
+    const fed = feedingStatus.value.filter(s => !!s[slot]).length
+    const total = feedingStatus.value.length
+    return { created, allFed: total > 0 && fed === total, fed, total }
   }
 
   /** Undo für „Alle gefüttert“: die eben angelegten Fütterungen wieder löschen. */
@@ -321,7 +377,8 @@ export const usePetsStore = defineStore('pets', () => {
     if (!householdId) return
     const active = captureHousehold(householdId)
 
-    const log = await repo.giveMedication(householdId, petId, medicationId)
+    // Client-ID: ein Retry derselben Gabe (Timeout, Doppel-Request) wird nicht doppelt gespeichert
+    const log = await repo.giveMedication(householdId, petId, medicationId, crypto.randomUUID())
     if (active() && (!medicationsPetId.value || medicationsPetId.value === petId)) upsertMedicationLog(log)
     return log
   }
@@ -356,9 +413,13 @@ export const usePetsStore = defineStore('pets', () => {
 
   function handlePetUpdated(pet: Pet) {
     const idx = pets.value.findIndex(p => p.id === pet.id)
+    const wasArchived = idx !== -1 ? pets.value[idx].archived : pet.archived
     if (idx !== -1) {
       pets.value[idx] = pet
     }
+    // Archivierte Tiere haben keinen Fütterungsstatus mehr; reaktivierte brauchen ihn wieder
+    if (pet.archived) feedingStatus.value = feedingStatus.value.filter(s => s.pet_id !== pet.id)
+    else if (wasArchived) fetchFeedingStatus()
   }
 
   function handlePetDeleted(data: { id: string }) {
@@ -558,6 +619,9 @@ export const usePetsStore = defineStore('pets', () => {
     createPet,
     updatePet,
     removePet,
+    archivePet,
+    unarchivePet,
+    fetchPetHistory,
     toggleFeeding,
     feedAll,
     undoFeedings,

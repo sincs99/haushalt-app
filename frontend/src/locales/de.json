@@ -83,6 +83,7 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "eventRunningSince": "läuft seit {date}, {time}",
     "greetingMorning": "Guten Morgen",
     "greetingAfternoon": "Guten Tag",
     "greetingEvening": "Guten Abend",
@@ -155,7 +156,16 @@
     "deleted": "Termin gelöscht",
     "prevWeek": "Vorherige Woche",
     "nextWeek": "Nächste Woche",
-    "noEventsDay": "Keine Termine an diesem Tag"
+    "noEventsDay": "Keine Termine an diesem Tag",
+    "reminderLabel": "Erinnerung",
+    "reminder": {
+      "none": "Keine",
+      "15m": "15 Minuten vorher",
+      "1h": "1 Stunde vorher",
+      "1d": "1 Tag vorher"
+    },
+    "reminderAllDay": "Ganztägig: Erinnerung am Tag um 08:00",
+    "reminderAllDayBefore": "Ganztägig: Erinnerung am Vortag um 08:00"
   },
   "calendars": {
     "manage": "Kalender verwalten",
@@ -245,7 +255,9 @@
     "listDeleted": "Liste gelöscht",
     "listName": "Listenname",
     "storeActions": "Aktionen für {store}",
-    "mergeStores": "Zusammenführen"
+    "mergeStores": "Zusammenführen",
+    "alreadyOnList": "«{name}» steht schon auf der Liste",
+    "alreadyOnOtherList": "«{name}» steht schon auf der Liste «{list}»"
   },
   "todos": {
     "title": "Aufgaben",
@@ -340,6 +352,8 @@
       "settlementTitle": "Ausgleich",
       "pays": "zahlt",
       "unassignedHint": "{amount} von ehemaligen Mitgliedern nicht zuordenbar",
+      "formerMemberBadge": "ehemaliges Mitglied",
+      "formerMemberHint": "Ehemalige Mitglieder sehen den Haushalt nicht mehr. Offene Beträge lassen sich trotzdem hier ausgleichen.",
       "loadError": "Salden konnten nicht geladen werden."
     },
     "category": "Kategorie",
@@ -354,7 +368,29 @@
       "uncategorized": "Ohne Kategorie"
     },
     "saved": "Ausgabe gespeichert",
-    "deleteLabel": "Ausgabe «{name}» löschen"
+    "deleteLabel": "Ausgabe «{name}» löschen",
+    "retroWarning": "Diese Ausgabe liegt vor dem letzten Ausgleich zwischen den Beteiligten – Salden ändern sich nachträglich.",
+    "deleteRetroTitle": "Bereits ausgeglichen",
+    "deleteAnyway": "Trotzdem löschen",
+    "conflictReloaded": "Die Ausgabe wurde inzwischen von {name} geändert. Die aktuellen Werte sind geladen – bitte prüfen und erneut speichern.",
+    "deletedMeanwhile": "Die Ausgabe wurde inzwischen gelöscht.",
+    "createdBy": "Erfasst von {name}",
+    "updatedBy": "Zuletzt geändert von {name}",
+    "loadMore": "Ältere Ausgaben laden",
+    "restoreConflict": "Die Rechnung wurde für diesen Monat inzwischen neu gebucht – die gelöschte Buchung kann nicht wiederhergestellt werden.",
+    "history": {
+      "show": "Gelöschte Einträge anzeigen",
+      "hide": "Gelöschte Einträge ausblenden",
+      "title": "Verlauf: gelöschte Einträge",
+      "empty": "Keine gelöschten Einträge",
+      "deletedBy": "Gelöscht von {name} am {date}",
+      "restore": "Wiederherstellen",
+      "restoreLabel": "«{name}» wiederherstellen",
+      "restored": "Wiederhergestellt",
+      "restoreError": "Konnte nicht wiederhergestellt werden.",
+      "loadError": "Verlauf konnte nicht geladen werden.",
+      "settlementName": "Zahlung {from} → {to}"
+    }
   },
   "finance": {
     "available": "Noch verfügbar",
@@ -385,7 +421,27 @@
     "spentThisMonth": "Ausgegeben diesen Monat",
     "allBooked": "Alle Rechnungen für diesen Monat sind gebucht.",
     "budgetSaveError": "Budget konnte nicht gespeichert werden.",
-    "bookError": "Rechnung konnte nicht gebucht werden."
+    "bookError": "Rechnung konnte nicht gebucht werden.",
+    "bookMonth": "Monat",
+    "bookMonthCurrent": "{month} (aktueller Monat)",
+    "choosePayer": "Bitte wählen …",
+    "noDefaultPayerHint": "Für diese Rechnung ist kein Standard-Zahler hinterlegt – bitte wähle, wer bezahlt hat.",
+    "manageBills": "Rechnungen verwalten",
+    "billsEmpty": "Noch keine wiederkehrenden Rechnungen",
+    "editBill": "Rechnung bearbeiten",
+    "newBill": "Neue Rechnung",
+    "billNamePlaceholder": "z. B. Miete",
+    "billDefaultPayer": "Standard-Zahler",
+    "billNoDefaultPayer": "Keiner (beim Buchen wählen)",
+    "billActive": "Aktiv (erscheint unter „Anstehende Rechnungen“)",
+    "billPaused": "Pausiert",
+    "billMeta": "{amount} · am {day}. · {payer}",
+    "billDeleteTitle": "Rechnung löschen?",
+    "billDeleteConfirm": "Rechnung «{name}» löschen? Bereits gebuchte Ausgaben bleiben erhalten.",
+    "billSaveError": "Rechnung konnte nicht gespeichert werden.",
+    "billDeleteError": "Rechnung konnte nicht gelöscht werden.",
+    "billDayInvalid": "Bitte einen Tag zwischen 1 und 28 wählen.",
+    "billEditLabel": "Rechnung «{name}» bearbeiten"
   },
   "settlements": {
     "title": "Ausgleichszahlungen",
@@ -405,7 +461,16 @@
     "sameUser": "Von und An dürfen nicht identisch sein.",
     "flow": "{from} → {to}",
     "saveError": "Zahlung konnte nicht gespeichert werden.",
-    "deleteLabel": "Ausgleichszahlung löschen"
+    "deleteLabel": "Ausgleichszahlung löschen",
+    "createdBy": "erfasst von {name}",
+    "warningTitle": "Bitte prüfen",
+    "warnings": {
+      "DUPLICATE_RECENT": "Eine gleiche Zahlung wurde in den letzten 10 Minuten bereits erfasst.",
+      "EXCEEDS_OPEN_DEBT": "Der Betrag ist höher als die offene Schuld ({amount})."
+    },
+    "saveAnyway": "Trotzdem erfassen",
+    "createdWithWarning": "Gespeichert – eine gleiche Zahlung wurde eben schon erfasst. Bitte prüfen.",
+    "loadMore": "Ältere Zahlungen laden"
   },
   "chores": {
     "title": "Ämtli",
@@ -559,6 +624,8 @@
     "CANNOT_REMOVE_SELF": "Du kannst dich nicht selbst entfernen – nutze Haushalt verlassen",
     "TOO_MANY_REMINDERS": "Maximal 5 Erinnerungen pro Aufgabe",
     "REMINDER_NOT_FOUND": "Erinnerung nicht gefunden",
+    "REMINDER_IN_PAST": "Die Erinnerung muss in der Zukunft liegen",
+    "TODO_IS_DONE": "Die Aufgabe ist erledigt – öffne sie wieder, um eine Erinnerung zu setzen",
     "FILE_TOO_LARGE": "Datei ist zu gross (max. 10 MB)",
     "FILE_TYPE_NOT_ALLOWED": "Dateityp nicht erlaubt oder Datei beschädigt",
     "FILE_IN_USE": "Datei wird noch verwendet",
@@ -569,9 +636,11 @@
     "BILL_PAYER_REQUIRED": "Bitte wähle aus, wer die Rechnung bezahlt hat",
     "BILL_ALREADY_BOOKED": "Rechnung wurde bereits gebucht",
     "ENTITY_ID_CONFLICT": "Diese ID wird bereits verwendet",
+    "CONFLICT_RETRY": "Jemand hat das gerade gleichzeitig geändert – bitte versuche es noch einmal",
     "AI_NOT_CONFIGURED": "Der KI-Assistent ist auf diesem Server nicht eingerichtet",
     "AI_NOT_ENABLED": "Der KI-Assistent ist für diesen Haushalt nicht eingeschaltet",
     "AI_DAILY_LIMIT_REACHED": "Das Tageslimit für KI-Anfragen in diesem Haushalt ist erreicht – morgen geht es weiter",
+    "AI_USER_DAILY_LIMIT_REACHED": "Du hast dein persönliches Tageslimit für KI-Anfragen erreicht – morgen geht es weiter",
     "AI_REFUSED": "Die KI hat diese Anfrage abgelehnt. Formuliere sie bitte anders.",
     "AI_INVALID_OUTPUT": "Die KI hat keine brauchbare Antwort geliefert – versuch es nochmals",
     "AI_PLANT_NOT_RECOGNIZED": "Diese Eingabe wurde nicht als Pflanze erkannt",
@@ -585,6 +654,8 @@
     "TAG_TARGET_NOT_FOUND": "Das Ziel dieses Tags wurde gelöscht",
     "TAG_NOT_EXECUTABLE": "Dieser Tag öffnet nur eine Seite",
     "TAG_NOTHING_TO_DO": "Gerade gibt es nichts zu tun",
+    "TAG_CONFIRMATION_REQUIRED": "Bitte den Tag erneut scannen",
+    "TAG_CONFIRMATION_STALE": "Inzwischen hat sich etwas geändert – bitte erneut scannen",
     "TOO_MANY_TAGS": "Maximale Anzahl Tags für diesen Haushalt erreicht",
     "PLANT_NOT_FOUND": "Pflanze nicht gefunden",
     "PLANT_CARE_TASK_NOT_FOUND": "Pflegeaufgabe nicht gefunden",
@@ -630,7 +701,20 @@
     "notFound": "Nicht gefunden – wurde vielleicht gelöscht",
     "IMAGE_TOO_MANY_PIXELS": "Bild hat zu viele Pixel (max. 25 Megapixel)",
     "imageUnreadable": "Bild konnte nicht gelesen werden – unterstützt sind JPEG, PNG, WebP und iPhone-Fotos (HEIC)",
-    "WIDGET_TOKEN_INVALID": "Widget-Schlüssel ungültig"
+    "WIDGET_TOKEN_INVALID": "Widget-Schlüssel ungültig",
+    "EXPENSE_VERSION_CONFLICT": "Die Ausgabe wurde inzwischen geändert.",
+    "EXPENSE_DELETED": "Die Ausgabe wurde inzwischen gelöscht.",
+    "SETTLEMENT_DELETED": "Die Zahlung wurde inzwischen gelöscht.",
+    "DATE_OUT_OF_RANGE": "Das Datum liegt zu weit in der Vergangenheit oder Zukunft.",
+    "BILL_MONTH_OUT_OF_RANGE": "Nachbuchen ist nur für die letzten 12 Monate möglich.",
+    "MEDICATION_INACTIVE": "Das Medikament ist deaktiviert",
+    "PET_HAS_HISTORY": "Das Tier hat einen Verlauf – bitte archivieren oder ausdrücklich endgültig löschen",
+    "MEDICATION_HAS_HISTORY": "Medikament wurde schon gegeben – bitte deaktivieren statt löschen",
+    "PET_ARCHIVED": "Das Tier ist archiviert",
+    "MEAL_PLAN_OCCUPIED": "Für diesen Tag ist schon ein Essen geplant",
+    "EVENT_TIME_NONEXISTENT": "Diese Uhrzeit gibt es wegen der Zeitumstellung an diesem Tag nicht – bitte eine andere wählen",
+    "POLL_OPTION_TIME_REQUIRED": "Jede Option braucht Datum und Uhrzeit",
+    "SHOPPING_LIST_NOT_FOUND": "Diese Einkaufsliste gibt es nicht mehr"
   },
   "push": {
     "title": "Benachrichtigungen",
@@ -649,7 +733,9 @@
   },
   "pwa": {
     "updateAvailable": "Eine neue Version ist verfügbar.",
-    "reload": "Neu laden"
+    "reload": "Neu laden",
+    "updateEntry": "Update verfügbar",
+    "updateEntrySub": "Tippen, um die neue Version zu laden"
   },
   "offline": {
     "banner": "Kein Netz – Änderungen können aktuell nicht gespeichert werden.",
@@ -759,7 +845,35 @@
     "medicationSaveError": "Medikament konnte nicht gespeichert werden",
     "medicationDeleteError": "Medikament konnte nicht gelöscht werden",
     "changePhoto": "Foto ändern",
-    "photoUploadErrorReason": "Foto konnte nicht hochgeladen werden: {reason}"
+    "photoUploadErrorReason": "Foto konnte nicht hochgeladen werden: {reason}",
+    "notAllFed": "{fed} von {total} gefüttert – bitte Status prüfen",
+    "archive": "Archivieren",
+    "unarchive": "Wieder aktivieren",
+    "archived": "{name} archiviert",
+    "unarchived": "{name} wieder aktiv",
+    "archivedBadge": "Archiviert",
+    "archivedHint": "Archiviert: wird nicht mehr gefüttert und erinnert. Der Verlauf bleibt erhalten.",
+    "archiveActionHint": "Z. B. verstorben oder abgegeben – der Verlauf bleibt erhalten.",
+    "archiveHint": "Tipp: „Archivieren“ blendet das Tier aus Fütterung und Erinnerungen aus und behält den Verlauf.",
+    "archiveSection": "Archiv ({n})",
+    "historyLoading": "Verlauf wird geprüft…",
+    "deleteHistoryWarning": "Endgültiges Löschen entfernt auch {feedings} Fütterungen, {doses} Medikamentengaben und {tasks} Pflegeaufgaben unwiderruflich.",
+    "deleteNoHistory": "Für dieses Tier gibt es noch keinen Verlauf.",
+    "deletePermanently": "Endgültig löschen",
+    "notGivenYet": "Noch nie gegeben",
+    "lastGivenToday": "Zuletzt gegeben um {time} von {name}",
+    "lastGivenAt": "Zuletzt gegeben am {date} von {name}",
+    "giveAgain": "Nochmals geben",
+    "giveAgainTitle": "Wirklich nochmals geben?",
+    "giveAgainHint": "Zuletzt gegeben um {time} von {name} – vor weniger als {hours} Stunden.",
+    "giveAgainConfirm": "Trotzdem geben",
+    "medicationHasHistoryTitle": "Medikament hat einen Verlauf",
+    "medicationHasHistoryHint": "„{name}“ wurde schon gegeben. Damit der Verlauf erhalten bleibt, kann es nur deaktiviert werden.",
+    "deactivateMedication": "Deaktivieren",
+    "medicationDeactivated": "Medikament deaktiviert",
+    "unfeedOtherTitle": "Fütterung entfernen?",
+    "unfeedOtherHint": "{name} hat {pet} um {time} gefüttert. Wirklich als nicht gefüttert markieren?",
+    "unfeedOtherConfirm": "Entfernen"
   },
   "petCare": {
     "title": "Pflege & Termine",
@@ -850,7 +964,8 @@
     "taskDeleteError": "Pflegeaufgabe konnte nicht gelöscht werden",
     "deleteTaskHint": "Der Pflege-Verlauf bleibt erhalten.",
     "changePhoto": "Foto ändern",
-    "photoUploadErrorReason": "Foto konnte nicht hochgeladen werden: {reason}"
+    "photoUploadErrorReason": "Foto konnte nicht hochgeladen werden: {reason}",
+    "alreadyDoneToday": "Heute schon erledigt – nichts geändert"
   },
   "food": {
     "title": "Essen",
@@ -904,7 +1019,33 @@
     "decideWinner": "«{option}» liegt vorne ({n} Stimme) und kommt in den Wochenplan. | «{option}» liegt vorne ({n} Stimmen) und kommt in den Wochenplan.",
     "decideTie": "Gleichstand – wähle, welches Gericht es gibt.",
     "decideHint": "Die Abstimmung wird damit für den ganzen Haushalt beendet.",
-    "pollDecidedToast": "Entschieden: «{option}»"
+    "pollDecidedToast": "Entschieden: «{option}»",
+    "decideOccupied": "Für {date} ist schon «{meal}» geplant. Beim Entscheiden wird es ersetzt.",
+    "decideReplace": "Ersetzen und entscheiden",
+    "minutes": "{n} Min.",
+    "showLess": "Weniger anzeigen",
+    "showAllRecipes": "Alle {n} Rezepte anzeigen",
+    "editRecipe": "Rezept bearbeiten",
+    "tags": "Tags",
+    "tagsPlaceholder": "z. B. vegetarisch, schnell",
+    "ingredientsPlaceholder": "500 g Mehl\n1 Ei",
+    "stepsPlaceholder": "Teig kneten\nBacken",
+    "onePerLine": "Eine pro Zeile (max. {max})",
+    "recipeSaved": "Rezept gespeichert",
+    "recipeCreated": "Rezept angelegt",
+    "recipeSaveError": "Rezept konnte nicht gespeichert werden.",
+    "recipeDeleted": "«{name}» gelöscht",
+    "recipeDeleteError": "Rezept konnte nicht gelöscht werden.",
+    "deleteRecipeHint": "Geplante Mahlzeiten mit diesem Rezept bleiben im Wochenplan – mit dem Namen als Text.",
+    "recipeError": {
+      "name": "Bitte einen Namen eingeben (max. 150 Zeichen)",
+      "servings": "Ganze Zahl ab 1",
+      "cost": "Betrag wie 12.50",
+      "duration": "Ganze Zahl ab 1",
+      "ingredients": "Höchstens 100 Zutaten, je max. 200 Zeichen",
+      "steps": "Höchstens 30 Schritte, je max. 1000 Zeichen",
+      "tags": "Höchstens 10 Tags, je max. 30 Zeichen"
+    }
   },
   "notes": {
     "title": "Notizen",
@@ -1024,6 +1165,7 @@
       "privacyHint": "Ist der KI-Assistent eingeschaltet, werden deine Eingaben (z. B. Zutaten, Pflanzenart, später auch Fotos) zur Verarbeitung an die Anthropic-API gesendet. In der App gespeichert wird nur, was du selbst übernimmst.",
       "adminOnly": "Nur Admins können den KI-Assistenten ein- oder ausschalten.",
       "usage": "Heute {used} von {limit} Anfragen genutzt",
+      "userUsage": "Davon persönlich (über alle Haushalte): {used} von {limit}",
       "openAssistant": "Zum KI-Assistenten",
       "saveError": "KI-Assistent konnte nicht umgeschaltet werden"
     },
@@ -1095,7 +1237,10 @@
       "adoptedForm": "Vorschlag übernommen – Aufgaben und Hinweise werden beim Speichern angelegt.",
       "nothingSavedYet": "Es wird erst gespeichert, wenn du übernimmst.",
       "applied": "Pflegevorschlag übernommen",
-      "applyError": "Pflegevorschlag konnte nicht übernommen werden"
+      "applyError": "Pflegevorschlag konnte nicht übernommen werden",
+      "planTitle": "Wird übernommen (abwählen, was bleiben soll):",
+      "planUpdate": "{task}: alle {from} → {to} Tage",
+      "planCreate": "{task}: neu, alle {to} Tage"
     }
   },
   "tags": {
@@ -1242,6 +1387,7 @@
       "nextDue": "Nächste Fälligkeit: {date}",
       "success": "Erledigt",
       "successNoChange": "War schon erledigt — nichts geändert.",
+      "reload": "Aktuellen Stand laden",
       "toDashboard": "Zur Startseite",
       "openModule": "Ansehen",
       "retry": "Erneut versuchen",
@@ -1253,6 +1399,7 @@
         "unsupported": "Diese Aktion wird von der App nicht unterstützt.",
         "already_done": "Schon erledigt — für diese Mahlzeit ist bereits eine Fütterung eingetragen.",
         "nothing_to_do": "Gerade gibt es dafür nichts zu tun.",
+        "stale": "Inzwischen hat sich etwas geändert (z. B. hat jemand anderes es erledigt). Es wurde nichts eingetragen — bitte den aktuellen Stand neu laden.",
         "rate_limited": "Zu viele Scans in kurzer Zeit. Bitte warte eine Minute.",
         "offline": "Keine Verbindung zum Server.",
         "unknown": "Etwas ist schiefgelaufen."

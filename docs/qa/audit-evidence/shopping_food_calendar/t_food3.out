@@ -1,0 +1,12 @@
+PATCH ingredients=null 500
+P|null|null
+
+GET recipes 500
+GET meal-plan week 500
+GET dashboard 200
+repair PATCH 200
+name 500
+servings 500
+is_favorite 500
+P|2|f
+

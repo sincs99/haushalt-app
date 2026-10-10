@@ -1,0 +1,16 @@
+<scratchpad>/venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:1033: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  result = context.run(func, *args)
+PASSED
+  book {201: 110}
+  create_custom {422: 106, 201: 43}
+  create_even {201: 81, 422: 67}
+  delete {204: 78}
+  fullpayload {200: 86}
+  leave {204: 103}
+  patch_amount {200: 95, 422: 9}
+  patch_participants {200: 62, 422: 59}
+  patch_payer {200: 69}
+  patch_to_custom {422: 75, 200: 56}
+  patch_to_even {200: 103}
+  settle_random {422: 40, 201: 120}
+  settle_suggestion {201: 98}

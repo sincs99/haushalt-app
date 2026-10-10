@@ -1,21 +1,34 @@
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Calendar, Event, Household, HouseholdMember
-from app.services.event_times import household_tz, range_bounds, to_household_time, to_utc
+from app.services.event_times import (
+    household_tz,
+    overlaps_range,
+    range_bounds,
+    to_household_time,
+    wall_time_to_utc,
+)
+from app.services.household_checks import assert_users_allowed
+from app.services.locking import lock_row
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
 # ---------------------------------------------------------------------------
+
+
+# Push-Erinnerung vor Beginn (PD-K1)
+EventReminder = Literal["none", "15m", "1h", "1d"]
 
 
 class EventCreate(BaseModel):
@@ -26,6 +39,7 @@ class EventCreate(BaseModel):
     calendar_id: uuid.UUID
     participant_ids: list[uuid.UUID] = Field(default_factory=list)
     note: str | None = Field(None, max_length=500)
+    reminder: EventReminder = "none"
 
     @field_validator("title")
     @classmethod
@@ -42,7 +56,10 @@ class EventCreate(BaseModel):
         return v
 
 
-class EventUpdate(BaseModel):
+class EventUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Event → 422 (app/core/patch_schema.py)
+    __orm_model__ = Event
+
     title: str | None = Field(None, min_length=1, max_length=150)
     starts_at: datetime | None = None
     ends_at: datetime | None = None
@@ -50,6 +67,7 @@ class EventUpdate(BaseModel):
     calendar_id: uuid.UUID | None = None
     participant_ids: list[uuid.UUID] | None = None
     note: str | None = Field(None, max_length=500)
+    reminder: EventReminder | None = None
 
     @field_validator("title")
     @classmethod
@@ -76,6 +94,7 @@ class EventResponse(BaseModel):
     all_day: bool
     participant_ids: list[uuid.UUID]
     note: str | None
+    reminder: str
     created_by_user_id: uuid.UUID
     created_at: datetime
 
@@ -85,6 +104,27 @@ class EventResponse(BaseModel):
 def _tz(db: Session, household_id: uuid.UUID):
     household = db.get(Household, household_id)
     return household_tz(household.timezone if household else None)
+
+
+def _as_utc(dt: datetime) -> datetime:
+    # SQLite liefert naive Datetimes (UTC)
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _dedupe(ids: list[uuid.UUID]) -> list[uuid.UUID]:
+    """Doppelte Teilnehmer entfernen, Reihenfolge behalten."""
+    return list(dict.fromkeys(ids))
+
+
+def _validated_participants(
+    db: Session, household_id: uuid.UUID, ids: list[uuid.UUID], on_record: list[str] | None = None
+) -> list[str]:
+    """Teilnehmer prüfen (CASA-21): neue müssen aktuelle Mitglieder sein; wer schon auf
+    dem Termin steht, darf auch Ex-Mitglied sein (wie bei Ausgaben, L-05)."""
+    ids = _dedupe(ids)
+    already = {uuid.UUID(str(p)) for p in (on_record or [])}
+    assert_users_allowed(db, household_id, ids, already)
+    return [str(pid) for pid in ids]
 
 
 def _event_response(event: Event, tz) -> EventResponse:
@@ -123,9 +163,8 @@ def list_events(
         db.query(Event)
         .filter(
             Event.household_id == household_id,
-            Event.starts_at < range_end,
             # Mehrtägige Termine, die vor dem Bereich beginnen, aber hineinreichen
-            func.coalesce(Event.ends_at, Event.starts_at) >= range_start,
+            overlaps_range(range_start, range_end),
         )
         .order_by(Event.starts_at.asc())
         .all()
@@ -144,16 +183,17 @@ def create_event(
     db: Session = Depends(get_db),
 ):
     tz = _tz(db, household_id)
-    starts_at = to_utc(body.starts_at, tz)
-    ends_at = to_utc(body.ends_at, tz) if body.ends_at is not None else None
+    starts_at = wall_time_to_utc(body.starts_at, tz)
+    ends_at = wall_time_to_utc(body.ends_at, tz) if body.ends_at is not None else None
     if ends_at is not None and ends_at < starts_at:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=error_detail(ErrorCode.EVENT_END_BEFORE_START, "ends_at must not be before starts_at"),
         )
 
-    # Calendar muss zum gleichen Haushalt gehören
-    calendar = db.get(Calendar, body.calendar_id)
+    # Calendar muss zum gleichen Haushalt gehören. Gesperrt bis zum Commit, damit
+    # ein paralleles Löschen des Kalenders den neuen Termin nicht verliert (CASA-20)
+    calendar = lock_row(db, Calendar, body.calendar_id)
     if calendar is None or calendar.household_id != household_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -167,8 +207,9 @@ def create_event(
         starts_at=starts_at,
         ends_at=ends_at,
         all_day=body.all_day,
-        participant_ids=[str(pid) for pid in body.participant_ids],
+        participant_ids=_validated_participants(db, household_id, body.participant_ids),
         note=body.note,
+        reminder=body.reminder,
         created_by_user_id=membership.user_id,
     )
     db.add(event)
@@ -225,7 +266,7 @@ def update_event(
     tz = _tz(db, household_id)
     for key in ("starts_at", "ends_at"):
         if update_data.get(key) is not None:
-            update_data[key] = to_utc(update_data[key], tz)
+            update_data[key] = wall_time_to_utc(update_data[key], tz)
 
     # Bestimme die effektiven Werte (gesendet oder bestehend), alles in UTC
     effective_starts = update_data.get("starts_at") or to_household_time(item.starts_at, tz)
@@ -240,19 +281,27 @@ def update_event(
 
     # calendar_id Validierung falls mitgesendet
     if "calendar_id" in update_data and update_data["calendar_id"] is not None:
-        calendar = db.get(Calendar, update_data["calendar_id"])
+        calendar = lock_row(db, Calendar, update_data["calendar_id"])
         if calendar is None or calendar.household_id != household_id:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=error_detail(ErrorCode.CALENDAR_MISMATCH, "Calendar does not belong to this household"),
             )
 
-    # participant_ids als String-Liste speichern
+    # participant_ids prüfen und als String-Liste speichern
     if "participant_ids" in update_data and update_data["participant_ids"] is not None:
-        update_data["participant_ids"] = [str(pid) for pid in update_data["participant_ids"]]
+        update_data["participant_ids"] = _validated_participants(
+            db, household_id, update_data["participant_ids"], item.participant_ids
+        )
+
+    # Erinnerung neu scharf schalten, wenn sich ihr Zeitpunkt ändert (PD-K1)
+    before = (_as_utc(item.starts_at), item.all_day, item.reminder)
 
     for field, value in update_data.items():
         setattr(item, field, value)
+
+    if (_as_utc(item.starts_at), item.all_day, item.reminder) != before:
+        item.notified_at = None
 
     db.commit()
     db.refresh(item)

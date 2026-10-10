@@ -11,6 +11,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.core.config import settings
+from app.core.db_errors import install_db_error_handlers
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.log_redaction import install_tag_token_redaction
 from app.core.rate_limit import limiter
@@ -38,7 +39,6 @@ from app.routers import (
     settlements,
     shopping,
     tags,
-    tasks,
     todos,
     widget,
 )
@@ -146,6 +146,8 @@ app = FastAPI(title="Haushalt App API", lifespan=lifespan, redirect_slashes=Fals
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _custom_rate_limit_handler)
+# IntegrityError/StaleDataError/Deadlock → 409 CONFLICT_RETRY statt 500 (Safety-Net)
+install_db_error_handlers(app)
 
 # API-Zugriffe laufen über den Authorization-Header; nur der Refresh-Token des
 # Web-Clients ist ein HttpOnly-Cookie (Path=/api/auth), das mit withCredentials
@@ -174,7 +176,6 @@ app.include_router(expenses.router)
 app.include_router(settlements.router)
 app.include_router(chores.router)
 app.include_router(dashboard.router)
-app.include_router(tasks.router)
 app.include_router(budgets.router)
 app.include_router(recurring_bills.router)
 app.include_router(events.router)

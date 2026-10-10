@@ -14,8 +14,8 @@ Sicherheitsbewertung: [`docs/security/ai-assistant-review.md`](security/ai-assis
 |---|---|---|---|---|
 | Rezept erzeugen | `POST /api/households/{id}/ai/recipe` | `medium` | 8000 | Vorschlag im Format von `RecipeCreate`, nicht gespeichert |
 | Pflanzenpflege | `POST /api/households/{id}/ai/plant-care` | `low` | 4000 | `PlantCareAdvice` (Intervalle, Licht, Giftigkeit) |
-| Status | `GET /api/ai/status` | — | — | `{enabled, daily_limit}`; `enabled=false` ohne Schlüssel |
-| Einstellungen lesen | `GET /api/households/{id}/ai/settings` | — | — | Opt-in, Verfügbarkeit, Aufrufe heute, Tageslimit (alle Mitglieder) |
+| Status | `GET /api/ai/status` | — | — | `{enabled, daily_limit, user_daily_limit}`; `enabled=false` ohne Schlüssel |
+| Einstellungen lesen | `GET /api/households/{id}/ai/settings` | — | — | Opt-in, Verfügbarkeit, Aufrufe heute, Tageslimit (alle Mitglieder); dazu `user_calls_today`/`user_daily_limit` der anfragenden Person |
 | Opt-in setzen | `PUT /api/households/{id}/ai/settings` | — | — | nur Admins; sendet `household_updated` mit `ai_enabled` |
 
 `max_tokens` ist bei Rezepten bewusst grösser als die geschätzten ~4000 Token Antwort: Bei Claude Opus 5.5 ist Denken immer an und zählt zu `max_tokens`. Abgerechnet wird nur, was tatsächlich erzeugt wird.
@@ -33,6 +33,7 @@ AiRecipeCard / AssistantView
                                          3. household.ai_enabled?     → 403 AI_NOT_ENABLED
                                          4. slowapi 10/min pro IP     → 429 RATE_LIMITED
                                          5. usage.reserve_call        → 429 AI_DAILY_LIMIT_REACHED
+                                                                        429 AI_USER_DAILY_LIMIT_REACHED
                                        services/ai/recipe.py | plant_care.py
                                          prompts.py (System DE/EN, Eingaben als JSON-Daten)
                                        services/ai/client.py
@@ -55,7 +56,7 @@ AiRecipeCard / AssistantView
 | `backend/app/services/ai/prompts.py` | Systemprompts DE/EN, `render_input` (Nutzereingaben als escapter JSON-Block) |
 | `backend/app/services/ai/schemas.py` | Request-Modelle, Output-Modelle für die API (`RecipeOutput`, `PlantCareOutput`), Antwort-Modelle |
 | `backend/app/services/ai/recipe.py`, `plant_care.py` | je eine Funktion pro Feature + Abbildung der Modell-Ausgabe auf die App-Schemas |
-| `backend/app/services/ai/usage.py` | Tageslimit und Token-Zähler (`ai_usage`) |
+| `backend/app/services/ai/usage.py` | Tageslimits und Token-Zähler (`ai_usage` pro Haushalt, `ai_user_usage` pro Person) |
 | `backend/app/services/ai/errors.py` | fachliche Fehler (`AiRefused`, `AiInvalidOutput`, …) |
 | `backend/app/routers/ai.py` | Endpunkte, Prüfreihenfolge, Fehler → HTTP |
 | `frontend/src/stores/ai.ts`, `repositories/aiRepository.ts` | Store und API-Zugriff |
@@ -93,11 +94,14 @@ client.beta.messages.parse(
 | kein Schlüssel | 503 | `AI_NOT_CONFIGURED` | nein |
 | Haushalt hat nicht eingeschaltet | 403 | `AI_NOT_ENABLED` | nein |
 | Tageslimit erreicht | 429 | `AI_DAILY_LIMIT_REACHED` | — |
+| Persönliches Tageslimit erreicht (über alle Haushalte) | 429 | `AI_USER_DAILY_LIMIT_REACHED` | — |
 | IP-Limit (10/min) | 429 | `RATE_LIMITED` | nein |
 | `stop_reason == "refusal"` | 422 | `AI_REFUSED` | ja (Tokens aus `usage`) |
 | Pflanze nicht erkannt (`recognized=false`) | 422 | `AI_PLANT_NOT_RECOGNIZED` | ja |
 | Antwort passt nicht ins Schema / `max_tokens` erreicht / unbrauchbar | 502 | `AI_INVALID_OUTPUT` | ja |
 | `RateLimitError` des Anbieters, zu viele gleichzeitige Aufrufe | 503 | `AI_BUSY` | nein |
+| übrige SDK-Fehler (`anthropic.APIError`, z. B. `APIResponseValidationError`) | 502 | `AI_UNAVAILABLE` | nein |
+| unerwartete Ausnahme (Bug) | 500 | — | nein (Reservierung wird zurückgegeben) |
 | `APIConnectionError` / `APITimeoutError` / sonstiger `APIStatusError` | 502 | `AI_UNAVAILABLE` | nein |
 
 Details zu Status-Fehlern (Statuscode, `request_id`) landen nur im Server-Log, nie in der Antwort.
@@ -142,9 +146,9 @@ Prompt-Caching bringt hier nichts: Die Systemprompts liegen unter der Mindestlä
 ## 5. Kostenschutz
 
 1. **IP-Limit:** slowapi `10/minute` auf `/ai/recipe` und `/ai/plant-care` (in-memory, wie die übrigen Limits).
-2. **Tageslimit pro Haushalt:** `ai_usage` mit einer Zeile pro Haushalt und UTC-Tag. `reserve_call` erhöht `calls` per `UPDATE … WHERE calls < limit` — auch parallele Anfragen überschreiten das Limit nicht (mit 10 parallelen Anfragen gegen PostgreSQL geprüft: genau `limit` kommen durch). Kam keine Antwort der API zustande (Netzwerk, Überlast, Fehlerstatus), wird die Reservierung zurückgegeben.
+2. **Tageslimit pro Haushalt und pro Person:** `ai_usage` (eine Zeile pro Haushalt und UTC-Tag) und `ai_user_usage` (eine Zeile pro Person und UTC-Tag, über alle Haushalte). `reserve_call` zählt beide in einer Transaktion per `INSERT … ON CONFLICT DO UPDATE SET calls = calls + 1 WHERE calls < limit RETURNING` — die Zeile wird angelegt oder erhöht, aber nur unter dem Limit. Parallele Anfragen überschreiten kein Limit und bekommen unter dem Limit kein falsches 429 (CASA-32; `tests/pg/test_pg_ai.py`, 10 parallele Anfragen). Greift das persönliche Limit, wird auch die Haushalts-Zählung zurückgerollt. Kam keine Antwort der API zustande (Netzwerk, Überlast, Fehlerstatus, sonstiger SDK-Fehler, unerwartete Ausnahme), wird die Reservierung bei beiden zurückgegeben (CASA-33).
 3. **Gleichzeitige Aufrufe** pro Prozess begrenzt (Abschnitt 2).
-4. **Bekannte Lücke:** Wer einen Account hat, kann weitere Haushalte gründen und dort den Assistenten einschalten. Ein Limit pro Nutzer oder ein globales Tageslimit fehlt noch (Review A-01).
+4. **Mehrere Haushalte:** Wer weitere Haushalte gründet, vervielfacht das Haushaltslimit, aber nicht das persönliche Limit `AI_DAILY_LIMIT_PER_USER` (PD-A2, Review A-01). Ein globales Tageslimit gibt es nicht; dafür das Ausgabenlimit in der Anthropic-Konsole setzen.
 
 ## 6. Konfiguration
 
@@ -152,6 +156,7 @@ Prompt-Caching bringt hier nichts: Die Systemprompts liegen unter der Mindestlä
 |---|---|---|
 | `ANTHROPIC_API_KEY` | leer | Schlüssel von <https://console.anthropic.com>; leer = KI deaktiviert |
 | `AI_DAILY_LIMIT_PER_HOUSEHOLD` | `50` | Aufrufe pro Haushalt und UTC-Tag; `0` sperrt alle Aufrufe |
+| `AI_DAILY_LIMIT_PER_USER` | `20` | Aufrufe pro Person und UTC-Tag über alle Haushalte; `0` sperrt alle Aufrufe |
 | `AI_REQUEST_TIMEOUT_SECONDS` | `90` | Timeout pro Versuch; das SDK wiederholt höchstens einmal |
 | `AI_MAX_CONCURRENT_REQUESTS` | `4` | gleichzeitige KI-Aufrufe pro Backend-Prozess |
 

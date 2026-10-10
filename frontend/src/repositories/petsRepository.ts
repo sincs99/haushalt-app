@@ -1,6 +1,7 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type {
-  Pet, PetCreatePayload, PetUpdatePayload, FeedingLog, PetFeedingStatus,
+  Pet, PetCreatePayload, PetUpdatePayload, FeedingLog, PetFeedingStatus, PetHistory,
   Medication, MedicationCreatePayload, MedicationUpdatePayload, MedicationLog,
   PetCareTask, PetCareTaskCreatePayload, PetCareTaskUpdatePayload,
 } from '../types'
@@ -10,7 +11,11 @@ export interface PetsRepository {
   fetchOne(householdId: string, petId: string): Promise<Pet>
   create(householdId: string, data: PetCreatePayload): Promise<Pet>
   update(householdId: string, petId: string, data: PetUpdatePayload): Promise<Pet>
-  remove(householdId: string, petId: string): Promise<void>
+  /** `force`: Tier samt Verlauf löschen (sonst 409 PET_HAS_HISTORY, PD-P2) */
+  remove(householdId: string, petId: string, force?: boolean): Promise<void>
+  archive(householdId: string, petId: string): Promise<Pet>
+  unarchive(householdId: string, petId: string): Promise<Pet>
+  fetchHistory(householdId: string, petId: string): Promise<PetHistory>
   fetchFeedingStatus(householdId: string): Promise<PetFeedingStatus[]>
   createFeeding(householdId: string, petId: string, slot: string): Promise<FeedingLog>
   deleteFeeding(householdId: string, petId: string, feedingId: string): Promise<void>
@@ -20,7 +25,8 @@ export interface PetsRepository {
   createMedication(householdId: string, petId: string, data: MedicationCreatePayload): Promise<Medication>
   updateMedication(householdId: string, petId: string, medicationId: string, data: MedicationUpdatePayload): Promise<Medication>
   removeMedication(householdId: string, petId: string, medicationId: string): Promise<void>
-  giveMedication(householdId: string, petId: string, medicationId: string): Promise<MedicationLog>
+  /** `clientId`: Client-generierte ID der Gabe — Retry derselben Gabe schreibt keinen zweiten Eintrag. */
+  giveMedication(householdId: string, petId: string, medicationId: string, clientId?: string): Promise<MedicationLog>
   fetchMedicationLog(householdId: string, petId: string, medicationId: string): Promise<MedicationLog[]>
   // Care Tasks
   fetchCareTasks(householdId: string, petId: string): Promise<PetCareTask[]>
@@ -62,10 +68,32 @@ export function createOnlinePetsRepository(): PetsRepository {
       return data
     },
 
-    async remove(householdId, petId) {
-      await api.delete(
+    async remove(householdId, petId, force = false) {
+      await deleteIdempotent(
         `/api/households/${householdId}/pets/${petId}`,
+        force ? { params: { force: true } } : undefined,
       )
+    },
+
+    async archive(householdId, petId) {
+      const { data } = await api.post<Pet>(
+        `/api/households/${householdId}/pets/${petId}/archive`,
+      )
+      return data
+    },
+
+    async unarchive(householdId, petId) {
+      const { data } = await api.post<Pet>(
+        `/api/households/${householdId}/pets/${petId}/unarchive`,
+      )
+      return data
+    },
+
+    async fetchHistory(householdId, petId) {
+      const { data } = await api.get<PetHistory>(
+        `/api/households/${householdId}/pets/${petId}/history`,
+      )
+      return data
     },
 
     async fetchFeedingStatus(householdId) {
@@ -84,7 +112,7 @@ export function createOnlinePetsRepository(): PetsRepository {
     },
 
     async deleteFeeding(householdId, petId, feedingId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/pets/${petId}/feedings/${feedingId}`,
       )
     },
@@ -125,14 +153,15 @@ export function createOnlinePetsRepository(): PetsRepository {
     },
 
     async removeMedication(householdId, petId, medicationId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/pets/${petId}/medications/${medicationId}`,
       )
     },
 
-    async giveMedication(householdId, petId, medicationId) {
+    async giveMedication(householdId, petId, medicationId, clientId) {
       const { data } = await api.post<MedicationLog>(
         `/api/households/${householdId}/pets/${petId}/medications/${medicationId}/give`,
+        clientId ? { id: clientId } : undefined,
       )
       return data
     },
@@ -177,7 +206,7 @@ export function createOnlinePetsRepository(): PetsRepository {
     },
 
     async removeCareTask(householdId, petId, taskId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/pets/${petId}/care-tasks/${taskId}`,
       )
     },

@@ -6,7 +6,7 @@ import { useChoresStore } from '../stores/chores'
 import { useAuthStore } from '../stores/auth'
 import { useAsyncAction } from '../composables/useAsyncAction'
 import { useLoader } from '../composables/useLoader'
-import { formatDateShort } from '../utils/dates'
+import { formatDateShort, householdDateString } from '../utils/dates'
 import type { ChoreInfo, ChoreAssignmentInfo, ChoreCreatePayload, ChoreUpdatePayload } from '../types'
 import { PhBroom, PhCalendarCheck, PhPencilSimple, PhUserSwitch, PhX } from '@phosphor-icons/vue'
 import BaseButton from '../components/ui/BaseButton.vue'
@@ -47,9 +47,9 @@ onMounted(() => {
 })
 
 // ── Date Helpers ──
+// „Heute“ im Haushalt (Server rechnet Fälligkeiten in Haushaltszeit), nicht auf dem Gerät
 function todayStr(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return householdDateString(authStore.currentHousehold?.timezone)
 }
 
 function formatWeekday(dateStr: string): string {

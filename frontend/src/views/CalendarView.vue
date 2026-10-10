@@ -11,7 +11,8 @@ import { useLoader } from '../composables/useLoader'
 import { DEFAULT_CALENDAR_PALETTE } from '../utils/categoryColors'
 import { expandEventToDays, eventTime, eventDate } from '../utils/dates'
 import type { ExpandedEventDay } from '../utils/dates'
-import type { CalendarEvent, CalendarEventCreatePayload, CalendarInfo, EventPoll } from '../types'
+import { changedEventFields } from '../utils/eventEdit'
+import type { CalendarEvent, CalendarEventCreatePayload, CalendarInfo, EventPoll, EventReminder, PollOption } from '../types'
 import CalendarMonthGrid from '../components/CalendarMonthGrid.vue'
 
 interface DisplayEvent extends CalendarEvent {
@@ -416,6 +417,8 @@ const formEndTime = ref('10:00')
 const formCalendarId = ref<string>('')
 const formParticipants = ref<string[]>([])
 const formNote = ref('')
+const formReminder = ref<EventReminder>('none')
+const REMINDER_OPTIONS: EventReminder[] = ['none', '15m', '1h', '1d']
 const formEndDate = ref('')
 const formEndDateError = ref('')
 const EVENT_FORM_ID = 'calendar-event-form'
@@ -434,6 +437,7 @@ function openCreateDialog() {
   formCalendarId.value = localStorage.getItem('last-calendar-' + authStore.currentHouseholdId) || store.calendars[0]?.id || ''
   formParticipants.value = []
   formNote.value = ''
+  formReminder.value = 'none'
   dialogOpen.value = true
 }
 
@@ -454,6 +458,7 @@ function openEditDialog(event: CalendarEvent) {
   formCalendarId.value = event.calendar_id
   formParticipants.value = [...event.participant_ids]
   formNote.value = event.note ?? ''
+  formReminder.value = event.reminder ?? 'none'
   dialogOpen.value = true
 }
 
@@ -501,10 +506,17 @@ async function submitForm() {
     calendar_id: formCalendarId.value,
     participant_ids: formParticipants.value,
     note: formNote.value.trim() || null,
+    reminder: formReminder.value,
   }
   const editing = editingEvent.value
+  // Bearbeiten: nur geänderte Felder senden (CASA-09); nichts geändert → kein Request
+  const changes = editing ? changedEventFields(editing, payload) : null
+  if (changes && Object.keys(changes).length === 0) {
+    closeDialog()
+    return
+  }
   const ok = await run(
-    () => editing ? store.updateEvent(editing.id, payload) : store.addEvent(payload),
+    () => editing && changes ? store.updateEvent(editing.id, changes) : store.addEvent(payload),
     {
       key: 'event-form',
       // Termin ausserhalb der sichtbaren Woche/des Monats (oder im ausgeblendeten
@@ -538,6 +550,7 @@ async function handleDelete() {
       calendar_id: event.calendar_id,
       participant_ids: [...event.participant_ids],
       note: event.note,
+      reminder: event.reminder ?? 'none',
     }),
     error: t('calendar.deleteError'),
   })
@@ -550,6 +563,12 @@ function isMyVote(poll: EventPoll, optionId: string): boolean {
   return poll.options
     .find(o => o.id === optionId)
     ?.votes.some(v => v.user_id === userId) ?? false
+}
+
+/** Termin einer Abstimmungsoption (Haushaltszeit aus dem String, CASA-60) */
+function formatOptionTime(option: PollOption): string {
+  if (!option.starts_at) return ''
+  return `${formatDayHeader(eventDate(option.starts_at))} · ${formatTime(option.starts_at)}`
 }
 
 function getMemberName(userId: string): string {
@@ -873,7 +892,10 @@ watch(
             :disabled="isPending(`poll-${poll.id}`)"
             @click="handleVote(poll, option.id)"
           >
-            <span class="poll-option__label">{{ option.label }}</span>
+            <span class="poll-option__label">
+              {{ option.label }}
+              <small v-if="option.starts_at" class="poll-option__time">{{ formatOptionTime(option) }}</small>
+            </span>
             <span class="poll-option__votes">
               <BaseAvatar
                 v-for="vote in option.votes"
@@ -1165,6 +1187,19 @@ watch(
           </div>
         </div>
 
+        <!-- Erinnerung (Push an Teilnehmer, sonst an alle) -->
+        <div class="form-field">
+          <label class="form-label" for="event-reminder">{{ t('calendar.reminderLabel') }}</label>
+          <select id="event-reminder" v-model="formReminder" class="form-input">
+            <option v-for="r in REMINDER_OPTIONS" :key="r" :value="r">
+              {{ t(`calendar.reminder.${r}`) }}
+            </option>
+          </select>
+          <p v-if="formAllDay && formReminder !== 'none'" class="form-hint">
+            {{ formReminder === '1d' ? t('calendar.reminderAllDayBefore') : t('calendar.reminderAllDay') }}
+          </p>
+        </div>
+
         <!-- Notiz -->
         <div class="form-field">
           <label class="form-label" for="event-note">{{ t('calendar.noteLabel') }}</label>
@@ -1237,7 +1272,10 @@ watch(
               :class="{ 'poll-option--selected': decideOptionId === option.id }"
               @click="decideOptionId = option.id"
             >
-              <span class="poll-option__label">{{ option.label }}</span>
+              <span class="poll-option__label">
+                {{ option.label }}
+                <small v-if="option.starts_at" class="poll-option__time">{{ formatOptionTime(option) }}</small>
+              </span>
               <span class="poll-option__count" v-if="option.votes.length > 0">
                 {{ option.votes.length }}
               </span>
@@ -1932,6 +1970,13 @@ watch(
 .poll-option__label {
   font-weight: var(--font-weight-medium);
   color: var(--ink);
+}
+
+.poll-option__time {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-regular, 400);
+  color: var(--sub);
 }
 
 .poll-option__votes {

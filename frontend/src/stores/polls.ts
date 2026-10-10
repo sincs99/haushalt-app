@@ -4,9 +4,21 @@ import { useAuthStore } from './auth'
 import { createOnlinePollsRepository } from '../repositories/pollsRepository'
 import type {
   EventPoll,
+  MealPlanEntry,
   PollCreatePayload,
   PollDecidePayload,
 } from '../types'
+import { createRequestGuard } from '../utils/householdGuard'
+
+/**
+ * Bestehender Menüplan-Eintrag aus einem 409 MEAL_PLAN_OCCUPIED (Essens-Abstimmung
+ * entscheiden auf einem belegten Tag, PD-M1) — sonst null.
+ */
+export function mealPlanOccupiedEntry(error: unknown): MealPlanEntry | null {
+  const detail = (error as any)?.response?.data?.detail
+  if ((error as any)?.response?.status !== 409 || detail?.code !== 'MEAL_PLAN_OCCUPIED') return null
+  return (detail.entry ?? null) as MealPlanEntry | null
+}
 
 export const usePollsStore = defineStore('polls', () => {
   // Repository
@@ -15,6 +27,8 @@ export const usePollsStore = defineStore('polls', () => {
   // State
   const polls = ref<EventPoll[]>([])
   const loading = ref(false)
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
 
   // Computed
   const openPolls = computed(() =>
@@ -30,12 +44,14 @@ export const usePollsStore = defineStore('polls', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'polls')
 
     loading.value = true
     try {
-      polls.value = await repo.fetchAll(householdId, status)
+      const result = await repo.fetchAll(householdId, status)
+      if (active()) polls.value = result
     } finally {
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -129,12 +145,20 @@ export const usePollsStore = defineStore('polls', () => {
     }
   }
 
-  async function mealDecidePoll(pollId: string, optionId: string) {
+  /**
+   * Essens-Abstimmung entscheiden. Ist der Tag schon belegt, antwortet der Server
+   * mit 409 MEAL_PLAN_OCCUPIED (siehe mealPlanOccupiedEntry) — erst nach Rückfrage
+   * mit `replace = true` erneut senden.
+   */
+  async function mealDecidePoll(pollId: string, optionId: string, replace = false) {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    const updated = await repo.mealDecide(householdId, pollId, { option_id: optionId })
+    const updated = await repo.mealDecide(householdId, pollId, {
+      option_id: optionId,
+      ...(replace ? { replace: true } : {}),
+    })
     const idx = polls.value.findIndex(p => p.id === pollId)
     if (idx !== -1) {
       polls.value[idx] = updated

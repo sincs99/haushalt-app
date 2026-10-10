@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import type { TagResolveResult } from '../../types'
 import {
+  executeParams,
+  localizedTargetName,
+  localizedTargetOption,
   moduleRouteFor,
   nextScanStep,
   plantWaterLines,
@@ -81,6 +84,19 @@ describe('safeInternalPath', () => {
   })
 })
 
+describe('executeParams (CASA-18)', () => {
+  it('sends the confirmation from resolve unchanged', () => {
+    const r = result({ action: 'chore.assignment.done', confirm: { assignment_id: 'a1' } })
+    expect(executeParams(r, 'morning')).toEqual({ confirm: { assignment_id: 'a1' } })
+  })
+
+  it('adds the slot only for feeding', () => {
+    expect(executeParams(result(), 'evening')).toEqual({ slot: 'evening' })
+    const water = result({ action: 'plant.water', confirm: { task_ids: ['t1', 't2'] } })
+    expect(executeParams(water, 'evening')).toEqual({ confirm: { task_ids: ['t1', 't2'] } })
+  })
+})
+
 describe('scanErrorKind', () => {
   it.each([
     [axiosError(404, 'TAG_NOT_FOUND'), 'not_found'],
@@ -89,6 +105,7 @@ describe('scanErrorKind', () => {
     [axiosError(410, 'TAG_DISABLED'), 'disabled'],
     [axiosError(409, 'FEEDING_DUPLICATE'), 'already_done'],
     [axiosError(409, 'TAG_NOTHING_TO_DO'), 'nothing_to_do'],
+    [axiosError(409, 'TAG_CONFIRMATION_STALE'), 'stale'],
     [axiosError(422, 'TAG_ACTION_INVALID'), 'unsupported'],
     [axiosError(422, 'TAG_NOT_EXECUTABLE'), 'unsupported'],
     [axiosError(422), 'unknown'],
@@ -159,5 +176,25 @@ describe('QR-Code', () => {
 
   it('liefert eine Data-URL (CSP: img-src data:)', () => {
     expect(qrSvgDataUrl('x').startsWith('data:image/svg+xml;charset=utf-8,')).toBe(true)
+  })
+})
+
+describe('Pflegearten übersetzt statt deutscher Backend-Namen (CASA-59)', () => {
+  const t = (key: string) => `[${key}]`
+
+  it('Ziel mit target_care_type → übersetzte Pflegeart', () => {
+    expect(localizedTargetName({ target_name: 'Gießen', target_care_type: 'water' }, t)).toBe('[plants.careTypes.water]')
+  })
+
+  it('eigene Bezeichnung / andere Ziele / ältere API → target_name', () => {
+    expect(localizedTargetName({ target_name: 'Blätter abwischen', target_care_type: null }, t)).toBe('Blätter abwischen')
+    expect(localizedTargetName({ target_name: 'Luna' }, t)).toBe('Luna')
+    expect(localizedTargetName({ target_name: null }, t)).toBeNull()
+  })
+
+  it('Dropdown-Option: Pflanze – übersetzte Pflegeart, sonst name', () => {
+    expect(localizedTargetOption({ id: '1', name: 'Monstera – Gießen', care_type: 'water', plant_name: 'Monstera' }, t))
+      .toBe('Monstera – [plants.careTypes.water]')
+    expect(localizedTargetOption({ id: '2', name: 'Luna' }, t)).toBe('Luna')
   })
 })

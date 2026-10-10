@@ -1,10 +1,18 @@
 # Lokale Entwicklung. Für Produktion docker-compose.prod.yml verwenden (siehe docs/deployment.md).
 # Secrets sind Pflicht: .env.example nach .env kopieren und Werte setzen.
 
+# Log-Rotation für alle Container (json-file): ohne Grenze wachsen Docker-Logs unbegrenzt
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${LOG_MAX_SIZE:-10m}"
+    max-file: "${LOG_MAX_FILE:-5}"
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_DB: haushalt
       POSTGRES_USER: haushalt
@@ -23,6 +31,7 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,6 +49,9 @@ services:
       # KI-Assistent (optional): ohne Schlüssel sind alle KI-Funktionen ausgeblendet
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_DAILY_LIMIT_PER_HOUSEHOLD: ${AI_DAILY_LIMIT_PER_HOUSEHOLD:-50}
+      AI_DAILY_LIMIT_PER_USER: ${AI_DAILY_LIMIT_PER_USER:-20}
+      # Nur diesem Netz (Frontend-nginx) X-Forwarded-For glauben — docs/deployment.md §2.1
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.16.0.0/12}
     # Nur lokal (API-Debugging); das Frontend erreicht das Backend über das Docker-Netz
     ports:
       - "127.0.0.1:8000:8000"
@@ -47,8 +59,19 @@ services:
   frontend:
     build: ./frontend
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - backend
+    environment:
+      # Proxies, deren X-Forwarded-For als Client-IP gilt (Komma-getrennt)
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-172.16.0.0/12}
+    healthcheck:
+      # Nur nginx selbst (ohne Backend) — Backend hat einen eigenen Healthcheck
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/nginx-health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     ports:
       - "${FRONTEND_PORT:-8080}:80"
 

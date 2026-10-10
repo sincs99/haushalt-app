@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { waitForOverlayBack } from '../composables/useBackClose'
+import { applyHouseholdQuery } from './householdQuery'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -183,6 +184,10 @@ router.beforeEach(async (to) => {
     ) {
       return { path: '/no-household' }
     }
+
+    // Push-Link eines anderen Haushalts (?hh=<id>): erst wechseln, dann öffnen (CASA-40)
+    const target = applyHouseholdQuery(to, authStore)
+    if (target) return target
   }
 })
 

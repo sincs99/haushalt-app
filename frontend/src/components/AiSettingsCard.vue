@@ -75,6 +75,9 @@ watch(() => authStore.currentHouseholdId, load)
     <p v-if="enabled && aiStore.settings" class="ai-settings__hint">
       {{ t('ai.settings.usage', { used: aiStore.settings.calls_today, limit: aiStore.settings.daily_limit }) }}
     </p>
+    <p v-if="enabled && aiStore.settings?.user_daily_limit" class="ai-settings__hint">
+      {{ t('ai.settings.userUsage', { used: aiStore.settings.user_calls_today ?? 0, limit: aiStore.settings.user_daily_limit }) }}
+    </p>
 
     <RouterLink v-if="enabled" to="/assistant" class="ai-settings__link">
       {{ t('ai.settings.openAssistant') }}

@@ -39,12 +39,21 @@ describe('Laden', () => {
     const store = useFinanceStore()
     const pending = deferred<any>()
     repo.getSummary.mockReturnValue(pending.promise)
-    const p = store.fetchSummary('other-hh')
+    const p = store.fetchSummary(HOUSEHOLD_ID)
     expect(store.loading).toBe(true)
     pending.resolve(summary())
     await p
-    expect(repo.getSummary).toHaveBeenCalledWith('other-hh')
+    expect(repo.getSummary).toHaveBeenCalledWith(HOUSEHOLD_ID)
     expect(store.summary).toBeTruthy()
+    expect(store.loading).toBe(false)
+  })
+
+  test('fetchSummary eines anderen als des aktuellen Haushalts landet nicht im Store (CASA-12)', async () => {
+    const store = useFinanceStore()
+    repo.getSummary.mockResolvedValue(summary())
+    await store.fetchSummary('other-hh')
+    expect(repo.getSummary).toHaveBeenCalledWith('other-hh')
+    expect(store.summary).toBeNull()
     expect(store.loading).toBe(false)
   })
 

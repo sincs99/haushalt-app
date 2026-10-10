@@ -1,6 +1,8 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type {
   TagCreatePayload,
+  TagExecuteParams,
   TagExecuteResult,
   TagInfo,
   TagResolveResult,
@@ -20,7 +22,7 @@ export interface TagsRepository {
   remove(householdId: string, tagId: string): Promise<void>
   /** Was würde der Tag tun? Ändert nichts (ausser Nutzungszähler bei *.open). */
   resolve(token: string): Promise<TagResolveResult>
-  execute(token: string, params?: { slot?: 'morning' | 'evening' }): Promise<TagExecuteResult>
+  execute(token: string, params?: TagExecuteParams): Promise<TagExecuteResult>
 }
 
 export function createOnlineTagsRepository(): TagsRepository {
@@ -53,7 +55,7 @@ export function createOnlineTagsRepository(): TagsRepository {
     },
 
     async remove(householdId, tagId) {
-      await api.delete(`${base(householdId)}${tagId}`)
+      await deleteIdempotent(`${base(householdId)}${tagId}`)
     },
 
     async resolve(token) {

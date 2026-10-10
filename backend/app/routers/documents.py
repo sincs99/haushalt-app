@@ -24,11 +24,13 @@ from fastapi import (
     status,
 )
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Document, DocumentFile, HouseholdMember, StoredFile
@@ -39,6 +41,7 @@ from app.routers.files import (
     file_in_use_error,
     household_storage_quota,
     household_storage_used,
+    lock_files,
     remove_from_storage,
     store_upload,
 )
@@ -110,7 +113,10 @@ class DocumentFilesBody(BaseModel):
         return _unique_ids(v)
 
 
-class DocumentUpdate(BaseModel):
+class DocumentUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Document → 422 (app/core/patch_schema.py)
+    __orm_model__ = Document
+
     title: str | None = Field(None, min_length=1, max_length=150)
     category: DocumentCategory | None = None
     notes: str | None = Field(None, max_length=2000)
@@ -126,13 +132,6 @@ class DocumentUpdate(BaseModel):
     @classmethod
     def normalize_empty_notes(cls, v):
         return _normalize_notes(v)
-
-    @model_validator(mode="after")
-    def required_fields_not_null(self):
-        for name in ("title", "category"):
-            if name in self.model_fields_set and getattr(self, name) is None:
-                raise ValueError(f"{name} must not be null")
-        return self
 
 
 class DocumentResponse(BaseModel):
@@ -208,8 +207,10 @@ def _claim_files(db: Session, household_id: uuid.UUID, file_ids: list[uuid.UUID]
     """Prüft, dass alle Dateien zum Haushalt gehören und noch frei sind.
 
     Eine Datei gehört zu höchstens einem Dokument und nicht gleichzeitig einem Pet.
+    Die Dateien werden bis zum Commit gesperrt (CASA-28): eine parallele Zuordnung
+    derselben Datei wartet und bekommt danach FILE_IN_USE.
     """
-    files = db.query(StoredFile).filter(StoredFile.id.in_(file_ids)).all()
+    files = lock_files(db, file_ids)
     by_id = {f.id: f for f in files}
     if len(by_id) != len(file_ids) or any(f.household_id != household_id for f in files):
         raise HTTPException(
@@ -224,6 +225,16 @@ def _claim_files(db: Session, household_id: uuid.UUID, file_ids: list[uuid.UUID]
     if reference is not None:
         raise file_in_use_error(reference)
     return [by_id[fid] for fid in file_ids]
+
+
+def _commit_claim(db: Session) -> None:
+    """Commit nach dem Zuordnen von Dateien. Unique-Verletzung auf document_files.file_id
+    (Datei inzwischen anderweitig zugeordnet) → 422 FILE_IN_USE statt 409/500 (CASA-28)."""
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise file_in_use_error("another document")
 
 
 def _append_files(doc: Document, files: list[StoredFile]) -> None:
@@ -318,7 +329,7 @@ def create_document(
     )
     _append_files(doc, files)
     db.add(doc)
-    db.commit()
+    _commit_claim(db)
     db.refresh(doc)
 
     _emit(household_id, "document_created", doc)
@@ -429,7 +440,7 @@ def add_document_files(
 ):
     doc = _get_document_or_404(db, document_id, household_id)
     _append_files(doc, _claim_files(db, household_id, body.file_ids))
-    db.commit()
+    _commit_claim(db)
     db.refresh(doc)
 
     _emit(household_id, "document_updated", doc)

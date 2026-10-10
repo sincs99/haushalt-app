@@ -93,6 +93,16 @@ describe('Rezepte', () => {
     expect(store.weekPlan[0].recipe!.is_favorite).toBe(true)
   })
 
+  test('deleteRecipe: Wochenplan behält den Rezeptnamen als Freitext (PD-M3)', async () => {
+    const store = useFoodStore()
+    store.recipes = [recipe()]
+    store.weekPlan = [entry('2026-03-02')]
+    repo.deleteRecipe.mockResolvedValue(undefined)
+    await store.deleteRecipe('r1')
+    expect(store.recipes).toEqual([])
+    expect(store.weekPlan[0]).toMatchObject({ recipe_id: null, recipe: null, free_text: 'Pasta' })
+  })
+
   test('deleteRecipe entfernt erst nach Erfolg', async () => {
     const store = useFoodStore()
     store.recipes = [recipe()]
@@ -174,10 +184,11 @@ describe('Wochenplan', () => {
     expect(store.weekPlan).toEqual([e])
   })
 
-  test('addMissingToShopping reicht die Antwort durch', async () => {
+  test('addMissingToShopping reicht die Antwort durch und übergibt die Zielliste', async () => {
     const store = useFoodStore()
     repo.addMissingToShopping.mockResolvedValue({ added: 2 })
-    expect(await store.addMissingToShopping('e1')).toEqual({ added: 2 })
+    expect(await store.addMissingToShopping('e1', 'l1')).toEqual({ added: 2 })
+    expect(repo.addMissingToShopping).toHaveBeenCalledWith(HOUSEHOLD_ID, 'e1', 'l1')
   })
 
   test('navigateWeek verschiebt um 7 Tage und lädt neu', () => {
@@ -229,5 +240,28 @@ describe('Socket-Handler', () => {
     expect(store.weekPlan[0].recipe_id).toBe('r2')
     store.handleMealPlanDeleted({ date: '2026-03-02' })
     expect(store.weekPlan.map(e => e.date)).toEqual(['2026-03-03'])
+  })
+
+  test('meal_plan_updated ohne id (Teil-Payload) wird nicht übernommen, sondern neu geladen (CASA-19)', async () => {
+    const store = useFoodStore()
+    store.weekPlan = [entry('2026-03-02', { free_text: 'Fondue', recipe_id: null, recipe: null })]
+    repo.fetchWeekPlan.mockResolvedValue([entry('2026-03-02')])
+    store.handleMealPlanUpdated({ date: '2026-03-02' } as any)
+    // Tag wird nicht "leer" überschrieben
+    expect(store.weekPlan[0].id).toBe('e-2026-03-02')
+    expect(store.weekPlan[0].free_text).toBe('Fondue')
+    expect(repo.fetchWeekPlan).toHaveBeenCalledTimes(1)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(store.weekPlan[0].recipe_id).toBe('r1')
+  })
+
+  test('recipe_deleted: geplante Mahlzeiten behalten den Namen als Freitext (PD-M3)', () => {
+    const store = useFoodStore()
+    store.recipes = [recipe()]
+    store.weekPlan = [entry('2026-03-02'), entry('2026-03-03', { recipe_id: 'r2', recipe: recipe('r2', { name: 'Risotto' }) })]
+    store.handleRecipeDeleted({ id: 'r1' })
+    expect(store.weekPlan[0]).toMatchObject({ recipe_id: null, recipe: null, free_text: 'Pasta' })
+    expect(store.weekPlan[1].recipe_id).toBe('r2')
   })
 })

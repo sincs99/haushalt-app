@@ -1,0 +1,60 @@
+create list 201 
+
+== S1: two people add same item concurrently ==
+[201, 201]
+Milch items: [('Milch', '1 l'), ('Milch', '1 l')]
+
+== S2: delete then re-POST same client_id ==
+create 201 
+delete by B 204 
+re-POST same client id 201 
+ resurrected: True emits: ['shopping_item_created']
+
+== S3: concurrent toggles ==
+statuses [200, 200] resp versions [2, 2] resp checked [True, True]
+final True version 2 v0 1
+patch with stale version field (ignored?) 200 
+ version now 3
+
+== S4: concurrent increments of version 20 patches ==
+status {200} versions returned [4, 5, 6, 10, 11, 11, 11, 12, 13, 13]
+
+== S5: assignment to non-member / ex-member ==
+assign random 400 {"detail":"assigned_to_user_id is not a member of this household"}
+assign Ben 200 
+
+== S6: null in PATCH for non-null fields ==
+PATCH name=null 500 Internal Server Error
+PATCH is_checked=null 500 Internal Server Error
+
+== S7: store rename merging ==
+stores ['Coop', 'Migros']
+reassign coop->MIGROS 200 
+{'updated': 2, 'to_store': 'Migros'}
+stores ['Migros']
+store values ['Migros', 'None']
+
+== S8: concurrent rename vs create with old store ==
+[200, 201]
+stores after race ['Denner', 'Migros']
+
+== S9: delete list with items (no force / force) ==
+delete no force 409 {"detail":"List contains 9 items. Use ?force=true to delete."}
+delete force 204 
+ emits: ['shopping_list_deleted']
+ items left in L2: 0
+
+== S10: create item into list that is concurrently deleted ==
+[204, 500] ['Internal Server Error']
+[204, 500] ['Internal Server Error']
+[204, 201] []
+[204, 500] ['Internal Server Error']
+[204, 201] []
+
+== S11: list create with client id after delete ==
+list re-POST after delete 201 
+
+== S12: quantity free text ==
+weird qty 201 
+-5 kg; DROP
+qty 51 422 {"detail":[{"type":"string_too_long","loc":["body","quantity"],"msg":"String should have at most 50 characters","input":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","ctx":{"max_length":50}}]}

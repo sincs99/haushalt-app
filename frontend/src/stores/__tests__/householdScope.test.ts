@@ -23,7 +23,6 @@ import { usePetsStore } from '../pets'
 import { usePlantsStore } from '../plants'
 import { useNotesStore } from '../notes'
 import { useFoodStore } from '../food'
-import { useTasksStore } from '../tasks'
 import { useCalendarStore } from '../calendar'
 import { useShoppingStore } from '../shopping'
 import { useTodosStore } from '../todos'
@@ -50,8 +49,6 @@ test('leert Haustiere, Pflanzen, Notizen, Essen, Aufgaben und Kalender', () => {
   const food = useFoodStore()
   food.recipes = [{ id: 'r1', name: 'Risotto' } as any]
   food.weekPlan = [{ id: 'm1', date: '2026-10-05' } as any]
-  const tasks = useTasksStore()
-  tasks.items = [{ id: 'u1', type: 'todo' } as any]
   const calendar = useCalendarStore()
   calendar.events = [{ id: 'e1', title: 'Zahnarzt' } as any]
   calendar.calendars = [{ id: 'c1', name: 'Allgemein' } as any]
@@ -67,7 +64,6 @@ test('leert Haustiere, Pflanzen, Notizen, Essen, Aufgaben und Kalender', () => {
   expect(notes.items).toEqual([])
   expect(food.recipes).toEqual([])
   expect(food.weekPlan).toEqual([])
-  expect(tasks.items).toEqual([])
   expect(calendar.events).toEqual([])
   expect(calendar.calendars).toEqual([])
 })

@@ -11,13 +11,21 @@ from app.core.deps import get_current_user, verify_household_access, verify_hous
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import get_db
-from app.models import Budget, Calendar, Expense, Household, HouseholdMember, RecurringBill, User
+from app.models import Budget, Expense, Household, HouseholdMember, RecurringBill, User
+from app.services.finance_rules import add_months, validate_month
 from app.services.household_time import household_today
 from app.services.invite_code import (
-    generate_unique_invite_code,
     is_invite_code_expired,
-    new_invite_code_expiry,
     rotate_household_invite_code,
+)
+from app.services.locking import lock_household
+from app.services.membership import (
+    create_household_with_admin,
+    ensure_admin,
+    join_by_invite_code,
+    locked_membership,
+    member_count,
+    release_departing_member,
 )
 from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
@@ -157,6 +165,26 @@ def rename_household(
     return result
 
 
+def _not_member() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=error_detail(ErrorCode.NOT_HOUSEHOLD_MEMBER, "Not a member of this household"),
+    )
+
+
+def _delete_household_files(household_id: uuid.UUID) -> None:
+    """Hochgeladene Dateien (Dokumente, Fotos) eines gelöschten Haushalts entfernen.
+
+    Die DB-Einträge verschwinden per CASCADE, die Dateien auf der Platte sonst nie.
+    Best-effort: schlägt es fehl, räumt der periodische Cleanup
+    (services/file_cleanup.py) verwaiste Haushaltsordner später auf.
+    """
+    try:
+        _storage.delete_household(str(household_id))
+    except Exception:
+        pass
+
+
 @router.post("/leave", status_code=status.HTTP_204_NO_CONTENT)
 def leave_household(
     household_id: uuid.UUID,
@@ -165,57 +193,46 @@ def leave_household(
 ):
     """Haushalt verlassen. Immer erlaubt — auch mit offenen Salden.
 
-    Geschäftsregeln:
-    - Letztes Mitglied → Haushalt wird komplett gelöscht (CASCADE)
-    - Einziger Admin, aber andere Mitglieder → dienstältestes Mitglied wird Admin
+    Geschäftsregeln (docs/PROJECT-STATUS.md, "Haushalt verlassen"):
+    - Haushaltszeile wird gesperrt (CASA-10): parallele Austritte/Beitritte laufen nacheinander
+    - Letztes Mitglied → Haushalt wird komplett gelöscht (CASCADE) inkl. Dateien
+    - Bleiben Mitglieder ohne Admin → dienstältestes Mitglied wird Admin (PD-H3)
+    - Offene Zuständigkeiten werden freigegeben (PD-H1, release_departing_member)
     - Expenses/Shares werden NICHT gelöscht (Ehemaliges-Mitglied-Muster)
-    - rotation_order wird NICHT bereinigt (Scheduler überspringt)
     """
     user_id = membership.user_id
 
-    # Alle Mitglieder dieses Haushalts zählen
-    all_members = (
-        db.query(HouseholdMember)
-        .filter(HouseholdMember.household_id == household_id)
-        .all()
-    )
+    household = lock_household(db, household_id)
+    if household is None:
+        # Parallel gelöscht (letztes anderes Mitglied ist gerade gegangen)
+        raise _not_member()
+    # Unter der Sperre neu lesen: parallel entfernt oder befördert?
+    own = locked_membership(db, household_id, user_id)
+    if own is None:
+        raise _not_member()
 
-    if len(all_members) <= 1:
-        # Letztes Mitglied → Haushalt löschen
-        household = db.get(Household, household_id)
-        if household:
-            db.delete(household)  # CASCADE löscht members, expenses, etc.
+    db.delete(own)
+    db.flush()
+
+    # Nach dem Löschen neu zählen (nicht vorher), dann Invarianten herstellen
+    if member_count(db, household_id) == 0:
+        db.delete(household)  # CASCADE löscht members, expenses, etc.
         db.commit()
-        # Hochgeladene Dateien (Dokumente, Fotos) mitlöschen — die DB-Einträge
-        # verschwinden per CASCADE, die Dateien auf der Platte sonst nie
-        try:
-            _storage.delete_household(str(household_id))
-        except Exception:
-            pass  # Best-effort, DB ist konsistent
+        _delete_household_files(household_id)
         return  # Kein Event nötig bei Löschung
 
-    # Prüfe ob Admin-Promotion nötig
-    is_admin = membership.role == "admin"
-    remaining = [m for m in all_members if m.id != membership.id]
-
-    if is_admin:
-        # Gibt es andere Admins?
-        other_admins = [m for m in remaining if m.role == "admin"]
-        if not other_admins:
-            # Kein anderer Admin → dienstältestes Mitglied promoten
-            # Sortierung: joined_at ASC, dann user_id ASC (deterministic tiebreaker)
-            promoted = sorted(remaining, key=lambda m: (m.joined_at, str(m.user_id)))[0]
-            promoted.role = "admin"
-
-    db.delete(membership)
+    # Offene Zuständigkeiten freigeben (PD-H1) — im selben Commit wie der Austritt
+    released = release_departing_member(db, household_id, user_id)
+    ensure_admin(db, household_id)
     db.commit()
 
     # Socket-Event NACH Commit; danach verlassen alle Verbindungen des Users
-    # serverseitig den Room (REST ist bereits durch verify_household_access dicht)
+    # serverseitig den Room (REST ist bereits durch verify_household_access dicht).
+    # ``released`` nennt die Bereiche, die andere Clients neu laden müssen.
     emit_to_household_sync(
         household_id,
         "household_member_left",
-        {"household_id": str(household_id), "user_id": str(user_id)},
+        {"household_id": str(household_id), "user_id": str(user_id), "released": released.areas()},
         evict_user_id=user_id,
     )
 
@@ -231,6 +248,7 @@ def remove_member(
 
     Sich selbst entfernt man über POST /leave, nicht über diesen Endpoint.
 
+    Offene Zuständigkeiten werden wie beim Verlassen freigegeben (PD-H1).
     Der Einladungscode wird dabei erneuert, sonst könnte das entfernte Mitglied
     mit dem bekannten Code sofort wieder beitreten. Seine Socket-Verbindungen
     verlassen serverseitig den Room des Haushalts.
@@ -242,11 +260,21 @@ def remove_member(
             detail=error_detail(ErrorCode.CANNOT_REMOVE_SELF, "Use /leave to remove yourself"),
         )
 
-    # Ziel-Membership finden
-    target = db.query(HouseholdMember).filter_by(
-        household_id=household_id, user_id=user_id
-    ).first()
+    household = lock_household(db, household_id)
+    if household is None:
+        raise _not_member()
+    # Unter der Sperre prüfen, ob der Aufrufer noch (Admin-)Mitglied ist
+    caller = locked_membership(db, household_id, membership.user_id)
+    if caller is None:
+        raise _not_member()
+    if caller.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_detail(ErrorCode.ADMIN_REQUIRED, "Admin role required"),
+        )
 
+    # Ziel-Membership finden
+    target = locked_membership(db, household_id, user_id)
     if target is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -261,14 +289,18 @@ def remove_member(
         )
 
     db.delete(target)
-    household = db.get(Household, household_id)
+    db.flush()
+    # Offene Zuständigkeiten freigeben (PD-H1) — im selben Commit wie die Entfernung
+    released = release_departing_member(db, household_id, user_id)
     rotate_household_invite_code(db, household)
+    # Reparatur: Haushalt ohne Admin (Altbestand) bekommt hier wieder einen
+    ensure_admin(db, household_id)
     db.commit()
 
     emit_to_household_sync(
         household_id,
         "household_member_removed",
-        {"household_id": str(household_id), "user_id": str(user_id)},
+        {"household_id": str(household_id), "user_id": str(user_id), "released": released.areas()},
         evict_user_id=user_id,
     )
 
@@ -318,17 +350,12 @@ def get_finance_summary(
     today = household_today(db, household_id)
     if month is None:
         month = date(today.year, today.month, 1)
-    elif month.day != 1:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail(ErrorCode.INVALID_MONTH, "month must be the first day of a month"),
-        )
+    else:
+        # Erster des Monats, höchstens ±10 Jahre (9999-12-01 → sonst 500, CASA-36)
+        validate_month(month, today)
 
     # Nächsten Monat berechnen
-    if month.month == 12:
-        first_of_next_month = date(month.year + 1, 1, 1)
-    else:
-        first_of_next_month = date(month.year, month.month + 1, 1)
+    first_of_next_month = add_months(month, 1)
 
     # 2. Budget laden
     budget = (
@@ -345,6 +372,7 @@ def get_finance_summary(
             Expense.household_id == household_id,
             Expense.expense_date >= month,
             Expense.expense_date < first_of_next_month,
+            Expense.deleted_at.is_(None),
         )
         .scalar()
     )
@@ -357,6 +385,7 @@ def get_finance_summary(
             Expense.household_id == household_id,
             Expense.expense_date >= month,
             Expense.expense_date < first_of_next_month,
+            Expense.deleted_at.is_(None),
         )
         .group_by(Expense.category)
         .all()
@@ -399,6 +428,7 @@ def get_finance_summary(
             Expense.household_id == household_id,
             Expense.recurring_bill_id.isnot(None),
             Expense.booked_month == month,
+            Expense.deleted_at.is_(None),
         )
         .all()
     )
@@ -446,30 +476,7 @@ def create_household(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    invite_code = generate_unique_invite_code(db)
-    household = Household(
-        name=body.name.strip(),
-        invite_code=invite_code,
-        invite_code_expires_at=new_invite_code_expiry(),
-    )
-    db.add(household)
-    db.flush()
-
-    membership = HouseholdMember(
-        household_id=household.id,
-        user_id=current_user.id,
-        role="admin",
-    )
-    db.add(membership)
-
-    # Default-Kalender "Allgemein" anlegen, damit Events sofort möglich sind
-    default_calendar = Calendar(
-        household_id=household.id,
-        name="Allgemein",
-        color="#5B8DEF",
-        position=0,
-    )
-    db.add(default_calendar)
+    household, _ = create_household_with_admin(db, body.name, current_user.id)
 
     # Werte vor Commit sichern
     result = HouseholdCreateResponse(
@@ -487,46 +494,8 @@ def join_household(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Code normalisieren (case-insensitiv)
-    code = data.invite_code.strip().upper()
-
-    # Household suchen
-    from sqlalchemy import func
-    household = (
-        db.query(Household)
-        .filter(func.upper(Household.invite_code) == code)
-        .first()
-    )
-    if household is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=error_detail(ErrorCode.INVITE_CODE_NOT_FOUND, "Invite code not found"),
-        )
-    if is_invite_code_expired(household):
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail=error_detail(ErrorCode.INVITE_CODE_EXPIRED, "Invite code has expired"),
-        )
-
-    # Prüfen ob User bereits Mitglied ist
-    existing = (
-        db.query(HouseholdMember)
-        .filter_by(household_id=household.id, user_id=current_user.id)
-        .first()
-    )
-    if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=error_detail(ErrorCode.ALREADY_MEMBER, "Already a member of this household"),
-        )
-
-    # Membership anlegen
-    membership = HouseholdMember(
-        household_id=household.id,
-        user_id=current_user.id,
-        role="member",
-    )
-    db.add(membership)
+    household, membership = join_by_invite_code(db, data.invite_code, current_user.id)
+    role = membership.role
 
     # Werte vor dem Commit sichern (SQLAlchemy expired Objekte nach commit)
     household_id = household.id
@@ -543,7 +512,7 @@ def join_household(
             "household_id": str(household_id),
             "user_id": str(user_id),
             "display_name": display_name,
-            "role": "member",
+            "role": role,
         },
     )
 

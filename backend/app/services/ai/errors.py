@@ -30,6 +30,10 @@ class AiDailyLimitReached(AiError):
     """Tageslimit des Haushalts ausgeschöpft."""
 
 
+class AiUserDailyLimitReached(AiError):
+    """Persönliches Tageslimit (über alle Haushalte) ausgeschöpft (PD-A2)."""
+
+
 class AiBusy(AiError):
     """Zu viele gleichzeitige Aufrufe oder Rate-Limit beim Anbieter."""
 

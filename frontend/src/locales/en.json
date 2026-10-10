@@ -83,6 +83,7 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "eventRunningSince": "since {date}, {time}",
     "greetingMorning": "Good morning",
     "greetingAfternoon": "Good afternoon",
     "greetingEvening": "Good evening",
@@ -155,7 +156,16 @@
     "deleted": "Event deleted",
     "prevWeek": "Previous week",
     "nextWeek": "Next week",
-    "noEventsDay": "No events on this day"
+    "noEventsDay": "No events on this day",
+    "reminderLabel": "Reminder",
+    "reminder": {
+      "none": "None",
+      "15m": "15 minutes before",
+      "1h": "1 hour before",
+      "1d": "1 day before"
+    },
+    "reminderAllDay": "All day: reminder at 08:00 on the day",
+    "reminderAllDayBefore": "All day: reminder at 08:00 the day before"
   },
   "calendars": {
     "manage": "Manage calendars",
@@ -245,7 +255,9 @@
     "listDeleted": "List deleted",
     "listName": "List name",
     "storeActions": "Actions for {store}",
-    "mergeStores": "Merge"
+    "mergeStores": "Merge",
+    "alreadyOnList": "«{name}» is already on the list",
+    "alreadyOnOtherList": "«{name}» is already on the list «{list}»"
   },
   "todos": {
     "title": "Tasks",
@@ -340,6 +352,8 @@
       "settlementTitle": "Settlements",
       "pays": "pays",
       "unassignedHint": "{amount} from former members unassignable",
+      "formerMemberBadge": "former member",
+      "formerMemberHint": "Former members can no longer see the household. Open amounts can still be settled here.",
       "loadError": "Couldn't load balances."
     },
     "category": "Category",
@@ -354,7 +368,29 @@
       "uncategorized": "Uncategorized"
     },
     "saved": "Expense saved",
-    "deleteLabel": "Delete expense “{name}”"
+    "deleteLabel": "Delete expense “{name}”",
+    "retroWarning": "This expense is dated on or before the last settlement between the people involved – balances will change retroactively.",
+    "deleteRetroTitle": "Already settled",
+    "deleteAnyway": "Delete anyway",
+    "conflictReloaded": "{name} changed this expense in the meantime. The current values have been loaded – please check them and save again.",
+    "deletedMeanwhile": "This expense has been deleted in the meantime.",
+    "createdBy": "Added by {name}",
+    "updatedBy": "Last changed by {name}",
+    "loadMore": "Load older expenses",
+    "restoreConflict": "The bill has been booked again for this month – the deleted booking cannot be restored.",
+    "history": {
+      "show": "Show deleted entries",
+      "hide": "Hide deleted entries",
+      "title": "History: deleted entries",
+      "empty": "No deleted entries",
+      "deletedBy": "Deleted by {name} on {date}",
+      "restore": "Restore",
+      "restoreLabel": "Restore “{name}”",
+      "restored": "Restored",
+      "restoreError": "Could not be restored.",
+      "loadError": "History could not be loaded.",
+      "settlementName": "Payment {from} → {to}"
+    }
   },
   "finance": {
     "available": "Still available",
@@ -385,7 +421,27 @@
     "spentThisMonth": "Spent this month",
     "allBooked": "All bills for this month are booked.",
     "budgetSaveError": "Couldn't save the budget.",
-    "bookError": "Couldn't book the bill."
+    "bookError": "Couldn't book the bill.",
+    "bookMonth": "Month",
+    "bookMonthCurrent": "{month} (current month)",
+    "choosePayer": "Please choose …",
+    "noDefaultPayerHint": "This bill has no default payer – please choose who paid.",
+    "manageBills": "Manage bills",
+    "billsEmpty": "No recurring bills yet",
+    "editBill": "Edit bill",
+    "newBill": "New bill",
+    "billNamePlaceholder": "e.g. Rent",
+    "billDefaultPayer": "Default payer",
+    "billNoDefaultPayer": "None (choose when booking)",
+    "billActive": "Active (shown under “Upcoming bills”)",
+    "billPaused": "Paused",
+    "billMeta": "{amount} · on the {day}. · {payer}",
+    "billDeleteTitle": "Delete bill?",
+    "billDeleteConfirm": "Delete bill “{name}”? Expenses already booked are kept.",
+    "billSaveError": "The bill could not be saved.",
+    "billDeleteError": "The bill could not be deleted.",
+    "billDayInvalid": "Please choose a day between 1 and 28.",
+    "billEditLabel": "Edit bill “{name}”"
   },
   "settlements": {
     "title": "Settlements",
@@ -405,7 +461,16 @@
     "sameUser": "Sender and recipient must be different.",
     "flow": "{from} → {to}",
     "saveError": "Could not save payment.",
-    "deleteLabel": "Delete settlement"
+    "deleteLabel": "Delete settlement",
+    "createdBy": "added by {name}",
+    "warningTitle": "Please check",
+    "warnings": {
+      "DUPLICATE_RECENT": "An identical payment was already recorded in the last 10 minutes.",
+      "EXCEEDS_OPEN_DEBT": "The amount is higher than the open debt ({amount})."
+    },
+    "saveAnyway": "Record anyway",
+    "createdWithWarning": "Saved – an identical payment was just recorded. Please check.",
+    "loadMore": "Load older payments"
   },
   "chores": {
     "title": "Chores",
@@ -559,6 +624,8 @@
     "CANNOT_REMOVE_SELF": "Cannot remove yourself - use Leave household instead",
     "TOO_MANY_REMINDERS": "Maximum 5 reminders per task",
     "REMINDER_NOT_FOUND": "Reminder not found",
+    "REMINDER_IN_PAST": "The reminder must be in the future",
+    "TODO_IS_DONE": "This task is done – reopen it to set a reminder",
     "FILE_TOO_LARGE": "File is too large (max. 10 MB)",
     "FILE_TYPE_NOT_ALLOWED": "File type not allowed or file is corrupt",
     "FILE_IN_USE": "File is still in use",
@@ -569,9 +636,11 @@
     "BILL_PAYER_REQUIRED": "Please choose who paid the bill",
     "BILL_ALREADY_BOOKED": "This bill has already been booked",
     "ENTITY_ID_CONFLICT": "This ID is already in use",
+    "CONFLICT_RETRY": "Someone changed this at the same time – please try again",
     "AI_NOT_CONFIGURED": "The AI assistant is not set up on this server",
     "AI_NOT_ENABLED": "The AI assistant is not turned on for this household",
     "AI_DAILY_LIMIT_REACHED": "This household has reached its daily limit of AI requests – try again tomorrow",
+    "AI_USER_DAILY_LIMIT_REACHED": "You have reached your personal daily limit of AI requests – try again tomorrow",
     "AI_REFUSED": "The AI declined this request. Please rephrase it.",
     "AI_INVALID_OUTPUT": "The AI did not return a usable answer – please try again",
     "AI_PLANT_NOT_RECOGNIZED": "This input was not recognized as a plant",
@@ -585,6 +654,8 @@
     "TAG_TARGET_NOT_FOUND": "The target of this tag was deleted",
     "TAG_NOT_EXECUTABLE": "This tag only opens a page",
     "TAG_NOTHING_TO_DO": "There is nothing to do right now",
+    "TAG_CONFIRMATION_REQUIRED": "Please scan the tag again",
+    "TAG_CONFIRMATION_STALE": "Something changed in the meantime – please scan again",
     "TOO_MANY_TAGS": "Maximum number of tags for this household reached",
     "PLANT_NOT_FOUND": "Plant not found",
     "PLANT_CARE_TASK_NOT_FOUND": "Care task not found",
@@ -630,7 +701,20 @@
     "notFound": "Not found – it may have been deleted",
     "IMAGE_TOO_MANY_PIXELS": "Image has too many pixels (max. 25 megapixels)",
     "imageUnreadable": "Could not read the image – supported are JPEG, PNG, WebP and iPhone photos (HEIC)",
-    "WIDGET_TOKEN_INVALID": "Invalid widget key"
+    "WIDGET_TOKEN_INVALID": "Invalid widget key",
+    "EXPENSE_VERSION_CONFLICT": "The expense has been changed in the meantime.",
+    "EXPENSE_DELETED": "The expense has been deleted in the meantime.",
+    "SETTLEMENT_DELETED": "The payment has been deleted in the meantime.",
+    "DATE_OUT_OF_RANGE": "The date is too far in the past or future.",
+    "BILL_MONTH_OUT_OF_RANGE": "Bills can only be booked for the past 12 months.",
+    "MEDICATION_INACTIVE": "The medication is deactivated",
+    "PET_HAS_HISTORY": "The pet has a history – archive it or explicitly delete it permanently",
+    "MEDICATION_HAS_HISTORY": "The medication has been given already – deactivate it instead of deleting",
+    "PET_ARCHIVED": "The pet is archived",
+    "MEAL_PLAN_OCCUPIED": "A meal is already planned for this day",
+    "EVENT_TIME_NONEXISTENT": "This time does not exist on that day because of the daylight saving change – please pick another",
+    "POLL_OPTION_TIME_REQUIRED": "Every option needs a date and time",
+    "SHOPPING_LIST_NOT_FOUND": "This shopping list no longer exists"
   },
   "push": {
     "title": "Notifications",
@@ -649,7 +733,9 @@
   },
   "pwa": {
     "updateAvailable": "A new version is available.",
-    "reload": "Reload"
+    "reload": "Reload",
+    "updateEntry": "Update available",
+    "updateEntrySub": "Tap to load the new version"
   },
   "offline": {
     "banner": "No connection – changes cannot be saved right now.",
@@ -759,7 +845,35 @@
     "medicationSaveError": "Couldn't save the medication",
     "medicationDeleteError": "Couldn't delete the medication",
     "changePhoto": "Change photo",
-    "photoUploadErrorReason": "Could not upload photo: {reason}"
+    "photoUploadErrorReason": "Could not upload photo: {reason}",
+    "notAllFed": "{fed} of {total} fed – please check the status",
+    "archive": "Archive",
+    "unarchive": "Reactivate",
+    "archived": "{name} archived",
+    "unarchived": "{name} is active again",
+    "archivedBadge": "Archived",
+    "archivedHint": "Archived: no more feedings or reminders. The history is kept.",
+    "archiveActionHint": "E.g. passed away or rehomed – the history is kept.",
+    "archiveHint": "Tip: “Archive” hides the pet from feeding and reminders and keeps the history.",
+    "archiveSection": "Archive ({n})",
+    "historyLoading": "Checking history…",
+    "deleteHistoryWarning": "Deleting permanently also removes {feedings} feedings, {doses} medication doses and {tasks} care tasks for good.",
+    "deleteNoHistory": "There is no history for this pet yet.",
+    "deletePermanently": "Delete permanently",
+    "notGivenYet": "Never given",
+    "lastGivenToday": "Last given at {time} by {name}",
+    "lastGivenAt": "Last given on {date} by {name}",
+    "giveAgain": "Give again",
+    "giveAgainTitle": "Really give again?",
+    "giveAgainHint": "Last given at {time} by {name} – less than {hours} hours ago.",
+    "giveAgainConfirm": "Give anyway",
+    "medicationHasHistoryTitle": "Medication has a history",
+    "medicationHasHistoryHint": "“{name}” has already been given. To keep its history it can only be deactivated.",
+    "deactivateMedication": "Deactivate",
+    "medicationDeactivated": "Medication deactivated",
+    "unfeedOtherTitle": "Remove feeding?",
+    "unfeedOtherHint": "{name} fed {pet} at {time}. Really mark as not fed?",
+    "unfeedOtherConfirm": "Remove"
   },
   "petCare": {
     "title": "Care & Schedule",
@@ -850,7 +964,8 @@
     "taskDeleteError": "Couldn't delete the care task",
     "deleteTaskHint": "The care history is kept.",
     "changePhoto": "Change photo",
-    "photoUploadErrorReason": "Photo could not be uploaded: {reason}"
+    "photoUploadErrorReason": "Photo could not be uploaded: {reason}",
+    "alreadyDoneToday": "Already done today – nothing changed"
   },
   "food": {
     "title": "Food",
@@ -904,7 +1019,33 @@
     "decideWinner": "“{option}” is in the lead ({n} vote) and goes into the meal plan. | “{option}” is in the lead ({n} votes) and goes into the meal plan.",
     "decideTie": "It's a tie – pick which meal it will be.",
     "decideHint": "This ends the poll for the whole household.",
-    "pollDecidedToast": "Decided: “{option}”"
+    "pollDecidedToast": "Decided: “{option}”",
+    "decideOccupied": "«{meal}» is already planned for {date}. Deciding replaces it.",
+    "decideReplace": "Replace and decide",
+    "minutes": "{n} min",
+    "showLess": "Show less",
+    "showAllRecipes": "Show all {n} recipes",
+    "editRecipe": "Edit recipe",
+    "tags": "Tags",
+    "tagsPlaceholder": "e.g. vegetarian, quick",
+    "ingredientsPlaceholder": "500 g flour\n1 egg",
+    "stepsPlaceholder": "Knead the dough\nBake",
+    "onePerLine": "One per line (max. {max})",
+    "recipeSaved": "Recipe saved",
+    "recipeCreated": "Recipe created",
+    "recipeSaveError": "Recipe could not be saved.",
+    "recipeDeleted": "«{name}» deleted",
+    "recipeDeleteError": "Recipe could not be deleted.",
+    "deleteRecipeHint": "Planned meals with this recipe stay in the week plan – with the name as text.",
+    "recipeError": {
+      "name": "Please enter a name (max. 150 characters)",
+      "servings": "Whole number from 1",
+      "cost": "Amount like 12.50",
+      "duration": "Whole number from 1",
+      "ingredients": "At most 100 ingredients, max. 200 characters each",
+      "steps": "At most 30 steps, max. 1000 characters each",
+      "tags": "At most 10 tags, max. 30 characters each"
+    }
   },
   "notes": {
     "title": "Notes",
@@ -1024,6 +1165,7 @@
       "privacyHint": "When the AI assistant is on, your input (e.g. ingredients, plant species, later also photos) is sent to the Anthropic API for processing. Only what you choose to keep is saved in the app.",
       "adminOnly": "Only admins can turn the AI assistant on or off.",
       "usage": "{used} of {limit} requests used today",
+      "userUsage": "Your personal usage (across all households): {used} of {limit}",
       "openAssistant": "Open AI assistant",
       "saveError": "AI assistant could not be switched"
     },
@@ -1095,7 +1237,10 @@
       "adoptedForm": "Suggestion applied – tasks and notes are created when you save.",
       "nothingSavedYet": "Nothing is saved until you apply it.",
       "applied": "Care suggestion applied",
-      "applyError": "Could not apply the care suggestion"
+      "applyError": "Could not apply the care suggestion",
+      "planTitle": "Will be applied (untick what should stay):",
+      "planUpdate": "{task}: every {from} → {to} days",
+      "planCreate": "{task}: new, every {to} days"
     }
   },
   "tags": {
@@ -1242,6 +1387,7 @@
       "nextDue": "Next due: {date}",
       "success": "Done",
       "successNoChange": "Already done — nothing changed.",
+      "reload": "Load current state",
       "toDashboard": "Go to home",
       "openModule": "View",
       "retry": "Try again",
@@ -1253,6 +1399,7 @@
         "unsupported": "This action is not supported by the app.",
         "already_done": "Already done — a feeding is already logged for this meal.",
         "nothing_to_do": "There is nothing to do for this right now.",
+        "stale": "Something changed in the meantime (e.g. someone else already did it). Nothing was recorded — please reload the current state.",
         "rate_limited": "Too many scans in a short time. Please wait a minute.",
         "offline": "No connection to the server.",
         "unknown": "Something went wrong."

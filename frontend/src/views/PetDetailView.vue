@@ -11,6 +11,7 @@ import { useLoader } from '../composables/useLoader'
 import { localDateString } from '../utils/dates'
 import { imageUploadErrorReason } from '../utils/imageUpload'
 import { parseWeightKgToGrams } from '../utils/money'
+import { formatClock, isRecentDose, lastDose, MEDICATION_CONFIRM_HOURS, needsUnfeedConfirmation } from '../utils/petCare'
 import { useProtectedImage } from '../composables/useProtectedImage'
 import { usePhotoUpload } from '../composables/usePhotoUpload'
 import type {
@@ -244,7 +245,33 @@ function feedingSlotInfo(slot: FeedingSlot): string | null {
   })
 }
 
+// Fütterung einer anderen Person entfernen → erst nachfragen (wer, wann; CASA-30)
+const unfeedConfirmSlot = ref<FeedingSlot | null>(null)
+const unfeedConfirmText = computed(() => {
+  const entry = unfeedConfirmSlot.value ? feedingStatus.value?.[unfeedConfirmSlot.value] : null
+  if (!entry) return ''
+  return t('pets.unfeedOtherHint', {
+    name: getMemberName(entry.fed_by_user_id),
+    time: formatClock(entry.fed_at),
+    pet: pet.value?.name ?? '',
+  })
+})
+
 function handleToggleFeeding(slot: FeedingSlot) {
+  if (needsUnfeedConfirmation(feedingStatus.value?.[slot], authStore.user?.id)) {
+    unfeedConfirmSlot.value = slot
+    return
+  }
+  return toggleFeeding(slot)
+}
+
+function confirmUnfeed() {
+  const slot = unfeedConfirmSlot.value
+  unfeedConfirmSlot.value = null
+  if (slot) return toggleFeeding(slot)
+}
+
+function toggleFeeding(slot: FeedingSlot) {
   const id = petId.value
   const name = pet.value?.name ?? ''
   return run(async () => {
@@ -261,13 +288,44 @@ function handleToggleFeeding(slot: FeedingSlot) {
   })
 }
 
+// ── Archiv (PD-P2) ──
+
+function handleArchivePet() {
+  const current = pet.value
+  if (!current) return
+  return run(() => petsStore.archivePet(current.id), {
+    key: 'archive',
+    success: t('pets.archived', { name: current.name }),
+    undo: () => petsStore.unarchivePet(current.id),
+    error: t('pets.updateError'),
+  })
+}
+
+function handleUnarchivePet() {
+  const current = pet.value
+  if (!current) return
+  return run(() => petsStore.unarchivePet(current.id), {
+    key: 'archive',
+    success: t('pets.unarchived', { name: current.name }),
+    error: t('pets.updateError'),
+  })
+}
+
 // ── Medication Helpers ──
 
 function isGivenToday(medicationId: string): boolean {
-  const logs = petsStore.medicationLogs[medicationId]
-  if (!logs || logs.length === 0) return false
+  const last = lastDose(petsStore.medicationLogs[medicationId])
   // Lokales Datum, nicht UTC (sonst gilt nachts die Gabe von gestern als heute)
-  return localDateString(new Date(logs[0].given_at)) === localDateString()
+  return !!last && localDateString(new Date(last.given_at)) === localDateString()
+}
+
+/** „Zuletzt gegeben um HH:MM von X“ (heute) bzw. mit Datum (früher) — PD-P1. */
+function lastGivenText(medicationId: string): string {
+  const last = lastDose(petsStore.medicationLogs[medicationId])
+  if (!last) return t('pets.notGivenYet')
+  const name = getMemberName(last.given_by_user_id)
+  if (isGivenToday(medicationId)) return t('pets.lastGivenToday', { time: formatClock(last.given_at), name })
+  return t('pets.lastGivenAt', { date: formatLogDateTime(last.given_at), name })
 }
 
 function formatLogDateTime(givenAt: string): string {
@@ -281,7 +339,35 @@ function formatLogDateTime(givenAt: string): string {
   })
 }
 
+// Geben ist immer möglich (auch mehrmals täglich, PD-P1). Liegt die letzte Gabe weniger als
+// MEDICATION_CONFIRM_HOURS zurück, erst nachfragen (zeigt wann und von wem).
 // Guard gegen Doppeltipp (sonst zwei Gaben). Kein Undo: Backend kann Gaben nicht löschen.
+const confirmGiveMedId = ref<string | null>(null)
+const confirmGiveText = computed(() => {
+  const last = confirmGiveMedId.value ? lastDose(petsStore.medicationLogs[confirmGiveMedId.value]) : null
+  if (!last) return ''
+  return t('pets.giveAgainHint', {
+    time: formatClock(last.given_at),
+    name: getMemberName(last.given_by_user_id),
+    hours: MEDICATION_CONFIRM_HOURS,
+  })
+})
+
+function requestGiveMedication(medicationId: string) {
+  if (isRecentDose(lastDose(petsStore.medicationLogs[medicationId]))) {
+    confirmGiveMedId.value = medicationId
+    return
+  }
+  return handleGiveMedication(medicationId)
+}
+
+async function confirmGiveAgain() {
+  const medId = confirmGiveMedId.value
+  if (!medId) return
+  confirmGiveMedId.value = null
+  await handleGiveMedication(medId)
+}
+
 function handleGiveMedication(medicationId: string) {
   return run(() => petsStore.giveMedication(petId.value, medicationId), {
     key: `give-${medicationId}`,
@@ -358,24 +444,57 @@ async function handleSaveMedication() {
 }
 
 // ── Delete Medication ──
+// Medikamente mit Gaben-Verlauf lassen sich nicht löschen (409 MEDICATION_HAS_HISTORY,
+// PD-P2) — der Dialog bietet dann „Deaktivieren“ an; der Verlauf bleibt erhalten.
 
 const deletingMedId = ref<string | null>(null)
+const deletingMedHasHistory = ref(false)
+const deletingMed = computed(() => petsStore.medications.find(m => m.id === deletingMedId.value) ?? null)
 
 function confirmDeleteMed(medId: string) {
   deletingMedId.value = medId
+  deletingMedHasHistory.value = (petsStore.medicationLogs[medId] ?? []).length > 0
 }
 
 function cancelDeleteMed() {
   deletingMedId.value = null
 }
 
+function isHistoryConflict(err: unknown): boolean {
+  const e = err as { response?: { data?: { detail?: { code?: string } } } }
+  return e?.response?.data?.detail?.code === 'MEDICATION_HAS_HISTORY'
+}
+
 async function handleDeleteMed() {
   const medId = deletingMedId.value
   if (!medId) return
-  const ok = await run(() => petsStore.removeMedication(petId.value, medId), {
+  let hasHistory = false
+  const ok = await run(async () => {
+    try {
+      await petsStore.removeMedication(petId.value, medId)
+      return true
+    } catch (err) {
+      // Andere Person hat inzwischen eine Gabe erfasst → Dialog auf „Deaktivieren“ umstellen
+      if (!isHistoryConflict(err)) throw err
+      hasHistory = true
+      return false
+    }
+  }, {
     key: 'med-delete',
-    success: t('pets.medicationDeleted'),
+    success: (deleted) => (deleted ? t('pets.medicationDeleted') : undefined),
     error: t('pets.medicationDeleteError'),
+  })
+  if (hasHistory) deletingMedHasHistory.value = true
+  else if (ok) deletingMedId.value = null
+}
+
+async function handleDeactivateMed() {
+  const medId = deletingMedId.value
+  if (!medId) return
+  const ok = await run(() => petsStore.updateMedication(petId.value, medId, { active: false }), {
+    key: 'med-delete',
+    success: t('pets.medicationDeactivated'),
+    error: t('pets.medicationSaveError'),
   })
   if (ok) deletingMedId.value = null
 }
@@ -651,6 +770,7 @@ async function handleDeleteCareTask() {
         <div class="detail-header__info">
           <span class="detail-header__emoji">{{ speciesEmoji(pet.species) }}</span>
           <h1 class="detail-header__name">{{ pet.name }}</h1>
+          <span v-if="pet.archived" class="archived-badge">{{ $t('pets.archivedBadge') }}</span>
         </div>
         <button class="edit-btn tap-target" @click="openEditPetDialog" :aria-label="$t('common.edit')">
           <PhPencilSimple :size="20" weight="bold" />
@@ -660,8 +780,18 @@ async function handleDeleteCareTask() {
       <!-- Teilweise nicht geladen (z. B. Medikamente/Pflege): Hinweis statt leerer Listen -->
       <BaseErrorState v-if="loadError" :retrying="reloading" @retry="reload" />
 
-      <!-- ═══ Fütterung heute ═══ -->
-      <section class="section">
+      <!-- ═══ Archiviert: Hinweis + Reaktivieren ═══ -->
+      <section v-if="pet.archived" class="section">
+        <BaseCard>
+          <p class="archived-hint">{{ $t('pets.archivedHint') }}</p>
+          <BaseButton variant="secondary" size="sm" :loading="isPending('archive')" @click="handleUnarchivePet">
+            {{ $t('pets.unarchive') }}
+          </BaseButton>
+        </BaseCard>
+      </section>
+
+      <!-- ═══ Fütterung heute ═══ (nicht für archivierte Tiere) -->
+      <section v-if="!pet.archived" class="section">
         <BaseCard>
           <h2 class="card-title">{{ $t('pets.feedingToday') }}</h2>
 
@@ -749,7 +879,7 @@ async function handleDeleteCareTask() {
                     <template v-if="med.schedule">{{ med.schedule }}</template>
                   </span>
                   <span class="med-item__status" :class="isGivenToday(med.id) ? 'med-item__status--given' : 'med-item__status--pending'">
-                    {{ isGivenToday(med.id) ? $t('pets.givenToday') : $t('pets.notGivenToday') }}
+                    {{ lastGivenText(med.id) }}
                   </span>
                 </div>
                 <div class="med-item__actions">
@@ -770,16 +900,15 @@ async function handleDeleteCareTask() {
                 </div>
               </div>
 
-              <!-- Give Button -->
+              <!-- Give Button: immer verfügbar (mehrere Gaben pro Tag, PD-P1) -->
               <BaseButton
-                v-if="!isGivenToday(med.id)"
-                variant="primary"
+                :variant="isGivenToday(med.id) ? 'secondary' : 'primary'"
                 size="sm"
                 class="med-give-btn"
                 :loading="isPending(`give-${med.id}`)"
-                @click="handleGiveMedication(med.id)"
+                @click="requestGiveMedication(med.id)"
               >
-                {{ $t('pets.giveNow') }}
+                {{ isGivenToday(med.id) ? $t('pets.giveAgain') : $t('pets.giveNow') }}
               </BaseButton>
 
               <!-- Letzte Gaben -->
@@ -959,6 +1088,14 @@ async function handleDeleteCareTask() {
               </div>
             </div>
           </div>
+
+          <!-- Archivieren (verstorben/abgegeben): Verlauf bleibt erhalten -->
+          <div v-if="!pet.archived" class="archive-action">
+            <BaseButton variant="ghost" size="sm" :loading="isPending('archive')" @click="handleArchivePet">
+              {{ $t('pets.archive') }}
+            </BaseButton>
+            <span class="archive-action__hint">{{ $t('pets.archiveActionHint') }}</span>
+          </div>
         </BaseCard>
       </section>
     </template>
@@ -1012,20 +1149,70 @@ async function handleDeleteCareTask() {
       </template>
     </BaseDialog>
 
-    <!-- ═══ Delete Medication Confirm ═══ -->
+    <!-- ═══ Delete Medication Confirm (mit Verlauf → Deaktivieren) ═══ -->
     <BaseDialog
       :open="!!deletingMedId"
-      :title="$t('pets.deleteMedicationConfirm')"
-      danger
+      :title="deletingMedHasHistory ? $t('pets.medicationHasHistoryTitle') : $t('pets.deleteMedicationConfirm')"
+      :danger="!deletingMedHasHistory"
       @close="cancelDeleteMed"
     >
+      <p v-if="deletingMedHasHistory" class="dialog-hint">
+        {{ $t('pets.medicationHasHistoryHint', { name: deletingMed?.name ?? '' }) }}
+      </p>
       <template #footer>
         <div class="dialog-actions">
           <BaseButton variant="ghost" @click="cancelDeleteMed">
             {{ $t('common.cancel') }}
           </BaseButton>
-          <BaseButton variant="danger" :loading="isPending('med-delete')" @click="handleDeleteMed">
+          <BaseButton
+            v-if="deletingMedHasHistory"
+            variant="primary"
+            :disabled="!deletingMed?.active"
+            :loading="isPending('med-delete')"
+            @click="handleDeactivateMed"
+          >
+            {{ $t('pets.deactivateMedication') }}
+          </BaseButton>
+          <BaseButton v-else variant="danger" :loading="isPending('med-delete')" @click="handleDeleteMed">
             {{ $t('common.delete') }}
+          </BaseButton>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- ═══ Fütterung einer anderen Person entfernen (CASA-30) ═══ -->
+    <BaseDialog
+      :open="!!unfeedConfirmSlot"
+      :title="$t('pets.unfeedOtherTitle')"
+      @close="unfeedConfirmSlot = null"
+    >
+      <p class="dialog-hint">{{ unfeedConfirmText }}</p>
+      <template #footer>
+        <div class="dialog-actions">
+          <BaseButton variant="ghost" @click="unfeedConfirmSlot = null">
+            {{ $t('common.cancel') }}
+          </BaseButton>
+          <BaseButton variant="danger" @click="confirmUnfeed">
+            {{ $t('pets.unfeedOtherConfirm') }}
+          </BaseButton>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- ═══ Erneute Gabe kurz nach der letzten bestätigen (PD-P1) ═══ -->
+    <BaseDialog
+      :open="!!confirmGiveMedId"
+      :title="$t('pets.giveAgainTitle')"
+      @close="confirmGiveMedId = null"
+    >
+      <p class="dialog-hint">{{ confirmGiveText }}</p>
+      <template #footer>
+        <div class="dialog-actions">
+          <BaseButton variant="ghost" @click="confirmGiveMedId = null">
+            {{ $t('common.cancel') }}
+          </BaseButton>
+          <BaseButton variant="primary" @click="confirmGiveAgain">
+            {{ $t('pets.giveAgainConfirm') }}
           </BaseButton>
         </div>
       </template>
@@ -1282,6 +1469,36 @@ async function handleDeleteCareTask() {
 
 .detail-header__emoji {
   font-size: var(--text-xl);
+}
+
+.archived-badge {
+  font-size: var(--text-xs);
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--chip);
+  color: var(--sub);
+}
+
+.archived-hint,
+.dialog-hint {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--sub);
+}
+
+.archive-action {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.archive-action__hint {
+  font-size: var(--text-xs);
+  color: var(--sub);
 }
 
 .detail-header__name {

@@ -9,6 +9,10 @@ Gezählt wird, was bis heute (Zeitzone des Haushalts) fällig und offen ist:
 
 Bewusst nicht gezählt: Einkaufsliste (kein Termin), Termine (keine Aufgabe),
 Dokumente (Ablauf ist ein Hinweis, keine offene Arbeit).
+
+Zuweisungen an Personen, die nicht (mehr) Mitglied sind, gelten als "niemandem
+zugewiesen" (PD-H1) — wie beim Push, der dann an alle Mitglieder geht. Beim
+Austritt werden sie zwar freigegeben, Altbestand kann sie aber noch enthalten.
 """
 
 import uuid
@@ -23,6 +27,7 @@ from app.models import (
     Chore,
     ChoreAssignment,
     Household,
+    HouseholdMember,
     Pet,
     PetCareTask,
     Plant,
@@ -68,6 +73,7 @@ def due_items(db: Session, household: Household, user_id: uuid.UUID, locale: str
     start_of_today = datetime.combine(today, time.min, tzinfo=tz).astimezone(timezone.utc)
     end_of_today = datetime.combine(today, time.max, tzinfo=tz).astimezone(timezone.utc)
     items: list[DueItem] = []
+    member_ids = db.query(HouseholdMember.user_id).filter(HouseholdMember.household_id == household.id)
 
     todos = (
         db.query(Todo)
@@ -76,7 +82,11 @@ def due_items(db: Session, household: Household, user_id: uuid.UUID, locale: str
             Todo.is_done == False,  # noqa: E712
             Todo.due_date.isnot(None),
             Todo.due_date <= end_of_today,
-            or_(Todo.assigned_to_user_id == user_id, Todo.assigned_to_user_id.is_(None)),
+            or_(
+                Todo.assigned_to_user_id == user_id,
+                Todo.assigned_to_user_id.is_(None),
+                Todo.assigned_to_user_id.not_in(member_ids),
+            ),
         )
         .order_by(Todo.due_date.asc())
         .all()
@@ -92,11 +102,13 @@ def due_items(db: Session, household: Household, user_id: uuid.UUID, locale: str
         .filter(
             ChoreAssignment.household_id == household.id,
             ChoreAssignment.completed_at.is_(None),
+            Chore.active.is_(True),  # pausierte Ämtli zählen nicht (CASA-17)
             ChoreAssignment.due_date <= today,
             ChoreAssignment.due_date >= today - CHORE_LOOKBACK,
             or_(
                 ChoreAssignment.assigned_user_id == user_id,
                 ChoreAssignment.assigned_user_id.is_(None),
+                ChoreAssignment.assigned_user_id.not_in(member_ids),
             ),
         )
         .order_by(ChoreAssignment.due_date.asc())
@@ -110,7 +122,11 @@ def due_items(db: Session, household: Household, user_id: uuid.UUID, locale: str
     pet_care = (
         db.query(PetCareTask, Pet.name)
         .join(Pet, PetCareTask.pet_id == Pet.id)
-        .filter(PetCareTask.household_id == household.id, PetCareTask.next_due_at <= today)
+        .filter(
+            PetCareTask.household_id == household.id,
+            PetCareTask.next_due_at <= today,
+            Pet.archived.is_(False),  # archivierte Tiere zählen nicht (PD-P2)
+        )
         .order_by(PetCareTask.next_due_at.asc())
         .all()
     )

@@ -9,12 +9,14 @@ import { useAsyncAction } from '../composables/useAsyncAction'
 import { useLoader } from '../composables/useLoader'
 import { useI18n } from 'vue-i18n'
 import { formatRappen, parseAmountToRappen } from '../utils/money'
-import { formatDate } from '../utils/dates'
+import { addMonths, formatDate, householdDateString, monthStart } from '../utils/dates'
 import { useAuthStore } from '../stores/auth'
 import { PhCheck, PhX } from '@phosphor-icons/vue'
 import type { Expense, PendingBillInfo } from '../types'
 import BalanceSummary from '../components/BalanceSummary.vue'
 import ExpenseFormDialog from '../components/ExpenseFormDialog.vue'
+import FinanceHistory from '../components/FinanceHistory.vue'
+import RecurringBillsManager from '../components/RecurringBillsManager.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
 import BaseDialog from '../components/ui/BaseDialog.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
@@ -29,7 +31,13 @@ const settlementsStore = useSettlementsStore()
 const { run, isPending } = useAsyncAction()
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const authStore = useAuthStore()
+
+// Haushaltsdatum (Zeitzone aus /me), sonst Gerätedatum (CASA-39)
+function householdToday(): string {
+  return householdDateString(authStore.currentHousehold?.timezone)
+}
 
 // ── Kategorie-Emoji-Mapping ──
 const CATEGORY_EMOJI: Record<string, string> = {
@@ -109,8 +117,8 @@ async function saveBudget() {
   budgetError.value = ''
   savingBudget.value = true
   try {
-    const now = new Date()
-    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+    // Angezeigter Monat der Übersicht, sonst aktueller Haushaltsmonat
+    const month = financeStore.summary?.month ?? monthStart(householdToday())
     await financeStore.upsertBudget({ month, amount_rappen: rappen })
     editingBudget.value = false
   } catch (e) {
@@ -139,7 +147,7 @@ const pendingBills = computed(() => {
 const hasBills = computed(() => pendingBills.value.length > 0)
 
 const nextBillId = computed(() => {
-  const today = new Date().getDate()
+  const today = Number(householdToday().substring(8, 10))
   const unbooked = pendingBills.value.filter(b => !b.is_booked_this_month)
   if (unbooked.length === 0) return null
   // Nächste nach heute
@@ -151,16 +159,30 @@ const nextBillId = computed(() => {
   return unbooked.sort((a, b) => a.day_of_month - b.day_of_month)[0].id
 })
 
-// Buchen-Dialog: Zahler bestätigen oder ändern (Standard-Zahler der Rechnung vorausgewählt)
-const authStore = useAuthStore()
+// Buchen-Dialog: Zahler bestätigen oder ändern (Standard-Zahler der Rechnung vorausgewählt).
+// Ohne (gültigen) Standard-Zahler — z. B. nach dem Austritt des Zahlers — wird nichts
+// still vorausgewählt: der Nutzer muss wählen, wer bezahlt hat (CASA-22).
 const bookDialogBill = ref<PendingBillInfo | null>(null)
 const bookPayerId = ref('')
+const bookMonth = ref('')
+const bookMissingPayer = ref(false)
+
+// Aktueller Monat + die 12 Monate davor (Nachbuchen, PD-F4)
+const bookMonthOptions = computed(() => {
+  const current = monthStart(householdToday())
+  const fmt = new Intl.DateTimeFormat(locale.value === 'de' ? 'de-CH' : 'en-CH', { month: 'long', year: 'numeric' })
+  return Array.from({ length: 13 }, (_, i) => {
+    const value = addMonths(current, -i)
+    const label = fmt.format(new Date(`${value}T12:00:00`))
+    return { value, label: i === 0 ? t('finance.bookMonthCurrent', { month: label }) : label }
+  })
+})
 
 function openBookDialog(bill: PendingBillInfo) {
   const isMember = (id: string | null) => !!id && expensesStore.members.some(m => m.id === id)
-  bookPayerId.value = isMember(bill.paid_by_user_id)
-    ? bill.paid_by_user_id!
-    : authStore.user?.id ?? expensesStore.members[0]?.id ?? ''
+  bookMissingPayer.value = !isMember(bill.paid_by_user_id)
+  bookPayerId.value = bookMissingPayer.value ? '' : bill.paid_by_user_id!
+  bookMonth.value = monthStart(householdToday())
   bookDialogBill.value = bill
 }
 
@@ -168,7 +190,9 @@ async function confirmBookBill() {
   const bill = bookDialogBill.value
   if (!bill || !bookPayerId.value) return
   const payerId = bookPayerId.value
-  const ok = await run(() => financeStore.bookBill(bill.id, payerId), {
+  const current = monthStart(householdToday())
+  const month = bookMonth.value && bookMonth.value !== current ? bookMonth.value : undefined
+  const ok = await run(() => financeStore.bookBill(bill.id, payerId, month), {
     key: `bill-${bill.id}`,
     success: t('finance.billBooked'),
     // Rückgängig = gebuchte Ausgabe löschen; das Backend leitet „gebucht“ aus der
@@ -198,26 +222,24 @@ function openEditDialog(expense: Expense) {
 }
 
 // ── Delete Expense ──
-async function handleDeleteExpense(expenseId: string) {
+// Bereits ausgeglichene Ausgabe: erst bestätigen lassen (PD-F2)
+const retroDeleteExpense = ref<Expense | null>(null)
+
+async function handleDeleteExpense(expenseId: string, confirmed = false) {
   const expense = expensesStore.expenses.find(e => e.id === expenseId)
   if (!expense) return
+  if (expense.before_last_settlement && !confirmed) {
+    retroDeleteExpense.value = expense
+    return
+  }
+  retroDeleteExpense.value = null
 
-  // Rückgängig legt die Ausgabe neu an (mit Kategorie und Aufteilung);
-  // der Bezug zu einer gebuchten Rechnung lässt sich ohne Backend nicht wiederherstellen
+  // Gelöscht wird weich; Rückgängig stellt exakt wieder her — inkl. Rechnungsbezug,
+  // gebuchtem Monat und Ex-Mitgliedern (CASA-03)
   await run(() => expensesStore.removeExpense(expenseId), {
     key: `expense-${expenseId}`,
     success: t('common.deleted'),
-    undo: () => expensesStore.addExpense({
-      description: expense.description,
-      amount_rappen: expense.amount_rappen,
-      currency: expense.currency,
-      paid_by_user_id: expense.paid_by_user_id!,
-      expense_date: expense.expense_date,
-      split_type: expense.split_type,
-      category: expense.category ?? undefined,
-      shares: expense.split_type === 'custom' ? expense.shares : undefined,
-      participant_ids: expense.split_type === 'even' ? expense.shares.map(s => s.user_id) : undefined,
-    }),
+    undo: () => expensesStore.restoreExpense(expenseId),
     error: t('expenses.deleteError'),
   })
 }
@@ -230,16 +252,18 @@ async function handleDeleteSettlement(settlementId: string) {
   await run(() => settlementsStore.remove(settlementId), {
     key: `settlement-${settlementId}`,
     success: t('common.deleted'),
-    undo: () => settlementsStore.create({
-      from_user_id: settlement.from_user_id,
-      to_user_id: settlement.to_user_id,
-      amount_rappen: settlement.amount_rappen,
-      currency: settlement.currency,
-      settled_date: settlement.settled_date,
-      note: settlement.note ?? undefined,
-    }),
+    undo: () => settlementsStore.restore(settlementId),
     error: t('settlements.deleteError'),
   })
+}
+
+// ── Ältere Einträge nachladen (CASA-23) ──
+async function loadMoreExpenses() {
+  await run(() => expensesStore.loadMore(), { key: 'more-expenses', error: t('common.loadError') })
+}
+
+async function loadMoreSettlements() {
+  await run(() => settlementsStore.loadMore(), { key: 'more-settlements', error: t('common.loadError') })
 }
 
 // ── Split-Type Label ──
@@ -417,6 +441,9 @@ onMounted(() => {
       </p>
     </BaseCard>
 
+    <!-- ══════════════ 3b. Rechnungen verwalten ══════════════ -->
+    <RecurringBillsManager />
+
     <!-- ══════════════ 4. Letzte Ausgaben ══════════════ -->
     <BaseCard padding="md">
       <div class="expenses-header">
@@ -490,6 +517,17 @@ onMounted(() => {
         </li>
       </ul>
 
+      <BaseButton
+        v-if="expensesStore.hasMore && expensesStore.expenses.length > 0"
+        variant="ghost"
+        size="sm"
+        class="load-more"
+        :loading="isPending('more-expenses')"
+        @click="loadMoreExpenses"
+      >
+        {{ $t('expenses.loadMore') }}
+      </BaseButton>
+
       <!-- Empty State -->
       <div
         v-if="!expensesStore.loading && !reloading && !loadError && expensesStore.expenses.length === 0"
@@ -536,6 +574,9 @@ onMounted(() => {
           </div>
           <div class="settlement-item__meta">
             <span>{{ formatDate(s.settled_date) }}</span>
+            <span v-if="s.created_by_user_id">
+              {{ $t('settlements.createdBy', { name: resolveUserName(s.created_by_user_id) }) }}
+            </span>
             <span v-if="s.note" class="settlement-item__note">{{ s.note }}</span>
           </div>
           <button
@@ -549,7 +590,20 @@ onMounted(() => {
           </button>
         </li>
       </ul>
+      <BaseButton
+        v-if="settlementsStore.hasMore"
+        variant="ghost"
+        size="sm"
+        class="load-more"
+        :loading="isPending('more-settlements')"
+        @click="loadMoreSettlements"
+      >
+        {{ $t('settlements.loadMore') }}
+      </BaseButton>
     </BaseCard>
+
+    <!-- ══════════════ 7. Verlauf gelöschter Einträge ══════════════ -->
+    <FinanceHistory />
 
     <!-- ══════════════ Expense Dialog ══════════════ -->
     <ExpenseFormDialog
@@ -564,11 +618,17 @@ onMounted(() => {
       @close="bookDialogBill = null"
     >
       <div class="form-field">
+        <p v-if="bookMissingPayer" class="book-hint" role="note">{{ $t('finance.noDefaultPayerHint') }}</p>
         <label class="form-label" for="book-payer">{{ $t('finance.paidBy') }}</label>
-        <select id="book-payer" v-model="bookPayerId" class="book-select">
+        <select id="book-payer" v-model="bookPayerId" class="book-select" :aria-invalid="!bookPayerId">
+          <option v-if="!bookPayerId" value="" disabled>{{ $t('finance.choosePayer') }}</option>
           <option v-for="m in expensesStore.members" :key="m.id" :value="m.id">
             {{ m.display_name }}
           </option>
+        </select>
+        <label class="form-label" for="book-month">{{ $t('finance.bookMonth') }}</label>
+        <select id="book-month" v-model="bookMonth" class="book-select">
+          <option v-for="opt in bookMonthOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
         <p class="section-sub">
           {{ $t('finance.bookBillHint', { amount: bookDialogBill ? formatRappen(bookDialogBill.amount_rappen) : '' }) }}
@@ -582,6 +642,22 @@ onMounted(() => {
           @click="confirmBookBill"
         >
           {{ $t('finance.book') }}
+        </BaseButton>
+      </template>
+    </BaseDialog>
+
+    <!-- Bereits ausgeglichene Ausgabe löschen: Salden ändern sich nachträglich (PD-F2) -->
+    <BaseDialog
+      :open="!!retroDeleteExpense"
+      :title="$t('expenses.deleteRetroTitle')"
+      danger
+      @close="retroDeleteExpense = null"
+    >
+      <p class="section-sub">{{ $t('expenses.retroWarning') }}</p>
+      <template #footer>
+        <BaseButton variant="secondary" @click="retroDeleteExpense = null">{{ $t('common.cancel') }}</BaseButton>
+        <BaseButton variant="danger" @click="retroDeleteExpense && handleDeleteExpense(retroDeleteExpense.id, true)">
+          {{ $t('expenses.deleteAnyway') }}
         </BaseButton>
       </template>
     </BaseDialog>
@@ -763,6 +839,19 @@ onMounted(() => {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-3);
+}
+
+.load-more {
+  margin-top: var(--space-2);
+}
+
+.book-hint {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-warning-soft);
+  border-radius: var(--radius-sm);
+  color: var(--color-warning-strong);
+  font-size: var(--text-sm);
 }
 
 /* ── Bills ── */

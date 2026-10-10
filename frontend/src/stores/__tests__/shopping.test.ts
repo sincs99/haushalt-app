@@ -14,6 +14,7 @@ const { repo, auth } = vi.hoisted(() => ({
     updateList: vi.fn(),
     deleteList: vi.fn(),
     reassignStore: vi.fn(),
+    bulkAdd: vi.fn(),
   },
   auth: { currentHouseholdId: 'h1' as string | null, user: { id: 'u1' } },
 }))
@@ -376,6 +377,49 @@ describe('shopping store', () => {
       s.handleListDeleted({ id: 'b' })
       expect(s.activeListId).toBeNull()
     })
+  })
+
+  it('bulkAddItems sends one request to the given/active list and merges the added items', async () => {
+    const store = useShoppingStore()
+    store.activeListId = 'l1'
+    store.items = [item({ id: 'old', name: 'Mehl' })]
+    repo.bulkAdd.mockResolvedValue({ added: [item({ id: 'new', name: 'Eier' })], skipped: ['500 g Mehl'], list_id: 'l1' })
+
+    const result = await store.bulkAddItems(['500 g Mehl', 'Eier'])
+    expect(repo.bulkAdd).toHaveBeenCalledWith('h1', 'l1', ['500 g Mehl', 'Eier'])
+    expect(result?.skipped).toEqual(['500 g Mehl'])
+    expect(store.items.map(i => i.id)).toEqual(['old', 'new'])
+
+    // Socket-Event desselben Items danach erzeugt kein Duplikat
+    store.handleItemCreated(item({ id: 'new', name: 'Eier' }))
+    expect(store.items).toHaveLength(2)
+
+    await store.bulkAddItems(['Brot'], 'l2')
+    expect(repo.bulkAdd).toHaveBeenLastCalledWith('h1', 'l2', ['Brot'])
+  })
+
+  it('bulkAddItems does not merge the response after a household switch', async () => {
+    const store = useShoppingStore()
+    store.activeListId = 'l1'
+    repo.bulkAdd.mockImplementation(async () => {
+      auth.currentHouseholdId = 'h2'
+      return { added: [item({ id: 'x' })], skipped: [], list_id: 'l1' }
+    })
+    await store.bulkAddItems(['Milk'])
+    expect(store.items).toEqual([])
+  })
+
+  it('findOpenDuplicates matches open items on all lists ignoring quantity and case (PD-S1)', () => {
+    const store = useShoppingStore()
+    store.items = [
+      item({ id: 'a', name: 'Milch', list_id: 'l2' }),
+      item({ id: 'b', name: '500 g Mehl' }),
+      item({ id: 'c', name: 'Eier', is_checked: true }),
+    ]
+    expect(store.findOpenDuplicates('milch').map(i => i.id)).toEqual(['a'])
+    expect(store.findOpenDuplicates('Mehl').map(i => i.id)).toEqual(['b'])
+    expect(store.findOpenDuplicates('Eier')).toEqual([])
+    expect(store.findOpenDuplicates('  ')).toEqual([])
   })
 
   it('activeListItems only returns items of the active list', () => {

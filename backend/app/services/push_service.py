@@ -25,6 +25,7 @@ from app.models import (
     Chore,
     ChoreAssignment,
     Document,
+    Event,
     Household,
     HouseholdMember,
     Pet,
@@ -36,7 +37,8 @@ from app.models import (
     TodoReminder,
 )
 from app.services.attention import attention_count
-from app.services.chore_scheduler import materialize_due_assignments
+from app.services.chore_scheduler import materialize_and_emit
+from app.services.event_times import event_remind_at, household_tz, to_household_time
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -81,6 +83,11 @@ _TEXTS = {
         "doc_soon_title": "Dokument läuft bald ab",
         "doc_due_title": "Dokument läuft heute ab",
         "doc_body": "{title} · {date}",
+        "event_title_15m": "Termin in 15 Minuten",
+        "event_title_1h": "Termin in 1 Stunde",
+        "event_title_today": "Termin heute",
+        "event_title_tomorrow": "Termin morgen",
+        "event_body_time": "{title} · {time}",
         "test_title": "Benachrichtigungen aktiv",
         "test_body": "So sehen Erinnerungen der Haushalt App aus.",
     },
@@ -100,6 +107,11 @@ _TEXTS = {
         "doc_soon_title": "Document expires soon",
         "doc_due_title": "Document expires today",
         "doc_body": "{title} · {date}",
+        "event_title_15m": "Event in 15 minutes",
+        "event_title_1h": "Event in 1 hour",
+        "event_title_today": "Event today",
+        "event_title_tomorrow": "Event tomorrow",
+        "event_body_time": "{title} · {time}",
         "test_title": "Notifications enabled",
         "test_body": "This is how Haushalt App reminders look.",
     },
@@ -155,6 +167,12 @@ def _format_date(locale: str, d: date) -> str:
     return d.strftime("%d.%m.%Y") if locale == "de" else d.isoformat()
 
 
+def _with_household(url: str, household_id: uuid.UUID) -> str:
+    """Hängt `hh=<household_id>` an eine App-URL an (Router wechselt dann den Haushalt)."""
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}hh={household_id}"
+
+
 def send_to_users(
     db: Session,
     user_ids: list[uuid.UUID],
@@ -164,7 +182,9 @@ def send_to_users(
     """Sendet an alle Subscriptions der User; Payload wird pro Locale gebaut.
 
     Mit household_id bekommt jede Payload die Zahl fürs App-Icon (`badge`,
-    siehe services/attention.py), damit der Service Worker sie setzen kann.
+    siehe services/attention.py), damit der Service Worker sie setzen kann, und die
+    URL trägt den Haushalt (`?hh=<id>`): Ein Tippen öffnet die Seite im richtigen
+    Haushalt, auch wenn die App gerade einen anderen zeigt (CASA-40).
     """
     if not user_ids:
         return 0
@@ -174,6 +194,8 @@ def send_to_users(
     sent = 0
     for sub in subs:
         payload = build_payload(sub.locale)
+        if household_id is not None and payload.get("url"):
+            payload = {**payload, "url": _with_household(payload["url"], household_id)}
         if household is not None:
             if sub.user_id not in badges:
                 badges[sub.user_id] = attention_count(db, household, sub.user_id)
@@ -244,6 +266,8 @@ def process_pet_care_tasks(db: Session, now: datetime) -> int:
             PetCareTask.notified_at.is_(None),
             # Grobfilter (+1 Tag Puffer für Zeitzonen), exakt pro Household unten
             PetCareTask.next_due_at <= (now + timedelta(days=1)).date(),
+            # Keine Erinnerungen für archivierte Tiere (PD-P2)
+            Pet.archived.is_(False),
         )
         .all()
     )
@@ -319,7 +343,7 @@ def _ensure_chore_assignments(db: Session, now: datetime) -> None:
         if local_now.hour < CHORE_NOTIFY_HOUR or _chores_materialized.get(household.id) == local_now.date():
             continue
         try:
-            materialize_due_assignments(db, household)
+            materialize_and_emit(db, household)
             _chores_materialized[household.id] = local_now.date()
         except Exception:
             db.rollback()
@@ -336,6 +360,8 @@ def process_chore_assignments(db: Session, now: datetime) -> int:
         .filter(
             ChoreAssignment.notified_at.is_(None),
             ChoreAssignment.completed_at.is_(None),
+            # Pausierte Ämtli melden nicht (CASA-17)
+            Chore.active == True,  # noqa: E712
             # Grobfilter (±1 Tag für Zeitzonen), exakt pro Household unten
             ChoreAssignment.due_date >= (now - timedelta(days=1)).date(),
             ChoreAssignment.due_date <= (now + timedelta(days=1)).date(),
@@ -406,6 +432,65 @@ def process_document_expiry(db: Session, now: datetime) -> int:
     return sent
 
 
+def process_event_reminders(db: Session, now: datetime) -> int:
+    """Termin-Erinnerungen (PD-K1): an die Teilnehmer, sonst an alle Mitglieder.
+
+    Der Zeitpunkt hängt von der Zeitzone des Haushalts ab (ganztägig: 08:00 lokal)
+    und wird deshalb hier berechnet; der Grobfilter (±2 Tage) hält die Abfrage klein.
+    Hat der Termin schon begonnen oder ist die Erinnerung veraltet (Backend offline),
+    wird still geclaimt statt nachträglich zu senden.
+    """
+    due = (
+        db.query(Event, Household.timezone)
+        .join(Household, Event.household_id == Household.id)
+        .filter(
+            Event.reminder != "none",
+            Event.notified_at.is_(None),
+            Event.starts_at <= now + timedelta(days=2),
+            Event.starts_at >= now - timedelta(days=2),
+        )
+        .all()
+    )
+    sent = 0
+    for event, tz_name in due:
+        tz = household_tz(tz_name)
+        remind_at = event_remind_at(event.starts_at, event.all_day, event.reminder, tz)
+        if remind_at is None or remind_at > now:
+            continue
+        if not _claim(db, Event, event.id, now):
+            continue
+
+        local_start = to_household_time(event.starts_at, tz)
+        local_now = now.astimezone(tz)
+        if event.all_day:
+            started = local_start.date() < local_now.date()
+        else:
+            started = _as_utc(event.starts_at) <= now
+        if started or now - remind_at > STALE_AFTER:
+            continue
+
+        if event.all_day:
+            title_key = "event_title_today" if local_start.date() == local_now.date() else "event_title_tomorrow"
+        elif event.reminder == "1d":
+            title_key = "event_title_tomorrow"
+        else:
+            title_key = f"event_title_{event.reminder}"
+
+        members = _household_member_ids(db, event.household_id)
+        participants = [m for m in members if str(m) in {str(p) for p in (event.participant_ids or [])}]
+        recipients = participants or members
+
+        title, tag = event.title, f"event-reminder-{event.id}"
+        time_label = None if event.all_day else local_start.strftime("%H:%M")
+        sent += send_to_users(db, recipients, lambda loc: {
+            "title": _text(loc, title_key),
+            "body": _text(loc, "event_body_time", title=title, time=time_label) if time_label else title,
+            "url": "/calendar",
+            "tag": tag,
+        }, household_id=event.household_id)
+    return sent
+
+
 def send_test_notification(db: Session, user_id: uuid.UUID) -> int:
     return send_to_users(db, [user_id], lambda loc: {
         "title": _text(loc, "test_title"),
@@ -425,6 +510,7 @@ def run_once() -> None:
             + process_plant_care_tasks(db, now)
             + process_chore_assignments(db, now)
             + process_document_expiry(db, now)
+            + process_event_reminders(db, now)
         )
         if sent:
             logger.info("Push scheduler: %d notification(s) sent", sent)

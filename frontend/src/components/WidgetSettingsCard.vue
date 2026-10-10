@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { PhCopy, PhDeviceMobile, PhDownloadSimple } from '@phosphor-icons/vue'
 import BaseCard from './ui/BaseCard.vue'
@@ -8,7 +8,8 @@ import BaseDialog from './ui/BaseDialog.vue'
 import { API_BASE } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import { useToast } from '../composables/useToast'
-import { createOnlineWidgetRepository, type WidgetTokenStatus } from '../repositories/widgetRepository'
+import { createOnlineWidgetRepository } from '../repositories/widgetRepository'
+import { useWidgetToken } from '../composables/useWidgetToken'
 import { buildWidgetScript } from '../utils/widgetScript'
 import { translateApiError } from '../utils/apiErrors'
 import { formatDate } from '../utils/dates'
@@ -22,59 +23,29 @@ const { showToast } = useToast()
 const authStore = useAuthStore()
 const repo = createOnlineWidgetRepository()
 
-const status = ref<WidgetTokenStatus | null>(null)
-const busy = ref(false)
-const script = ref<string | null>(null) // nur direkt nach dem Erzeugen bekannt
 const confirmRevoke = ref(false)
 const confirmReplace = ref(false)
 
 const householdId = computed(() => authStore.currentHouseholdId)
 
-async function load() {
-  if (!householdId.value) return
-  try {
-    status.value = await repo.fetchStatus(householdId.value)
-  } catch {
-    status.value = null
-  }
-}
+// Antworten für einen inzwischen gewechselten Haushalt werden verworfen (CASA-50)
+const { status, script, busy, load, create: createToken, revoke: revokeToken } = useWidgetToken(
+  householdId,
+  repo,
+  (token) => buildWidgetScript(API_BASE || window.location.origin, token, locale.value),
+  (error) => showToast(translateApiError(error), 'error'),
+)
 
 onMounted(load)
-watch(householdId, () => {
-  script.value = null
-  load()
-})
 
 async function create() {
-  if (!householdId.value) return
   confirmReplace.value = false
-  busy.value = true
-  try {
-    const created = await repo.create(householdId.value)
-    const baseUrl = API_BASE || window.location.origin
-    script.value = buildWidgetScript(baseUrl, created.token, locale.value)
-    await load()
-  } catch (error) {
-    showToast(translateApiError(error), 'error')
-  } finally {
-    busy.value = false
-  }
+  await createToken()
 }
 
 async function revoke() {
-  if (!householdId.value) return
   confirmRevoke.value = false
-  busy.value = true
-  try {
-    await repo.revoke(householdId.value)
-    script.value = null
-    await load()
-    showToast(t('widget.revoked'), 'success')
-  } catch (error) {
-    showToast(translateApiError(error), 'error')
-  } finally {
-    busy.value = false
-  }
+  if (await revokeToken()) showToast(t('widget.revoked'), 'success')
 }
 
 async function copyScript() {

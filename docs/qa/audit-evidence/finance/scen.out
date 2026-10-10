@@ -1,0 +1,101 @@
+
+=== 1 debtor deletes creditor's expense
+    delete status=204
+    before={'Anna': 100000, 'Ben': -100000}
+    after={'Anna': 0, 'Ben': 0}
+
+=== 2 edit/delete after settlement
+    after settle saldi=[0, 0]
+    patch amount 100->60 status=200 saldi={'Anna': -2000, 'Ben': 2000} suggestions=[('Anna', 'Ben', 2000)]
+    delete status=204 saldi={'Anna': -5000, 'Ben': 5000} suggestions=[('Anna', 'Ben', 5000)]
+    warning/flag in response? patch keys=['amount_rappen', 'category', 'created_at', 'currency', 'description', 'expense_date', 'household_id', 'id', 'paid_by_user_id', 'recurring_bill_id', 'shares', 'split_type', 'updated_at']
+
+=== 3 overpaying settlement (debt 5.00, pay 999.99)
+    status=201
+    saldi={'Anna': -99499, 'Ben': 99499}
+
+=== 3b settlement with no debt at all (creditor pays debtor)
+    status=201
+
+=== 4 debtor+creditor both record the same suggested payment
+    statuses=201,201
+    saldi={'Ben': 2500, 'Anna': -2500}
+    new suggestion=[('Anna', 'Ben', 2500)]
+
+=== 5 lost update (UI sends full payload, no version)
+    Ben patch=200 amount=25000; Anna stale patch=200 -> final amount=10000
+
+=== 6a PATCH {split_type:even, description} on a 2-of-3 even expense
+    status=200 shares=[('Carla', 1000), ('Ben', 1000), ('Anna', 1000)]
+
+=== 6b create even with participant_ids=[]
+    status=201 shares=[('Carla', 1000), ('Ben', 1000), ('Anna', 1000)]
+
+=== 7 create expense amount=2147483647
+    status=201 body={"id":"10d58d5c-aa00-4f7f-a001-5c29c994bcb6","household_id":"a19d139d-8589-400a-886e-e6f8d50aabea","description":"big","
+
+=== 7 create expense amount=2147483648
+    status=500 body=Internal Server Error
+
+=== 7 create expense amount=1000000000000
+    status=500 body=Internal Server Error
+
+=== 7b (no raise) POST expenses amount=2^31
+    status=500 body=Internal Server Error
+
+=== 7b (no raise) POST settlements amount=2^31
+    status=500 body=Internal Server Error
+
+=== 7c budget amount=2^31
+    status=500
+
+=== 7d bill amount=2^31
+    status=500
+
+=== 7e sum over int32 max
+    balances 200 {"balances":[{"user_id":"78ebeed4-0ed4-4989-931d-33499720c418","paid_rappen":4294967294,"owed_rappen":2147483648,"settled_out_rappen":0,"settled_in_rappen":0,"saldo_rappen":2147483646},{"user_id":"833
+    summary 200 total=4294967294
+
+=== 8a delete booked expense then rebook
+    delete=204 rebook=201
+
+=== 8b delete booked expense -> Undo (re-create) -> bill shows unbooked -> book again
+    undo create=201 recurring_bill_id=None
+    pending after undo=[('Internet', False)]
+    second book=201
+    expenses named Internet this month=2 total_spent=12000
+
+=== 9 book after default payer left; Carla joined after bill creation
+    leave=204 book w/o payer=422 {'code': 'USERS_NOT_IN_HOUSEHOLD', 'message': "Users not in household: ['443bb4ea-f704-4733-9f24-29a15460326c']"}
+    book with override=201 expense_date=2026-10-28 shares=[('Anna', 5001), ('Carla', 5000)]
+
+=== 9b book inactive
+    status=409
+
+=== 9c create bill split_type=custom (E-5: no effect)
+    status=201 split_type=custom
+
+=== 10 remaining member deletes ex-member Carla's expense (Carla was owed 200), Undo
+    before={'Anna': -10000, 'Carla': 20000, 'Ben': -10000}
+    delete=204 undo=422 {'code': 'USERS_NOT_IN_HOUSEHOLD', 'message': "Users not in household: ['a0236d3e-cd34-474e-ad65-f38
+    after={'Anna': 0, 'Ben': 0}
+
+=== 11 SIMULATED hard delete of user Carla (no API path exists)
+    before sum(saldi)=0 unassigned=0
+    after  sum(saldi)=1000 unassigned=3000 saldi=[('Ben', -4000), ('Anna', 5000)]
+    expense amount vs sum(shares) after: [('A', 9000, 6000), ('C', 3000, 2000)]
+
+=== 12 month boundaries + dashboard saldo
+    totals=[('2026-12-01', 100), ('2027-01-01', 200), ('2028-02-01', 800), ('2028-03-01', 400)] (expect 100,200,800,400; settlements excluded)
+    dashboard Ben saldo=-700 vs balances=-700
+
+=== 13 expense_date extremes
+    0001-01-01 -> 201; 9999-12-31 -> 201
+
+=== 13b finance-summary month=9999-12-01
+    status=500
+
+=== 14 Carla (not a party) deletes Anna->Ben settlement
+    status=204
+
+DONE

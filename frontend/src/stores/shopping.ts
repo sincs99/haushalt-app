@@ -2,9 +2,12 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlineShoppingRepository } from '../repositories/shoppingRepository'
-import type { ShoppingItem, ShoppingList, ShoppingListUpdatePayload } from '../types'
+import type { BulkAddResponse, ShoppingItem, ShoppingList, ShoppingListUpdatePayload } from '../types'
 import { upsertVersioned } from '../utils/syncVersion'
 import { findCanonicalStore, storesEqual } from '../utils/storeName'
+import { createRequestGuard } from '../utils/householdGuard'
+import { createRetryIds } from '../utils/clientIds'
+import { ingredientKey } from '../utils/ingredientKey'
 
 // ── localStorage-Persistenz für aktive Liste ──
 
@@ -44,6 +47,10 @@ export const useShoppingStore = defineStore('shopping', () => {
 
   // Interner State für Race-Condition-Schutz
   const pendingToggles = new Set<string>()
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
+  // Manueller Retry eines gescheiterten Creates nutzt dieselbe Client-ID (CASA-45)
+  const retryIds = createRetryIds()
 
   // ── Computed ──
 
@@ -57,8 +64,12 @@ export const useShoppingStore = defineStore('shopping', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'lists')
 
-    lists.value = await repo.fetchLists(householdId)
+    const result = await repo.fetchLists(householdId)
+    // Antwort eines anderen Haushalts: weder Listen noch aktive Liste übernehmen
+    if (!active()) return
+    lists.value = result
 
     // Aktive Liste aus localStorage oder erste Liste
     const stored = getStoredActiveListId(householdId)
@@ -123,11 +134,14 @@ export const useShoppingStore = defineStore('shopping', () => {
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
+    const active = captureRequest(householdId, 'items')
+
     loading.value = true
     try {
-      items.value = await repo.fetchAll(householdId)
+      const result = await repo.fetchAll(householdId)
+      if (active()) items.value = result
     } finally {
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -137,7 +151,10 @@ export const useShoppingStore = defineStore('shopping', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
-    stores.value = await repo.fetchStores(householdId)
+    const active = captureRequest(householdId, 'stores')
+    const result = await repo.fetchStores(householdId)
+    if (!active()) return
+    stores.value = result
 
     // Aktiven Filter aus localStorage validieren (case-insensitive → kanonische Schreibweise)
     const stored = getStoredStoreFilter(householdId)
@@ -219,7 +236,8 @@ export const useShoppingStore = defineStore('shopping', () => {
 
     // 1. Optimistic: Sofort lokalen Eintrag mit endgültiger Client-ID erzeugen.
     //    Der Server übernimmt die ID → kein Temp-ID-Swap nötig.
-    const itemId = crypto.randomUUID()
+    const retryKey = JSON.stringify([householdId, activeListId.value, name, quantity, category, store])
+    const itemId = retryIds.idFor(retryKey)
     const now = new Date().toISOString()
     const optimisticItem: ShoppingItem = {
       id: itemId,
@@ -254,12 +272,45 @@ export const useShoppingStore = defineStore('shopping', () => {
       //    Socket-Event → egal wer zuerst kommt, es entsteht kein Duplikat.
       //    Kein Insert, falls das Item inzwischen gelöscht wurde.
       upsertVersioned(items.value, serverItem, false)
+      retryIds.settled(retryKey)
       return itemId
     } catch (error) {
-      // 4. Rollback bei Fehler
+      // 4a. Antwort verloren, aber das Socket-Echo (gleiche ID, Server-Version) ist schon
+      //     da: Der Server hat den Artikel angelegt → behalten statt zurückrollen
+      if (items.value.some(i => i.id === itemId && i.version > 0)) {
+        retryIds.settled(retryKey)
+        return itemId
+      }
+      // 4b. Rollback bei Fehler; bei Netzwerkfehler nutzt ein Retry dieselbe ID
       items.value = items.value.filter(i => i.id !== itemId)
+      retryIds.failed(retryKey, itemId, error)
       throw error
     }
+  }
+
+  /**
+   * Mehrere Artikel auf eine Liste setzen ("Fehlende Zutaten" aus Rezept oder KI, PD-M2).
+   * Der Server überspringt, was schon offen auf irgendeiner Liste steht (auch mit
+   * Mengenangabe davor) — ein Retry legt nichts doppelt an. Ziel: übergebene oder
+   * aktive Liste. Nach einem Haushaltswechsel wird die Antwort nicht mehr eingemischt.
+   */
+  async function bulkAddItems(names: string[], listId?: string): Promise<BulkAddResponse | undefined> {
+    const householdId = useAuthStore().currentHouseholdId
+    const targetListId = listId ?? activeListId.value
+    if (!householdId || !targetListId || names.length === 0) return
+
+    const result = await repo.bulkAdd(householdId, targetListId, names)
+    if (useAuthStore().currentHouseholdId === householdId) {
+      for (const item of result.added) upsertVersioned(items.value, item, true)
+    }
+    return result
+  }
+
+  /** Offene Artikel (alle Listen), deren Produkt dem Namen entspricht (PD-S1-Hinweis). */
+  function findOpenDuplicates(name: string): ShoppingItem[] {
+    const key = ingredientKey(name)
+    if (!key) return []
+    return items.value.filter(i => !i.is_checked && ingredientKey(i.name) === key)
   }
 
   /**
@@ -496,6 +547,8 @@ export const useShoppingStore = defineStore('shopping', () => {
     // Actions (Items)
     fetchItems,
     addItem,
+    bulkAddItems,
+    findOpenDuplicates,
     toggleChecked,
     deleteItem,
     deleteItems,

@@ -24,3 +24,8 @@ ignore = [
 "tests/test_chores.py" = ["F811"]
 # TODO: ungenutzte Variable in Test-Setup prüfen
 "tests/test_files_scoping.py" = ["F841"]
+
+[tool.pytest.ini_options]
+markers = [
+    "pg: PostgreSQL-Integrationslane (tests/pg/, braucht TEST_PG_URL, sonst übersprungen)",
+]

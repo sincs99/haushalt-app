@@ -1,0 +1,6 @@
+book 201
+delete expense 204
+undo re-create 201 recurring_bill_id: None
+summary pending bills: [('Miete', False)]
+book again 201
+expenses 'Miete' this month: 2

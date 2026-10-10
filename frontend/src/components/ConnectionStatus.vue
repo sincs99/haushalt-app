@@ -1,11 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useSocket } from '../composables/useSocket'
-import { useConnectivity } from '../composables/useConnectivity'
+import { useSyncStatus } from '../composables/useSyncStatus'
 
-const { isConnected } = useSocket()
-const { isOnline } = useConnectivity()
-const status = computed(() => !isOnline.value ? 'offline' : isConnected.value ? 'connected' : 'reconnecting')
+const status = useSyncStatus()
 </script>
 
 <template>

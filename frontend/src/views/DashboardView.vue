@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { eventTime } from '../utils/dates'
+import { formatDateShort, householdDateString, todayEventLabel } from '../utils/dates'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -99,8 +99,8 @@ const combinedTasks = computed<DashboardTodoItem[]>(() => {
     ? data.value.chores.items.slice(0, remaining).map(c => ({
         id: c.id,
         title: c.title,
-        due_date: null,
-        is_overdue: false,
+        due_date: c.due_date,
+        is_overdue: c.is_overdue,
         type: 'chore' as const,
       }))
     : []
@@ -110,8 +110,10 @@ const combinedTasks = computed<DashboardTodoItem[]>(() => {
 
 // ── Overdue Badge ──
 const overdueBadge = computed(() => {
-  if (!data.value || data.value.todos.overdue_count === 0) return ''
-  return t('dashboard.overdueCount', { n: data.value.todos.overdue_count })
+  if (!data.value) return ''
+  // Todos und Ämtli: dieselbe Zählung wie die Liste darunter (CASA-43)
+  const n = data.value.todos.overdue_count + (data.value.chores.overdue_count ?? 0)
+  return n === 0 ? '' : t('dashboard.overdueCount', { n })
 })
 
 // ── Finance ──
@@ -138,9 +140,14 @@ const todayEvents = computed(() => {
 })
 
 function formatEventTime(item: DashboardEventItem): string {
-  if (item.all_day) return t('calendar.allDay')
-  // Haushaltszeit direkt aus dem String (siehe utils/dates eventTime)
-  return eventTime(item.starts_at)
+  // Haushaltszeit direkt aus dem String (siehe utils/dates eventTime);
+  // mehrtägige Termine von gestern: "läuft seit …" statt Startzeit
+  const label = todayEventLabel(item, householdDateString(authStore.currentHousehold?.timezone))
+  if (label.kind === 'allDay') return t('calendar.allDay')
+  if (label.kind === 'since') {
+    return t('dashboard.eventRunningSince', { date: formatDateShort(label.date), time: label.time })
+  }
+  return label.time
 }
 
 // ── Handlers ──

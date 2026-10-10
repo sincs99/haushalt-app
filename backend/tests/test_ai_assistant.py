@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.core.rate_limit import limiter
-from app.models import AiUsage, Recipe
+from app.models import AiUsage, AiUserUsage, HouseholdMember, Recipe
 from app.services.ai import client as ai_client
 from app.services.ai.errors import AiNotConfigured
 from app.services.ai.schemas import (
@@ -131,7 +131,11 @@ def test_status_without_key_is_disabled(client, token_a, monkeypatch):
 
 def test_status_with_key_is_enabled(client, token_a, api_key):
     res = client.get("/api/ai/status", headers=_auth(token_a))
-    assert res.json() == {"enabled": True, "daily_limit": settings.ai_daily_limit_per_household}
+    assert res.json() == {
+        "enabled": True,
+        "daily_limit": settings.ai_daily_limit_per_household,
+        "user_daily_limit": settings.ai_daily_limit_per_user,
+    }
 
 
 def test_recipe_without_key_returns_503(client, token_a, ai_household, monkeypatch):
@@ -617,3 +621,80 @@ def test_household_delete_cascades_usage(client, db, token_a, ai_household, fake
     res = client.post(f"/api/households/{ai_household.id}/leave", headers=_auth(token_a))
     assert res.status_code == 204
     assert db.query(AiUsage).count() == 0
+
+
+# ---------------------------------------------------------------------------
+# CASA-33: unerwartete Fehler → Reservierung zurückgeben
+# ---------------------------------------------------------------------------
+
+
+def test_response_validation_error_is_unavailable_and_not_counted(client, db, token_a, ai_household, fake_client):
+    """``APIResponseValidationError`` ist weder Status- noch Verbindungsfehler → früher roher 500."""
+    fake_client.beta.messages.parse.side_effect = anthropic.APIResponseValidationError(
+        response=httpx2.Response(200, request=_request()), body=None
+    )
+    res = client.post(_recipe_url(ai_household), json=RECIPE_BODY, headers=_auth(token_a))
+    assert res.status_code == 502
+    assert res.json()["detail"]["code"] == "AI_UNAVAILABLE"
+    assert db.query(AiUsage).one().calls == 0
+
+
+def test_unexpected_exception_releases_reservation(client, db, token_a, ai_household, fake_client):
+    fake_client.beta.messages.parse.side_effect = RuntimeError("bug")
+    with pytest.raises(RuntimeError):
+        client.post(_recipe_url(ai_household), json=RECIPE_BODY, headers=_auth(token_a))
+    db.expire_all()
+    assert db.query(AiUsage).one().calls == 0
+    assert db.query(AiUserUsage).one().calls == 0
+
+
+# ---------------------------------------------------------------------------
+# PD-A2: Tageslimit pro Person (zusätzlich zum Haushalt)
+# ---------------------------------------------------------------------------
+
+
+def test_daily_limit_per_user_default_is_20():
+    assert type(settings).model_fields["ai_daily_limit_per_user"].default == 20
+
+
+def test_daily_limit_per_user(client, db, token_a, token_a2, user_a2, ai_household, fake_client, monkeypatch):
+    monkeypatch.setattr(settings, "ai_daily_limit_per_household", 50)
+    monkeypatch.setattr(settings, "ai_daily_limit_per_user", 2)
+    fake_client.beta.messages.parse.return_value = _response(_plant_output())
+
+    for _ in range(2):
+        assert client.post(_plant_url(ai_household), json={"plant": "Ficus"}, headers=_auth(token_a)).status_code == 200
+    res = client.post(_plant_url(ai_household), json={"plant": "Ficus"}, headers=_auth(token_a))
+    assert res.status_code == 429
+    assert res.json()["detail"]["code"] == "AI_USER_DAILY_LIMIT_REACHED"
+    assert fake_client.beta.messages.parse.call_count == 2
+    # Abgelehnter Aufruf zählt auch beim Haushalt nicht
+    assert db.query(AiUsage).one().calls == 2
+
+    # Andere Person im selben Haushalt ist nicht betroffen
+    assert client.post(_plant_url(ai_household), json={"plant": "Ficus"}, headers=_auth(token_a2)).status_code == 200
+
+    body = client.get(f"/api/households/{ai_household.id}/ai/settings", headers=_auth(token_a)).json()
+    assert (body["user_calls_today"], body["user_daily_limit"]) == (2, 2)
+
+
+def test_daily_limit_per_user_spans_households(
+    client, db, token_a, user_a, ai_household, household_b, fake_client, monkeypatch
+):
+    """Mehrere Haushalte vervielfachen das persönliche Limit nicht."""
+    monkeypatch.setattr(settings, "ai_daily_limit_per_user", 1)
+    household_b.ai_enabled = True
+    db.add(HouseholdMember(id=uuid.uuid4(), household_id=household_b.id, user_id=user_a.id, role="member"))
+    db.commit()
+    fake_client.beta.messages.parse.return_value = _response(_plant_output())
+
+    assert client.post(_plant_url(ai_household), json={"plant": "Ficus"}, headers=_auth(token_a)).status_code == 200
+    res = client.post(_plant_url(household_b), json={"plant": "Ficus"}, headers=_auth(token_a))
+    assert res.status_code == 429
+    assert res.json()["detail"]["code"] == "AI_USER_DAILY_LIMIT_REACHED"
+
+
+def test_sdk_error_releases_user_reservation(client, db, token_a, ai_household, fake_client):
+    fake_client.beta.messages.parse.side_effect = anthropic.APIConnectionError(request=_request())
+    client.post(_recipe_url(ai_household), json=RECIPE_BODY, headers=_auth(token_a))
+    assert db.query(AiUserUsage).one().calls == 0

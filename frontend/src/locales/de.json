@@ -573,6 +573,7 @@
     "AI_NOT_CONFIGURED": "Der KI-Assistent ist auf diesem Server nicht eingerichtet",
     "AI_NOT_ENABLED": "Der KI-Assistent ist für diesen Haushalt nicht eingeschaltet",
     "AI_DAILY_LIMIT_REACHED": "Das Tageslimit für KI-Anfragen in diesem Haushalt ist erreicht – morgen geht es weiter",
+    "AI_USER_DAILY_LIMIT_REACHED": "Du hast dein persönliches Tageslimit für KI-Anfragen erreicht – morgen geht es weiter",
     "AI_REFUSED": "Die KI hat diese Anfrage abgelehnt. Formuliere sie bitte anders.",
     "AI_INVALID_OUTPUT": "Die KI hat keine brauchbare Antwort geliefert – versuch es nochmals",
     "AI_PLANT_NOT_RECOGNIZED": "Diese Eingabe wurde nicht als Pflanze erkannt",
@@ -1027,6 +1028,7 @@
       "privacyHint": "Ist der KI-Assistent eingeschaltet, werden deine Eingaben (z. B. Zutaten, Pflanzenart, später auch Fotos) zur Verarbeitung an die Anthropic-API gesendet. In der App gespeichert wird nur, was du selbst übernimmst.",
       "adminOnly": "Nur Admins können den KI-Assistenten ein- oder ausschalten.",
       "usage": "Heute {used} von {limit} Anfragen genutzt",
+      "userUsage": "Davon persönlich (über alle Haushalte): {used} von {limit}",
       "openAssistant": "Zum KI-Assistenten",
       "saveError": "KI-Assistent konnte nicht umgeschaltet werden"
     },

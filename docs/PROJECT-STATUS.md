@@ -211,12 +211,13 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 
 | Datei | Zweck | Status |
 |---|---|---|
-| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | GitHub Actions: Jobs `backend` (ruff, pytest mit Coverage), `backend-postgres` (postgres:16, `alembic upgrade head`, `pytest -m pg`, `alembic downgrade -1 && upgrade head`), `frontend` (Locale-Check, Typecheck, Vitest mit Coverage), `dependency-audit` (pip-audit, npm audit) | ✅ Fertig |
+| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | GitHub Actions: Jobs `backend` (ruff, pytest mit Coverage), `backend-postgres` (postgres:16, `alembic upgrade head`, `pytest -m pg`, `alembic downgrade -1 && upgrade head`, Restore-Drill `scripts/restore-drill.sh`), `frontend` (Locale-Check, Typecheck, Vitest mit Coverage), `dependency-audit` (pip-audit, npm audit) | ✅ Fertig |
 | [`docker-compose.yml`](../docker-compose.yml) | Entwicklungs-Setup (Datenbank, Backend, Frontend; Ports nur lokal gebunden) | ✅ Fertig |
-| [`docker-compose.prod.yml`](../docker-compose.prod.yml) | Produktion hinter Nginx Proxy Manager (Healthchecks, keine veröffentlichten Ports) | ✅ Fertig |
+| [`docker-compose.prod.yml`](../docker-compose.prod.yml) | Produktion hinter Nginx Proxy Manager (Healthchecks für alle drei Container, keine veröffentlichten Ports, Log-Rotation `json-file` 5×10 MB, vertrauenswürdige Proxy-Bereiche `TRUSTED_PROXY_CIDRS`/`FORWARDED_ALLOW_IPS`) | ✅ Fertig |
 | [`.env.example`](../.env.example), [`.env.prod.example`](../.env.prod.example) | Vorlagen für Umgebungsvariablen | ✅ Fertig |
 | [`backend/Dockerfile`](../backend/Dockerfile), [`frontend/Dockerfile`](../frontend/Dockerfile), [`frontend/nginx.conf`](../frontend/nginx.conf), [`frontend/nginx/security-headers.conf`](../frontend/nginx/security-headers.conf) | Container-Images, Nginx-Konfiguration und Security-Header fürs Frontend | ✅ Fertig |
-| [`scripts/backup-db.ps1`](../scripts/backup-db.ps1), [`scripts/restore-db.ps1`](../scripts/restore-db.ps1) | Backup/Restore von Datenbank und Uploads (PowerShell) | ✅ Fertig |
+| [`scripts/backup-db.ps1`](../scripts/backup-db.ps1), [`scripts/restore-db.ps1`](../scripts/restore-db.ps1) | Backup/Restore von Datenbank und Uploads (PowerShell). Backup: Dump vor Uploads, `-Consistent` (Backend gestoppt), `-Keep`, `-CopyTo` (Off-Host). Restore: Backend stoppen, Dump in frische DB (`--single-transaction --exit-on-error`), Tausch, Uploads, Backend starten + Health-Check (CASA-07, CASA-57) | ✅ Fertig |
+| [`scripts/restore-db.sh`](../scripts/restore-db.sh), [`scripts/restore-drill.sh`](../scripts/restore-drill.sh) | Restore für Linux-Hosts (gleiche Logik, auch direkt gegen eine DB-URL) und Restore-Drill für CI/Betrieb | ✅ Fertig |
 
 ### Frontend (`frontend/src/`)
 
@@ -707,6 +708,9 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 - Parallele Schreibkonflikte, die nicht fachlich behandelt werden, liefern 409 `CONFLICT_RETRY` (Frontend: „bitte noch einmal versuchen“) statt 500.
 - `households.timezone` (Default `Europe/Zurich`) steuert Putzplan-Datumsberechnung, Termin-Uhrzeiten, Fütterungs-/Pflegetage sowie die Kalenderdaten der Finanzen (Buchungsmonat, Default-Monat von Budget und Übersicht, Standard-Datum von Ausgaben/Ausgleich; `services/household_time.py`); `households.currency` (Default `CHF`): eine Währung pro Haushalt.
 - Beim Löschen eines Haushalts werden alle zugehörigen Tabellen per `CASCADE` geleert; die Dateien auf dem Datenträger entfernt der Router beim Auflösen des Haushalts (`POST /leave` durch das letzte Mitglied); verwaiste Uploads räumt `app/services/file_cleanup.py` periodisch auf.
+- **Ledger-FKs auf `users` sind `RESTRICT`** (Migration `ops1a2b3c4d5`, CASA-55): `expense_shares.user_id`, `settlements.from_user_id`/`to_user_id`, `expenses.paid_by_user_id`. Ein `DELETE FROM users` mit Buchungen schlägt fehl, statt Anteile/Ausgleiche still mitzulöschen (früher `CASCADE`: Salden der anderen hätten sich verschoben) oder den Zahler zu leeren (`SET NULL`). Festgehalten in `tests/pg/test_pg_smoke.py::test_ledger_user_fks_restrict`.
+- **Konto-Löschung (PD-D1, nur vorbereitet — kein Endpunkt):** Eine künftige Löschung *anonymisiert* die Person, statt die `users`-Zeile zu löschen: `email` → nicht zustellbarer Platzhalter (z. B. `deleted-<uuid>@invalid`), `display_name` → „Ehemaliges Mitglied“, `password_hash` unbrauchbar, Refresh-Tokens/Push-Abos/Widget-Tokens/`ai_user_usage` löschen, Mitgliedschaften wie beim Verlassen beenden (Departure-Regeln). Alle Buchungen, Logs und Historien behalten die (anonyme) `user_id`, Salden bleiben unverändert. Die übrigen `NO ACTION`-FKs (Termine, Abstimmungen, Fütterungs-/Medikamenten-Logs, Mitgliedschaften) blockieren eine Hard-Delete-Abkürzung bewusst.
+- **Schema = Modelle** (CASA-56): Jeder DB-Server-Default hat ein Modell-Pendant (`server_default`); der Drift-Check `tests/pg/test_pg_smoke.py::test_models_match_migrations` vergleicht Tabellen, Spalten, Typen, Nullability, FKs **und** Server-Defaults. Alle Migrationen lassen sich bis `base` zurückrollen (`test_full_downgrade_to_base_and_upgrade_again`) — im Betrieb gilt trotzdem forward-only (siehe `docs/deployment.md` §4).
 
 ---
 
@@ -880,7 +884,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | CI (Lint, Tests mit Coverage, Dependency-Audit) | — | — | — |
 | Tags (NFC-Chips/QR-Sticker, Ein-Tipp-Aktionen inkl. Pflanze gießen / Pflegeaufgabe) | ✅ Registry, CRUD, resolve/execute | ✅ TagsView, Scan-Seite `/t/:token`, QR, Web NFC | ✅ Socket |
 | Produktions-Deployment (Docker, Nginx Proxy Manager) | ✅ | ✅ | — |
-| KI-Assistent (optional): Rezeptvorschlag aus Zutaten, Pflanzenpflege-Hinweise; Opt-in pro Haushalt, Tageslimit | ✅ `routers/ai.py`, `services/ai/` | ✅ Karte in FoodView, `/assistant`, Einstellungen | ✅ `household_updated` (Opt-in) |
+| KI-Assistent (optional): Rezeptvorschlag aus Zutaten, Pflanzenpflege-Hinweise; Opt-in pro Haushalt, Tageslimit pro Haushalt und pro Person | ✅ `routers/ai.py`, `services/ai/` | ✅ Karte in FoodView, `/assistant`, Einstellungen | ✅ `household_updated` (Opt-in) |
 | Rezepte mit Zubereitungsschritten und Tags | ✅ | ✅ Anzeige in den Rezept-Details | ✅ Socket |
 
 ### ❌ Offen (nächste Schritte)
@@ -894,7 +898,6 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 | Frontend-Testabdeckung | Mittel | 🟡 Mittel | 77,49 % Statements, 72,14 % Branches (Statement-Schwelle 66 % in `vitest.config.ts`, CI bricht darunter ab); Komponenten, Stores `polls`/`dashboard` und die Repositories sind ungetestet; Schwelle bei Verbesserung nachziehen |
 | FR/IT-Sprachen | Klein | 🔵 Niedrig | Locale-Erweiterung |
 | Chores-Statistiken | Klein | 🔵 Niedrig | „Wer hat wie oft geputzt“ |
-| KI-Assistent: globales Tageslimit oder Limit pro Nutzer | Klein | 🟡 Mittel | Das Tageslimit gilt pro Haushalt; über weitere Haushalte lässt es sich vervielfachen (A-01 in `docs/security/ai-assistant-review.md`) |
 | KI-Assistent Etappe 2 | Mittel | 🔵 Niedrig | Beleg-Scan per Foto (Ausgabe vorbefüllen), Wochenplan-Vorschlag; Plan in `docs/ai-assistant.md` |
 | Rezepte im Frontend anlegen/bearbeiten | Mittel | 🔵 Niedrig | Es gibt keine Rezept-Verwaltung in der Oberfläche; Rezepte entstehen bisher nur über die API bzw. den KI-Vorschlag |
 
@@ -1317,7 +1320,7 @@ Die Nummerierung ist die der Dokumentation und nicht identisch mit den „Epic-N
   - Strukturierte Ausgaben über `client.beta.messages.parse()` mit Pydantic-Modellen (JSON-Schema in `output_config.format`), kein Textparsing; Ausgabe wird in die Grenzen der App-Schemas gebracht
   - Serverseitige Fallbacks (`server-side-fallback-2026-07-01`, `fallbacks="default"`); `stop_reason == "refusal"` → 422 `AI_REFUSED`; typisierte SDK-Exceptions → 502/503 mit eigenen Codes; Timeout 90 s, `max_retries=1`, max. 4 gleichzeitige Aufrufe
   - Opt-in pro Haushalt (`households.ai_enabled`, Standard aus, nur Admins), Datenschutz-Hinweis in den Einstellungen; ohne `ANTHROPIC_API_KEY` meldet `GET /api/ai/status` `enabled: false` und das Frontend blendet alles aus
-  - Kostenschutz: 10/min pro IP (slowapi) und Tageslimit pro Haushalt (`ai_usage`, atomare Reservierung, `AI_DAILY_LIMIT_PER_HOUSEHOLD`, Standard 50) mit Token-Zählern aus `response.usage`
+  - Kostenschutz: 10/min pro IP (slowapi), Tageslimit pro Haushalt (`ai_usage`, `AI_DAILY_LIMIT_PER_HOUSEHOLD`, Standard 50) mit Token-Zählern aus `response.usage` und pro Person über alle Haushalte (`ai_user_usage`, `AI_DAILY_LIMIT_PER_USER`, Standard 20, 429 `AI_USER_DAILY_LIMIT_REACHED`); Reservierung per Upsert `ON CONFLICT DO UPDATE … WHERE calls < limit` (CASA-32), Rückgabe bei jedem Fehler ohne API-Antwort (CASA-33)
   - Rezeptvorschlag im Format von `RecipeCreate`, nicht gespeichert; Speichern über den Rezept-Endpunkt, fehlende Zutaten über den Shopping-Endpunkt
   - Pflanzenpflege unabhängig von einem Plant-Modell (Intervalle, Lichtbedarf, Giftigkeit für Haustiere mit Hinweis „keine tierärztliche Auskunft“); Schema dokumentiert als Vorlage für das Pflanzen-Modul
   - Prompts DE/EN nach Sprache der Oberfläche; Nutzereingaben als escapter JSON-Block, Rolle nur im Systemprompt

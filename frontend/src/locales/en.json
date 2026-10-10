@@ -573,6 +573,7 @@
     "AI_NOT_CONFIGURED": "The AI assistant is not set up on this server",
     "AI_NOT_ENABLED": "The AI assistant is not turned on for this household",
     "AI_DAILY_LIMIT_REACHED": "This household has reached its daily limit of AI requests – try again tomorrow",
+    "AI_USER_DAILY_LIMIT_REACHED": "You have reached your personal daily limit of AI requests – try again tomorrow",
     "AI_REFUSED": "The AI declined this request. Please rephrase it.",
     "AI_INVALID_OUTPUT": "The AI did not return a usable answer – please try again",
     "AI_PLANT_NOT_RECOGNIZED": "This input was not recognized as a plant",
@@ -1027,6 +1028,7 @@
       "privacyHint": "When the AI assistant is on, your input (e.g. ingredients, plant species, later also photos) is sent to the Anthropic API for processing. Only what you choose to keep is saved in the app.",
       "adminOnly": "Only admins can turn the AI assistant on or off.",
       "usage": "{used} of {limit} requests used today",
+      "userUsage": "Your personal usage (across all households): {used} of {limit}",
       "openAssistant": "Open AI assistant",
       "saveError": "AI assistant could not be switched"
     },

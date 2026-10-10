@@ -894,6 +894,7 @@ export interface StorageUsage {
 export interface AiStatus {
   enabled: boolean      // Schlüssel auf dem Server gesetzt
   daily_limit: number
+  user_daily_limit?: number  // persönliches Limit über alle Haushalte
 }
 
 export interface AiSettings {
@@ -901,6 +902,9 @@ export interface AiSettings {
   available: boolean    // Schlüssel auf dem Server gesetzt
   calls_today: number
   daily_limit: number
+  // Persönliches Tageslimit der angemeldeten Person über alle Haushalte (PD-A2)
+  user_calls_today?: number
+  user_daily_limit?: number
 }
 
 export type AiLocale = 'de' | 'en'

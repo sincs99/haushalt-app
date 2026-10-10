@@ -240,7 +240,9 @@ class PushSubscription(Base):
     endpoint: Mapped[str] = mapped_column(String(1000), unique=True, nullable=False)
     p256dh: Mapped[str] = mapped_column(String(255), nullable=False)
     auth: Mapped[str] = mapped_column(String(255), nullable=False)
-    locale: Mapped[str] = mapped_column(String(5), nullable=False, default="de")
+    locale: Mapped[str] = mapped_column(
+        String(5), nullable=False, default="de", server_default="de"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -290,7 +292,9 @@ class ShoppingList(SyncVersionMixin, Base):
     icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="shopping_lists")
@@ -431,8 +435,9 @@ class Expense(Base):
         server_default="even",
     )
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # RESTRICT statt SET NULL: ohne Zahler verschieben sich alle Salden (PD-D1)
     paid_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
     )
     recurring_bill_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("recurring_bills.id", ondelete="SET NULL"), nullable=True
@@ -477,8 +482,9 @@ class ExpenseShare(Base):
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
     )
+    # RESTRICT: Buchungen nie still mit einer Person löschen (Saldo-Neuberechnung, PD-D1)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     amount_rappen: Mapped[int] = mapped_column(Integer, nullable=False)
 
@@ -499,11 +505,12 @@ class Settlement(Base):
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
     )
+    # RESTRICT wie bei expense_shares.user_id (PD-D1)
     from_user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     to_user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     amount_rappen: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(
@@ -673,7 +680,8 @@ class Calendar(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
@@ -682,7 +690,9 @@ class Calendar(Base):
     color: Mapped[str] = mapped_column(String(7), nullable=False)  # Hex "#RRGGBB"
     position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="calendars")
@@ -911,7 +921,9 @@ class Medication(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     dosage: Mapped[str | None] = mapped_column(String(50), nullable=True)
     schedule: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    active: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, server_default=text("true")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -986,7 +998,8 @@ class Plant(Base):
     __tablename__ = "plants"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
@@ -1001,7 +1014,9 @@ class Plant(Base):
         ForeignKey("stored_files.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="plants")
@@ -1025,7 +1040,8 @@ class PlantCareTask(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
@@ -1042,7 +1058,9 @@ class PlantCareTask(Base):
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     plant: Mapped["Plant"] = relationship(back_populates="care_tasks")
@@ -1055,7 +1073,8 @@ class PlantCareLog(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
@@ -1098,9 +1117,13 @@ class Recipe(Base):
     ingredients: Mapped[list] = mapped_column(NonNullJSON, nullable=False, server_default="[]")
     steps: Mapped[list] = mapped_column(NonNullJSON, nullable=False, default=list, server_default="[]")
     tags: Mapped[list] = mapped_column(NonNullJSON, nullable=False, default=list, server_default="[]")
-    is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_favorite: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="recipes")
@@ -1156,12 +1179,15 @@ class Note(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="notes")
@@ -1172,7 +1198,8 @@ class StoredFile(Base):
     __table_args__ = (Index("ix_stored_files_household", "household_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
@@ -1185,7 +1212,9 @@ class StoredFile(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="stored_files")
@@ -1243,12 +1272,15 @@ class Document(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="documents")
@@ -1280,7 +1312,7 @@ class DocumentFile(Base):
         primary_key=True,
         unique=True,
     )
-    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     document: Mapped["Document"] = relationship(back_populates="file_links")
     file: Mapped["StoredFile"] = relationship()
@@ -1320,7 +1352,9 @@ class Tag(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
     last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -1359,6 +1393,28 @@ class AiUsage(Base):
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     household: Mapped["Household"] = relationship(back_populates="ai_usage")
+
+
+class AiUserUsage(Base):
+    """Tageszähler der KI-Aufrufe pro Person über alle Haushalte (PD-A2).
+
+    Zusätzlich zu ``AiUsage``: Wer in mehreren Haushalten ist, kann das Haushaltslimit
+    nicht vervielfachen. Ein Eintrag pro Person und Tag (UTC), nur ``calls``.
+    """
+
+    __tablename__ = "ai_user_usage"
+    __table_args__ = (
+        UniqueConstraint("user_id", "day", name="uq_ai_user_usage_user_day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 
 class WidgetToken(Base):

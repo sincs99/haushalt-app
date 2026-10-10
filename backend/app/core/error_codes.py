@@ -96,6 +96,10 @@ class ErrorCode:
     TAG_TARGET_NOT_FOUND = "TAG_TARGET_NOT_FOUND"
     TAG_NOT_EXECUTABLE = "TAG_NOT_EXECUTABLE"
     TAG_NOTHING_TO_DO = "TAG_NOTHING_TO_DO"
+    # Execute ohne die Bestätigung aus resolve (CASA-18)
+    TAG_CONFIRMATION_REQUIRED = "TAG_CONFIRMATION_REQUIRED"
+    # Seit resolve hat sich das Ziel geändert (z. B. andere Zuweisung aktuell)
+    TAG_CONFIRMATION_STALE = "TAG_CONFIRMATION_STALE"
     TOO_MANY_TAGS = "TOO_MANY_TAGS"
     AI_NOT_CONFIGURED = "AI_NOT_CONFIGURED"
     AI_NOT_ENABLED = "AI_NOT_ENABLED"

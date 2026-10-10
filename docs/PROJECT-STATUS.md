@@ -512,8 +512,8 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | PATCH | `/api/households/{id}/tags/{tag_id}` | ✅ Admin | Bezeichnung, aktiv/deaktiviert, Ziel/Aktion neu zuordnen |
 | POST | `/api/households/{id}/tags/{tag_id}/regenerate-token` | ✅ Admin | Neuer Token, alter Chip/QR-Code wird wirkungslos |
 | DELETE | `/api/households/{id}/tags/{tag_id}` | ✅ Admin | Tag löschen |
-| POST | `/api/tags/resolve/{token}` | ✅ Mitglied | Was der Tag tut (keine Mutation; 30/min/IP) |
-| POST | `/api/tags/{token}/execute` | ✅ Mitglied | Aktion ausführen (30/min/IP) |
+| POST | `/api/tags/resolve/{token}` | ✅ Mitglied | Was der Tag tut (keine Mutation; 30/min/IP); liefert `confirm` (angezeigte Zuweisung bzw. Gießaufgaben) |
+| POST | `/api/tags/{token}/execute` | ✅ Mitglied | Aktion ausführen (30/min/IP). `chore.assignment.done` und `plant.water` verlangen `confirm` aus resolve (fehlt → 422 `TAG_CONFIRMATION_REQUIRED`, veraltet → 409 `TAG_CONFIRMATION_STALE`). Idempotent pro Haushaltstag: schon erledigt → `changed=false`, `reason=ALREADY_DONE` |
 | **Health** | | | |
 | GET | `/api/health` | ❌ | Health-Check mit DB-Prüfung |
 
@@ -1289,7 +1289,7 @@ Die Nummerierung ist die der Dokumentation und nicht identisch mit den „Epic-N
 ### Epic 32: Tags (NFC-Chips / QR-Sticker) ✅
 - **Abgeschlossen:** 2026-10-06 (Branch `claude/nfc-qr-tags`)
 - **Umfang:** Physische Tags, die beim Scannen eine Ein-Tipp-Aktion auslösen. Auf Chip bzw. QR-Code steht nur `https://<host>/t/<token>`; das Betriebssystem öffnet die URL in der installierten PWA (iOS kann Web NFC nicht, liest NFC-URLs aber nativ). Ziel und Aktion liegen in der Datenbank.
-- **Aktionen (Registry `app/services/tag_actions.py`):** `pet.feed` (ein Tier oder alle; Slot nach Tageszeit, ab 14 Uhr Abend, auf der Bestätigungsseite umschaltbar), `pet.care_task.done`, `chore.assignment.done` (jüngste offene Zuweisung bis heute, sonst die nächste innerhalb von 6 Tagen; ältere offene bleiben), `shopping_list.open` (nur Navigation), `todo.done` (idempotent). Mutationen rufen die bestehenden Endpoint-Funktionen der Module auf (gleiche Validierung und Socket-Events). Keine Lösch-Aktionen. Ein neuer Zieltyp (z. B. `plant.water`) braucht nur einen Registry-Eintrag plus i18n-Keys; Anleitung im Modulkopf.
+- **Aktionen (Registry `app/services/tag_actions.py`):** `pet.feed` (ein Tier oder alle; Slot nach Tageszeit, ab 14 Uhr Abend, auf der Bestätigungsseite umschaltbar), `pet.care_task.done`, `chore.assignment.done` (Zuweisung der laufenden Periode = jüngste bis heute seit `anchor_date`, erledigt oder nicht, sonst die nächste innerhalb von 6 Tagen; ist sie erledigt → „schon erledigt“, Rückstand und nächste Periode bleiben unangetastet), `shopping_list.open` (nur Navigation), `todo.done` (idempotent). Mutationen rufen die bestehenden Endpoint-Funktionen der Module auf (gleiche Validierung und Socket-Events). Keine Lösch-Aktionen. Ein neuer Zieltyp (z. B. `plant.water`) braucht nur einen Registry-Eintrag plus i18n-Keys; Anleitung im Modulkopf.
 - **Geschäftsregeln:**
   - Anlegen, Ändern, Deaktivieren, Token neu erzeugen und Löschen nur für Admins; Liste und Ausführen für alle Mitglieder
   - Scan ohne Login → Login mit `redirect` zurück auf `/t/<token>`; die Aktion läuft erst nach Tipp auf der Bestätigungsseite (`*.open` navigiert direkt)

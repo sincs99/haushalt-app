@@ -1243,6 +1243,7 @@
       "nextDue": "Next due: {date}",
       "success": "Done",
       "successNoChange": "Already done — nothing changed.",
+      "reload": "Load current state",
       "toDashboard": "Go to home",
       "openModule": "View",
       "retry": "Try again",
@@ -1254,6 +1255,7 @@
         "unsupported": "This action is not supported by the app.",
         "already_done": "Already done — a feeding is already logged for this meal.",
         "nothing_to_do": "There is nothing to do for this right now.",
+        "stale": "Something changed in the meantime (e.g. someone else already did it). Nothing was recorded — please reload the current state.",
         "rate_limited": "Too many scans in a short time. Please wait a minute.",
         "offline": "No connection to the server.",
         "unknown": "Something went wrong."

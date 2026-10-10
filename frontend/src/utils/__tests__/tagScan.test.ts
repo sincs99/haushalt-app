@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { TagResolveResult } from '../../types'
 import {
+  executeParams,
   moduleRouteFor,
   nextScanStep,
   plantWaterLines,
@@ -81,6 +82,19 @@ describe('safeInternalPath', () => {
   })
 })
 
+describe('executeParams (CASA-18)', () => {
+  it('sends the confirmation from resolve unchanged', () => {
+    const r = result({ action: 'chore.assignment.done', confirm: { assignment_id: 'a1' } })
+    expect(executeParams(r, 'morning')).toEqual({ confirm: { assignment_id: 'a1' } })
+  })
+
+  it('adds the slot only for feeding', () => {
+    expect(executeParams(result(), 'evening')).toEqual({ slot: 'evening' })
+    const water = result({ action: 'plant.water', confirm: { task_ids: ['t1', 't2'] } })
+    expect(executeParams(water, 'evening')).toEqual({ confirm: { task_ids: ['t1', 't2'] } })
+  })
+})
+
 describe('scanErrorKind', () => {
   it.each([
     [axiosError(404, 'TAG_NOT_FOUND'), 'not_found'],
@@ -89,6 +103,7 @@ describe('scanErrorKind', () => {
     [axiosError(410, 'TAG_DISABLED'), 'disabled'],
     [axiosError(409, 'FEEDING_DUPLICATE'), 'already_done'],
     [axiosError(409, 'TAG_NOTHING_TO_DO'), 'nothing_to_do'],
+    [axiosError(409, 'TAG_CONFIRMATION_STALE'), 'stale'],
     [axiosError(422, 'TAG_ACTION_INVALID'), 'unsupported'],
     [axiosError(422, 'TAG_NOT_EXECUTABLE'), 'unsupported'],
     [axiosError(422), 'unknown'],

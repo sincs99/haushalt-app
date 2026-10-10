@@ -1243,6 +1243,7 @@
       "nextDue": "Nächste Fälligkeit: {date}",
       "success": "Erledigt",
       "successNoChange": "War schon erledigt — nichts geändert.",
+      "reload": "Aktuellen Stand laden",
       "toDashboard": "Zur Startseite",
       "openModule": "Ansehen",
       "retry": "Erneut versuchen",
@@ -1254,6 +1255,7 @@
         "unsupported": "Diese Aktion wird von der App nicht unterstützt.",
         "already_done": "Schon erledigt — für diese Mahlzeit ist bereits eine Fütterung eingetragen.",
         "nothing_to_do": "Gerade gibt es dafür nichts zu tun.",
+        "stale": "Inzwischen hat sich etwas geändert (z. B. hat jemand anderes es erledigt). Es wurde nichts eingetragen — bitte den aktuellen Stand neu laden.",
         "rate_limited": "Zu viele Scans in kurzer Zeit. Bitte warte eine Minute.",
         "offline": "Keine Verbindung zum Server.",
         "unknown": "Etwas ist schiefgelaufen."

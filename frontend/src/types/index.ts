@@ -1021,6 +1021,13 @@ export interface TagResolveResult {
   details: Record<string, any>
   can_execute: boolean
   reason: string | null
+  /** Bei execute unverändert zurückschicken (angezeigte Zuweisung/Aufgaben, CASA-18) */
+  confirm?: Record<string, unknown> | null
+}
+
+export interface TagExecuteParams {
+  slot?: 'morning' | 'evening'
+  confirm?: Record<string, unknown> | null
 }
 
 export interface TagExecuteResult {
@@ -1029,5 +1036,7 @@ export interface TagExecuteResult {
   household_id: string
   target_name: string | null
   changed: boolean
+  /** z. B. ALREADY_DONE: wiederholter Scan, nichts geändert */
+  reason?: string | null
   result: Record<string, any>
 }

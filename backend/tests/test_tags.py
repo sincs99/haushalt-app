@@ -59,6 +59,12 @@ def _execute(client, token, tag, body=None):
     return client.post(f"/api/tags/{tag.token}/execute", headers=_auth(token), json=body)
 
 
+def _confirm_execute(client, token, tag, body=None):
+    """Wie die Scan-Seite: resolve, dann execute mit dessen ``confirm`` (CASA-18)."""
+    confirm = _resolve(client, token, tag).json().get("confirm")
+    return _execute(client, token, tag, {**(body or {}), "confirm": confirm})
+
+
 @pytest.fixture()
 def care_task_a(db, household_a, pet_a) -> PetCareTask:
     task = PetCareTask(
@@ -430,6 +436,9 @@ class TestPetFeed:
         tag = _make_tag(db, household_a, "pet.feed", "pet", pet_a.id)
         with patch.object(tag_actions, "default_feeding_slot", return_value="morning"):
             assert _execute(client, token_a, tag).status_code == 200
+            # Abends noch offen → bleibt ausführbar (PD-T2)
+            assert _resolve(client, token_a, tag).json()["details"]["slot"] == "evening"
+            assert _execute(client, token_a, tag, {"slot": "evening"}).status_code == 200
             data = _resolve(client, token_a, tag).json()
         assert data["can_execute"] is False
         assert data["reason"] == "ALREADY_FED"
@@ -503,7 +512,9 @@ class TestPlantWater:
         assert data["details"]["last_watered_at"] is None
         assert data["details"]["next_due_at"] == "2026-01-01"
 
-        resp = _execute(client, token_a, tag)
+        assert data["confirm"] == {"task_ids": [str(water_task_a.id)]}
+
+        resp = _execute(client, token_a, tag, {"confirm": data["confirm"]})
         assert resp.status_code == 200
         assert resp.json()["changed"] is True
         today = today_in_tz(household_a.timezone)
@@ -527,7 +538,7 @@ class TestPlantWater:
     def test_only_water_tasks_are_completed(self, client, db, household_a, token_a, plant_a, water_task_a):
         fertilize = _plant_task(db, household_a, plant_a, "fertilize", interval=30)
         tag = _make_tag(db, household_a, "plant.water", "plant", plant_a.id)
-        assert _execute(client, token_a, tag).status_code == 200
+        assert _confirm_execute(client, token_a, tag).status_code == 200
         db.refresh(fertilize)
         assert fertilize.last_done_at is None
 
@@ -537,7 +548,8 @@ class TestPlantWater:
         data = _resolve(client, token_a, tag).json()
         assert data["can_execute"] is False
         assert data["reason"] == "NO_WATER_TASK"
-        resp = _execute(client, token_a, tag)
+        assert data["confirm"] is None
+        resp = _execute(client, token_a, tag, {"confirm": {"task_ids": []}})
         assert resp.status_code == 409
         assert resp.json()["detail"]["code"] == "TAG_NOTHING_TO_DO"
         assert db.query(PlantCareLog).count() == 0
@@ -581,8 +593,10 @@ class TestPlantWater:
         assert data["can_execute"] is True
         assert data["details"]["due_count"] == 1
         assert [p["name"] for p in data["details"]["plants"]] == ["Ficus", "Monstera"]
+        confirm = data["confirm"]
+        assert confirm == {"task_ids": [str(water_task_a.id)]}
 
-        resp = _execute(client, token_a, tag)
+        resp = _execute(client, token_a, tag, {"confirm": confirm})
         assert resp.status_code == 200
         assert resp.json()["changed"] is True
         db.refresh(water_task_a)
@@ -593,7 +607,11 @@ class TestPlantWater:
         data = _resolve(client, token_a, tag).json()
         assert data["can_execute"] is False
         assert data["reason"] == "NOTHING_DUE"
-        assert _execute(client, token_a, tag).json()["changed"] is False
+        # Wiederholter Scan mit der alten Bestätigung: nichts doppelt geloggt
+        again = _execute(client, token_a, tag, {"confirm": confirm}).json()
+        assert again["changed"] is False
+        assert again["reason"] == "ALREADY_DONE"
+        assert db.query(PlantCareLog).count() == 1
 
     def test_all_plants_without_plants(self, client, db, household_a, token_a):
         tag = _make_tag(db, household_a, "plant.water", "plant", None)
@@ -664,22 +682,98 @@ class TestChoreDone:
         assert data["can_execute"] is True
         assert data["details"]["due_date"] == today.isoformat()
         assert data["details"]["assigned_user_name"] == "Alice"
-
-        resp = _execute(client, token_a, tag)
-        assert resp.status_code == 200
         assignment = db.query(ChoreAssignment).filter(ChoreAssignment.due_date == today).one()
+        assert data["confirm"] == {"assignment_id": str(assignment.id)}
+
+        resp = _execute(client, token_a, tag, {"confirm": data["confirm"]})
+        assert resp.status_code == 200
+        assert resp.json()["changed"] is True
+        db.refresh(assignment)
         assert assignment.completed_at is not None
         assert assignment.completed_by_user_id == user_a.id
         assert "chore_assignment_updated" in [c.args[1] for c in _mock_socket_emit.call_args_list]
 
-        # Danach ist nichts mehr fällig (nächste Woche liegt ausserhalb von CHORE_EARLY_DAYS)
-        data = _resolve(client, token_a, tag).json()
-        assert data["can_execute"] is False
-        assert data["reason"] == "NOTHING_DUE"
-        assert data["details"]["last_done_by"] == "Alice"
-        resp = _execute(client, token_a, tag)
+        # Danach: laufende Periode erledigt → „schon erledigt“, nicht die nächste Woche
+        again = _resolve(client, token_a, tag).json()
+        assert again["can_execute"] is False
+        assert again["reason"] == "ALREADY_DONE"
+        assert again["confirm"] is None
+        assert again["details"]["last_done_by"] == "Alice"
+        resp = _execute(client, token_a, tag, {"confirm": data["confirm"]})
+        assert resp.status_code == 200
+        assert resp.json()["changed"] is False
+        assert resp.json()["reason"] == "ALREADY_DONE"
+
+    def test_execute_requires_confirmation(self, client, db, household_a, token_a, chore_a):
+        tag = _make_tag(db, household_a, "chore.assignment.done", "chore", chore_a.id)
+        for body in (None, {}, {"confirm": {}}, {"confirm": {"assignment_id": "nope"}}):
+            resp = _execute(client, token_a, tag, body)
+            assert resp.status_code == 422
+            assert resp.json()["detail"]["code"] == "TAG_CONFIRMATION_REQUIRED"
+        assert db.query(ChoreAssignment).filter(ChoreAssignment.completed_at.isnot(None)).count() == 0
+
+    def test_backlog_untouched_on_repeated_scans(self, client, db, household_a, token_a, user_a, chore_a):
+        """CASA-05: zweiter/dritter Scan arbeitet nicht den Rückstand ab."""
+        today = today_in_tz(household_a.timezone)
+        chore_a.anchor_date = today - timedelta(days=14)
+        db.commit()
+        backlog = [
+            ChoreAssignment(household_id=household_a.id, chore_id=chore_a.id, assigned_user_id=user_a.id, due_date=today - timedelta(days=d))
+            for d in (7, 14)
+        ]
+        db.add_all(backlog)
+        db.commit()
+        tag = _make_tag(db, household_a, "chore.assignment.done", "chore", chore_a.id)
+        confirm = _resolve(client, token_a, tag).json()["confirm"]
+        first = _execute(client, token_a, tag, {"confirm": confirm})
+        assert first.json()["changed"] is True
+        assert first.json()["result"]["assignment"]["due_date"] == today.isoformat()
+        # Doppelt ausgelöster Scan / Retry nach Netzfehler: gleiche Bestätigung
+        for _ in range(2):
+            resp = _execute(client, token_a, tag, {"confirm": confirm})
+            assert resp.status_code == 200
+            assert resp.json()["changed"] is False
+        # Neuer Scan: Bestätigungsseite meldet „schon erledigt“
+        assert _resolve(client, token_a, tag).json()["reason"] == "ALREADY_DONE"
+        for b in backlog:
+            db.refresh(b)
+            assert b.completed_at is None
+
+    def test_completed_in_app_after_resolve_does_not_complete_backlog(self, client, db, household_a, token_a, user_a, chore_a):
+        """CASA-18: resolve zeigt heute; jemand hakt in der App ab; execute ändert nichts anderes."""
+        today = today_in_tz(household_a.timezone)
+        chore_a.anchor_date = today - timedelta(days=7)
+        db.commit()
+        old = ChoreAssignment(household_id=household_a.id, chore_id=chore_a.id, assigned_user_id=user_a.id, due_date=today - timedelta(days=7))
+        db.add(old)
+        db.commit()
+        tag = _make_tag(db, household_a, "chore.assignment.done", "chore", chore_a.id)
+        confirm = _resolve(client, token_a, tag).json()["confirm"]
+        shown = db.get(ChoreAssignment, uuid.UUID(confirm["assignment_id"]))
+        assert shown.due_date == today
+        client.post(
+            f"/api/households/{household_a.id}/chores/assignments/{shown.id}/complete", headers=_auth(token_a)
+        )
+        resp = _execute(client, token_a, tag, {"confirm": confirm})
+        assert resp.status_code == 200
+        assert resp.json()["changed"] is False
+        db.refresh(old)
+        assert old.completed_at is None
+
+    def test_stale_confirmation_is_409(self, client, db, household_a, token_a, user_a, chore_a):
+        """Bestätigt war eine andere (nicht mehr aktuelle) Zuweisung → 409, nichts geändert."""
+        today = today_in_tz(household_a.timezone)
+        chore_a.anchor_date = today - timedelta(days=7)
+        db.commit()
+        old = ChoreAssignment(household_id=household_a.id, chore_id=chore_a.id, assigned_user_id=user_a.id, due_date=today - timedelta(days=7))
+        db.add(old)
+        db.commit()
+        tag = _make_tag(db, household_a, "chore.assignment.done", "chore", chore_a.id)
+        _resolve(client, token_a, tag)  # materialisiert den heutigen Termin
+        resp = _execute(client, token_a, tag, {"confirm": {"assignment_id": str(old.id)}})
         assert resp.status_code == 409
-        assert resp.json()["detail"]["code"] == "TAG_NOTHING_TO_DO"
+        assert resp.json()["detail"]["code"] == "TAG_CONFIRMATION_STALE"
+        assert db.query(ChoreAssignment).filter(ChoreAssignment.completed_at.isnot(None)).count() == 0
 
     def test_prefers_current_period_over_older_backlog(self, client, db, household_a, token_a, user_a, chore_a):
         today = today_in_tz(household_a.timezone)
@@ -692,7 +786,7 @@ class TestChoreDone:
         db.add(old)
         db.commit()
         tag = _make_tag(db, household_a, "chore.assignment.done", "chore", chore_a.id)
-        assert _execute(client, token_a, tag).status_code == 200
+        assert _confirm_execute(client, token_a, tag).status_code == 200
         db.refresh(old)
         assert old.completed_at is None
         current = db.query(ChoreAssignment).filter(ChoreAssignment.due_date == today).one()
@@ -705,7 +799,96 @@ class TestChoreDone:
         data = _resolve(client, token_a, tag).json()
         assert data["can_execute"] is False
         assert data["reason"] == "CHORE_INACTIVE"
-        assert _execute(client, token_a, tag).status_code == 409
+        assert _execute(client, token_a, tag, {"confirm": {"assignment_id": str(uuid.uuid4())}}).status_code == 409
+
+
+class TestRepeatedScansSameDay:
+    """PD-T1: Pflegeaufgaben und Gießen pro Haushaltstag höchstens einmal."""
+
+    def test_pet_care_task_twice(self, client, db, household_a, token_a, care_task_a):
+        tag = _make_tag(db, household_a, "pet.care_task.done", "pet_care_task", care_task_a.id)
+        assert _execute(client, token_a, tag).json()["changed"] is True
+        db.refresh(care_task_a)
+        next_due = care_task_a.next_due_at
+        data = _resolve(client, token_a, tag).json()
+        assert data["can_execute"] is False
+        assert data["reason"] == "ALREADY_DONE"
+        again = _execute(client, token_a, tag).json()
+        assert again["changed"] is False
+        assert again["reason"] == "ALREADY_DONE"
+        db.refresh(care_task_a)
+        assert care_task_a.next_due_at == next_due
+
+    def test_plant_care_task_twice_logs_once(self, client, db, household_a, token_a, plant_a):
+        task = _plant_task(db, household_a, plant_a, "fertilize", interval=30)
+        tag = _make_tag(db, household_a, "plant.care_task.done", "plant_care_task", task.id)
+        assert _execute(client, token_a, tag).json()["changed"] is True
+        assert _resolve(client, token_a, tag).json()["reason"] == "ALREADY_DONE"
+        assert _execute(client, token_a, tag).json()["changed"] is False
+        assert db.query(PlantCareLog).filter(PlantCareLog.care_task_id == task.id).count() == 1
+
+    def test_single_plant_waters_only_due_task(self, client, db, household_a, token_a, plant_a, water_task_a):
+        """Zwei Gießaufgaben, eine nicht fällig: nur die fällige wird erledigt (CASA-29)."""
+        today = today_in_tz(household_a.timezone)
+        winter = _plant_task(db, household_a, plant_a, "water", interval=30, due=today + timedelta(days=20), label="Winter")
+        tag = _make_tag(db, household_a, "plant.water", "plant", plant_a.id)
+        resp = _confirm_execute(client, token_a, tag)
+        assert resp.json()["changed"] is True
+        db.refresh(winter)
+        assert winter.last_done_at is None
+        assert winter.next_due_at == today + timedelta(days=20)
+        # Zweiter Scan am selben Tag: schon gegossen, die nicht fällige bleibt unberührt
+        data = _resolve(client, token_a, tag).json()
+        assert data["can_execute"] is False
+        assert data["reason"] == "ALREADY_DONE"
+        assert db.query(PlantCareLog).filter(PlantCareLog.plant_id == plant_a.id).count() == 1
+
+    def test_single_plant_none_due_waters_earliest(self, client, db, household_a, token_a, plant_a):
+        today = today_in_tz(household_a.timezone)
+        early = _plant_task(db, household_a, plant_a, "water", interval=7, due=today + timedelta(days=2))
+        late = _plant_task(db, household_a, plant_a, "water", interval=7, due=today + timedelta(days=5))
+        tag = _make_tag(db, household_a, "plant.water", "plant", plant_a.id)
+        data = _resolve(client, token_a, tag).json()
+        assert data["confirm"] == {"task_ids": [str(early.id)]}
+        assert _execute(client, token_a, tag, {"confirm": data["confirm"]}).json()["changed"] is True
+        db.refresh(late)
+        assert late.last_done_at is None
+        assert _resolve(client, token_a, tag).json()["reason"] == "ALREADY_DONE"
+
+    def test_water_all_only_waters_confirmed_tasks(self, client, db, household_a, token_a, plant_a, water_task_a):
+        """CASA-18: was nach resolve fällig wird, gießt execute nicht ungesehen mit."""
+        today = today_in_tz(household_a.timezone)
+        other = Plant(household_id=household_a.id, name="Ficus")
+        db.add(other)
+        db.commit()
+        later = _plant_task(db, household_a, other, "water", due=today + timedelta(days=3))
+        tag = _make_tag(db, household_a, "plant.water", "plant", None)
+        confirm = _resolve(client, token_a, tag).json()["confirm"]
+        later.next_due_at = today
+        db.commit()
+        resp = _execute(client, token_a, tag, {"confirm": confirm}).json()
+        assert resp["changed"] is True
+        assert len(resp["result"]["logs"]) == 1
+        db.refresh(later)
+        assert later.last_done_at is None
+
+    def test_feed_offers_other_unfed_slot(self, client, db, household_a, token_a, pet_a):
+        """PD-T2: Abends schon gefüttert, morgens nicht → Morgen-Fütterung ist möglich."""
+        tag = _make_tag(db, household_a, "pet.feed", "pet", pet_a.id)
+        with patch.object(tag_actions, "default_feeding_slot", return_value="evening"):
+            assert _execute(client, token_a, tag).status_code == 200
+            data = _resolve(client, token_a, tag).json()
+        assert data["can_execute"] is True
+        assert data["details"]["slot"] == "morning"
+        assert data["details"]["unfed_slots"] == ["morning"]
+        assert _execute(client, token_a, tag, {"slot": "morning"}).json()["changed"] is True
+
+    def test_todo_already_done_reason(self, client, db, household_a, token_a, todo_a):
+        tag = _make_tag(db, household_a, "todo.done", "todo", todo_a.id)
+        assert _execute(client, token_a, tag).json()["changed"] is True
+        again = _execute(client, token_a, tag).json()
+        assert again["changed"] is False
+        assert again["reason"] == "ALREADY_DONE"
 
 
 class TestShoppingListOpen:

@@ -1,6 +1,7 @@
 import api from '../api/client'
 import type {
   TagCreatePayload,
+  TagExecuteParams,
   TagExecuteResult,
   TagInfo,
   TagResolveResult,
@@ -20,7 +21,7 @@ export interface TagsRepository {
   remove(householdId: string, tagId: string): Promise<void>
   /** Was würde der Tag tun? Ändert nichts (ausser Nutzungszähler bei *.open). */
   resolve(token: string): Promise<TagResolveResult>
-  execute(token: string, params?: { slot?: 'morning' | 'evening' }): Promise<TagExecuteResult>
+  execute(token: string, params?: TagExecuteParams): Promise<TagExecuteResult>
 }
 
 export function createOnlineTagsRepository(): TagsRepository {

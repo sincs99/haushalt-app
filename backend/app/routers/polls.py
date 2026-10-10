@@ -22,7 +22,13 @@ from app.models import (
     Recipe,
 )
 from app.routers.events import _event_response
-from app.services.event_times import household_tz, to_utc
+from app.services.event_times import (
+    all_day_start_utc,
+    household_tz,
+    to_household_time,
+    to_utc,
+    wall_time_to_utc,
+)
 from app.services.household_time import household_today
 from app.services.locking import lock_row
 from app.socket_manager import emit_to_household_sync
@@ -124,6 +130,19 @@ def _get_poll_or_404(
     return poll
 
 
+def _tz(db: Session, household_id: uuid.UUID):
+    household = db.get(Household, household_id)
+    return household_tz(household.timezone if household else None)
+
+
+def _poll_response(poll: EventPoll, tz) -> PollResponse:
+    """Response mit Optionszeiten in Haushaltszeit wie bei Terminen (CASA-60, PD-K5)."""
+    response = PollResponse.model_validate(poll)
+    for option in response.options:
+        option.starts_at = to_household_time(option.starts_at, tz)
+    return response
+
+
 def _already_decided() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -167,7 +186,8 @@ def list_polls(
     )
     if status_filter is not None:
         query = query.filter(EventPoll.status == status_filter)
-    return query.order_by(EventPoll.created_at.desc()).all()
+    tz = _tz(db, household_id)
+    return [_poll_response(p, tz) for p in query.order_by(EventPoll.created_at.desc()).all()]
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +207,17 @@ def create_poll(
             detail=error_detail(
                 ErrorCode.POLL_MEAL_DATE_REQUIRED,
                 "meal_date is required for meal polls",
+            ),
+        )
+
+    # Termin-Optionen brauchen eine Uhrzeit (PD-K2) — sonst entstünde beim
+    # Entscheiden ein Termin "jetzt"
+    if body.poll_type == "event" and any(opt.starts_at is None for opt in body.options):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.POLL_OPTION_TIME_REQUIRED,
+                "Every option of an event poll needs starts_at",
             ),
         )
 
@@ -222,13 +253,14 @@ def create_poll(
             )
 
     # Optionszeiten ohne Offset gelten wie bei Terminen als Haushaltszeit
-    tz = household_tz(db.get(Household, household_id).timezone)
+    # (Sommerzeit-Lücke → 422 EVENT_TIME_NONEXISTENT)
+    tz = _tz(db, household_id)
     for opt in body.options:
         option = EventPollOption(
             poll_id=poll.id,
             household_id=household_id,
             label=opt.label,
-            starts_at=to_utc(opt.starts_at, tz) if opt.starts_at is not None else None,
+            starts_at=wall_time_to_utc(opt.starts_at, tz) if opt.starts_at is not None else None,
             recipe_id=opt.recipe_id,
         )
         db.add(option)
@@ -239,12 +271,13 @@ def create_poll(
     # Reload mit eager-load für Response
     poll = _get_poll_or_404(poll.id, household_id, db)
 
+    response = _poll_response(poll, tz)
     emit_to_household_sync(
         str(household_id),
         "poll_created",
-        PollResponse.model_validate(poll).model_dump(mode="json"),
+        response.model_dump(mode="json"),
     )
-    return poll
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +290,7 @@ def get_poll(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    return _get_poll_or_404(poll_id, household_id, db)
+    return _poll_response(_get_poll_or_404(poll_id, household_id, db), _tz(db, household_id))
 
 
 # ---------------------------------------------------------------------------
@@ -322,7 +355,7 @@ def vote_poll(
         if existing_vote.option_id == body.option_id:
             # Gleiche Option → keine Änderung, Poll neu laden
             poll = _get_poll_or_404(poll_id, household_id, db)
-            return poll
+            return _poll_response(poll, _tz(db, household_id))
         # Andere Option → alte Stimme löschen
         db.delete(existing_vote)
         db.flush()
@@ -344,12 +377,13 @@ def vote_poll(
     # Reload für Response
     poll = _get_poll_or_404(poll_id, household_id, db)
 
+    response = _poll_response(poll, _tz(db, household_id))
     emit_to_household_sync(
         str(household_id),
         "poll_voted",
-        PollResponse.model_validate(poll).model_dump(mode="json"),
+        response.model_dump(mode="json"),
     )
-    return poll
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -404,17 +438,22 @@ def decide_poll(
         )
 
     # Event erstellen
+    tz = _tz(db, household_id)
     if chosen_option.starts_at is not None:
         # Naive Werte aus der DB (SQLite) sind bereits UTC
         event_starts_at = to_utc(chosen_option.starts_at, timezone.utc)
+        all_day = False
     else:
-        event_starts_at = datetime.now(timezone.utc)
+        # Altbestand ohne Uhrzeit (neue Termin-Optionen brauchen eine, PD-K2):
+        # ganztägig am heutigen Haushaltsdatum statt "jetzt" mit Mikrosekunden
+        event_starts_at = all_day_start_utc(household_today(db, household_id), tz)
+        all_day = True
     event = Event(
         household_id=household_id,
         calendar_id=body.calendar_id,
         title=body.event_title,
         starts_at=event_starts_at,
-        all_day=False,
+        all_day=all_day,
         participant_ids=[],
         created_by_user_id=membership.user_id,
     )
@@ -428,20 +467,20 @@ def decide_poll(
     # Reload für Response
     poll = _get_poll_or_404(poll_id, household_id, db)
 
+    response = _poll_response(poll, tz)
     emit_to_household_sync(
         str(household_id),
         "poll_decided",
-        PollResponse.model_validate(poll).model_dump(mode="json"),
+        response.model_dump(mode="json"),
     )
     # Vollständiger Termin wie bei POST /events (Zeiten in Haushaltszeit): der
     # Kalender fügt das Objekt direkt in seine Liste ein
-    tz = household_tz(db.get(Household, household_id).timezone)
     emit_to_household_sync(
         str(household_id),
         "event_created",
         _event_response(event, tz).model_dump(mode="json"),
     )
-    return poll
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -521,10 +560,11 @@ def meal_decide_poll(
     poll = _get_poll_or_404(poll_id, household_id, db)
 
     # Socket-Events
+    response = _poll_response(poll, _tz(db, household_id))
     emit_to_household_sync(
         str(household_id),
         "poll_decided",
-        PollResponse.model_validate(poll).model_dump(mode="json"),
+        response.model_dump(mode="json"),
     )
     emit_to_household_sync(
         str(household_id),
@@ -532,4 +572,4 @@ def meal_decide_poll(
         {"date": str(meal_date)},
     )
 
-    return poll
+    return response

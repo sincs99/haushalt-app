@@ -11,7 +11,7 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Calendar, Event, Household, HouseholdMember
-from app.services.event_times import household_tz, range_bounds, to_household_time, to_utc
+from app.services.event_times import household_tz, range_bounds, to_household_time, wall_time_to_utc
 from app.services.household_checks import assert_users_allowed
 from app.services.locking import lock_row
 from app.socket_manager import emit_to_household_sync
@@ -166,8 +166,8 @@ def create_event(
     db: Session = Depends(get_db),
 ):
     tz = _tz(db, household_id)
-    starts_at = to_utc(body.starts_at, tz)
-    ends_at = to_utc(body.ends_at, tz) if body.ends_at is not None else None
+    starts_at = wall_time_to_utc(body.starts_at, tz)
+    ends_at = wall_time_to_utc(body.ends_at, tz) if body.ends_at is not None else None
     if ends_at is not None and ends_at < starts_at:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -248,7 +248,7 @@ def update_event(
     tz = _tz(db, household_id)
     for key in ("starts_at", "ends_at"):
         if update_data.get(key) is not None:
-            update_data[key] = to_utc(update_data[key], tz)
+            update_data[key] = wall_time_to_utc(update_data[key], tz)
 
     # Bestimme die effektiven Werte (gesendet oder bestehend), alles in UTC
     effective_starts = update_data.get("starts_at") or to_household_time(item.starts_at, tz)

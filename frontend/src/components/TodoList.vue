@@ -5,6 +5,7 @@ import { useToast } from '../composables/useToast'
 import { useAsyncAction } from '../composables/useAsyncAction'
 import { useI18n } from 'vue-i18n'
 import { formatDateShort } from '../utils/dates'
+import { nextPendingReminder } from '../utils/todoReminders'
 import type { TodoItem } from '../types'
 import { PhPencilSimple, PhX, PhListChecks, PhBell, PhPlus } from '@phosphor-icons/vue'
 import BaseButton from './ui/BaseButton.vue'
@@ -114,11 +115,9 @@ function formatReminderDate(isoString: string): string {
   })
 }
 
-// Nächste zukünftige Erinnerung eines Todos
+// Nächste ausstehende Erinnerung (zukünftig und noch nicht gesendet)
 function getNextReminder(todo: TodoItem): string | null {
-  const now = new Date()
-  const future = todo.reminders.filter(r => new Date(r.remind_at) > now)
-  return future.length > 0 ? future[0].remind_at : null
+  return nextPendingReminder(todo.reminders)
 }
 
 // Reminder löschen

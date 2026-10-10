@@ -401,7 +401,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | PATCH | `/api/households/{id}/todos/{todo_id}` | ✅ | Todo aktualisieren |
 | DELETE | `/api/households/{id}/todos/{todo_id}` | ✅ | Todo löschen |
 | POST | `/api/households/{id}/todos/{todo_id}/claim` | ✅ | Todo übernehmen |
-| POST | `/api/households/{id}/todos/{todo_id}/reminders/` | ✅ | Erinnerung anlegen (maximal 5 pro Todo) |
+| POST | `/api/households/{id}/todos/{todo_id}/reminders/` | ✅ | Erinnerung anlegen (maximal 5 pro Todo; nicht an erledigte Todos → 422 `TODO_IS_DONE`; `remind_at` ohne Offset = Wanduhrzeit des Haushalts, wie bei Terminen; Vergangenheit → 422 `REMINDER_IN_PAST`). Erledigen markiert Erinnerungen nicht mehr; Wiedereröffnen schaltet künftige wieder scharf |
 | DELETE | `/api/households/{id}/todos/{todo_id}/reminders/{reminder_id}` | ✅ | Erinnerung löschen |
 | **Expenses** | | | |
 | GET | `/api/households/{id}/expenses/` | ✅ | Ausgaben-Liste (nach Datum absteigend, `limit`/`offset`) |
@@ -544,7 +544,7 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `shopping_items_bulk_updated` | Server → Room | `{ item_ids, changes: { store } }` |
 | **Todos** | | |
 | `todo_created` | Server → Room | `TodoItem` |
-| `todo_updated` | Server → Room | `TodoItem` (auch bei Claim und Erinnerungen) |
+| `todo_updated` | Server → Room | `TodoItem` (auch bei Claim und Erinnerungen; Erinnerung anlegen/löschen erhöht `version`) |
 | `todo_deleted` | Server → Room | `{ id }` |
 | **Expenses** | | |
 | `expense_created` | Server → Room | `ExpenseResponse` (inkl. shares; auch beim Buchen einer Rechnung) |

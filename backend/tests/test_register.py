@@ -2,7 +2,7 @@
 from unittest.mock import patch
 
 from app.core.error_codes import ErrorCode
-from app.models import HouseholdMember, User
+from app.models import Calendar, Household, HouseholdMember, User
 
 
 class TestRegisterWithHouseholdName:
@@ -23,6 +23,23 @@ class TestRegisterWithHouseholdName:
         m = db.query(HouseholdMember).filter_by(user_id=user.id).first()
         assert m is not None
         assert m.role == "admin"
+
+    def test_register_household_matches_households_endpoint(self, client, db):
+        """Register und POST /households/ nutzen denselben Helfer: Default-Kalender + Code-Ablauf."""
+        resp = client.post("/api/auth/register", json={
+            "email": "cal@test.com",
+            "password": "password123",
+            "display_name": "Cal",
+            "household_name": "  Kalender-Haushalt  ",
+        })
+        assert resp.status_code == 200
+        user = db.query(User).filter_by(email="cal@test.com").first()
+        m = db.query(HouseholdMember).filter_by(user_id=user.id).first()
+        household = db.get(Household, m.household_id)
+        assert household.name == "Kalender-Haushalt"
+        assert household.invite_code_expires_at is not None
+        calendars = db.query(Calendar).filter_by(household_id=household.id).all()
+        assert [c.name for c in calendars] == ["Allgemein"]
 
 
 class TestRegisterWithInviteCode:

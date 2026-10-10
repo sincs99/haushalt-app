@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.core.error_codes import ErrorCode, error_detail
 from app.models import (
+    Calendar,
     Chore,
     ChoreAssignment,
     EventPoll,
@@ -31,7 +32,12 @@ from app.models import (
     Todo,
     WidgetToken,
 )
-from app.services.invite_code import find_household_by_invite_code, is_invite_code_expired
+from app.services.invite_code import (
+    find_household_by_invite_code,
+    generate_unique_invite_code,
+    is_invite_code_expired,
+    new_invite_code_expiry,
+)
 from app.services.locking import lock_household
 
 
@@ -71,6 +77,36 @@ def ensure_admin(db: Session, household_id: uuid.UUID) -> HouseholdMember | None
 
 def member_count(db: Session, household_id: uuid.UUID) -> int:
     return db.query(HouseholdMember).filter(HouseholdMember.household_id == household_id).count()
+
+
+# Default-Kalender jedes neuen Haushalts, damit Events sofort möglich sind
+DEFAULT_CALENDAR_NAME = "Allgemein"
+DEFAULT_CALENDAR_COLOR = "#5B8DEF"
+
+
+def create_household_with_admin(db: Session, name: str, user_id: uuid.UUID) -> tuple[Household, HouseholdMember]:
+    """Legt einen neuen Haushalt mit ``user_id`` als Admin an. Kein Commit.
+
+    Einziger Weg für POST /households/ und die Registrierung mit Haushaltsnamen:
+    eindeutiger Einladungscode mit Ablaufdatum, Admin-Mitgliedschaft, Default-Kalender.
+    """
+    household = Household(
+        name=name.strip(),
+        invite_code=generate_unique_invite_code(db),
+        invite_code_expires_at=new_invite_code_expiry(),
+    )
+    db.add(household)
+    db.flush()
+    membership = HouseholdMember(household_id=household.id, user_id=user_id, role="admin")
+    db.add(membership)
+    db.add(Calendar(
+        household_id=household.id,
+        name=DEFAULT_CALENDAR_NAME,
+        color=DEFAULT_CALENDAR_COLOR,
+        position=0,
+    ))
+    db.flush()
+    return household, membership
 
 
 def join_by_invite_code(db: Session, raw_code: str, user_id: uuid.UUID) -> tuple[Household, HouseholdMember]:

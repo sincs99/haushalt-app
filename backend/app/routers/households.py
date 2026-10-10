@@ -11,17 +11,16 @@ from app.core.deps import get_current_user, verify_household_access, verify_hous
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import get_db
-from app.models import Budget, Calendar, Expense, Household, HouseholdMember, RecurringBill, User
+from app.models import Budget, Expense, Household, HouseholdMember, RecurringBill, User
 from app.services.finance_rules import add_months, validate_month
 from app.services.household_time import household_today
 from app.services.invite_code import (
-    generate_unique_invite_code,
     is_invite_code_expired,
-    new_invite_code_expiry,
     rotate_household_invite_code,
 )
 from app.services.locking import lock_household
 from app.services.membership import (
+    create_household_with_admin,
     ensure_admin,
     join_by_invite_code,
     locked_membership,
@@ -477,30 +476,7 @@ def create_household(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    invite_code = generate_unique_invite_code(db)
-    household = Household(
-        name=body.name.strip(),
-        invite_code=invite_code,
-        invite_code_expires_at=new_invite_code_expiry(),
-    )
-    db.add(household)
-    db.flush()
-
-    membership = HouseholdMember(
-        household_id=household.id,
-        user_id=current_user.id,
-        role="admin",
-    )
-    db.add(membership)
-
-    # Default-Kalender "Allgemein" anlegen, damit Events sofort möglich sind
-    default_calendar = Calendar(
-        household_id=household.id,
-        name="Allgemein",
-        color="#5B8DEF",
-        position=0,
-    )
-    db.add(default_calendar)
+    household, _ = create_household_with_admin(db, body.name, current_user.id)
 
     # Werte vor Commit sichern
     result = HouseholdCreateResponse(

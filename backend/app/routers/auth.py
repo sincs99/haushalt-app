@@ -22,13 +22,9 @@ from app.core.security import (
     verify_password,
 )
 from app.database import get_db
-from app.models import Household, HouseholdMember, RefreshToken, User
-from app.services.invite_code import (
-    generate_unique_invite_code,
-    new_invite_code_expiry,
-)
+from app.models import HouseholdMember, RefreshToken, User
 from app.services.locking import lock_row
-from app.services.membership import join_by_invite_code
+from app.services.membership import create_household_with_admin, join_by_invite_code
 from app.socket_manager import disconnect_user_sync, emit_to_household_sync
 
 logger = logging.getLogger(__name__)
@@ -333,16 +329,7 @@ def register(
         }
     else:
         # ── Pfad A: Neuen Haushalt erstellen (Standard, wie bisher) ──
-        invite_code = generate_unique_invite_code(db)
-        household = Household(
-            name=data.household_name.strip(),
-            invite_code=invite_code,
-            invite_code_expires_at=new_invite_code_expiry(),
-        )
-        db.add(household)
-        db.flush()
-        db.add(HouseholdMember(household_id=household.id, user_id=user.id, role="admin"))
-        db.flush()
+        household, _ = create_household_with_admin(db, data.household_name, user.id)
 
     household_id = household.id
     pair, _ = _create_token_pair(str(user.id), db)

@@ -161,7 +161,13 @@ def default_feeding_slot(household: Household) -> str:
 
 
 def _pet_targets(db: Session, household_id: uuid.UUID) -> list[TargetOption]:
-    pets = db.query(Pet).filter(Pet.household_id == household_id).order_by(Pet.name).all()
+    # Archivierte Tiere sind keine Tag-Ziele mehr (PD-P2)
+    pets = (
+        db.query(Pet)
+        .filter(Pet.household_id == household_id, Pet.archived.is_(False))
+        .order_by(Pet.name)
+        .all()
+    )
     return [TargetOption(p.id, p.name) for p in pets]
 
 
@@ -188,7 +194,7 @@ def _describe_pet_feed(ctx: TagContext) -> TagDescription:
     today = _get_household_today(db, household_id)
     slot = default_feeding_slot(ctx.household)
 
-    pet_query = db.query(Pet).filter(Pet.household_id == household_id)
+    pet_query = db.query(Pet).filter(Pet.household_id == household_id, Pet.archived.is_(False))
     if ctx.target is not None:
         pet_query = pet_query.filter(Pet.id == ctx.target.id)
     pets = pet_query.order_by(Pet.name).all()
@@ -277,7 +283,7 @@ def _care_task_targets(db: Session, household_id: uuid.UUID) -> list[TargetOptio
     rows = (
         db.query(PetCareTask, Pet.name)
         .join(Pet, PetCareTask.pet_id == Pet.id)
-        .filter(PetCareTask.household_id == household_id)
+        .filter(PetCareTask.household_id == household_id, Pet.archived.is_(False))
         .order_by(Pet.name, PetCareTask.name)
         .all()
     )

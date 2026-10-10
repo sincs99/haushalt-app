@@ -244,6 +244,8 @@ def process_pet_care_tasks(db: Session, now: datetime) -> int:
             PetCareTask.notified_at.is_(None),
             # Grobfilter (+1 Tag Puffer für Zeitzonen), exakt pro Household unten
             PetCareTask.next_due_at <= (now + timedelta(days=1)).date(),
+            # Keine Erinnerungen für archivierte Tiere (PD-P2)
+            Pet.archived.is_(False),
         )
         .all()
     )

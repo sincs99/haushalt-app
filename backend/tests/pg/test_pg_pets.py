@@ -25,7 +25,7 @@ def test_feed_all_racing_single_feeding_feeds_every_pet(client, household, db):
     for trial in range(10):
         slot = "morning" if trial % 2 == 0 else "evening"
 
-        def act(i):
+        def act(i, slot=slot):
             if i == 0:
                 return client.post(
                     household.url(f"/pets/{pets[0]}/feedings"),
@@ -78,3 +78,29 @@ def test_feed_all_parallel_feed_all_never_duplicates(client, household, db):
         == 3
     )
 
+
+
+def test_parallel_give_with_same_client_id_logs_once(client, household, db):
+    """CASA-14: dieselbe Gabe von zwei Geräten/Retries (gleiche Client-ID) → ein Log-Eintrag."""
+    from app.models import MedicationLog
+
+    pet = _create_pets(client, household, ["Mia"])[0]
+    med = client.post(
+        household.url(f"/pets/{pet}/medications"), json={"name": "Antibiotikum"}, headers=household.headers()
+    ).json()
+    client_id = str(uuid.uuid4())
+
+    results = run_parallel(
+        lambda i: client.post(
+            household.url(f"/pets/{pet}/medications/{med['id']}/give"),
+            json={"id": client_id},
+            headers=household.headers(0),
+        ),
+        4,
+    )
+    codes = status_codes(results)
+    assert 500 not in codes, codes
+    assert set(codes) <= {200, 201}, codes
+    assert {r.json()["id"] for r in results} == {client_id}
+    db.expire_all()
+    assert db.query(MedicationLog).filter(MedicationLog.medication_id == uuid.UUID(med["id"])).count() == 1

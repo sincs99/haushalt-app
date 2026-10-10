@@ -9,6 +9,7 @@ import { deferred, HOUSEHOLD_ID, USER_ID } from './helpers'
 const { repo, householdRepo, auth } = vi.hoisted(() => ({
   repo: {
     fetchAll: vi.fn(), fetchFeedingStatus: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(),
+    archive: vi.fn(), unarchive: vi.fn(), fetchHistory: vi.fn(),
     createFeeding: vi.fn(), deleteFeeding: vi.fn(), feedAll: vi.fn(),
     fetchMedications: vi.fn(), createMedication: vi.fn(), updateMedication: vi.fn(),
     removeMedication: vi.fn(), giveMedication: vi.fn(), fetchMedicationLog: vi.fn(),
@@ -94,6 +95,41 @@ describe('Pets', () => {
     await expect(p).rejects.toThrow('x')
     expect(store.pets.map(x => x.id)).toEqual(['a', 'b'])
     expect(store.feedingStatus).toHaveLength(2)
+  })
+})
+
+describe('Archiv (PD-P2)', () => {
+  test('archivePet entfernt das Tier aus dem Fütterungsstatus, unarchivePet lädt ihn neu', async () => {
+    const store = usePetsStore()
+    store.pets = [pet('p1', { archived: false }), pet('p2', { archived: false })]
+    store.feedingStatus = [status('p1'), status('p2')]
+    repo.archive.mockResolvedValue(pet('p1', { archived: true }))
+    await store.archivePet('p1')
+    expect(store.pets[0].archived).toBe(true)
+    expect(store.feedingStatus.map(s => s.pet_id)).toEqual(['p2'])
+
+    repo.unarchive.mockResolvedValue(pet('p1', { archived: false }))
+    repo.fetchFeedingStatus.mockResolvedValue([status('p1'), status('p2')])
+    await store.unarchivePet('p1')
+    await vi.waitFor(() => expect(store.feedingStatus).toHaveLength(2))
+    expect(store.pets[0].archived).toBe(false)
+  })
+
+  test('Socket pet_updated mit archived=true entfernt den Fütterungsstatus', () => {
+    const store = usePetsStore()
+    store.pets = [pet('p1', { archived: false })]
+    store.feedingStatus = [status('p1')]
+    store.handlePetUpdated(pet('p1', { archived: true }))
+    expect(store.feedingStatus).toEqual([])
+    expect(repo.fetchFeedingStatus).not.toHaveBeenCalled()
+  })
+
+  test('fetchPetHistory liefert die Zahlen für die Lösch-Warnung', async () => {
+    const store = usePetsStore()
+    const history = { feedings: 3, medications: 1, medication_logs: 2, care_tasks: 0 }
+    repo.fetchHistory.mockResolvedValue(history)
+    await expect(store.fetchPetHistory('p1')).resolves.toEqual(history)
+    expect(repo.fetchHistory).toHaveBeenCalledWith(HOUSEHOLD_ID, 'p1')
   })
 })
 
@@ -252,6 +288,17 @@ describe('Medikation', () => {
     store.handleMedicationGiven({ id: 'x', medication_id: 'm2' } as any)
     expect(store.medicationLogs.m1[0].id).toBe('sock')
     expect(store.medicationLogs.m2).toHaveLength(1)
+  })
+
+  test('giveMedication sendet eine Client-ID (Idempotenz bei Retry, CASA-14)', async () => {
+    const store = usePetsStore()
+    repo.giveMedication.mockResolvedValue({ id: 'g', medication_id: 'm1' })
+    await store.giveMedication('p1', 'm1')
+    await store.giveMedication('p1', 'm1')
+    const ids = repo.giveMedication.mock.calls.map(call => call[3])
+    expect(ids[0]).toMatch(/^[0-9a-f-]{36}$/)
+    // Jede bewusste Gabe ist eine neue Gabe (nie still zusammenführen)
+    expect(ids[1]).not.toBe(ids[0])
   })
 
   test('fetchMedicationLog kürzt auf 10 und schluckt Fehler', async () => {

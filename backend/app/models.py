@@ -851,6 +851,14 @@ class Pet(Base):
     health_entries: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # health_entries Schema: [{"title": str, "subtitle": str, "severity": str}]
     # severity: "green" | "yellow" | "red"
+    # Archiviert (verstorben/abgegeben, PD-P2): Verlauf bleibt erhalten, das Tier
+    # erscheint aber nicht mehr in Fütterung, Dashboard, Erinnerungen und Tag-Zielen.
+    archived: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

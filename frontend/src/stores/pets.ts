@@ -5,7 +5,7 @@ import { createOnlinePetsRepository } from '../repositories/petsRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import { localDateString } from '../utils/dates'
 import type {
-  Pet, PetCreatePayload, PetUpdatePayload, PetFeedingStatus, FeedingLog, FeedingSlot,
+  Pet, PetCreatePayload, PetUpdatePayload, PetFeedingStatus, PetHistory, FeedingLog, FeedingSlot,
   HouseholdMemberInfo, Medication, MedicationCreatePayload, MedicationUpdatePayload, MedicationLog,
   PetCareTask, PetCareTaskCreatePayload, PetCareTaskUpdatePayload,
 } from '../types'
@@ -171,6 +171,39 @@ export const usePetsStore = defineStore('pets', () => {
       }
       throw error
     }
+  }
+
+  /**
+   * Tier archivieren (verstorben/abgegeben, PD-P2): Verlauf bleibt, das Tier fällt aus
+   * Fütterung, Dashboard und Erinnerungen. Rückgängig über `unarchivePet`.
+   */
+  async function archivePet(petId: string) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+    const active = captureHousehold(householdId)
+
+    const updated = await repo.archive(householdId, petId)
+    if (active()) handlePetUpdated(updated)
+    return updated
+  }
+
+  async function unarchivePet(petId: string) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    if (!householdId) return
+    const active = captureHousehold(householdId)
+
+    const updated = await repo.unarchive(householdId, petId)
+    if (active()) handlePetUpdated(updated)
+    return updated
+  }
+
+  /** Umfang des Verlaufs (Fütterungen, Gaben, Pflegeaufgaben) für die Lösch-Warnung. */
+  async function fetchPetHistory(petId: string): Promise<PetHistory | undefined> {
+    const householdId = useAuthStore().currentHouseholdId
+    if (!householdId) return
+    return repo.fetchHistory(householdId, petId)
   }
 
   /**
@@ -340,7 +373,8 @@ export const usePetsStore = defineStore('pets', () => {
     if (!householdId) return
     const active = captureHousehold(householdId)
 
-    const log = await repo.giveMedication(householdId, petId, medicationId)
+    // Client-ID: ein Retry derselben Gabe (Timeout, Doppel-Request) wird nicht doppelt gespeichert
+    const log = await repo.giveMedication(householdId, petId, medicationId, crypto.randomUUID())
     if (active() && (!medicationsPetId.value || medicationsPetId.value === petId)) upsertMedicationLog(log)
     return log
   }
@@ -375,9 +409,13 @@ export const usePetsStore = defineStore('pets', () => {
 
   function handlePetUpdated(pet: Pet) {
     const idx = pets.value.findIndex(p => p.id === pet.id)
+    const wasArchived = idx !== -1 ? pets.value[idx].archived : pet.archived
     if (idx !== -1) {
       pets.value[idx] = pet
     }
+    // Archivierte Tiere haben keinen Fütterungsstatus mehr; reaktivierte brauchen ihn wieder
+    if (pet.archived) feedingStatus.value = feedingStatus.value.filter(s => s.pet_id !== pet.id)
+    else if (wasArchived) fetchFeedingStatus()
   }
 
   function handlePetDeleted(data: { id: string }) {
@@ -577,6 +615,9 @@ export const usePetsStore = defineStore('pets', () => {
     createPet,
     updatePet,
     removePet,
+    archivePet,
+    unarchivePet,
+    fetchPetHistory,
     toggleFeeding,
     feedAll,
     undoFeedings,

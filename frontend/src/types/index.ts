@@ -574,7 +574,18 @@ export interface Pet {
   vet_name: string | null
   food_notes: string | null
   health_entries: HealthEntry[] | null
+  // Archiv (verstorben/abgegeben): Verlauf bleibt, keine Fütterung/Erinnerungen mehr
+  archived: boolean
+  archived_at: string | null
   created_at: string
+}
+
+/** Umfang des Verlaufs eines Tiers (Warnung vor endgültigem Löschen). */
+export interface PetHistory {
+  feedings: number
+  medications: number
+  medication_logs: number
+  care_tasks: number
 }
 
 export interface PetCreatePayload {

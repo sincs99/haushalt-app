@@ -213,7 +213,51 @@ export const useAuthStore = defineStore('auth', () => {
         currentHouseholdId.value = data.households[0].id
         localStorage.setItem(HOUSEHOLD_KEY, currentHouseholdId.value!)
       }
+    } else if (currentHouseholdId.value) {
+      // Kein Haushalt mehr (z.B. entfernt, während das Gerät offline war)
+      currentHouseholdId.value = null
+      localStorage.removeItem(HOUSEHOLD_KEY)
     }
+  }
+
+  // ── Mitgliedschaft neu prüfen (CASA-49) ──
+
+  let _revalidatePromise: Promise<void> | null = null
+
+  /**
+   * Lädt /me neu und behandelt den aktuellen Haushalt als verlassen, wenn er fehlt.
+   * Aufgerufen nach einem Socket-Reconnect (Entfernung verpasst, solange offline), bei
+   * 403 NOT_HOUSEHOLD_MEMBER auf den aktuellen Haushalt und beim entsprechenden
+   * Socket-`error`. Single-Flight; Fehler (offline) werden verschluckt.
+   */
+  async function revalidateMembership(): Promise<void> {
+    if (!token.value) return
+    if (_revalidatePromise) return _revalidatePromise
+    _revalidatePromise = (async () => {
+      const previousId = currentHouseholdId.value
+      const previousName = households.value.find(h => h.id === previousId)?.name ?? ''
+      try {
+        await fetchMe()
+      } catch {
+        return // Offline/Serverfehler — der nächste Anlass prüft erneut
+      }
+      if (!previousId || households.value.some(h => h.id === previousId)) return
+      // Eigener Austritt läuft gerade → die View meldet und navigiert selbst
+      if (_ownLeaves.has(previousId)) return
+      _announceRemoval(previousName)
+    })()
+    try {
+      await _revalidatePromise
+    } finally {
+      _revalidatePromise = null
+    }
+  }
+
+  /** Socket-`error` vom Server: nicht (mehr) Mitglied des Haushalts → wie 403 behandeln. */
+  function handleSocketError(data: { code?: string; household_id?: string } | null | undefined) {
+    if (data?.code !== 'NOT_HOUSEHOLD_MEMBER') return
+    if (data.household_id && data.household_id !== currentHouseholdId.value) return
+    void revalidateMembership()
   }
 
   // ── Switch Household ──
@@ -439,25 +483,31 @@ export const useAuthStore = defineStore('auth', () => {
       const removedName = households.value.find(h => h.id === householdId)?.name ?? ''
       // Haushalt aus Liste entfernen
       households.value = households.value.filter(h => h.id !== householdId)
-
-      // Toast + Navigation
-      const { showToast } = useToast()
-      const { t } = i18n.global
-
       if (households.value.length > 0) {
         // Auf ersten verbleibenden Haushalt wechseln
         switchHousehold(households.value[0].id)
-        showToast(t('household.switchedTo', { name: households.value[0].name }), 'info')
       } else {
-        // Kein Haushalt mehr → Zustand "kein Haushalt"
         currentHouseholdId.value = null
         localStorage.removeItem(HOUSEHOLD_KEY)
-        showToast(t('household.youWereRemoved', { name: removedName }), 'info')
-        // Navigation analog logout()
-        import('../router').then(({ default: router }) => {
-          router.replace('/no-household')
-        })
       }
+      _announceRemoval(removedName)
+    }
+  }
+
+  /** Toast + Navigation, nachdem der aktuelle Haushalt weggefallen ist (Liste schon aktualisiert). */
+  function _announceRemoval(removedName: string) {
+    const { showToast } = useToast()
+    const { t } = i18n.global
+
+    if (households.value.length > 0) {
+      showToast(t('household.switchedTo', { name: households.value[0].name }), 'info')
+    } else {
+      // Kein Haushalt mehr → Zustand "kein Haushalt"
+      showToast(t('household.youWereRemoved', { name: removedName }), 'info')
+      // Navigation analog logout()
+      import('../router').then(({ default: router }) => {
+        router.replace('/no-household')
+      })
     }
   }
 
@@ -483,11 +533,13 @@ export const useAuthStore = defineStore('auth', () => {
     refreshForSocket,
     switchHousehold,
     leaveHousehold,
+    revalidateMembership,
     logout,
     // Socket-Event-Handler
     handleHouseholdUpdated,
     handleMemberJoined,
     handleMemberLeft,
     handleMemberRemoved,
+    handleSocketError,
   }
 })

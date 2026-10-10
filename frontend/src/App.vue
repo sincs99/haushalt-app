@@ -116,6 +116,7 @@ watch(
     off('household_member_joined', authStore.handleMemberJoined)
     off('household_member_left', authStore.handleMemberLeft)
     off('household_member_removed', authStore.handleMemberRemoved)
+    off('error', authStore.handleSocketError)
     off('budget_updated', dashboardStore.invalidate)
     off('recurring_bill_booked', dashboardStore.invalidate)
     off('todo_created', dashboardStore.invalidate)
@@ -213,6 +214,8 @@ watch(
       on('household_member_joined', authStore.handleMemberJoined)
       on('household_member_left', authStore.handleMemberLeft)
       on('household_member_removed', authStore.handleMemberRemoved)
+      // Server lehnt join_household ab / reauth findet keine Mitgliedschaft mehr (CASA-48/49)
+      on('error', authStore.handleSocketError)
 
       // Dashboard invalidieren bei relevanten Events
       on('budget_updated', dashboardStore.invalidate)
@@ -294,6 +297,8 @@ function handleReconnect() {
     refreshAllStores()
     void refreshAppBadge()
   }
+  // Entfernung oder Rollenwechsel verpasst, solange die Verbindung weg war (CASA-49)
+  void authStore.revalidateMembership()
 }
 
 onReconnect(handleReconnect)
@@ -328,6 +333,7 @@ onUnmounted(() => {
   off('household_member_joined', authStore.handleMemberJoined)
   off('household_member_left', authStore.handleMemberLeft)
   off('household_member_removed', authStore.handleMemberRemoved)
+  off('error', authStore.handleSocketError)
   off('budget_updated', dashboardStore.invalidate)
   off('recurring_bill_booked', dashboardStore.invalidate)
   off('todo_created', dashboardStore.invalidate)

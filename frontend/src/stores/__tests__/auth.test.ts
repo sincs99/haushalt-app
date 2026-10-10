@@ -449,6 +449,63 @@ describe('Haushalte', () => {
     expect(showToast).toHaveBeenCalledWith('household.switchedTo', 'info')
   })
 
+  test('revalidateMembership: verpasste Entfernung (offline) → nächster Haushalt + Hinweis (CASA-49)', async () => {
+    api.get.mockResolvedValueOnce(meResponse())
+    const store = useAuthStore()
+    store.token = 'access'
+    await store.fetchMe()
+    api.get.mockResolvedValueOnce(meResponse({ households: [{ id: 'hh-2', name: 'Ferienhaus', role: 'member', currency: 'CHF' }] }))
+
+    await store.revalidateMembership()
+
+    expect(store.currentHouseholdId).toBe('hh-2')
+    expect(showToast).toHaveBeenCalledWith('household.switchedTo', 'info')
+  })
+
+  test('revalidateMembership: letzter Haushalt weg → /no-household', async () => {
+    api.get.mockResolvedValueOnce(meResponse({ households: [{ id: 'hh-1', name: 'WG', role: 'member', currency: 'CHF' }] }))
+    const store = useAuthStore()
+    store.token = 'access'
+    await store.fetchMe()
+    api.get.mockResolvedValueOnce(meResponse({ households: [] }))
+
+    await store.revalidateMembership()
+
+    expect(store.currentHouseholdId).toBeNull()
+    expect(localStorage.getItem(HOUSEHOLD_KEY)).toBeNull()
+    expect(showToast).toHaveBeenCalledWith('household.youWereRemoved', 'info')
+    await vi.waitFor(() => expect(router.replace).toHaveBeenCalledWith('/no-household'))
+  })
+
+  test('revalidateMembership: noch Mitglied oder offline → kein Hinweis', async () => {
+    api.get.mockResolvedValue(meResponse())
+    const store = useAuthStore()
+    store.token = 'access'
+    await store.fetchMe()
+
+    await store.revalidateMembership()
+    api.get.mockRejectedValueOnce(networkError())
+    await store.revalidateMembership()
+
+    expect(store.currentHouseholdId).toBe('hh-1')
+    expect(showToast).not.toHaveBeenCalled()
+  })
+
+  test('Socket-error NOT_HOUSEHOLD_MEMBER für den aktuellen Haushalt prüft die Mitgliedschaft', async () => {
+    api.get.mockResolvedValue(meResponse())
+    const store = useAuthStore()
+    store.token = 'access'
+    await store.fetchMe()
+    api.get.mockClear()
+
+    store.handleSocketError({ code: 'NOT_HOUSEHOLD_MEMBER', household_id: 'hh-2' }) // nicht aktuell
+    store.handleSocketError({ code: 'SOMETHING_ELSE', household_id: 'hh-1' })
+    expect(api.get).not.toHaveBeenCalled()
+
+    store.handleSocketError({ code: 'NOT_HOUSEHOLD_MEMBER', household_id: 'hh-1' })
+    await vi.waitFor(() => expect(api.get).toHaveBeenCalledWith('/api/auth/me'))
+  })
+
   test('household_updated übernimmt Name und KI-Opt-in', async () => {
     api.get.mockResolvedValue(meResponse())
     const store = useAuthStore()

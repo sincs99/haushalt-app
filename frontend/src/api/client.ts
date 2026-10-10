@@ -72,7 +72,21 @@ api.interceptors.response.use(
       }
     }
 
-    // 403 wird NICHT als Auth-Fehler behandelt — durchreichen!
+    // 403 wird NICHT als Auth-Fehler behandelt — durchreichen! Ausnahme: "kein Mitglied"
+    // für den AKTUELLEN Haushalt heisst, die Entfernung wurde verpasst (z.B. offline):
+    // /me neu laden und den Haushalt als verlassen behandeln (CASA-49).
+    if (
+      error.response?.status === 403 &&
+      error.response?.data?.detail?.code === 'NOT_HOUSEHOLD_MEMBER'
+    ) {
+      const { useAuthStore } = await import('../stores/auth')
+      const authStore = useAuthStore()
+      const householdId = authStore.currentHouseholdId
+      if (householdId && originalRequest?.url?.includes(`/api/households/${householdId}`)) {
+        void authStore.revalidateMembership()
+      }
+    }
+
     return Promise.reject(error)
   },
 )

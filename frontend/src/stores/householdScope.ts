@@ -37,8 +37,15 @@ export function resetHouseholdScopedStores(): void {
   expenses.expenses = []
   expenses.balances = null
   expenses.members = []
+  expenses.hasMore = false
+  expenses.deletedExpenses = []
+  expenses.deletedLoaded = false
 
-  useSettlementsStore().settlements = []
+  const settlements = useSettlementsStore()
+  settlements.settlements = []
+  settlements.hasMore = false
+  settlements.deletedSettlements = []
+  settlements.deletedLoaded = false
 
   const chores = useChoresStore()
   chores.chores = []

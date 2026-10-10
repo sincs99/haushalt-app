@@ -114,3 +114,43 @@ export function localDateString(date: Date = new Date()): string {
   const d = String(date.getDate()).padStart(2, '0')
   return `${y}-${m}-${d}`
 }
+
+/**
+ * Heutiges Datum (YYYY-MM-DD) in Haushaltszeit. Die Zeitzone kommt aus `/api/auth/me`
+ * (`households[].timezone`); fehlt sie oder ist sie ungültig, gilt das Gerätedatum.
+ * Auf Reisen weicht das Gerätedatum sonst vom Haushaltstag ab (CASA-39).
+ */
+export function householdDateString(timeZone?: string | null, now: Date = new Date()): string {
+  if (timeZone) {
+    try {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(now)
+      const get = (type: string) => parts.find(p => p.type === type)?.value
+      const y = get('year')
+      const m = get('month')
+      const d = get('day')
+      if (y && m && d) return `${y}-${m}-${d}`
+    } catch {
+      // Unbekannte Zeitzone → Gerätedatum
+    }
+  }
+  return localDateString(now)
+}
+
+/** Erster des Monats ("YYYY-MM-01") zu einem Datum "YYYY-MM-DD" */
+export function monthStart(dateStr: string): string {
+  return `${dateStr.substring(0, 7)}-01`
+}
+
+/** Monat ("YYYY-MM-01") um `delta` Monate verschoben */
+export function addMonths(monthStr: string, delta: number): string {
+  const y = Number(monthStr.substring(0, 4))
+  const m = Number(monthStr.substring(5, 7)) - 1 + delta
+  const year = y + Math.floor(m / 12)
+  const month = (((m % 12) + 12) % 12) + 1
+  return `${year}-${String(month).padStart(2, '0')}-01`
+}

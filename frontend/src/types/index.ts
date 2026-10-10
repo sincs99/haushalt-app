@@ -128,6 +128,17 @@ export interface Expense {
   shares: ExpenseShare[]
   category: string | null
   recurring_bill_id: string | null
+  /** Gebuchter Monat einer wiederkehrenden Rechnung (YYYY-MM-01) */
+  booked_month?: string | null
+  /** Optimistic Locking: PATCH/DELETE mit If-Match (PD-F7) */
+  version: number
+  created_by_user_id?: string | null
+  updated_by_user_id?: string | null
+  /** Soft Delete: gesetzt, wenn gelöscht (Verlauf, wiederherstellbar) */
+  deleted_at?: string | null
+  deleted_by_user_id?: string | null
+  /** Datiert auf/vor dem letzten Ausgleich zwischen Beteiligten (PD-F2: Warnung) */
+  before_last_settlement?: boolean
 }
 
 export type SplitType = 'even' | 'custom'
@@ -144,7 +155,10 @@ export interface ExpenseCreatePayload {
   category?: string
 }
 
-export type ExpenseUpdatePayload = Partial<ExpenseCreatePayload>
+/** Teil-Update: nur geänderte Felder; `category: null` leert die Kategorie (CASA-38) */
+export type ExpenseUpdatePayload = Partial<Omit<ExpenseCreatePayload, 'category'>> & {
+  category?: string | null
+}
 
 // ── Budget ──
 
@@ -182,8 +196,7 @@ export interface RecurringBillCreatePayload {
   name: string
   amount_rappen: number
   day_of_month: number
-  category?: string
-  split_type?: SplitType
+  category?: string | null
   active?: boolean
   paid_by_user_id?: string | null
 }
@@ -193,7 +206,6 @@ export interface RecurringBillUpdatePayload {
   amount_rappen?: number
   day_of_month?: number
   category?: string | null
-  split_type?: SplitType
   active?: boolean
   paid_by_user_id?: string | null
 }
@@ -254,9 +266,22 @@ export interface SettlementInfo {
   note: string | null
   created_by_user_id: string | null
   created_at: string
+  deleted_at?: string | null
+  deleted_by_user_id?: string | null
+  /** Nur in der Create-Antwort: Plausibilitätswarnungen (PD-F3) */
+  warnings?: SettlementWarning[]
+}
+
+export type SettlementWarning = 'DUPLICATE_RECENT' | 'EXCEEDS_OPEN_DEBT'
+
+export interface SettlementCheckResponse {
+  warnings: SettlementWarning[]
+  open_debt_rappen: number
 }
 
 export interface SettlementCreatePayload {
+  /** Client-generierte ID → idempotenter Create (Retry/Doppelklick) */
+  id?: string
   from_user_id: string
   to_user_id: string
   amount_rappen: number
@@ -277,6 +302,7 @@ export interface HouseholdInfo {
   role: string
   currency: string  // z.B. "CHF" — vom Backend via GET /api/auth/me
   ai_enabled?: boolean  // Opt-in für den KI-Assistenten (nur Admins schalten um)
+  timezone?: string | null  // IANA-Zeitzone des Haushalts ("heute" in Haushaltszeit, CASA-39)
 }
 
 export interface HouseholdMemberInfo {

@@ -704,13 +704,27 @@ class TestChoreDone:
         assert resp.json()["changed"] is False
         assert resp.json()["reason"] == "ALREADY_DONE"
 
-    def test_execute_requires_confirmation(self, client, db, household_a, token_a, chore_a):
+    def test_execute_rejects_malformed_confirmation(self, client, db, household_a, token_a, chore_a):
         tag = _make_tag(db, household_a, "chore.assignment.done", "chore", chore_a.id)
-        for body in (None, {}, {"confirm": {}}, {"confirm": {"assignment_id": "nope"}}):
-            resp = _execute(client, token_a, tag, body)
-            assert resp.status_code == 422
-            assert resp.json()["detail"]["code"] == "TAG_CONFIRMATION_REQUIRED"
+        resp = _execute(client, token_a, tag, {"confirm": {"assignment_id": "nope"}})
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "TAG_CONFIRMATION_REQUIRED"
         assert db.query(ChoreAssignment).filter(ChoreAssignment.completed_at.isnot(None)).count() == 0
+
+    def test_execute_without_confirmation_from_old_client(self, client, db, household_a, token_a, chore_a):
+        """Ältere PWA ohne ``confirm``: erledigt nur die aktuelle Periode, danach „schon erledigt“."""
+        tag = _make_tag(db, household_a, "chore.assignment.done", "chore", chore_a.id)
+        resolved = _resolve(client, token_a, tag).json()
+        expected_id = resolved["confirm"]["assignment_id"]
+        first = _execute(client, token_a, tag, None)
+        assert first.status_code == 200
+        assert first.json()["changed"] is True
+        assert first.json()["result"]["assignment"]["id"] == expected_id
+        for body in ({}, {"confirm": {}}):
+            again = _execute(client, token_a, tag, body)
+            assert again.status_code == 200
+            assert again.json()["changed"] is False
+        assert db.query(ChoreAssignment).filter(ChoreAssignment.completed_at.isnot(None)).count() == 1
 
     def test_backlog_untouched_on_repeated_scans(self, client, db, household_a, token_a, user_a, chore_a):
         """CASA-05: zweiter/dritter Scan arbeitet nicht den Rückstand ab."""

@@ -310,7 +310,8 @@ def get_dashboard(
     care_tasks = (
         db.query(PetCareTask, Pet.name.label("pet_name"))
         .join(Pet, PetCareTask.pet_id == Pet.id)
-        .filter(PetCareTask.household_id == household_id)
+        # Archivierte Tiere nicht mehr anzeigen (PD-P2, Pets-Bereich)
+        .filter(PetCareTask.household_id == household_id, Pet.archived.is_(False))
         .order_by(
             case((PetCareTask.next_due_at < today, 0), else_=1),  # Überfällige zuerst
             PetCareTask.next_due_at.asc(),

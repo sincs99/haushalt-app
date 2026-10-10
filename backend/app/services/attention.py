@@ -122,7 +122,11 @@ def due_items(db: Session, household: Household, user_id: uuid.UUID, locale: str
     pet_care = (
         db.query(PetCareTask, Pet.name)
         .join(Pet, PetCareTask.pet_id == Pet.id)
-        .filter(PetCareTask.household_id == household.id, PetCareTask.next_due_at <= today)
+        .filter(
+            PetCareTask.household_id == household.id,
+            PetCareTask.next_due_at <= today,
+            Pet.archived.is_(False),  # archivierte Tiere zählen nicht (PD-P2)
+        )
         .order_by(PetCareTask.next_due_at.asc())
         .all()
     )

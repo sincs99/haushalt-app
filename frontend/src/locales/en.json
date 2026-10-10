@@ -692,7 +692,10 @@
     "EXPENSE_DELETED": "The expense has been deleted in the meantime.",
     "SETTLEMENT_DELETED": "The payment has been deleted in the meantime.",
     "DATE_OUT_OF_RANGE": "The date is too far in the past or future.",
-    "BILL_MONTH_OUT_OF_RANGE": "Bills can only be booked for the past 12 months."
+    "BILL_MONTH_OUT_OF_RANGE": "Bills can only be booked for the past 12 months.",
+    "MEDICATION_INACTIVE": "The medication is deactivated",
+    "MEDICATION_HAS_HISTORY": "The medication has been given already – deactivate it instead of deleting",
+    "PET_ARCHIVED": "The pet is archived"
   },
   "push": {
     "title": "Notifications",
@@ -823,7 +826,35 @@
     "medicationSaveError": "Couldn't save the medication",
     "medicationDeleteError": "Couldn't delete the medication",
     "changePhoto": "Change photo",
-    "photoUploadErrorReason": "Could not upload photo: {reason}"
+    "photoUploadErrorReason": "Could not upload photo: {reason}",
+    "notAllFed": "{fed} of {total} fed – please check the status",
+    "archive": "Archive",
+    "unarchive": "Reactivate",
+    "archived": "{name} archived",
+    "unarchived": "{name} is active again",
+    "archivedBadge": "Archived",
+    "archivedHint": "Archived: no more feedings or reminders. The history is kept.",
+    "archiveActionHint": "E.g. passed away or rehomed – the history is kept.",
+    "archiveHint": "Tip: “Archive” hides the pet from feeding and reminders and keeps the history.",
+    "archiveSection": "Archive ({n})",
+    "historyLoading": "Checking history…",
+    "deleteHistoryWarning": "Deleting permanently also removes {feedings} feedings, {doses} medication doses and {tasks} care tasks for good.",
+    "deleteNoHistory": "There is no history for this pet yet.",
+    "deletePermanently": "Delete permanently",
+    "notGivenYet": "Never given",
+    "lastGivenToday": "Last given at {time} by {name}",
+    "lastGivenAt": "Last given on {date} by {name}",
+    "giveAgain": "Give again",
+    "giveAgainTitle": "Really give again?",
+    "giveAgainHint": "Last given at {time} by {name} – less than {hours} hours ago.",
+    "giveAgainConfirm": "Give anyway",
+    "medicationHasHistoryTitle": "Medication has a history",
+    "medicationHasHistoryHint": "“{name}” has already been given. To keep its history it can only be deactivated.",
+    "deactivateMedication": "Deactivate",
+    "medicationDeactivated": "Medication deactivated",
+    "unfeedOtherTitle": "Remove feeding?",
+    "unfeedOtherHint": "{name} fed {pet} at {time}. Really mark as not fed?",
+    "unfeedOtherConfirm": "Remove"
   },
   "petCare": {
     "title": "Care & Schedule",
@@ -914,7 +945,8 @@
     "taskDeleteError": "Couldn't delete the care task",
     "deleteTaskHint": "The care history is kept.",
     "changePhoto": "Change photo",
-    "photoUploadErrorReason": "Photo could not be uploaded: {reason}"
+    "photoUploadErrorReason": "Photo could not be uploaded: {reason}",
+    "alreadyDoneToday": "Already done today – nothing changed"
   },
   "food": {
     "title": "Food",
@@ -1160,7 +1192,10 @@
       "adoptedForm": "Suggestion applied – tasks and notes are created when you save.",
       "nothingSavedYet": "Nothing is saved until you apply it.",
       "applied": "Care suggestion applied",
-      "applyError": "Could not apply the care suggestion"
+      "applyError": "Could not apply the care suggestion",
+      "planTitle": "Will be applied (untick what should stay):",
+      "planUpdate": "{task}: every {from} → {to} days",
+      "planCreate": "{task}: new, every {to} days"
     }
   },
   "tags": {

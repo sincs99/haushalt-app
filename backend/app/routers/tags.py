@@ -511,15 +511,16 @@ def execute_tag(
 
     params = body.model_dump(exclude_none=True) if body else {}
     if action.requires_confirm and not params.get("confirm"):
-        # Ohne Bestätigung aus resolve wüsste execute nicht, was angezeigt wurde
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail(
-                ErrorCode.TAG_CONFIRMATION_REQUIRED,
-                "Resolve the tag first and send its 'confirm' object",
-            ),
-        )
-    result = action.execute(ctx, params)
+        # Ältere Clients (PWA vor dem Update) schicken kein ``confirm``: dann gilt, was
+        # resolve jetzt anheften würde. Das ist sicher, weil execute ohnehin nur die
+        # aktuelle Periode bzw. heute fällige Aufgaben erledigt (CASA-05/PD-T1).
+        description = action.describe(ctx)
+        if not description.can_execute or not description.confirm:
+            result = {"changed": False, "reason": description.reason or "ALREADY_DONE"}
+        else:
+            result = action.execute(ctx, {**params, "confirm": description.confirm})
+    else:
+        result = action.execute(ctx, params)
     target_name = _target_display_name(ctx.target) if ctx.target is not None else None
     _record_use(db, tag)
 

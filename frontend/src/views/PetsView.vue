@@ -9,7 +9,8 @@ import { useToast } from '../composables/useToast'
 import { useAsyncAction } from '../composables/useAsyncAction'
 import { useLoader } from '../composables/useLoader'
 import { parseWeightKgToGrams } from '../utils/money'
-import type { Pet, PetCreatePayload, FeedingSlot, FeedingLog } from '../types'
+import { activePets, archivedPets, formatClock, hasHistory, needsUnfeedConfirmation } from '../utils/petCare'
+import type { Pet, PetCreatePayload, PetHistory, FeedingSlot, FeedingLog } from '../types'
 import { PhCat, PhSun, PhMoon, PhPlus } from '@phosphor-icons/vue'
 import PetPhotoAvatar from '../components/PetPhotoAvatar.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
@@ -90,6 +91,19 @@ watch(() => authStore.currentHouseholdId, (id) => {
   reload()
 })
 
+// ── Aktive / archivierte Tiere (PD-P2) ──
+const visiblePets = computed(() => activePets(petsStore.pets))
+const archivedList = computed(() => archivedPets(petsStore.pets))
+const showArchive = ref(false)
+
+function handleUnarchive(pet: Pet) {
+  return run(() => petsStore.unarchivePet(pet.id), {
+    key: `unarchive-${pet.id}`,
+    success: t('pets.unarchived', { name: pet.name }),
+    error: t('pets.updateError'),
+  })
+}
+
 // ── Current Slot ──
 const currentSlot = computed<FeedingSlot>(() => {
   const hour = new Date().getHours()
@@ -144,20 +158,47 @@ const showFeedAllButton = computed(() => {
 
 function handleFeedAll() {
   return run(async () => {
-    const created = await petsStore.feedAll(currentSlot.value)
+    const result = await petsStore.feedAll(currentSlot.value)
+    // „Alle gefüttert“ nur, wenn der neu geladene Status das bestätigt (CASA-13)
+    if (!result.allFed) notifyInfo(t('pets.notAllFed', { fed: result.fed, total: result.total }))
     // Jemand anderes war schneller: Hinweis statt Erfolg
-    if (created.length === 0) notifyInfo(t('pets.allAlreadyFed'))
-    return created
+    else if (result.created.length === 0) notifyInfo(t('pets.allAlreadyFed'))
+    return result
   }, {
     key: 'feed-all',
-    success: (created) => (created.length > 0 ? t('pets.allFedToast') : undefined),
-    undo: (created) => petsStore.undoFeedings(created),
+    success: (result) => (result.allFed && result.created.length > 0 ? t('pets.allFedToast') : undefined),
+    undo: (result) => petsStore.undoFeedings(result.created),
     error: t('pets.feedError'),
   })
 }
 
 // ── Toggle Feeding ──
+// Fütterung einer anderen Person entfernen → erst nachfragen (wer, wann; CASA-30)
+const unfeedConfirm = ref<{ petId: string; slot: FeedingSlot; petName: string; text: string } | null>(null)
+
 function handleToggleFeeding(petId: string, slot: FeedingSlot, petName: string) {
+  const existing = petsStore.feedingStatus.find(s => s.pet_id === petId)?.[slot]
+  if (existing && needsUnfeedConfirmation(existing, authStore.user?.id)) {
+    unfeedConfirm.value = {
+      petId, slot, petName,
+      text: t('pets.unfeedOtherHint', {
+        name: getMemberName(existing.fed_by_user_id),
+        time: formatClock(existing.fed_at),
+        pet: petName,
+      }),
+    }
+    return
+  }
+  return toggleFeeding(petId, slot, petName)
+}
+
+function confirmUnfeed() {
+  const pending = unfeedConfirm.value
+  unfeedConfirm.value = null
+  if (pending) return toggleFeeding(pending.petId, pending.slot, pending.petName)
+}
+
+function toggleFeeding(petId: string, slot: FeedingSlot, petName: string) {
   return run(async () => {
     const result = await petsStore.toggleFeeding(petId, slot)
     // 409: schon gefüttert (Status wurde neu geladen) → Hinweis, kein Fehler
@@ -257,11 +298,30 @@ async function handleCreatePet() {
   if (ok) showAddDialog.value = false
 }
 
-// ── Delete Pet ──
+// ── Delete / Archive Pet ──
+// Vor dem endgültigen Löschen den Verlauf zählen und „Archivieren“ anbieten (PD-P2):
+// Löschen entfernt alle Fütterungen, Medikamentengaben und Pflegeaufgaben unwiderruflich.
 const deletingPetId = ref<string | null>(null)
+const deleteHistory = ref<PetHistory | null>(null)
+const deleteHistoryLoading = ref(false)
+const deleteHistoryFailed = ref(false)
+const deletingPet = computed(() => petsStore.pets.find(p => p.id === deletingPetId.value) ?? null)
+// Verlauf unbekannt (Laden gescheitert) → vorsichtshalber wie „mit Verlauf“ behandeln
+const deleteHasHistory = computed(() => deleteHistoryFailed.value || hasHistory(deleteHistory.value))
 
-function confirmDelete(petId: string) {
+async function confirmDelete(petId: string) {
   deletingPetId.value = petId
+  deleteHistory.value = null
+  deleteHistoryFailed.value = false
+  deleteHistoryLoading.value = true
+  try {
+    const history = await petsStore.fetchPetHistory(petId)
+    if (deletingPetId.value === petId) deleteHistory.value = history ?? null
+  } catch {
+    if (deletingPetId.value === petId) deleteHistoryFailed.value = true
+  } finally {
+    if (deletingPetId.value === petId) deleteHistoryLoading.value = false
+  }
 }
 
 function cancelDelete() {
@@ -275,6 +335,18 @@ async function handleDelete() {
     key: 'delete',
     success: t('pets.deleted'),
     error: t('pets.deleteError'),
+  })
+  if (ok) deletingPetId.value = null
+}
+
+async function handleArchive() {
+  const pet = deletingPet.value
+  if (!pet) return
+  const ok = await run(() => petsStore.archivePet(pet.id), {
+    key: 'archive',
+    success: t('pets.archived', { name: pet.name }),
+    undo: () => petsStore.unarchivePet(pet.id),
+    error: t('pets.updateError'),
   })
   if (ok) deletingPetId.value = null
 }
@@ -322,8 +394,8 @@ function navigateToPet(petId: string) {
     </BaseEmptyState>
 
     <template v-else>
-      <!-- ═══ Fütterung heute ═══ -->
-      <section class="section">
+      <!-- ═══ Fütterung heute ═══ (nur aktive Tiere) -->
+      <section v-if="petsStore.feedingStatus.length > 0" class="section">
         <BaseCard>
           <h2 class="card-title">{{ $t('pets.feedingToday') }}</h2>
 
@@ -385,7 +457,7 @@ function navigateToPet(petId: string) {
       <!-- ═══ Tier-Karten ═══ -->
       <section class="section">
         <div
-          v-for="pet in petsStore.pets"
+          v-for="pet in visiblePets"
           :key="pet.id"
           class="pet-card"
           role="button"
@@ -421,6 +493,41 @@ function navigateToPet(petId: string) {
             </button>
           </div>
         </div>
+      </section>
+
+      <!-- ═══ Archiv (verstorben/abgegeben) ═══ -->
+      <section v-if="archivedList.length > 0" class="section">
+        <button
+          type="button"
+          class="archive-toggle tap-target"
+          :aria-expanded="showArchive"
+          @click="showArchive = !showArchive"
+        >
+          {{ $t('pets.archiveSection', { n: archivedList.length }) }}
+        </button>
+        <ul v-if="showArchive" class="archive-list">
+          <li v-for="pet in archivedList" :key="pet.id" class="archive-row">
+            <button type="button" class="archive-row__name tap-target" @click="navigateToPet(pet.id)">
+              {{ pet.name }}
+            </button>
+            <button
+              type="button"
+              class="archive-row__action tap-target"
+              :disabled="isPending(`unarchive-${pet.id}`)"
+              @click="handleUnarchive(pet)"
+            >
+              {{ $t('pets.unarchive') }}
+            </button>
+            <button
+              type="button"
+              class="pet-card__delete tap-target"
+              :aria-label="$t('common.delete')"
+              @click="confirmDelete(pet.id)"
+            >
+              {{ $t('common.delete') }}
+            </button>
+          </li>
+        </ul>
       </section>
     </template>
 
@@ -479,16 +586,56 @@ function navigateToPet(petId: string) {
       </template>
     </BaseDialog>
 
+    <!-- Fütterung einer anderen Person entfernen (CASA-30) -->
+    <BaseDialog :open="!!unfeedConfirm" :title="$t('pets.unfeedOtherTitle')" @close="unfeedConfirm = null">
+      <p class="delete-hint">{{ unfeedConfirm?.text }}</p>
+      <template #footer>
+        <div class="dialog-actions">
+          <BaseButton variant="ghost" @click="unfeedConfirm = null">
+            {{ $t('common.cancel') }}
+          </BaseButton>
+          <BaseButton variant="danger" @click="confirmUnfeed">
+            {{ $t('pets.unfeedOtherConfirm') }}
+          </BaseButton>
+        </div>
+      </template>
+    </BaseDialog>
+
     <!-- Delete Confirm Dialog -->
     <BaseDialog :open="!!deletingPetId" :title="$t('pets.deleteConfirm')" danger @close="cancelDelete">
-      <p class="delete-hint">{{ $t('pets.deleteHint') }}</p>
+      <p v-if="deleteHistoryLoading" class="delete-hint">{{ $t('pets.historyLoading') }}</p>
+      <template v-else-if="deleteHasHistory">
+        <p v-if="deleteHistory" class="delete-hint delete-hint--warning">
+          {{ $t('pets.deleteHistoryWarning', {
+            feedings: deleteHistory.feedings,
+            doses: deleteHistory.medication_logs,
+            tasks: deleteHistory.care_tasks,
+          }) }}
+        </p>
+        <p v-else class="delete-hint delete-hint--warning">{{ $t('pets.deleteHint') }}</p>
+        <p v-if="deletingPet && !deletingPet.archived" class="delete-hint">{{ $t('pets.archiveHint') }}</p>
+      </template>
+      <p v-else class="delete-hint">{{ $t('pets.deleteNoHistory') }}</p>
       <template #footer>
         <div class="dialog-actions">
           <BaseButton variant="ghost" @click="cancelDelete">
             {{ $t('common.cancel') }}
           </BaseButton>
-          <BaseButton variant="danger" :loading="isPending('delete')" @click="handleDelete">
-            {{ $t('common.delete') }}
+          <BaseButton
+            v-if="deletingPet && !deletingPet.archived && deleteHasHistory"
+            variant="primary"
+            :loading="isPending('archive')"
+            @click="handleArchive"
+          >
+            {{ $t('pets.archive') }}
+          </BaseButton>
+          <BaseButton
+            variant="danger"
+            :disabled="deleteHistoryLoading"
+            :loading="isPending('delete')"
+            @click="handleDelete"
+          >
+            {{ deleteHasHistory ? $t('pets.deletePermanently') : $t('common.delete') }}
           </BaseButton>
         </div>
       </template>
@@ -650,6 +797,56 @@ function navigateToPet(petId: string) {
   justify-content: flex-end;
 }
 
+/* ── Archiv ── */
+.archive-toggle {
+  background: none;
+  border: none;
+  padding: var(--space-2) 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--sub);
+  cursor: pointer;
+}
+
+.archive-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.archive-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-btn);
+  background: var(--chip);
+}
+
+.archive-row__name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--text-base);
+  color: var(--sub);
+  cursor: pointer;
+}
+
+.archive-row__action {
+  font-size: var(--text-xs);
+  color: var(--ink);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+}
+
 .pet-card__delete {
   font-size: var(--text-xs);
   color: var(--color-danger);
@@ -709,7 +906,11 @@ function navigateToPet(petId: string) {
 .delete-hint {
   font-size: var(--text-sm);
   color: var(--sub);
-  margin: 0;
+  margin: 0 0 var(--space-2);
+}
+
+.delete-hint--warning {
+  color: var(--color-danger);
 }
 
 /* ── Skeleton ── */

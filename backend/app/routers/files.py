@@ -26,6 +26,7 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Document, DocumentFile, HouseholdMember, Pet, Plant, StoredFile
+from app.services.locking import lock_household
 from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
 
@@ -255,11 +256,16 @@ def store_upload(
 ) -> StoredFile:
     """Liest, validiert und speichert einen Upload; legt den StoredFile-Eintrag an.
 
-    Committet nicht — der Aufrufer entscheidet über die Transaktion.
+    Committet nicht — der Aufrufer entscheidet über die Transaktion. Scheitert der
+    Commit, muss der Aufrufer die Datei wieder vom Storage entfernen
+    (``remove_from_storage(stored_file.storage_path)``).
     """
     # Chunk-basiertes Lesen mit frühzeitigem Abbruch (RAM-Exhaustion-Schutz)
     raw_data = read_upload_limited(file.file)
     processed_data, final_mime, ext = validate_upload(raw_data, file.content_type or "")
+    # Quota unter Haushaltssperre prüfen und bis zum Commit halten (CASA-26): parallele
+    # Uploads laufen nacheinander, sonst sieht jeder die alte Summe und alle passieren
+    lock_household(db, household_id)
     check_storage_quota(db, household_id, len(processed_data))
     original_name = (file.filename or "upload")[:255]
 
@@ -320,6 +326,24 @@ def file_in_use(
     return None
 
 
+def lock_files(db: Session, file_ids: list[uuid.UUID]) -> list[StoredFile]:
+    """Sperrt die StoredFile-Zeilen bis zum Transaktionsende (CASA-27/28).
+
+    Wer eine Datei einem Pet, einer Pflanze oder einem Dokument zuordnet, sperrt sie
+    zuerst und prüft erst danach ``file_in_use``: parallele Zuordnungen derselben Datei
+    laufen so nacheinander (die zweite sieht die erste → FILE_IN_USE), und die
+    Waisen-Bereinigung überspringt gesperrte Dateien. Feste Reihenfolge (id) gegen Deadlocks.
+    """
+    return (
+        db.query(StoredFile)
+        .filter(StoredFile.id.in_(file_ids))
+        .order_by(StoredFile.id)
+        .with_for_update()
+        .populate_existing()
+        .all()
+    )
+
+
 def file_in_use_error(reference: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -332,28 +356,79 @@ def file_in_use_error(reference: str) -> HTTPException:
 ORPHAN_FILE_GRACE = timedelta(hours=24)
 
 
-def delete_orphan_files(db: Session, now: datetime | None = None) -> int:
-    """Löscht verwaiste StoredFiles (DB + Storage), die älter als ORPHAN_FILE_GRACE sind.
-
-    Gibt die Anzahl gelöschter Dateien zurück.
-    """
+def orphan_file_candidates(db: Session, now: datetime | None = None) -> list[uuid.UUID]:
+    """IDs der StoredFiles ohne Referenz, die älter als ORPHAN_FILE_GRACE sind (ungesperrt)."""
     cutoff = (now or datetime.now(timezone.utc)) - ORPHAN_FILE_GRACE
-    orphans = (
-        db.query(StoredFile)
+    return [
+        row.id
+        for row in db.query(StoredFile.id)
         .filter(StoredFile.created_at < cutoff)
         .filter(~db.query(Pet.id).filter(Pet.photo_file_id == StoredFile.id).exists())
         .filter(~db.query(Plant.id).filter(Plant.photo_file_id == StoredFile.id).exists())
         .filter(~db.query(DocumentFile.file_id).filter(DocumentFile.file_id == StoredFile.id).exists())
         .all()
-    )
-    paths = [f.storage_path for f in orphans]
-    for f in orphans:
-        db.delete(f)
+    ]
+
+
+def delete_orphans(db: Session, file_ids: list[uuid.UUID]) -> int:
+    """Löscht die Kandidaten — aber nie eine inzwischen zugeordnete Datei (CASA-27).
+
+    Zwischen Auswahl und Löschen kann jemand die Datei einem Dokument/Pet/einer
+    Pflanze zuordnen. Deshalb pro Datei: Zeile mit ``FOR UPDATE SKIP LOCKED`` sperren
+    (eine laufende Zuordnung hält die Sperre → überspringen) und die Referenzen mit
+    frischem Snapshot erneut prüfen. Erst nach dem Commit werden die Dateien vom
+    Storage entfernt.
+    """
+    paths: list[str] = []
+    for file_id in file_ids:
+        stored_file = (
+            db.query(StoredFile)
+            .filter(StoredFile.id == file_id)
+            .with_for_update(skip_locked=True)
+            .populate_existing()
+            .one_or_none()
+        )
+        if stored_file is None or file_in_use(db, [file_id]) is not None:
+            continue
+        paths.append(stored_file.storage_path)
+        db.delete(stored_file)
     db.commit()
 
     for path in paths:
         remove_from_storage(path)
     return len(paths)
+
+
+def delete_orphan_files(db: Session, now: datetime | None = None) -> int:
+    """Löscht verwaiste StoredFiles (DB + Storage), die älter als ORPHAN_FILE_GRACE sind.
+
+    Gibt die Anzahl gelöschter Dateien zurück.
+    """
+    return delete_orphans(db, orphan_file_candidates(db, now))
+
+
+def delete_untracked_storage_files(db: Session, now: datetime | None = None) -> int:
+    """Löscht Dateien im Storage ohne StoredFile-Zeile, die älter als ORPHAN_FILE_GRACE sind.
+
+    Entstehen, wenn nach dem Schreiben auf die Platte der DB-Commit scheitert
+    (Prozessabbruch, Verbindungsfehler) — sie zählen nicht zur Quota, belegen aber
+    Platz (CASA-27). Die Frist schützt Uploads, deren Commit gerade läuft.
+    """
+    cutoff = ((now or datetime.now(timezone.utc)) - ORPHAN_FILE_GRACE).timestamp()
+    old_paths = [path for path, mtime in _storage.list_files() if mtime < cutoff]
+    deleted = 0
+    for start in range(0, len(old_paths), 500):
+        chunk = old_paths[start:start + 500]
+        known = {
+            row.storage_path
+            for row in db.query(StoredFile.storage_path).filter(StoredFile.storage_path.in_(chunk))
+        }
+        for path in chunk:
+            if path not in known:
+                remove_from_storage(path)
+                deleted += 1
+    db.rollback()  # nur gelesen — Transaktion nicht offen halten
+    return deleted
 
 
 def remove_from_storage(storage_path: str) -> None:
@@ -394,7 +469,14 @@ def upload_file(
     db: Session = Depends(get_db),
 ):
     stored_file = store_upload(db, household_id, membership.user_id, file)
-    db.commit()
+    storage_path = stored_file.storage_path
+    try:
+        db.commit()
+    except Exception:
+        # Datei liegt schon auf der Platte, aber ohne DB-Zeile → wieder entfernen (CASA-27)
+        db.rollback()
+        remove_from_storage(storage_path)
+        raise
     db.refresh(stored_file)
 
     emit_to_household_sync(
@@ -448,7 +530,9 @@ def delete_file(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    stored_file = db.get(StoredFile, file_id)
+    # Gesperrt prüfen: eine parallele Zuordnung wartet bzw. wird gesehen (CASA-28)
+    locked = lock_files(db, [file_id])
+    stored_file = locked[0] if locked else None
     if stored_file is None or stored_file.household_id != household_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

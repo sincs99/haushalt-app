@@ -28,8 +28,9 @@ Eine Haushalt-App für gemeinsame Einkaufslisten, Aufgaben, wiederkehrende Putzp
 | PR | Inhalt |
 |---|---|
 | (PR folgt) Fix-Welle Logik-Audit | Umsetzung von `docs/qa/FULL_LOGIC_AUDIT.md` (CASA-01…60) nach `docs/qa/PRODUCT_DECISIONS.md` in Bereichs-Branches: PostgreSQL-Testlane (`tests/pg/`, Marker `pg`) und Sperr-Helfer (`services/locking.py`); Finanzen mit Version/If-Match, Soft Delete, Verlauf, Wiederherstellen, Ausgleich-Idempotenz und Rechnungsverwaltung; Mitgliedschafts-Sperren, Austritt „freigeben“, Refresh-Rotation; Ämtli-Übergänge, Tag-Idempotenz, Todo-Erinnerungen; Haustiere (Archiv, Medikamenten-Verlauf), Pflanzen, Datei-Sperren; Kalender-Sperren, Menüplan-Entscheid, Bulk-Einkauf, Termin-Erinnerungen, Rezept-UI; Zustandsisolierung pro Haushalt im Frontend; Restore/Backup, KI-Kontingent pro Person, Ledger-FKs. Nacharbeiten: Registrierung legt Haushalte über denselben Helfer an wie `POST /households/` (Default-Kalender), Dashboard zeigt „läuft seit …“ für mehrtägige Termine, Termine/Notizen/Todos senden beim Bearbeiten nur geänderte Felder (CASA-09), Salden ehemaliger Mitglieder gekennzeichnet (`is_member`), Tier mit Verlauf nur mit `?force=true` löschbar (`PET_HAS_HISTORY`), Pflegearten bei Tags als Schlüssel statt deutscher Namen (CASA-59) |
+| (PR folgt) Aufgaben mit mehreren Zuständigen | Tabelle `todo_assignees` statt `todos.assigned_to_user_id` (Migration `mas1a2b3c4d5`), `done_by_user_id` („eine:r für alle“, UI „erledigt von Anna“), „Ich übernehme“ fügt hinzu statt 409, `assignee_ids` in der API (Übergangsfeld `assigned_to_user_id` eine Version lang); UI: Mehrfachauswahl, Avatar-Stapel, „Übernehmen“/„Ich helfe mit“; Badge/Widget/Push/Austritt angepasst |
 
-**Kennzahlen (lokal erhoben am 10. Oktober 2026):** Backend 1159 Tests in 98 Dateien (81 in `tests/`, 1093 Tests auf SQLite; 17 in `tests/pg/`, 66 Tests auf PostgreSQL 16), Coverage 95 % (SQLite-Lane); Frontend 727 Tests in 56 Dateien, Coverage 83,4 % (Statements), 77,89 % (Branches), Statement-Schwelle 66 %; 1312 i18n-Schlüssel; 46 Alembic-Revisionen (einziger Kopf `cal1a2b3c4d5`); 39 Tabellen in `Base.metadata`; 162 API-Endpoints (inkl. Health-Check).
+**Kennzahlen (lokal erhoben am 10. Oktober 2026; seither +1 Tabelle/Revision, Kopf `mas1a2b3c4d5`, Tests: Backend 1115 SQLite + 70 PostgreSQL, Frontend 749 in 57 Dateien, 1324 i18n-Schlüssel):** Backend 1159 Tests in 98 Dateien (81 in `tests/`, 1093 Tests auf SQLite; 17 in `tests/pg/`, 66 Tests auf PostgreSQL 16), Coverage 95 % (SQLite-Lane); Frontend 727 Tests in 56 Dateien, Coverage 83,4 % (Statements), 77,89 % (Branches), Statement-Schwelle 66 %; 1312 i18n-Schlüssel; 46 Alembic-Revisionen (einziger Kopf `cal1a2b3c4d5`); 39 Tabellen in `Base.metadata`; 162 API-Endpoints (inkl. Health-Check).
 
 ### Änderungen seit 2026-08-12
 
@@ -98,7 +99,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | Datei | Zweck | Status |
 |---|---|---|
 | [`app/main.py`](../backend/app/main.py) | FastAPI-App (`redirect_slashes=False`), Startup-Prüfung der Konfiguration, CORS, Security-Header-Middleware, Rate-Limit-Handler, Mount aller 23 Router, Socket.IO-Mount unter `/socket.io`, `GET /api/health` (mit DB-Check), Hintergrund-Tasks (Web-Push-Scheduler, Upload-Cleanup) | ✅ Fertig |
-| [`app/models.py`](../backend/app/models.py) | SQLAlchemy-Models (39 Tabellen, siehe Abschnitt 5) und `SyncVersionMixin` (`updated_at`/`version`) | ✅ Fertig |
+| [`app/models.py`](../backend/app/models.py) | SQLAlchemy-Models (40 Tabellen, siehe Abschnitt 5) und `SyncVersionMixin` (`updated_at`/`version`) | ✅ Fertig |
 | [`app/database.py`](../backend/app/database.py) | DB-Session, Engine, Base | ✅ Fertig |
 | [`app/socket_manager.py`](../backend/app/socket_manager.py) | Socket.IO-Server: JWT-Auth beim Verbindungsaufbau, Haushalt-Räume (`join_household` prüft Mitgliedschaft), persönlicher Raum pro User, Sitzungs-Ablauf (Timer + `reauth`), `emit_to_household(_sync)` inkl. Rauswurf entfernter Mitglieder, `disconnect_user_sync` | ✅ Fertig |
 | [`app/core/config.py`](../backend/app/core/config.py) | Pydantic Settings (DB-URL, JWT-Secret, CORS, Token-Laufzeiten, Umgebung, VAPID-Schlüssel, Speicher-Limit pro Haushalt) | ✅ Fertig |
@@ -112,7 +113,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`app/routers/auth.py`](../backend/app/routers/auth.py) | 5 Endpoints: register, login, refresh, logout, me (mit Rate-Limits) | ✅ Fertig |
 | [`app/routers/households.py`](../backend/app/routers/households.py) | 9 Endpoints: Haushalt erstellen/umbenennen/beitreten/verlassen, Mitglieder, Einladungscode (anzeigen/erneuern, mit Ablaufdatum), Mitglied entfernen, Finanz-Zusammenfassung; Beitritt mit Rate-Limit | ✅ Fertig |
 | [`app/routers/shopping.py`](../backend/app/routers/shopping.py) | 10 Endpoints: Einkaufslisten (`list_router`) und Einkaufseinträge inkl. Geschäfts-Verwaltung (`router`) + Socket-Events | ✅ Fertig |
-| [`app/routers/todos.py`](../backend/app/routers/todos.py) | 7 Endpoints: Todos (CRUD, Claim) und Erinnerungen + Socket-Events | ✅ Fertig |
+| [`app/routers/todos.py`](../backend/app/routers/todos.py) | 7 Endpoints: Todos (CRUD, mehrere Zuständige, „Ich übernehme“) und Erinnerungen + Socket-Events | ✅ Fertig |
 | [`app/routers/expenses.py`](../backend/app/routers/expenses.py) | 7 Endpoints: Ausgaben (CRUD, Split even/custom, Einzelabruf, Wiederherstellen) und Salden; Zeilensperre + `version`/`If-Match` (409 `EXPENSE_VERSION_CONFLICT`), Soft Delete mit `created_by`/`updated_by`/`deleted_by`, Flag `before_last_settlement`; Pydantic-Schemas inline | ✅ Fertig |
 | [`app/routers/settlements.py`](../backend/app/routers/settlements.py) | 3 Endpoints: Ausgleichszahlungen (GET/POST/DELETE) + Socket-Events | ✅ Fertig |
 | [`app/routers/chores.py`](../backend/app/routers/chores.py) | 8 Endpoints: Ämtli (CRUD) und Zuweisungen (Liste, abhaken, rückgängig, neu zuweisen) + Socket-Events | ✅ Fertig |
@@ -138,11 +139,11 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`app/services/care_schedule.py`](../backend/app/services/care_schedule.py) | Fälligkeit wiederkehrender Pflegeaufgaben (Tiere, Pflanzen): Intervall-Änderung setzt `next_due_at` neu (PD-P4 / E-2) | ✅ Fertig |
 | [`app/services/household_checks.py`](../backend/app/services/household_checks.py) | Prüfungen auf Haushaltsmitgliedschaft (Teilnehmer, Ausgleichs-Parteien, Ex-Mitglieder) | ✅ Fertig |
 | [`app/services/invite_code.py`](../backend/app/services/invite_code.py) | Eindeutige Invite-Code-Generierung mit Retry-Logik | ✅ Fertig |
-| [`app/services/push_service.py`](../backend/app/services/push_service.py) | Web-Push-Versand (Endpoint-Allowlist) und Scheduler für Todo- und Termin-Erinnerungen (an Teilnehmer, sonst alle; ganztägig 08:00 am Tag bzw. Vortag), Tier- und Pflanzenpflege, Putzplan („Du bist dran“, materialisiert die heutigen Ämtli selbst) und Ablaufdaten von Dokumenten (30 Tage vorher und am Tag); jede Payload trägt die Zahl fürs App-Icon | ✅ Fertig |
-| [`app/services/attention.py`](../backend/app/services/attention.py) | Was heute ansteht (Zahl am App-Icon und Liste fürs Widget): bis heute fällige offene Aufgaben und Ämtli (eigene oder niemandem zugewiesene), Tier- und Pflanzenpflege | ✅ Fertig |
+| [`app/services/push_service.py`](../backend/app/services/push_service.py) | Web-Push-Versand (Endpoint-Allowlist) und Scheduler für Todo-Erinnerungen (an alle zuständigen Mitglieder, sonst alle) und Termin-Erinnerungen (an Teilnehmer, sonst alle; ganztägig 08:00 am Tag bzw. Vortag), Tier- und Pflanzenpflege, Putzplan („Du bist dran“, materialisiert die heutigen Ämtli selbst) und Ablaufdaten von Dokumenten (30 Tage vorher und am Tag); jede Payload trägt die Zahl fürs App-Icon | ✅ Fertig |
+| [`app/services/attention.py`](../backend/app/services/attention.py) | Was heute ansteht (Zahl am App-Icon und Liste fürs Widget): bis heute fällige offene Aufgaben (bei denen die Person mitzuständig ist oder die niemandem bzw. nur Ex-Mitgliedern zugewiesen sind) und Ämtli (eigene oder niemandem zugewiesene), Tier- und Pflanzenpflege | ✅ Fertig |
 | [`app/routers/widget.py`](../backend/app/routers/widget.py) | Homescreen-Widget (Scriptable): Nur-Lese-Schlüssel verwalten (3 Endpoints) und Widget-Daten (`/api/widget/summary`) — siehe [`widget.md`](widget.md) | ✅ Fertig |
 | [`app/services/storage.py`](../backend/app/services/storage.py) | `LocalStorageService`: Dateien unter `UPLOAD_DIR/{household_id}/` | ✅ Fertig |
-| [`alembic.ini`](../backend/alembic.ini), `migrations/` | Alembic-Konfiguration und -Migrationen (46 Revisionen unter `migrations/versions/`, einziger Kopf `cal1a2b3c4d5`) | ✅ Fertig |
+| [`alembic.ini`](../backend/alembic.ini), `migrations/` | Alembic-Konfiguration und -Migrationen (47 Revisionen unter `migrations/versions/`, einziger Kopf `mas1a2b3c4d5`) | ✅ Fertig |
 | [`scripts/regenerate_invite_codes.py`](../backend/scripts/regenerate_invite_codes.py) | Dry-Run/Apply-Script für Invite-Code-Migration | ✅ Fertig |
 | [`scripts/generate_vapid_keys.py`](../backend/scripts/generate_vapid_keys.py) | Erzeugt VAPID-Schlüssel für Web Push | ✅ Fertig |
 | [`pyproject.toml`](../backend/pyproject.toml) | ruff-Konfiguration (E, F, I, B) | ✅ Fertig |
@@ -180,6 +181,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`test_todo_scoping.py`](../backend/tests/test_todo_scoping.py) | Todos: Mehrmandanten-Scoping | ✅ Fertig |
 | [`test_todo_tags.py`](../backend/tests/test_todo_tags.py) | Todo-Tags (JSON-Feld) | ✅ Fertig |
 | [`test_todo_claim.py`](../backend/tests/test_todo_claim.py) | `POST /todos/{id}/claim` | ✅ Fertig |
+| [`test_todo_assignees.py`](../backend/tests/test_todo_assignees.py) | Mehrere Zuständige: Anlegen/Ändern (`assignee_ids`, Übergangsfeld `assigned_to_user_id`), „Ich übernehme“ idempotent, `done_by_user_id`, Filter „mir zugewiesen“, Badge/Widget, Push-Empfänger, Tag `todo.done` | ✅ Fertig |
 | [`test_todo_reminders.py`](../backend/tests/test_todo_reminders.py) | Erinnerungen: CRUD, Scoping, Maximum 5 | ✅ Fertig |
 | [`test_chores.py`](../backend/tests/test_chores.py) | Scheduler-Unit-Tests, API-Tests, Socket-Events | ✅ Fertig |
 | [`test_chore_scoping.py`](../backend/tests/test_chore_scoping.py) | Cross-Household 403 auf alle Chore-Endpoints | ✅ Fertig |
@@ -266,7 +268,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | **Stores** | | |
 | [`stores/auth.ts`](../frontend/src/stores/auth.ts) | Login, Register (+ Invite-Code), Token-Persistenz und -Refresh, fetchMe, Haushalt-Wechsel, Socket-Handler (`household_*`) | ✅ Fertig |
 | [`stores/shopping.ts`](../frontend/src/stores/shopping.ts) | Einkauf: Listen und Einträge, Optimistic Updates, Race-Condition-Schutz, Geschäfts-Verwaltung | ✅ Fertig |
-| [`stores/todos.ts`](../frontend/src/stores/todos.ts) | Todos: CRUD, Claim, Erinnerungen, Optimistic Updates | ✅ Fertig |
+| [`stores/todos.ts`](../frontend/src/stores/todos.ts) | Todos: CRUD, mehrere Zuständige, „Ich übernehme“ (`claimTodo`), „erledigt von“, Erinnerungen, Optimistic Updates mit Rollback | ✅ Fertig |
 | [`stores/chores.ts`](../frontend/src/stores/chores.ts) | Ämtli: CRUD, Optimistic Updates, Toggle-Mutex, Socket-Handler | ✅ Fertig |
 | [`stores/expenses.ts`](../frontend/src/stores/expenses.ts) | Ausgaben: CRUD mit Version (If-Match, Konflikt übernimmt Server-Stand), Wiederherstellen, Verlauf, „Mehr laden“, Socket-Handler, debounced Balances-Refetch | ✅ Fertig |
 | [`stores/settlements.ts`](../frontend/src/stores/settlements.ts) | Ausgleichszahlungen: CRUD mit Client-ID, Plausibilitätsprüfung, Wiederherstellen, Verlauf, „Mehr laden“, Socket-Handler | ✅ Fertig |
@@ -339,7 +341,9 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | [`components/ConnectionStatus.vue`](../frontend/src/components/ConnectionStatus.vue) | Verbindungsstatus mit Text und Erklärung in „Mehr“ und Einstellungen; Offline hat Vorrang | ✅ Fertig |
 | [`components/ShoppingList.vue`](../frontend/src/components/ShoppingList.vue) | Einkaufsliste: Geschäfts-Chips, Gruppierung, Quick-Add, Kebab-Menü (Umbenennen/Auflösen) | ✅ Fertig |
 | [`components/ShoppingItemEditSheet.vue`](../frontend/src/components/ShoppingItemEditSheet.vue) | Eintrag bearbeiten: Name, Menge, Geschäft, Abteilung | ✅ Fertig |
-| [`components/TodoList.vue`](../frontend/src/components/TodoList.vue) | Aufgabenliste: Quick-Add, Detail-Edit, Zuweisung, Fälligkeit, Erinnerungen | ✅ Fertig |
+| [`components/TodoList.vue`](../frontend/src/components/TodoList.vue) | Aufgabenliste: Quick-Add (Zuständige bleiben nach dem Erfassen stehen), Detail-Edit, Avatar-Stapel (max. 3 + „+n“), „Übernehmen“/„Ich helfe mit“, „erledigt von …“, Fälligkeit, Erinnerungen | ✅ Fertig |
+| [`components/TodoAssigneePicker.vue`](../frontend/src/components/TodoAssigneePicker.vue) | Mehrfachauswahl der Zuständigen (Chips mit `aria-pressed`, „Alle“/„Niemand“, 44-px-Ziele) | ✅ Fertig |
+| [`utils/todoAssignees.ts`](../frontend/src/utils/todoAssignees.ts) | Regeln für Zuständige im Client: Auswahl umschalten, Avatar-Stapel, Übernehmen vs. Mithelfen, Zähler pro Person, Vorauswahl beim Personen-Filter | ✅ Fertig |
 | [`components/ExpenseList.vue`](../frontend/src/components/ExpenseList.vue) | Ausgabenliste: Bearbeiten, Optimistic Delete | ✅ Fertig |
 | [`components/ExpenseFormDialog.vue`](../frontend/src/components/ExpenseFormDialog.vue) | Ausgabe-Dialog: Erstellen/Bearbeiten, Even/Custom-Split | ✅ Fertig |
 | [`components/BalanceSummary.vue`](../frontend/src/components/BalanceSummary.vue) | Saldo-Übersicht, Ausgleichsvorschläge, Inline-Erfassung von Ausgleichszahlungen | ✅ Fertig |
@@ -413,13 +417,14 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | PATCH | `/api/households/{id}/shopping-items/{item_id}` | ✅ | Eintrag aktualisieren |
 | DELETE | `/api/households/{id}/shopping-items/{item_id}` | ✅ | Eintrag löschen |
 | **Todos** | | | |
-| GET | `/api/households/{id}/todos/` | ✅ | Todo-Liste |
-| POST | `/api/households/{id}/todos/` | ✅ | Todo erstellen (Client-ID möglich, idempotent) |
-| PATCH | `/api/households/{id}/todos/{todo_id}` | ✅ | Todo aktualisieren |
+| GET | `/api/households/{id}/todos/` | ✅ | Todo-Liste; `assigned_to_me=true` = Aufgaben, bei denen ich eine der Zuständigen bin |
+| POST | `/api/households/{id}/todos/` | ✅ | Todo erstellen (Client-ID möglich, idempotent); `assignee_ids` (max. 10, Duplikate zusammengefasst, nur Mitglieder; leer = offen für alle) |
+| PATCH | `/api/households/{id}/todos/{todo_id}` | ✅ | Todo aktualisieren; `assignee_ids` ersetzt die Menge (`null` → 422, „niemand“ = `[]`; bereits eingetragene Ex-Mitglieder dürfen stehen bleiben, neue müssen Mitglied sein); `is_done=true` setzt `done_by_user_id` = Aufrufer (nur beim Wechsel offen → erledigt), `false` leert es |
 | DELETE | `/api/households/{id}/todos/{todo_id}` | ✅ | Todo löschen |
-| POST | `/api/households/{id}/todos/{todo_id}/claim` | ✅ | Todo übernehmen |
+| POST | `/api/households/{id}/todos/{todo_id}/claim` | ✅ | „Ich übernehme“: fügt den Aufrufer zu den Zuständigen hinzu, auch wenn andere schon eingetragen sind; schon eingetragen → 200 ohne Änderung/Event; erledigt → 422 `TODO_IS_DONE`. Race-sicher über PK `(todo_id, user_id)` + `ON CONFLICT DO NOTHING` (früher 409 `TODO_ALREADY_CLAIMED`, nicht mehr verwendet) |
 | POST | `/api/households/{id}/todos/{todo_id}/reminders/` | ✅ | Erinnerung anlegen (maximal 5 pro Todo; nicht an erledigte Todos → 422 `TODO_IS_DONE`; `remind_at` ohne Offset = Wanduhrzeit des Haushalts, wie bei Terminen; Vergangenheit → 422 `REMINDER_IN_PAST`). Erledigen markiert Erinnerungen nicht mehr; Wiedereröffnen schaltet künftige wieder scharf |
 | DELETE | `/api/households/{id}/todos/{todo_id}/reminders/{reminder_id}` | ✅ | Erinnerung löschen |
+| | *Übergang (eine Version, veraltet)* | | Create/PATCH nehmen noch `assigned_to_user_id` an (`id` → `[id]`, `null` → `[]`; `assignee_ids` hat Vorrang); die Antwort liefert `assigned_to_user_id` = erste zuständige Person, damit eine alte PWA bis zum Update weiterläuft. Wird entfernt, sobald alle Clients `assignee_ids` nutzen |
 | **Expenses** | | | |
 | GET | `/api/households/{id}/expenses/` | ✅ | Ausgaben-Liste (nach Datum absteigend, `limit`/`offset`, optional `month`; `deleted=true` → nur gelöschte) |
 | GET | `/api/households/{id}/expenses/{expense_id}` | ✅ | Einzelne Ausgabe (auch gelöscht) |
@@ -588,7 +593,7 @@ Verbindung unter `/socket.io` mit `auth: { token }` (Access-Token). Events gehen
 | `shopping_items_bulk_updated` | Server → Room | `{ item_ids, changes: { store } }` |
 | **Todos** | | |
 | `todo_created` | Server → Room | `TodoItem` |
-| `todo_updated` | Server → Room | `TodoItem` (auch bei Claim und Erinnerungen; Erinnerung anlegen/löschen erhöht `version`) |
+| `todo_updated` | Server → Room | `TodoItem` inkl. `assignee_ids` und `done_by_user_id` (auch bei Claim und Erinnerungen; Erinnerung anlegen/löschen und jede Änderung der Zuständigen erhöhen `version`; Claim ohne Änderung sendet kein Event) |
 | `todo_deleted` | Server → Room | `{ id }` |
 | **Expenses** | | |
 | `expense_created` | Server → Room | `ExpenseResponse` (inkl. shares, `version`; auch beim Buchen einer Rechnung und beim Wiederherstellen) |
@@ -688,7 +693,7 @@ Eine Verbindung gilt nur so lange wie das Access-Token (15 Min.), mit dem sie zu
 
 ## 5. Datenmodell
 
-39 Tabellen in `backend/app/models.py` (Alembic-Migrationen: `backend/migrations/versions/`, 46 Revisionen, einziger Kopf `cal1a2b3c4d5`). Geldbeträge sind Integer in Rappen (`*_rappen`). Soweit nicht anders vermerkt, haben alle Haushalts-Tabellen `household_id` (FK auf `households`, `ON DELETE CASCADE`).
+40 Tabellen in `backend/app/models.py` (Alembic-Migrationen: `backend/migrations/versions/`, 47 Revisionen, einziger Kopf `mas1a2b3c4d5`). Geldbeträge sind Integer in Rappen (`*_rappen`). Soweit nicht anders vermerkt, haben alle Haushalts-Tabellen `household_id` (FK auf `households`, `ON DELETE CASCADE`).
 
 ### Übersicht
 
@@ -697,7 +702,7 @@ User ──< HouseholdMember >── Household
  ├──< RefreshToken                │  (invite_code, timezone, currency)
  └──< PushSubscription            │
                                   ├── ShoppingList ──< ShoppingItem
-                                  ├── Todo ──< TodoReminder
+                                  ├── Todo ──< TodoReminder, TodoAssignee (>── User)
                                   ├── Expense ──< ExpenseShare   (Expense >── RecurringBill, optional)
                                   ├── Settlement, Budget, RecurringBill
                                   ├── Chore ──< ChoreAssignment
@@ -720,7 +725,8 @@ User ──< HouseholdMember >── Household
 | `push_subscriptions` | `user_id`, `endpoint` (unique), `p256dh`, `auth`, `locale` | Web-Push-Geräte; `user_id` CASCADE |
 | `shopping_lists` | `name`, `icon`, `position` | `version`/`updated_at` |
 | `shopping_items` | `list_id` (CASCADE), `name`, `quantity`, `category`, `store` (Freitext), `is_checked`, `checked_at`, `added_by_user_id`, `assigned_to_user_id` | `version`/`updated_at`; Geschäfte sind abgeleitete Freitext-Werte, keine eigene Tabelle |
-| `todos` | `title`, `description`, `assigned_to_user_id`, `due_date`, `is_done`, `done_at`, `tags` (JSON), `created_by_user_id` | `version`/`updated_at` |
+| `todos` | `title`, `description`, `due_date`, `is_done`, `done_at`, `done_by_user_id` (SET NULL), `tags` (JSON), `created_by_user_id` | `version`/`updated_at`; Zuständige in `todo_assignees` (Spalte `assigned_to_user_id` entfernt, Migration `mas1a2b3c4d5`) |
+| `todo_assignees` | `todo_id` (CASCADE), `user_id` (CASCADE), `household_id`, `created_at` | PK `(todo_id, user_id)`; Index `user_id`; keine Zeile = offen für alle; Reihenfolge = `created_at`, `user_id` |
 | `todo_reminders` | `todo_id` (CASCADE), `remind_at`, `notified_at` | Maximal 5 pro Todo (API); Index `(household_id, remind_at)` |
 | `expenses` | `description`, `amount_rappen`, `currency`, `split_type` (`even`/`custom`), `category`, `paid_by_user_id`, `expense_date`, `recurring_bill_id`, `booked_month` | `updated_at` (kein `version`); Unique `(recurring_bill_id, booked_month)` (eine Buchung pro Rechnung und Monat); Index `(household_id, expense_date)` |
 | `expense_shares` | `expense_id` (CASCADE), `user_id`, `amount_rappen` | Unique `(expense_id, user_id)` |
@@ -777,6 +783,14 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 ## Geschäftsregeln
 
 - Einladungscodes laufen nach 7 Tagen ab (`INVITE_CODE_TTL` in `services/invite_code.py`). Das Ablaufdatum steht in `households.invite_code_expires_at` (UTC); es wird beim Anlegen des Haushalts und bei jeder Rotation (Admin-Button, Entfernen eines Mitglieds) neu gesetzt. `NULL` bedeutet „läuft nicht ab“. Ein abgelaufener Code wird bei `POST /join` und `POST /register` mit HTTP 410 und `INVITE_CODE_EXPIRED` abgelehnt (nicht als „nicht gefunden“). Die Migration setzt bei bestehenden Haushalten 7 Tage ab Upgrade; die Haushalts-Ansicht zeigt „gültig bis …“ bzw. einen Hinweis mit Link zur Rotation.
+### Aufgaben: mehrere Zuständige
+- Eine Aufgabe hat beliebig viele Zuständige (`todo_assignees`, API max. 10); **keine = offen für alle**
+- **Eine:r für alle:** Wer abhakt, erledigt die Aufgabe für alle; `done_by_user_id` hält fest, wer (UI „erledigt von Anna“). Wiedereröffnen leert es
+- **„Ich übernehme“** (`POST …/claim`) trägt mich zusätzlich ein, auch wenn andere schon zuständig sind (UI: „Übernehmen“ ohne Zuständige, „Ich helfe mit“ wenn andere eingetragen sind); idempotent
+- „Meine“ (`assigned_to_me`, Personen-Filter im UI, Badge/Widget): Person ist eine der Zuständigen. Niemandem oder nur Ex-Mitgliedern zugewiesene Aufgaben zählen in Badge/Widget für alle (nicht als „meine“)
+- Push-Erinnerung an alle zuständigen aktuellen Mitglieder, sonst an alle Mitglieder
+- Jede Änderung der Zuständigen erhöht `version` (Socket-Merge im Client)
+
 ### Währungsregel
 - **Eine Währung pro Haushalt** (`Household.currency`, Default: CHF)
 - Expenses und Settlements müssen die Haushaltswährung verwenden
@@ -804,14 +818,14 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 - Letztes Mitglied verlässt → Haushalt wird komplett gelöscht (CASCADE) inkl. hochgeladener Dateien
 - Bleiben Mitglieder ohne Admin → dienstältestes Mitglied wird Admin
 - **Offene Zuständigkeiten werden freigegeben (PD-H1)**, im selben Commit wie der Austritt:
-  - offene Aufgaben (`is_done = false`) und offene Einkaufsartikel (`is_checked = false`) der Person → niemandem zugewiesen
+  - offene Aufgaben (`is_done = false`): die Person wird aus den Zuständigen entfernt (`todo_assignees`; andere bleiben, war sie allein → offen für alle); offene Einkaufsartikel (`is_checked = false`) der Person → niemandem zugewiesen
   - offene Ämtli-Termine (`completed_at IS NULL`, auch überfällige und vorab erzeugte) → niemandem zugewiesen
   - die Person wird aus `rotation_order` aller Ämtli entfernt; `next_rotation_index` wird so angepasst, dass die Person, die als Nächstes dran gewesen wäre, auch weiterhin als Nächste dran ist (war es die austretende Person, ist es die folgende). Vollständig durchlaufene Runden bleiben im Index erhalten
   - Standard-Zahler wiederkehrender Rechnungen → leer (Buchen verlangt dann einen Zahler, `BILL_PAYER_REQUIRED`)
   - Stimmen in **offenen** Umfragen werden gelöscht; entschiedene Umfragen behalten sie
   - Widget-Schlüssel der Person für diesen Haushalt wird gelöscht
   - Erledigte Aufgaben/Ämtli, Ausgaben, Ausgleiche und entschiedene Umfragen behalten die Person (Geschichte)
-- Zuweisungen an Nicht-Mitglieder (Altbestand) gelten in Badge, Widget und Dashboard als „niemandem zugewiesen“ — wie beim Push, der dann an alle Mitglieder geht
+- Zuweisungen an Nicht-Mitglieder (Altbestand) gelten in Badge, Widget und Dashboard als „niemandem zugewiesen“ — wie beim Push, der dann an alle Mitglieder geht. Aufgaben mit mehreren Zuständigen: die austretende Person wird nur aus **offenen** Aufgaben ausgetragen, die anderen bleiben zuständig; erledigte behalten sie
 - Socket: `household_member_left` mit `released` (betroffene Bereiche: `todos`, `shopping`, `chores`, `recurring_bills`, `polls`); andere Clients laden diese Listen neu
 - Einladungscode bleibt (PD-H4): wer freiwillig geht, kann innerhalb der Gültigkeit wieder beitreten — ohne seine alten Zuständigkeiten und ohne alten Widget-Schlüssel
 
@@ -1015,7 +1029,7 @@ Verweise auf `users` in Ersteller-, Zuweiser- und Zahler-Spalten (`created_by_us
 |---|---|---|
 | FastAPI | 0.141.1 | Web-Framework |
 | SQLAlchemy | (via requirements.txt) | ORM |
-| Alembic | 1.18.5 | DB-Migrationen (46 Revisionen) |
+| Alembic | 1.18.5 | DB-Migrationen (47 Revisionen) |
 | psycopg2-binary | 2.9.12 | PostgreSQL-Driver |
 | python-socketio | (via requirements.txt) | WebSocket |
 | bcrypt | 4.0.1 | Passwort-Hashing |

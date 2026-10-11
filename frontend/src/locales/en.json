@@ -301,7 +301,10 @@
     "joinInHint": "Add me as well",
     "claimError": "Couldn't add you.",
     "doneBy": "done by {name}",
-    "doneByYou": "done by you"
+    "doneByYou": "done by you",
+    "createdHiddenAssigned": "Task added. It's hidden because only tasks without anyone assigned are shown here.",
+    "emptyUnassignedTitle": "Everything is assigned",
+    "emptyUnassignedSubtitle": "Every open task has someone taking care of it."
   },
   "tasks": {
     "title": "Tasks",
@@ -328,7 +331,8 @@
     "emptySubtitle": "Create a new task or wait for the next chore schedule entry.",
     "manageChores": "Manage chores",
     "segmentTodos": "Tasks",
-    "segmentChores": "Chores"
+    "segmentChores": "Chores",
+    "filterUnassigned": "Unassigned"
   },
   "expenses": {
     "title": "Expenses",

@@ -21,6 +21,7 @@ import {
   assigneeStack,
   claimAction,
   isAssignedTo,
+  isUnassigned,
   nextQuickAddAssignees,
   type AssigneeStack,
 } from '../utils/todoAssignees'
@@ -36,6 +37,8 @@ const props = withDefaults(defineProps<{
   filterUserId?: string
   /** Vorname der gefilterten Person (für Hinweise) */
   filterUserName?: string
+  /** Tab "Offen": nur Aufgaben ohne Zuständige */
+  filterUnassigned?: boolean
   /** Laden ist gescheitert → Fehlerzustand statt „Keine offenen Aufgaben“ */
   loadError?: boolean
   retrying?: boolean
@@ -43,6 +46,7 @@ const props = withDefaults(defineProps<{
   autoFocus: false,
   filterUserId: undefined,
   filterUserName: undefined,
+  filterUnassigned: false,
   loadError: false,
   retrying: false,
 })
@@ -68,6 +72,18 @@ const newReminders = ref<string[]>([])
 watch(() => props.filterUserId, (id, oldId) => {
   newAssignees.value = nextQuickAddAssignees(newAssignees.value, id, oldId)
 }, { immediate: true })
+
+// Tab "Offen": neue Aufgaben ohne Zuständige vorbelegen (sonst sofort ausgeblendet)
+watch(() => props.filterUnassigned, (on) => {
+  if (on) newAssignees.value = []
+}, { immediate: true })
+
+// Personen-Filter oder Tab "Offen"
+function matchesFilter(todo: TodoItem): boolean {
+  if (props.filterUnassigned) return isUnassigned(todo, todosStore.members)
+  if (props.filterUserId !== undefined) return isAssignedTo(todo, props.filterUserId)
+  return true
+}
 
 // Zusammenfassung der Vorauswahl (nur aktuelle Mitglieder, Vornamen)
 const newAssigneesSummary = computed(() =>
@@ -98,20 +114,8 @@ onMounted(() => {
 
 // Getrennte Listen: offen vs. erledigt (mit optionalem Personen-Filter:
 // Aufgaben, bei denen die Person eine der Zuständigen ist)
-const openTodos = computed(() => {
-  let list = todosStore.items.filter((t) => !t.is_done)
-  if (props.filterUserId !== undefined) {
-    list = list.filter((t) => isAssignedTo(t, props.filterUserId))
-  }
-  return list
-})
-const doneTodos = computed(() => {
-  let list = todosStore.items.filter((t) => t.is_done)
-  if (props.filterUserId !== undefined) {
-    list = list.filter((t) => isAssignedTo(t, props.filterUserId))
-  }
-  return list
-})
+const openTodos = computed(() => todosStore.items.filter((t) => !t.is_done && matchesFilter(t)))
+const doneTodos = computed(() => todosStore.items.filter((t) => t.is_done && matchesFilter(t)))
 
 // Avatar-Stapel pro Aufgabe (max. 3 + "+n"; Ex-Mitglieder zählen nicht)
 const stacks = computed(() => {
@@ -240,6 +244,8 @@ async function handleAddTodo() {
     // Gefilterte Person bewusst abgewählt → durch den Filter ausgeblendet
     if (props.filterUserId !== undefined && !assignees.includes(props.filterUserId)) {
       notifyInfo(t('todos.createdHidden', { name: props.filterUserName ?? '' }))
+    } else if (props.filterUnassigned && assignees.length > 0) {
+      notifyInfo(t('todos.createdHiddenAssigned'))
     }
   }, { key: `add:${title}`, error: t('todos.addError') })
   inputRef.value?.focus()
@@ -593,8 +599,8 @@ async function saveEdit(todoId: string) {
     <BaseEmptyState
       v-if="!todosStore.loading && openTodos.length === 0 && !(loadError && todosStore.items.length === 0)"
       :icon="PhListChecks"
-      :title="$t('todos.emptyOpenTitle')"
-      :subtitle="$t('todos.emptySubtitle')"
+      :title="filterUnassigned ? $t('todos.emptyUnassignedTitle') : $t('todos.emptyOpenTitle')"
+      :subtitle="filterUnassigned ? $t('todos.emptyUnassignedSubtitle') : $t('todos.emptySubtitle')"
     />
 
     <!-- Erledigte Todos (eingeklappt) -->

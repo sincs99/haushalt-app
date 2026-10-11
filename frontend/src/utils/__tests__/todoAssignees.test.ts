@@ -5,6 +5,8 @@ import {
   assigneeStack,
   claimAction,
   isAssignedTo,
+  isUnassigned,
+  openUnassignedCount,
   openCountFor,
   sameAssignees,
   toggleAssignee,
@@ -113,5 +115,23 @@ describe('nextQuickAddAssignees (Personen-Filter)', () => {
     expect(nextQuickAddAssignees(['anna', 'ben'], undefined, 'ben')).toEqual(['anna', 'ben'])
     expect(nextQuickAddAssignees(['anna'], 'carla', undefined)).toEqual(['anna', 'carla'])
     expect(nextQuickAddAssignees(['anna', 'carla'], 'carla', 'ben')).toEqual(['anna', 'carla'])
+  })
+})
+
+describe('isUnassigned / openUnassignedCount (Tab "Offen")', () => {
+  it('ohne Zuständige oder nur mit Ex-Mitgliedern gilt eine Aufgabe als offen für alle', () => {
+    expect(isUnassigned(todo({ assignee_ids: [] }), members)).toBe(true)
+    expect(isUnassigned(todo({ assignee_ids: ['weg'] }), members)).toBe(true)
+    expect(isUnassigned(todo({ assignee_ids: ['weg', 'ben'] }), members)).toBe(false)
+  })
+
+  it('zählt nur offene, nicht erledigte Aufgaben ohne Zuständige', () => {
+    const items = [
+      todo({ id: '1', assignee_ids: [] }),
+      todo({ id: '2', assignee_ids: ['weg'] }),
+      todo({ id: '3', assignee_ids: ['ben'] }),
+      todo({ id: '4', assignee_ids: [], is_done: true }),
+    ]
+    expect(openUnassignedCount(items, members)).toBe(2)
   })
 })

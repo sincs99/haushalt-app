@@ -67,6 +67,16 @@ export function claimAction(
   return activeAssignees(todo, members).length > 0 ? 'join' : 'claim'
 }
 
+/** Niemand (mehr) zuständig → offen für alle (Tab "Offen"); Ex-Mitglieder zählen nicht */
+export function isUnassigned(todo: TodoItem, members: readonly HouseholdMemberInfo[]): boolean {
+  return activeAssignees(todo, members).length === 0
+}
+
+/** Offene Aufgaben ohne Zuständige (Zahl im Tab "Offen") */
+export function openUnassignedCount(items: readonly TodoItem[], members: readonly HouseholdMemberInfo[]): number {
+  return items.filter(t => !t.is_done && isUnassigned(t, members)).length
+}
+
 /** Offene Aufgaben, bei denen die Person (mit-)zuständig ist (Zahl im Personen-Filter) */
 export function openCountFor(items: readonly TodoItem[], userId: string): number {
   return items.filter(t => !t.is_done && isAssignedTo(t, userId)).length

@@ -184,7 +184,7 @@ def test_reminder_goes_only_to_assignee(db, todo_a, user_a, user_a2, mock_webpus
     now = datetime.now(timezone.utc)
     _add_sub(db, user_a)
     sub2 = _add_sub(db, user_a2)
-    todo_a.assigned_to_user_id = user_a2.id
+    todo_a.assignee_ids = [user_a2.id]
     db.commit()
     _reminder(db, todo_a, now)
 

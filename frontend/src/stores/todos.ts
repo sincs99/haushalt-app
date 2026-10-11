@@ -54,7 +54,7 @@ export const useTodosStore = defineStore('todos', () => {
   async function addTodo(
     title: string,
     description?: string,
-    assignedToUserId?: string,
+    assigneeIds?: string[],
     dueDate?: string,
     tags?: string[],
   ): Promise<string | undefined> {
@@ -64,7 +64,8 @@ export const useTodosStore = defineStore('todos', () => {
 
     // 1. Optimistic: Sofort lokalen Eintrag mit endgültiger Client-ID erzeugen.
     //    Der Server übernimmt die ID → kein Temp-ID-Swap nötig.
-    const retryKey = JSON.stringify([householdId, title, description, assignedToUserId, dueDate, tags])
+    const assignees = [...new Set(assigneeIds ?? [])]
+    const retryKey = JSON.stringify([householdId, title, description, assignees, dueDate, tags])
     const todoId = retryIds.idFor(retryKey)
     const now = new Date().toISOString()
     const optimisticItem: TodoItem = {
@@ -72,9 +73,10 @@ export const useTodosStore = defineStore('todos', () => {
       household_id: householdId,
       title,
       description: description ?? null,
-      assigned_to_user_id: assignedToUserId ?? null,
+      assignee_ids: assignees,
       due_date: dueDate ?? null,
       is_done: false,
+      done_by_user_id: null,
       created_by_user_id: authStore.user?.id ?? null,
       created_at: now,
       done_at: null,
@@ -91,7 +93,7 @@ export const useTodosStore = defineStore('todos', () => {
         id: todoId,
         title,
         description,
-        assigned_to_user_id: assignedToUserId,
+        assignee_ids: assignees,
         due_date: dueDate,
         tags,
       })
@@ -140,7 +142,12 @@ export const useTodosStore = defineStore('todos', () => {
     const item = items.value.find(i => i.id === todoId)
     const previousIsDone = item?.is_done
     const previousDoneAt = item?.done_at ?? null
+    const previousDoneBy = item?.done_by_user_id ?? null
     if (item) {
+      // Eine:r für alle: wer abhakt, erledigt für alle (Server setzt done_by ebenso;
+      // war die Aufgabe schon erledigt, bleibt die bisherige Person)
+      if (isDone && !item.is_done) item.done_by_user_id = authStore.user?.id ?? null
+      if (!isDone) item.done_by_user_id = null
       item.is_done = isDone
       item.done_at = isDone ? new Date().toISOString() : null
     }
@@ -155,6 +162,7 @@ export const useTodosStore = defineStore('todos', () => {
       if (currentItem && previousIsDone !== undefined) {
         currentItem.is_done = previousIsDone
         currentItem.done_at = previousDoneAt
+        currentItem.done_by_user_id = previousDoneBy
       }
       throw error
     } finally {
@@ -171,7 +179,7 @@ export const useTodosStore = defineStore('todos', () => {
     const newId = await addTodo(
       snapshot.title,
       snapshot.description ?? undefined,
-      snapshot.assigned_to_user_id ?? undefined,
+      snapshot.assignee_ids?.length ? [...snapshot.assignee_ids] : undefined,
       snapshot.due_date ?? undefined,
       snapshot.tags?.length ? [...snapshot.tags] : undefined,
     )
@@ -198,18 +206,48 @@ export const useTodosStore = defineStore('todos', () => {
     const item = items.value.find(i => i.id === todoId)
     if (!item) return
 
-    // 1. Snapshot für Rollback
+    // 1. Snapshot für Rollback (Arrays werden ersetzt, nicht verändert)
     const snapshot = { ...item }
 
     // 2. Optimistic: Sofort aktualisieren
     Object.assign(item, data)
 
     try {
-      // 3. Server-Call
-      await repo.update(householdId, todoId, data)
+      // 3. Server-Call; Antwort trägt die neue Version (Socket-Events älterer
+      //    Stände werden danach verworfen)
+      const serverItem = await repo.update(householdId, todoId, data)
+      if (serverItem) upsertVersioned(items.value, serverItem, false)
     } catch (error) {
-      // 4. Rollback auf Snapshot
-      Object.assign(item, snapshot)
+      // 4. Rollback auf Snapshot — frisch nachschlagen (Socket kann ersetzt haben)
+      const currentItem = items.value.find(i => i.id === todoId)
+      if (currentItem) Object.assign(currentItem, snapshot)
+      throw error
+    }
+  }
+
+  /**
+   * "Ich übernehme" / "Ich helfe mit": mich zu den Zuständigen hinzufügen, auch
+   * wenn schon andere eingetragen sind. Schon dabei → kein Request.
+   */
+  async function claimTodo(todoId: string) {
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    const myId = authStore.user?.id
+    if (!householdId || !myId) return
+
+    const item = items.value.find(i => i.id === todoId)
+    if (!item || item.assignee_ids.includes(myId)) return
+
+    // Optimistic: sofort hinzufügen
+    item.assignee_ids = [...item.assignee_ids, myId]
+
+    try {
+      const serverItem = await repo.claim(householdId, todoId)
+      if (serverItem) upsertVersioned(items.value, serverItem, false)
+    } catch (error) {
+      // Rollback: nur mich wieder entfernen (andere Änderungen per Socket bleiben)
+      const currentItem = items.value.find(i => i.id === todoId)
+      if (currentItem) currentItem.assignee_ids = currentItem.assignee_ids.filter(id => id !== myId)
       throw error
     }
   }
@@ -334,6 +372,7 @@ export const useTodosStore = defineStore('todos', () => {
     setDone,
     restoreTodo,
     updateTodo,
+    claimTodo,
     deleteTodo,
     addReminder,
     deleteReminder,

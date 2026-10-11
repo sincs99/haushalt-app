@@ -351,13 +351,14 @@ class Todo(SyncVersionMixin, Base):
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    assigned_to_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
     due_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     is_done: Mapped[bool] = mapped_column(default=False)
+    # Wer abgehakt hat ("eine:r für alle"); leer, solange offen
+    done_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -374,6 +375,73 @@ class Todo(SyncVersionMixin, Base):
         back_populates="todo", cascade="all, delete-orphan",
         order_by="TodoReminder.remind_at",
     )
+    # Zuständige Personen (keine = offen für alle). Reihenfolge: wer zuerst eingetragen wurde
+    assignee_links: Mapped[list["TodoAssignee"]] = relationship(
+        back_populates="todo", cascade="all, delete-orphan",
+        order_by="(TodoAssignee.created_at, TodoAssignee.user_id)",
+    )
+
+    @property
+    def assignee_ids(self) -> list[uuid.UUID]:
+        return [link.user_id for link in self.assignee_links]
+
+    @assignee_ids.setter
+    def assignee_ids(self, user_ids) -> None:
+        """Setzt die Zuständigen (Duplikate werden ignoriert, Bestehende bleiben samt
+        Zeitpunkt). Bei einer Änderung zählt ``version`` hoch — Collection-Änderungen
+        allein lösen den Versions-Hook nicht aus (``include_collections=False``).
+        """
+        wanted = list(dict.fromkeys(user_ids))
+        current = {link.user_id: link for link in self.assignee_links}
+        if set(wanted) == set(current):
+            return
+        now = datetime.now(timezone.utc)
+        self.assignee_links = [
+            current.get(uid) or TodoAssignee(user_id=uid, household_id=self.household_id, created_at=now)
+            for uid in wanted
+        ]
+        self.updated_at = now
+
+    @property
+    def assigned_to_user_id(self) -> uuid.UUID | None:
+        """Veraltet (Übergang für alte PWA-Versionen): erste zuständige Person."""
+        links = self.assignee_links
+        return links[0].user_id if links else None
+
+
+class TodoAssignee(Base):
+    """Zuständige Person einer Aufgabe. PK (todo_id, user_id) macht "Ich übernehme"
+    race-sicher (INSERT … ON CONFLICT DO NOTHING)."""
+
+    __tablename__ = "todo_assignees"
+    __table_args__ = (
+        Index("ix_todo_assignees_user_id", "user_id"),
+    )
+
+    todo_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("todos.id", ondelete="CASCADE"), primary_key=True
+    )
+    # Konto gelöscht → Zuweisung verschwindet (wie früher SET NULL auf der Spalte)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc), server_default=func.now(),
+    )
+
+    todo: Mapped["Todo"] = relationship(back_populates="assignee_links")
+
+
+@event.listens_for(TodoAssignee, "before_insert")
+def _todo_assignee_household(mapper, connection, target):
+    # Beim Anlegen per Konstruktor (Todo(..., assignee_ids=[…])) kann household_id
+    # des Todos beim Setzen noch fehlen → hier vom Todo übernehmen
+    if target.household_id is None and target.todo is not None:
+        target.household_id = target.todo.household_id
 
 
 class TodoReminder(Base):

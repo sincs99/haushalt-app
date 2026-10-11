@@ -50,12 +50,14 @@ def hh(db):
     db.flush()
 
     now = datetime.now(timezone.utc)
-    open_todo = Todo(household_id=h.id, title="Altglas", assigned_to_user_id=ben.id, due_date=now, created_by_user_id=anna.id)
-    done_todo = Todo(household_id=h.id, title="Erledigt", assigned_to_user_id=ben.id, is_done=True, created_by_user_id=anna.id)
-    other_todo = Todo(household_id=h.id, title="Carlas", assigned_to_user_id=carla.id, created_by_user_id=anna.id)
+    open_todo = Todo(household_id=h.id, title="Altglas", assignee_ids=[ben.id], due_date=now, created_by_user_id=anna.id)
+    done_todo = Todo(household_id=h.id, title="Erledigt", assignee_ids=[ben.id], is_done=True, created_by_user_id=anna.id)
+    other_todo = Todo(household_id=h.id, title="Carlas", assignee_ids=[carla.id], created_by_user_id=anna.id)
+    # Mehrere Zuständige: nur Ben fällt weg, Carla bleibt
+    shared_todo = Todo(household_id=h.id, title="Zusammen", assignee_ids=[ben.id, carla.id], created_by_user_id=anna.id)
 
     lst = ShoppingList(household_id=h.id, name="Einkauf")
-    db.add_all([open_todo, done_todo, other_todo, lst])
+    db.add_all([open_todo, done_todo, other_todo, shared_todo, lst])
     db.flush()
     open_item = ShoppingItem(household_id=h.id, list_id=lst.id, name="Milch", assigned_to_user_id=ben.id)
     checked_item = ShoppingItem(household_id=h.id, list_id=lst.id, name="Brot", is_checked=True, assigned_to_user_id=ben.id)
@@ -96,6 +98,7 @@ def hh(db):
     db.commit()
     return SimpleNamespace(
         h=h, anna=anna, ben=ben, carla=carla, open_todo=open_todo, done_todo=done_todo, other_todo=other_todo,
+        shared_todo=shared_todo,
         open_item=open_item, checked_item=checked_item, chore=chore, overdue=overdue, future=future, done=done,
         bill=bill, carla_bill=carla_bill, open_poll=open_poll, decided_poll=decided_poll,
     )
@@ -119,11 +122,12 @@ def test_departure_releases_open_responsibilities(client, db, hh, depart):
     assert depart(client, s).status_code == 204
     db.expire_all()
 
-    # Offenes → niemand; Erledigtes behält Ben
-    assert db.get(Todo, s.open_todo.id).assigned_to_user_id is None
+    # Offenes → ohne Ben; Erledigtes behält Ben
+    assert db.get(Todo, s.open_todo.id).assignee_ids == []
     assert db.get(Todo, s.open_todo.id).version == open_todo_version + 1  # Offline-Sync sieht die Änderung
-    assert db.get(Todo, s.done_todo.id).assigned_to_user_id == s.ben.id
-    assert db.get(Todo, s.other_todo.id).assigned_to_user_id == s.carla.id
+    assert db.get(Todo, s.shared_todo.id).assignee_ids == [s.carla.id]
+    assert db.get(Todo, s.done_todo.id).assignee_ids == [s.ben.id]
+    assert db.get(Todo, s.other_todo.id).assignee_ids == [s.carla.id]
     assert db.get(ShoppingItem, s.open_item.id).assigned_to_user_id is None
     assert db.get(ShoppingItem, s.checked_item.id).assigned_to_user_id == s.ben.id
     assert db.get(ChoreAssignment, s.overdue.id).assigned_user_id is None

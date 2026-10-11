@@ -13,7 +13,8 @@ export interface TodosRepository {
       id?: string
       title: string
       description?: string
-      assigned_to_user_id?: string
+      /** Zuständige; leer = offen für alle */
+      assignee_ids?: string[]
       due_date?: string
       tags?: string[]
     },
@@ -24,6 +25,8 @@ export interface TodosRepository {
     data: Partial<TodoItem>,
   ): Promise<TodoItem>
   remove(householdId: string, todoId: string): Promise<void>
+  /** "Ich übernehme": mich zu den Zuständigen hinzufügen (idempotent) */
+  claim(householdId: string, todoId: string): Promise<TodoItem>
   addReminder(householdId: string, todoId: string, remindAt: string): Promise<TodoReminder>
   deleteReminder(householdId: string, todoId: string, reminderId: string): Promise<void>
 }
@@ -51,7 +54,7 @@ export function createOnlineTodosRepository(): TodosRepository {
           ...(payload.id ? { id: payload.id } : {}),
           title: payload.title,
           description: payload.description ?? null,
-          assigned_to_user_id: payload.assigned_to_user_id ?? null,
+          assignee_ids: payload.assignee_ids ?? [],
           due_date: payload.due_date ?? null,
           tags: payload.tags ?? [],
         },
@@ -71,6 +74,13 @@ export function createOnlineTodosRepository(): TodosRepository {
       await deleteIdempotent(
         `/api/households/${householdId}/todos/${todoId}`,
       )
+    },
+
+    async claim(householdId, todoId) {
+      const { data } = await api.post<TodoItem>(
+        `/api/households/${householdId}/todos/${todoId}/claim`,
+      )
+      return data
     },
 
     async addReminder(householdId, todoId, remindAt) {

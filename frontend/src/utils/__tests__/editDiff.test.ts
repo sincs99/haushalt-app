@@ -8,7 +8,7 @@ const note = (o: Partial<NoteItem> = {}): NoteItem => ({
 })
 
 const todo = (o: Partial<TodoItem> = {}): TodoItem => ({
-  id: 't1', household_id: 'h', title: 'Velo flicken', description: null, assigned_to_user_id: null,
+  id: 't1', household_id: 'h', title: 'Velo flicken', description: null, assignee_ids: [], done_by_user_id: null,
   due_date: '2026-10-07T00:00:00Z', is_done: false, created_by_user_id: 'u1', created_at: '',
   done_at: null, tags: [], updated_at: '', version: 2, reminders: [], ...o,
 })
@@ -27,16 +27,36 @@ describe('changedNoteFields (CASA-09)', () => {
 })
 
 describe('changedTodoFields (CASA-09)', () => {
-  const unchanged = { title: 'Velo flicken', description: null, due_date: '2026-10-07', assigned_to_user_id: null }
+  const unchanged = { title: 'Velo flicken', description: null, due_date: '2026-10-07', assignee_ids: [] as string[] }
 
   it('Fälligkeit als Tag verglichen (API liefert 00:00 UTC) → unverändert leer', () => {
     expect(changedTodoFields(todo(), unchanged)).toEqual({})
   })
 
   it('nur geänderte Felder; Fälligkeit entfernen → null', () => {
-    expect(changedTodoFields(todo(), { ...unchanged, assigned_to_user_id: 'u2' })).toEqual({ assigned_to_user_id: 'u2' })
+    expect(changedTodoFields(todo(), { ...unchanged, assignee_ids: ['u2'] })).toEqual({ assignee_ids: ['u2'] })
     expect(changedTodoFields(todo(), { ...unchanged, due_date: null })).toEqual({ due_date: null })
     expect(changedTodoFields(todo({ description: 'Schlauch' }), { ...unchanged, description: null }))
       .toEqual({ description: null })
+  })
+})
+
+describe('changedTodoFields: Zuständige', () => {
+  const base = { title: 'Velo flicken', description: null, due_date: '2026-10-07' }
+
+  it('gleiche Personen in anderer Reihenfolge → keine Änderung', () => {
+    expect(changedTodoFields(todo({ assignee_ids: ['u1', 'u2'] }), { ...base, assignee_ids: ['u2', 'u1'] })).toEqual({})
+  })
+
+  it('Person dazu/weg → ganze neue Menge; alle entfernen → leere Liste (nicht null)', () => {
+    expect(changedTodoFields(todo({ assignee_ids: ['u1'] }), { ...base, assignee_ids: ['u1', 'u2'] }))
+      .toEqual({ assignee_ids: ['u1', 'u2'] })
+    expect(changedTodoFields(todo({ assignee_ids: ['u1'] }), { ...base, assignee_ids: [] }))
+      .toEqual({ assignee_ids: [] })
+  })
+
+  it('nur andere Felder geändert → Zuständige werden nicht mitgeschickt', () => {
+    expect(changedTodoFields(todo({ assignee_ids: ['u1'] }), { ...base, title: 'Neu', assignee_ids: ['u1'] }))
+      .toEqual({ title: 'Neu' })
   })
 })

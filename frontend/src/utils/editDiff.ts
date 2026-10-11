@@ -5,6 +5,7 @@
  */
 import type { NoteItem, TodoItem } from '../types'
 import { todoDueDay } from './dates'
+import { sameAssignees } from './todoAssignees'
 
 export interface NoteEdit {
   title: string
@@ -18,7 +19,8 @@ export interface TodoEdit {
   description: string | null
   /** "YYYY-MM-DD" oder null */
   due_date: string | null
-  assigned_to_user_id: string | null
+  /** Zuständige Personen (Menge; Reihenfolge egal) */
+  assignee_ids: string[]
 }
 
 export function changedNoteFields(original: NoteItem, edit: NoteEdit): Partial<NoteEdit> {
@@ -36,8 +38,9 @@ export function changedTodoFields(original: TodoItem, edit: TodoEdit): Partial<T
   if ((edit.description ?? null) !== (original.description ?? null)) changes.description = edit.description ?? null
   // Fälligkeit als Kalendertag vergleichen (API liefert 00:00 UTC)
   if ((edit.due_date ?? null) !== todoDueDay(original.due_date)) changes.due_date = edit.due_date ?? null
-  if ((edit.assigned_to_user_id ?? null) !== (original.assigned_to_user_id ?? null)) {
-    changes.assigned_to_user_id = edit.assigned_to_user_id ?? null
+  // Zuständige als Menge vergleichen; geändert → ganze neue Menge senden
+  if (!sameAssignees(edit.assignee_ids, original.assignee_ids ?? [])) {
+    changes.assignee_ids = [...edit.assignee_ids]
   }
   return changes
 }

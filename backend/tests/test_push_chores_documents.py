@@ -271,11 +271,11 @@ def test_attention_count_per_user(db, household_a, user_a, user_a2, plant_a):
     # Todos: fällig (mir), fällig (niemand), fällig (anderer), ohne Datum, erledigt, Zukunft
     db.add_all([
         Todo(household_id=household_a.id, title="mine", created_by_user_id=user_a.id,
-             assigned_to_user_id=user_a.id, due_date=now - timedelta(hours=1)),
+             assignee_ids=[user_a.id], due_date=now - timedelta(hours=1)),
         Todo(household_id=household_a.id, title="open", created_by_user_id=user_a.id,
              due_date=now - timedelta(days=2)),
         Todo(household_id=household_a.id, title="other", created_by_user_id=user_a.id,
-             assigned_to_user_id=user_a2.id, due_date=now - timedelta(hours=1)),
+             assignee_ids=[user_a2.id], due_date=now - timedelta(hours=1)),
         Todo(household_id=household_a.id, title="nodate", created_by_user_id=user_a.id),
         Todo(household_id=household_a.id, title="done", created_by_user_id=user_a.id,
              due_date=now - timedelta(hours=1), is_done=True),

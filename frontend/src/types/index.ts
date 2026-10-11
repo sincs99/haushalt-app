@@ -62,9 +62,14 @@ export interface TodoItem {
   household_id: string
   title: string
   description: string | null
-  assigned_to_user_id: string | null
+  /** Zuständige Personen; leer = offen für alle */
+  assignee_ids: string[]
+  /** @deprecated Übergangsfeld der API (erste zuständige Person) — nicht verwenden */
+  assigned_to_user_id?: string | null
   due_date: string | null
   is_done: boolean
+  /** Wer abgehakt hat (eine:r für alle); null solange offen */
+  done_by_user_id: string | null
   created_by_user_id: string | null
   created_at: string
   done_at: string | null

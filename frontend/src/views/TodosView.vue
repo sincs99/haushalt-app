@@ -9,6 +9,7 @@ import { useLoader } from '../composables/useLoader'
 import PageHeader from '../components/ui/PageHeader.vue'
 import BasePillTabs from '../components/ui/BasePillTabs.vue'
 import TodoList from '../components/TodoList.vue'
+import { openCountFor } from '../utils/todoAssignees'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,9 +33,8 @@ const filterTabs = computed(() => {
   ]
 
   for (const member of todosStore.members) {
-    const count = todosStore.items.filter(
-      (item) => item.assigned_to_user_id === member.id && !item.is_done,
-    ).length
+    // Offene Aufgaben, bei denen die Person (mit-)zuständig ist
+    const count = openCountFor(todosStore.items, member.id)
     const name = member.display_name.split(' ')[0]
     tabs.push({
       key: member.id,

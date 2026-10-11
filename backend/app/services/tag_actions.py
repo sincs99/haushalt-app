@@ -856,7 +856,10 @@ def _describe_todo_done(ctx: TagContext) -> TagDescription:
         "is_done": todo.is_done,
         "done_at": _iso(todo.done_at),
         "due_date": _iso(todo.due_date),
-        "assigned_user_name": _display_name(ctx.db, todo.assigned_to_user_id),
+        # Alle Zuständigen, kommagetrennt (Scan-Seite zeigt "Zuständig: …")
+        "assigned_user_name": ", ".join(
+            name for name in (_display_name(ctx.db, uid) for uid in todo.assignee_ids) if name
+        ) or None,
     }
     if todo.is_done:
         return TagDescription(todo.title, f"'{todo.title}' is already done", details, False, "ALREADY_DONE")

@@ -244,8 +244,8 @@ def process_todo_reminders(db: Session, now: datetime) -> int:
             continue
 
         members = _household_member_ids(db, reminder.household_id)
-        # Zugewiesene Person, sonst der ganze Haushalt
-        recipients = [todo.assigned_to_user_id] if todo.assigned_to_user_id in members else members
+        # Alle zuständigen (aktuellen) Mitglieder, sonst der ganze Haushalt
+        recipients = [uid for uid in todo.assignee_ids if uid in members] or members
 
         title, tag = todo.title, f"todo-reminder-{todo.id}"
         sent += send_to_users(db, recipients, lambda loc: {

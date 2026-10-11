@@ -152,7 +152,7 @@ def test_update_to_foreign_assignee_is_422(client, household_a, token_a, todo_a,
 
 
 def test_ex_member_already_assigned_may_stay(client, db, household_a, token_a, todo_a, user_a2):
-    todo_a.assigned_to_user_id = user_a2.id
+    todo_a.assignee_ids = [user_a2.id]
     db.commit()
     db.query(HouseholdMember).filter_by(household_id=household_a.id, user_id=user_a2.id).delete()
     db.commit()

@@ -30,6 +30,7 @@ from app.models import (
     RecurringBill,
     ShoppingItem,
     Todo,
+    TodoAssignee,
     WidgetToken,
 )
 from app.services.invite_code import (
@@ -206,7 +207,8 @@ def _remove_from_rotation(chore: Chore, user_key: str) -> None:
 def release_departing_member(db: Session, household_id: uuid.UUID, user_id: uuid.UUID) -> ReleaseResult:
     """Gibt die offenen Zuständigkeiten einer austretenden Person frei (gleiche Transaktion).
 
-    - offene Aufgaben und offene Einkaufsartikel: Zuweisung → niemand
+    - offene Aufgaben: aus den Zuständigen austragen (andere bleiben)
+    - offene Einkaufsartikel: Zuweisung → niemand
     - offene Ämtli-Termine (``completed_at IS NULL``, auch überfällige): → niemand
     - aus ``rotation_order`` aller Ämtli entfernen (nächste Person bleibt gleich)
     - Standard-Zahler wiederkehrender Rechnungen → leer
@@ -219,12 +221,13 @@ def release_departing_member(db: Session, household_id: uuid.UUID, user_id: uuid
     result = ReleaseResult()
     user_key = str(user_id)
 
+    # Aus den Zuständigen offener Aufgaben austragen (andere Zuständige bleiben)
     for todo in db.query(Todo).filter(
         Todo.household_id == household_id,
-        Todo.assigned_to_user_id == user_id,
         Todo.is_done == False,  # noqa: E712
+        Todo.assignee_links.any(TodoAssignee.user_id == user_id),
     ):
-        todo.assigned_to_user_id = None
+        todo.assignee_ids = [uid for uid in todo.assignee_ids if uid != user_id]
         result.todos.append(todo.id)
 
     for item in db.query(ShoppingItem).filter(

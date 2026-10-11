@@ -2,8 +2,8 @@
 import uuid
 
 
-def test_claim_free_todo(client, household_a, token_a, db):
-    """Claim auf freies Todo → 200, assigned_to_user_id == caller."""
+def test_claim_free_todo(client, household_a, token_a, user_a, db):
+    """Claim auf freies Todo → 200, Aufrufer ist zuständig."""
     from app.models import Todo
 
     todo = Todo(household_id=household_a.id, title="Freies Todo")
@@ -17,17 +17,18 @@ def test_claim_free_todo(client, household_a, token_a, db):
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["assigned_to_user_id"] is not None
+    assert data["assignee_ids"] == [str(user_a.id)]
+    assert data["assigned_to_user_id"] == str(user_a.id)  # Übergangsfeld
 
 
-def test_claim_already_assigned(client, household_a, token_a, user_a, db):
-    """Claim auf bereits zugewiesenes Todo → 409 Conflict."""
+def test_claim_already_assigned_to_someone_else(client, household_a, token_a, user_a, user_a2, db):
+    """Claim auf Todo einer anderen Person → 200, beide zuständig ("Ich helfe mit")."""
     from app.models import Todo
 
     todo = Todo(
         household_id=household_a.id,
         title="Vergebenes Todo",
-        assigned_to_user_id=user_a.id,
+        assignee_ids=[user_a2.id],
     )
     db.add(todo)
     db.commit()
@@ -37,7 +38,8 @@ def test_claim_already_assigned(client, household_a, token_a, user_a, db):
         f"/api/households/{household_a.id}/todos/{todo.id}/claim",
         headers={"Authorization": f"Bearer {token_a}"},
     )
-    assert resp.status_code == 409
+    assert resp.status_code == 200
+    assert sorted(resp.json()["assignee_ids"]) == sorted([str(user_a.id), str(user_a2.id)])
 
 
 def test_claim_cross_household(client, household_a, household_b, token_a, db):

@@ -9,7 +9,7 @@ import { useLoader } from '../composables/useLoader'
 import PageHeader from '../components/ui/PageHeader.vue'
 import BasePillTabs from '../components/ui/BasePillTabs.vue'
 import TodoList from '../components/TodoList.vue'
-import { openCountFor } from '../utils/todoAssignees'
+import { openCountFor, openUnassignedCount } from '../utils/todoAssignees'
 
 const route = useRoute()
 const router = useRouter()
@@ -26,10 +26,16 @@ const { loadError, reloading, reload } = useLoader(() =>
 // ── Filter State ──
 const activeFilter = ref('all')
 
-// ── Filter Tabs (Alle / pro Mitglied) ──
+// Schlüssel des Tabs "Offen" (Aufgaben ohne Zuständige); kann keine User-ID sein
+const UNASSIGNED = 'unassigned'
+
+// ── Filter Tabs (Alle / Offen / pro Mitglied) ──
 const filterTabs = computed(() => {
+  const unassigned = openUnassignedCount(todosStore.items, todosStore.members)
+  const openLabel = t('tasks.filterUnassigned')
   const tabs: Array<{ key: string; label: string }> = [
     { key: 'all', label: t('tasks.filterAll') },
+    { key: UNASSIGNED, label: unassigned > 0 ? `${openLabel} (${unassigned})` : openLabel },
   ]
 
   for (const member of todosStore.members) {
@@ -46,8 +52,10 @@ const filterTabs = computed(() => {
 })
 
 // ── Filter Value für TodoList-Prop ──
+const filterUnassigned = computed(() => activeFilter.value === UNASSIGNED)
+
 const filterUserId = computed<string | undefined>(() => {
-  if (activeFilter.value === 'all') return undefined
+  if (activeFilter.value === 'all' || filterUnassigned.value) return undefined
   return activeFilter.value
 })
 
@@ -112,6 +120,7 @@ onUnmounted(() => {
     <TodoList
       :filter-user-id="filterUserId"
       :filter-user-name="filterUserName"
+      :filter-unassigned="filterUnassigned"
       :auto-focus="shouldAutoFocus"
       :load-error="loadError"
       :retrying="reloading"

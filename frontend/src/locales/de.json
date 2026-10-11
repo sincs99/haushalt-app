@@ -301,7 +301,10 @@
     "joinInHint": "Mich zusätzlich eintragen",
     "claimError": "Konnte dich nicht eintragen.",
     "doneBy": "erledigt von {name}",
-    "doneByYou": "erledigt von dir"
+    "doneByYou": "erledigt von dir",
+    "createdHiddenAssigned": "Aufgabe erfasst. Sie ist ausgeblendet, weil hier nur Aufgaben ohne Zuständige angezeigt werden.",
+    "emptyUnassignedTitle": "Alles verteilt",
+    "emptyUnassignedSubtitle": "Jede offene Aufgabe hat jemanden, der sich darum kümmert."
   },
   "tasks": {
     "title": "Aufgaben",
@@ -328,7 +331,8 @@
     "emptySubtitle": "Erstelle eine neue Aufgabe oder warte auf den nächsten Putzplan-Eintrag.",
     "manageChores": "Ämtli verwalten",
     "segmentTodos": "Aufgaben",
-    "segmentChores": "Ämtli"
+    "segmentChores": "Ämtli",
+    "filterUnassigned": "Offen"
   },
   "expenses": {
     "title": "Ausgaben",

@@ -18,6 +18,7 @@ import BaseCheckCircle from '../components/ui/BaseCheckCircle.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseAvatar from '../components/ui/BaseAvatar.vue'
 import BaseErrorState from '../components/ui/BaseErrorState.vue'
+import AssigneeAvatars from '../components/AssigneeAvatars.vue'
 import { dueText } from '../utils/plantCare'
 import type { DashboardTodoItem, DashboardEventItem, DashboardPetCareItem, DashboardPlantItem, DashboardReminderItem } from '../types'
 
@@ -102,6 +103,7 @@ const combinedTasks = computed<DashboardTodoItem[]>(() => {
         due_date: c.due_date,
         is_overdue: c.is_overdue,
         type: 'chore' as const,
+        assignees: c.assignees ?? [],
       }))
     : []
 
@@ -342,6 +344,8 @@ function formatReminderDate(isoString: string): string {
             >
               {{ item.title }}
             </span>
+            <!-- Zuständige (leer = offen für alle) -->
+            <AssigneeAvatars :assignees="item.assignees ?? []" />
           </li>
         </ul>
         <template v-if="combinedTasks.length === 0">
@@ -599,6 +603,11 @@ function formatReminderDate(isoString: string): string {
 .task-item__type-icon {
   flex-shrink: 0;
   color: var(--sub);
+}
+
+.task-item__title {
+  flex: 1;
+  min-width: 0;
 }
 
 .task-item__title--overdue {

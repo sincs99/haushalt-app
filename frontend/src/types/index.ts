@@ -376,12 +376,20 @@ export interface ChoreAssignmentInfo {
 
 // ── Dashboard ──
 
+/** Zuständige Person (nur aktuelle Mitglieder) */
+export interface DashboardAssignee {
+  user_id: string
+  display_name: string
+}
+
 export interface DashboardTodoItem {
   id: string
   title: string
   due_date: string | null
   is_overdue: boolean
   type: 'todo' | 'chore'
+  /** Leer = offen für alle */
+  assignees: DashboardAssignee[]
 }
 
 export interface DashboardTodoSection {
@@ -396,6 +404,7 @@ export interface DashboardChoreItem {
   assigned_user_id: string | null
   due_date: string            // "YYYY-MM-DD"
   is_overdue: boolean
+  assignees: DashboardAssignee[]
 }
 
 export interface DashboardChoreSection {

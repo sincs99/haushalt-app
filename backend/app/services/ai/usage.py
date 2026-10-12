@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models import AiUsage, AiUserUsage
+from app.services import entitlements
 from app.services.ai.errors import AiDailyLimitReached, AiUsageInfo, AiUserDailyLimitReached
 
 
@@ -48,12 +49,17 @@ def _increment_below_limit(db: Session, model, key_column, key: uuid.UUID, day: 
     return db.execute(stmt).first() is not None
 
 
+def daily_limit(db: Session, household_id: uuid.UUID) -> int:
+    """Tageslimit des Haushalts (tarifabhängig, services/entitlements.py)."""
+    return entitlements.limits_for_household_id(db, household_id).ai_daily_limit
+
+
 def reserve_call(db: Session, household_id: uuid.UUID, user_id: uuid.UUID) -> date:
     """Reserviert einen Aufruf und liefert den gezählten Tag.
 
-    Wirft ``AiDailyLimitReached`` (Haushalt) oder ``AiUserDailyLimitReached`` (Person).
+    Wirft ``AiDailyLimitReached`` (Haushalt, Limit des Tarifs) oder ``AiUserDailyLimitReached`` (Person).
     """
-    household_limit = settings.ai_daily_limit_per_household
+    household_limit = daily_limit(db, household_id)
     user_limit = settings.ai_daily_limit_per_user
     day = today_utc()
     if household_limit <= 0:

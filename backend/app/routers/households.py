@@ -21,16 +21,14 @@ from app.services.invite_code import (
 from app.services.locking import lock_household
 from app.services.membership import (
     create_household_with_admin,
+    delete_household_files,
     ensure_admin,
     join_by_invite_code,
     locked_membership,
     member_count,
     release_departing_member,
 )
-from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
-
-_storage = LocalStorageService()
 
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
@@ -173,16 +171,8 @@ def _not_member() -> HTTPException:
 
 
 def _delete_household_files(household_id: uuid.UUID) -> None:
-    """Hochgeladene Dateien (Dokumente, Fotos) eines gelöschten Haushalts entfernen.
-
-    Die DB-Einträge verschwinden per CASCADE, die Dateien auf der Platte sonst nie.
-    Best-effort: schlägt es fehl, räumt der periodische Cleanup
-    (services/file_cleanup.py) verwaiste Haushaltsordner später auf.
-    """
-    try:
-        _storage.delete_household(str(household_id))
-    except Exception:
-        pass
+    """Hochgeladene Dateien eines gelöschten Haushalts entfernen (services/membership.py)."""
+    delete_household_files(household_id)
 
 
 @router.post("/leave", status_code=status.HTTP_204_NO_CONTENT)

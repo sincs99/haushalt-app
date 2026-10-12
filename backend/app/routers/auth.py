@@ -3,7 +3,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy.exc import IntegrityError
@@ -23,8 +23,14 @@ from app.core.security import (
 )
 from app.database import get_db
 from app.models import HouseholdMember, RefreshToken, User
+from app.services import entitlements
+from app.services.invite_code import find_household_by_invite_code
 from app.services.locking import lock_row
-from app.services.membership import create_household_with_admin, join_by_invite_code
+from app.services.membership import (
+    create_household_with_admin,
+    join_by_invite_code,
+    raise_if_member_limit_reached,
+)
 from app.socket_manager import disconnect_user_sync, emit_to_household_sync
 
 logger = logging.getLogger(__name__)
@@ -67,6 +73,8 @@ class RegisterRequest(BaseModel):
     display_name: str
     household_name: str | None = None
     invite_code: str | None = None
+    # Zustimmung zu Nutzungsbedingungen und Datenschutz (Pflicht bei LEGAL_TERMS_REQUIRED)
+    accept_terms: bool = False
 
     @model_validator(mode="after")
     def exactly_one_household_method(self):
@@ -102,6 +110,8 @@ class HouseholdOut(BaseModel):
     role: str
     currency: str
     ai_enabled: bool = False
+    # Geltender Tarif (free/premium; "selfhosted" ohne BILLING_ENABLED)
+    plan: str = "selfhosted"
     # IANA-Zeitzone des Haushalts: „heute“ für Fälligkeiten im Frontend (CASA-39)
     timezone: str = "Europe/Zurich"
 
@@ -110,6 +120,8 @@ class MeResponse(BaseModel):
     id: uuid.UUID
     email: str
     display_name: str
+    email_verified: bool = False
+    is_platform_admin: bool = False
     households: list[HouseholdOut]
 
 
@@ -295,8 +307,16 @@ def register(
     request: Request,
     response: Response,
     data: RegisterRequest,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
+    if settings.legal_terms_required and not data.accept_terms:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(
+                ErrorCode.TERMS_ACCEPTANCE_REQUIRED, "Terms of service and privacy policy must be accepted"
+            ),
+        )
     email_taken = HTTPException(
         status_code=400, detail=error_detail(ErrorCode.EMAIL_ALREADY_REGISTERED, "Email already registered")
     )
@@ -304,11 +324,20 @@ def register(
     if existing:
         raise email_taken
 
+    # Mitglieder-Limit des Tarifs vorab prüfen, damit bei einem vollen Haushalt kein
+    # halb angelegtes Konto zurückbleibt (die verbindliche Prüfung läuft unter der
+    # Sperre in join_by_invite_code)
+    if data.invite_code:
+        raise_if_member_limit_reached(db, find_household_by_invite_code(db, data.invite_code))
+
     user = User(
         email=data.email,
         password_hash=hash_password(data.password),
         display_name=data.display_name,
     )
+    if data.accept_terms:
+        user.terms_accepted_at = datetime.now(timezone.utc)
+        user.terms_version = settings.legal_terms_version
     db.add(user)
     try:
         db.flush()
@@ -332,6 +361,13 @@ def register(
         household, _ = create_household_with_admin(db, data.household_name, user.id)
 
     household_id = household.id
+
+    # Bestätigungs-Mail (nur wenn Versand konfiguriert ist; die App bleibt ohne nutzbar)
+    if settings.mail_enabled:
+        from app.routers.account import send_verification_mail
+        from app.services.mail_templates import request_language
+
+        send_verification_mail(db, user, request_language(request), background)
     pair, _ = _create_token_pair(str(user.id), db)
     db.commit()
 
@@ -354,8 +390,13 @@ def login(
     # Antwortzeit nicht verrät, ob ein Account existiert (User-Enumeration).
     password_hash = user.password_hash if user else _DUMMY_PASSWORD_HASH
     password_ok = verify_password(form_data.password, password_hash)
-    if not user or not password_ok:
+    if not user or not password_ok or user.deleted_at is not None:
         raise HTTPException(status_code=401, detail=error_detail(ErrorCode.INVALID_CREDENTIALS, "Incorrect email or password"))
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_detail(ErrorCode.ACCOUNT_DISABLED, "Account is disabled"),
+        )
 
     pair, _ = _create_token_pair(str(user.id), db)
     db.commit()
@@ -430,11 +471,16 @@ def refresh_endpoint(
     if _as_aware(old_token.expires_at) < now:
         raise _refresh_rejected(ErrorCode.REFRESH_TOKEN_EXPIRED, "Refresh token expired", from_cookie)
 
-    # 4) Alles OK → alten Token widerrufen + Nachfolger anlegen, ein Commit
+    # 4) Konto gesperrt oder gelöscht → kein neues Paar
+    owner = db.get(User, old_token.user_id)
+    if owner is None or owner.deleted_at is not None or not owner.is_active:
+        raise _refresh_rejected(ErrorCode.ACCOUNT_DISABLED, "Account is disabled", from_cookie)
+
+    # 5) Alles OK → alten Token widerrufen + Nachfolger anlegen, ein Commit
     user_id = old_token.user_id
     pair = _rotate(db, old_token)
 
-    # 5) Lazy Cleanup: alte Tokens dieses Users aufräumen
+    # 6) Lazy Cleanup: alte Tokens dieses Users aufräumen
     try:
         _cleanup_expired_tokens(user_id, db)
     except Exception:
@@ -492,6 +538,7 @@ def get_me(
             role=m.role,
             currency=m.household.currency,
             ai_enabled=m.household.ai_enabled,
+            plan=entitlements.effective_plan(m.household),
             timezone=m.household.timezone or "Europe/Zurich",
         )
         for m in memberships
@@ -501,5 +548,7 @@ def get_me(
         id=current_user.id,
         email=current_user.email,
         display_name=current_user.display_name,
+        email_verified=current_user.email_verified_at is not None,
+        is_platform_admin=current_user.is_platform_admin,
         households=households,
     )

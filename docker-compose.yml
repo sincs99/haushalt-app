@@ -49,6 +49,15 @@ services:
       # KI-Assistent (optional): ohne Schlüssel sind alle KI-Funktionen ausgeblendet
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_DAILY_LIMIT_PER_HOUSEHOLD: ${AI_DAILY_LIMIT_PER_HOUSEHOLD:-50}
+      # E-Mail (optional): ohne SMTP_HOST werden Mails in der Entwicklung nur geloggt
+      MAIL_BACKEND: ${MAIL_BACKEND:-auto}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_TLS: ${SMTP_TLS:-starttls}
+      MAIL_FROM: ${MAIL_FROM:-Haushalt App <noreply@example.com>}
+      APP_BASE_URL: ${APP_BASE_URL:-}
       AI_DAILY_LIMIT_PER_USER: ${AI_DAILY_LIMIT_PER_USER:-20}
       # Nur diesem Netz (Frontend-nginx) X-Forwarded-For glauben — docs/deployment.md §2.1
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.16.0.0/12}

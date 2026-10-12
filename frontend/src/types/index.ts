@@ -98,6 +98,10 @@ export interface UserInfo {
   id: string
   email: string
   display_name: string
+  /** E-Mail-Adresse per Link bestätigt (false bei Konten vor dieser Funktion) */
+  email_verified?: boolean
+  /** Betreiber-Zugang (/admin) */
+  is_platform_admin?: boolean
 }
 
 // ── Expenses ──
@@ -298,6 +302,7 @@ export interface HouseholdInfo {
   role: string
   currency: string  // z.B. "CHF" — vom Backend via GET /api/auth/me
   ai_enabled?: boolean  // Opt-in für den KI-Assistenten (nur Admins schalten um)
+  plan?: string  // Geltender Tarif: 'free' | 'premium' | 'selfhosted' (ohne BILLING_ENABLED)
   timezone?: string | null  // IANA-Zeitzone des Haushalts ("heute" in Haushaltszeit, CASA-39)
 }
 
@@ -311,6 +316,8 @@ export interface MeResponse {
   id: string
   email: string
   display_name: string
+  email_verified?: boolean
+  is_platform_admin?: boolean
   households: HouseholdInfo[]
 }
 
@@ -1106,4 +1113,59 @@ export interface TagExecuteResult {
   /** z. B. ALREADY_DONE: wiederholter Scan, nichts geändert */
   reason?: string | null
   result: Record<string, any>
+}
+
+// ── Billing / Tarife ──
+
+export interface BillingStatus {
+  billing_enabled: boolean
+  plan: string
+  plan_expires_at: string | null
+  limits: { max_members: number | null; storage_bytes: number; ai_daily_limit: number }
+  usage: { members: number; storage_bytes: number; ai_calls_today: number }
+  subscription: {
+    provider: string
+    status: string
+    current_period_end: string | null
+    cancel_at_period_end: boolean
+  } | null
+  checkout_available: boolean
+  portal_available: boolean
+  intervals: string[]
+}
+
+// ── Plattform-Admin ──
+
+export interface AdminOverview {
+  billing_enabled: boolean
+  users_total: number
+  users_active: number
+  users_deleted: number
+  households_total: number
+  households_by_plan: Record<string, number>
+  subscriptions_active: number
+}
+
+export interface AdminHousehold {
+  id: string
+  name: string
+  plan: string
+  effective_plan: string
+  plan_expires_at: string | null
+  member_count: number
+  storage_bytes: number
+  created_at: string
+  stripe_customer_id: string | null
+}
+
+export interface AdminUser {
+  id: string
+  email: string
+  display_name: string
+  created_at: string
+  is_active: boolean
+  is_platform_admin: boolean
+  email_verified: boolean
+  deleted: boolean
+  household_count: number
 }

@@ -14,4 +14,13 @@ Proxy-Hinweis:
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-limiter = Limiter(key_func=get_remote_address)
+from app.core.config import settings
+
+# Storage: ``memory://`` (ein Prozess) oder Redis (``RATE_LIMIT_STORAGE_URI``), damit
+# mehrere Worker dieselben Zähler sehen. Fällt Redis aus, zählt der Prozess im
+# Speicher weiter (in_memory_fallback), statt alle Anfragen abzulehnen.
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri=settings.rate_limit_storage_uri.strip() or "memory://",
+    in_memory_fallback_enabled=True,
+)

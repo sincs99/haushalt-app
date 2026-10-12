@@ -33,6 +33,7 @@ from app.models import (
     TodoAssignee,
     WidgetToken,
 )
+from app.services import entitlements
 from app.services.invite_code import (
     find_household_by_invite_code,
     generate_unique_invite_code,
@@ -40,6 +41,9 @@ from app.services.invite_code import (
     new_invite_code_expiry,
 )
 from app.services.locking import lock_household
+from app.services.storage import LocalStorageService
+
+_storage = LocalStorageService()
 
 
 def locked_membership(db: Session, household_id: uuid.UUID, user_id: uuid.UUID) -> HouseholdMember | None:
@@ -110,6 +114,15 @@ def create_household_with_admin(db: Session, name: str, user_id: uuid.UUID) -> t
     return household, membership
 
 
+def raise_if_member_limit_reached(db: Session, household: Household) -> None:
+    """Tarif-Schranke (services/entitlements.py): 402, wenn der Haushalt voll ist."""
+    if not entitlements.can_add_member(db, household):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=error_detail(ErrorCode.PLAN_MEMBER_LIMIT_REACHED, "This household has reached its member limit"),
+        )
+
+
 def join_by_invite_code(db: Session, raw_code: str, user_id: uuid.UUID) -> tuple[Household, HouseholdMember]:
     """Tritt per Einladungscode bei (POST /households/join und Registrierung mit Code). Kein Commit.
 
@@ -136,6 +149,7 @@ def join_by_invite_code(db: Session, raw_code: str, user_id: uuid.UUID) -> tuple
             status_code=status.HTTP_409_CONFLICT,
             detail=error_detail(ErrorCode.ALREADY_MEMBER, "Already a member of this household"),
         )
+    raise_if_member_limit_reached(db, household)
 
     membership = HouseholdMember(household_id=household.id, user_id=user_id, role="member")
     db.add(membership)
@@ -280,3 +294,50 @@ def release_departing_member(db: Session, household_id: uuid.UUID, user_id: uuid
 
     db.flush()
     return result
+
+
+# ---------------------------------------------------------------------------
+# Austritt ausserhalb des Routers (Konto löschen, routers/account.py)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class LeaveResult:
+    household_deleted: bool
+    released_areas: list[str]
+
+
+def delete_household_files(household_id: uuid.UUID) -> None:
+    """Dateien eines gelöschten Haushalts entfernen (best-effort, Cleanup-Job räumt den Rest)."""
+    try:
+        _storage.delete_household(str(household_id))
+    except Exception:
+        pass
+
+
+def leave(db: Session, household_id: uuid.UUID, user_id: uuid.UUID) -> LeaveResult | None:
+    """Verlässt den Haushalt mit denselben Regeln wie POST /households/{id}/leave. Committet.
+
+    None = Haushalt oder Mitgliedschaft existiert (unter der Sperre) nicht mehr.
+    Socket-Events verschickt der Aufrufer.
+    """
+    household = lock_household(db, household_id)
+    if household is None:
+        return None
+    own = locked_membership(db, household_id, user_id)
+    if own is None:
+        return None
+
+    db.delete(own)
+    db.flush()
+
+    if member_count(db, household_id) == 0:
+        db.delete(household)  # CASCADE löscht members, expenses, etc.
+        db.commit()
+        delete_household_files(household_id)
+        return LeaveResult(household_deleted=True, released_areas=[])
+
+    released = release_departing_member(db, household_id, user_id)
+    ensure_admin(db, household_id)
+    db.commit()
+    return LeaveResult(household_deleted=False, released_areas=released.areas())

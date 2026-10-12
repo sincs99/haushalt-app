@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import EmailVerificationBanner from './components/EmailVerificationBanner.vue'
 import { watch, onUnmounted, computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
@@ -142,6 +143,7 @@ onUnmounted(() => {
 
     <!-- Hauptinhalt -->
     <main class="app-content">
+      <EmailVerificationBanner />
       <router-view />
     </main>
 

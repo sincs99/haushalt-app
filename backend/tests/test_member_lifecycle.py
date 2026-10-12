@@ -146,7 +146,7 @@ def test_last_member_leaving_deletes_household_files(client, db, tmp_path, house
     orphan.write_bytes(b"x")
     other = storage.save(str(household_b.id), "b.pdf", b"%PDF-1", ".pdf")
 
-    with patch("app.routers.households._storage", storage):
+    with patch("app.services.membership._storage", storage):
         resp = client.post(f"/api/households/{household_a.id}/leave", headers=_auth(token_a))
     assert resp.status_code == 204
 
@@ -158,7 +158,7 @@ def test_last_member_leaving_deletes_household_files(client, db, tmp_path, house
 def test_leaving_with_remaining_members_keeps_files(client, db, tmp_path, household_a, token_a, user_a, user_a2):
     storage = LocalStorageService(str(tmp_path))
     own = storage.save(str(household_a.id), "a.pdf", b"%PDF-1", ".pdf")
-    with patch("app.routers.households._storage", storage):
+    with patch("app.services.membership._storage", storage):
         resp = client.post(f"/api/households/{household_a.id}/leave", headers=_auth(token_a))
     assert resp.status_code == 204
     assert (tmp_path / own).exists()

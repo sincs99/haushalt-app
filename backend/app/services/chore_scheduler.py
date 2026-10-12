@@ -146,19 +146,45 @@ def _resolve_next_assignee(
 # 4) Lazy Materialisierung
 # ---------------------------------------------------------------------------
 
+# Vorschau: so viele Tage im Voraus werden Zuweisungen angelegt
+HORIZON_DAYS = 7
+# Backfill: höchstens so viele Tage in die Vergangenheit nachholen
+BACKFILL_DAYS = 14
+
+
+def materialization_start(last_due: date | None, anchor: date, today: date) -> date:
+    """Erster Tag, ab dem neue Termine materialisiert werden.
+
+    Nie vor dem ``anchor_date`` (nach einer Zeitplanänderung liegt er ab heute —
+    sonst entstünde ein sofort überfälliger Termin nach altem Muster, CASA-16),
+    nie vor dem Backfill-Limit und immer nach dem letzten relevanten Termin.
+    """
+    start = max(anchor, today - timedelta(days=BACKFILL_DAYS))
+    if last_due is not None:
+        start = max(start, last_due + timedelta(days=1))
+    return start
+
+
 def materialize_due_assignments(db: Session, household) -> list:
     """
     Erzeugt fällige ``ChoreAssignment``-Einträge für alle aktiven Chores
     eines Households per Lazy-Materialisierung (Vorschau: 7 Tage).
 
-    Race-Conditions werden über ``begin_nested()``-Savepoints abgefangen:
-    bei einem ``IntegrityError`` (Duplikat auf ``(chore_id, due_date)``)
-    wird nur der Savepoint zurückgerollt, nicht die gesamte Transaktion.
+    Fortgesetzt wird nach dem letzten Termin, der offen ist oder bis heute fällig
+    war. Ein vorzeitig erledigter KÜNFTIGER Termin blockiert den Zeitplan nicht
+    (CASA-51: nach einer Zeitplanänderung bliebe sonst eine Periode leer); bereits
+    vorhandene Daten werden übersprungen, ohne einen Rotationsplatz zu verbrauchen.
+
+    Race-Conditions: Die Chores werden ``FOR UPDATE`` gesperrt (PostgreSQL);
+    zusätzlich fängt ein ``begin_nested()``-Savepoint einen ``IntegrityError``
+    (Duplikat auf ``(chore_id, due_date)``) ab, ohne die Transaktion zu verlieren.
     """
+    from sqlalchemy import or_
+
     from app.models import Chore, ChoreAssignment, HouseholdMember
 
     today = today_in_tz(household.timezone)
-    horizon = today + timedelta(days=7)
+    horizon = today + timedelta(days=HORIZON_DAYS)
 
     # Aktuelle Mitglieder-IDs des Households
     member_ids: set[str] = {
@@ -179,29 +205,43 @@ def materialize_due_assignments(db: Session, household) -> list:
     new_assignments: list[ChoreAssignment] = []
 
     for chore in chores:
-        # Letztes materialisiertes Datum (oder anchor_date als Startpunkt)
-        last_assignment = (
+        # Letzter relevanter Termin: offen oder bis heute fällig (vorzeitig erledigte
+        # künftige Termine zählen nicht, siehe Docstring)
+        last_due = (
             db.query(ChoreAssignment.due_date)
-            .filter(ChoreAssignment.chore_id == chore.id)
+            .filter(
+                ChoreAssignment.chore_id == chore.id,
+                or_(
+                    ChoreAssignment.completed_at.is_(None),
+                    ChoreAssignment.due_date <= today,
+                ),
+            )
             .order_by(ChoreAssignment.due_date.desc())
-            .first()
+            .limit(1)
+            .scalar()
         )
-
-        if last_assignment:
-            from_date = last_assignment.due_date + timedelta(days=1)
-        else:
-            from_date = chore.anchor_date
-
-        # Backfill-Limit – maximal 14 Tage in die Vergangenheit
-        backfill_limit = today - timedelta(days=14)
-        from_date = max(from_date, backfill_limit)
-
+        from_date = materialization_start(last_due, chore.anchor_date, today)
         if from_date > horizon:
             continue
 
         due_dates = next_due_dates(chore, from_date, horizon)
+        if not due_dates:
+            continue
+
+        # Schon vorhandene Termine (z. B. vorzeitig erledigt) nicht doppelt anlegen
+        existing = {
+            row.due_date
+            for row in db.query(ChoreAssignment.due_date).filter(
+                ChoreAssignment.chore_id == chore.id,
+                ChoreAssignment.due_date >= due_dates[0],
+                ChoreAssignment.due_date <= due_dates[-1],
+            )
+        }
 
         for dd in due_dates:
+            if dd in existing:
+                continue
+            rotation_index_before = chore.next_rotation_index
             assigned_user_id = _resolve_next_assignee(chore, member_ids)
 
             assignment = ChoreAssignment(
@@ -212,17 +252,48 @@ def materialize_due_assignments(db: Session, household) -> list:
             )
 
             # Savepoint für Race-Condition-Safety
+            nested = db.begin_nested()
             try:
-                nested = db.begin_nested()  # noqa: F841
                 db.add(assignment)
                 db.flush()
+                nested.commit()
                 new_assignments.append(assignment)
             except IntegrityError:
                 nested.rollback()
-                # Duplikat (paralleler Request) → überspringen
+                # Duplikat (paralleler Request) → überspringen, Rotationsplatz zurückgeben
+                chore.next_rotation_index = rotation_index_before
                 continue
 
     if new_assignments:
         db.commit()
 
+    return new_assignments
+
+
+def emit_assignments_created(household_id, assignments: list) -> None:
+    """``chore_assignment_created`` für frisch materialisierte Zuweisungen (CASA-46).
+
+    Gilt für jeden Materialisierungspfad (Putzplan, Tag-Scan, Push-Scheduler,
+    Zeitplanänderung) — sonst sehen offene Clients neue Termine erst nach einem Reload.
+    """
+    if not assignments:
+        return
+    # Modul-Attribut statt Direktimport: Tests ersetzen emit_to_household_sync
+    import app.socket_manager as socket_manager
+    from app.routers.chores import ChoreAssignmentResponse
+
+    for a in assignments:
+        socket_manager.emit_to_household_sync(
+            household_id,
+            "chore_assignment_created",
+            ChoreAssignmentResponse.model_validate(a).model_dump(mode="json"),
+        )
+
+
+def materialize_and_emit(db: Session, household) -> list:
+    """Materialisieren + Socket-Events — der Standardweg für alle Aufrufer."""
+    new_assignments = materialize_due_assignments(db, household)
+    for a in new_assignments:
+        db.refresh(a)
+    emit_assignments_created(household.id, new_assignments)
     return new_assignments

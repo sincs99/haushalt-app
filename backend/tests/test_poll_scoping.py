@@ -229,7 +229,8 @@ def test_decide_emits_full_event_payload(client, household_a, token_a, poll_a, c
     event = payloads[0]
     assert event["id"] == resp.json()["decided_event_id"]
     assert event["calendar_id"] == str(calendar_a.id)
-    assert event["all_day"] is False
+    # poll_a hat Optionen ohne Uhrzeit (Altbestand) → ganztägig am heutigen Datum (PD-K2)
+    assert event["all_day"] is True
     assert event["participant_ids"] == []
     # Zeiten wie bei POST /events: in Haushaltszeit mit Offset
     assert event["starts_at"].endswith(("+01:00", "+02:00"))

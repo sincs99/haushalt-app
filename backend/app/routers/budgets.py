@@ -9,6 +9,7 @@ from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import Budget, HouseholdMember
+from app.services.finance_rules import MAX_AMOUNT_RAPPEN, validate_month
 from app.services.household_time import household_today
 from app.socket_manager import emit_to_household_sync
 
@@ -19,7 +20,7 @@ from app.socket_manager import emit_to_household_sync
 
 class BudgetUpsert(BaseModel):
     month: date
-    amount_rappen: int = Field(..., gt=0)
+    amount_rappen: int = Field(..., gt=0, le=MAX_AMOUNT_RAPPEN)
 
     @field_validator("month")
     @classmethod
@@ -64,6 +65,7 @@ def upsert_budget(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
+    validate_month(body.month, household_today(db, household_id))
     existing = (
         db.query(Budget)
         .filter(Budget.household_id == household_id, Budget.month == body.month)
@@ -115,14 +117,11 @@ def get_budget(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
+    today = household_today(db, household_id)
     if month is None:
-        today = household_today(db, household_id)
         month = date(today.year, today.month, 1)
-    elif month.day != 1:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail(ErrorCode.INVALID_MONTH, "month must be the first day of a month"),
-        )
+    else:
+        validate_month(month, today)
 
     budget = (
         db.query(Budget)
@@ -145,11 +144,7 @@ def delete_budget(
     db: Session = Depends(get_db),
 ):
     """Budget für einen bestimmten Monat löschen."""
-    if month.day != 1:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail(ErrorCode.INVALID_MONTH, "month must be the first day of a month"),
-        )
+    validate_month(month, household_today(db, household_id))
 
     budget = (
         db.query(Budget)

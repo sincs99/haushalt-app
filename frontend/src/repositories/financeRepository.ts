@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type { Budget, BudgetUpsertPayload, RecurringBill, RecurringBillCreatePayload, RecurringBillUpdatePayload, FinanceSummary, Expense } from '../types'
 
 export interface FinanceRepository {
@@ -11,7 +12,8 @@ export interface FinanceRepository {
   createBill(householdId: string, payload: RecurringBillCreatePayload): Promise<RecurringBill>
   updateBill(householdId: string, billId: string, payload: RecurringBillUpdatePayload): Promise<RecurringBill>
   removeBill(householdId: string, billId: string): Promise<void>
-  bookBill(householdId: string, billId: string, paidByUserId?: string): Promise<Expense>
+  /** `month` (YYYY-MM-01): vergessenen Monat nachbuchen (max. 12 Monate zurück, PD-F4) */
+  bookBill(householdId: string, billId: string, paidByUserId?: string, month?: string): Promise<Expense>
 
   // Finance Summary
   getSummary(householdId: string, month?: string): Promise<FinanceSummary>
@@ -64,16 +66,19 @@ export function createOnlineFinanceRepository(): FinanceRepository {
     },
 
     async removeBill(householdId, billId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/recurring-bills/${billId}`,
       )
     },
 
-    async bookBill(householdId, billId, paidByUserId) {
-      // Ohne Zahler gilt der Standard-Zahler der Rechnung
+    async bookBill(householdId, billId, paidByUserId, month) {
+      // Ohne Zahler gilt der Standard-Zahler der Rechnung, ohne Monat der aktuelle
+      const body: Record<string, string> = {}
+      if (paidByUserId) body.paid_by_user_id = paidByUserId
+      if (month) body.month = month
       const { data } = await api.post<Expense>(
         `/api/households/${householdId}/recurring-bills/${billId}/book`,
-        paidByUserId ? { paid_by_user_id: paidByUserId } : undefined,
+        Object.keys(body).length ? body : undefined,
       )
       return data
     },

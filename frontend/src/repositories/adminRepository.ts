@@ -21,7 +21,7 @@ export function createOnlineAdminRepository(): AdminRepository {
       return data
     },
     async setPlan(householdId, plan, expiresAt, note) {
-      const { data } = await api.patch<AdminHousehold>(`/api/admin/households/${householdId}/plan`, {
+      const { data } = await api.put<AdminHousehold>(`/api/admin/households/${householdId}/plan`, {
         plan,
         expires_at: expiresAt,
         note: note || null,
@@ -33,7 +33,7 @@ export function createOnlineAdminRepository(): AdminRepository {
       return data
     },
     async setUserActive(userId, isActive) {
-      const { data } = await api.patch<AdminUser>(`/api/admin/users/${userId}`, { is_active: isActive })
+      const { data } = await api.put<AdminUser>(`/api/admin/users/${userId}`, { is_active: isActive })
       return data
     },
   }

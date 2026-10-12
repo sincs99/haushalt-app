@@ -4,7 +4,9 @@ import { useTodosStore } from '../stores/todos'
 import { useToast } from '../composables/useToast'
 import { useAsyncAction } from '../composables/useAsyncAction'
 import { useI18n } from 'vue-i18n'
-import { formatDateShort } from '../utils/dates'
+import { formatDateShort, householdDateString, todoDueDay } from '../utils/dates'
+import { useAuthStore } from '../stores/auth'
+import { nextPendingReminder } from '../utils/todoReminders'
 import type { TodoItem } from '../types'
 import { PhPencilSimple, PhX, PhListChecks, PhBell, PhPlus } from '@phosphor-icons/vue'
 import BaseButton from './ui/BaseButton.vue'
@@ -13,8 +15,19 @@ import BaseSkeleton from './ui/BaseSkeleton.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
 import BaseCheckCircle from './ui/BaseCheckCircle.vue'
 import BaseErrorState from './ui/BaseErrorState.vue'
+import TodoAssigneePicker from './TodoAssigneePicker.vue'
+import { changedTodoFields } from '../utils/editDiff'
+import {
+  assigneeStack,
+  claimAction,
+  isAssignedTo,
+  isUnassigned,
+  nextQuickAddAssignees,
+  type AssigneeStack,
+} from '../utils/todoAssignees'
 
 const todosStore = useTodosStore()
+const authStore = useAuthStore()
 const { notifyError, notifyInfo } = useToast()
 const { run } = useAsyncAction()
 const { t } = useI18n()
@@ -24,6 +37,8 @@ const props = withDefaults(defineProps<{
   filterUserId?: string
   /** Vorname der gefilterten Person (für Hinweise) */
   filterUserName?: string
+  /** Tab "Offen": nur Aufgaben ohne Zuständige */
+  filterUnassigned?: boolean
   /** Laden ist gescheitert → Fehlerzustand statt „Keine offenen Aufgaben“ */
   loadError?: boolean
   retrying?: boolean
@@ -31,6 +46,7 @@ const props = withDefaults(defineProps<{
   autoFocus: false,
   filterUserId: undefined,
   filterUserName: undefined,
+  filterUnassigned: false,
   loadError: false,
   retrying: false,
 })
@@ -45,23 +61,44 @@ const inputRef = ref<HTMLInputElement | null>(null)
 const showAddDetails = ref(false)
 const newDescription = ref('')
 const newDueDate = ref('')
-const newAssignedTo = ref('')
+// Zuständige der nächsten neuen Aufgabe. Bleibt nach dem Erfassen stehen (mehrere
+// Aufgaben für dieselben Personen hintereinander) und ist auch bei eingeklappten
+// Details sichtbar (Zusammenfassung neben "Details").
+const newAssignees = ref<string[]>([])
 const newReminders = ref<string[]>([])
 
 // Mit aktivem Personen-Filter die neue Aufgabe dieser Person vorbelegen —
 // sonst verschwände sie nach dem Erfassen sofort aus der gefilterten Ansicht
 watch(() => props.filterUserId, (id, oldId) => {
-  if (!newAssignedTo.value || newAssignedTo.value === oldId) {
-    newAssignedTo.value = id ?? ''
-  }
+  newAssignees.value = nextQuickAddAssignees(newAssignees.value, id, oldId)
 }, { immediate: true })
+
+// Tab "Offen": neue Aufgaben ohne Zuständige vorbelegen (sonst sofort ausgeblendet)
+watch(() => props.filterUnassigned, (on) => {
+  if (on) newAssignees.value = []
+}, { immediate: true })
+
+// Personen-Filter oder Tab "Offen"
+function matchesFilter(todo: TodoItem): boolean {
+  if (props.filterUnassigned) return isUnassigned(todo, todosStore.members)
+  if (props.filterUserId !== undefined) return isAssignedTo(todo, props.filterUserId)
+  return true
+}
+
+// Zusammenfassung der Vorauswahl (nur aktuelle Mitglieder, Vornamen)
+const newAssigneesSummary = computed(() =>
+  todosStore.members
+    .filter((m) => newAssignees.value.includes(m.id))
+    .map((m) => m.display_name.split(' ')[0])
+    .join(', '),
+)
 
 // Bearbeitungs-Toggle pro Todo
 const editingId = ref<string | null>(null)
 const editTitle = ref('')
 const editDescription = ref('')
 const editDueDate = ref('')
-const editAssignedTo = ref('')
+const editAssignees = ref<string[]>([])
 const editNewReminders = ref<string[]>([])
 const editTitleError = ref('')
 const editSaving = ref(false)
@@ -75,26 +112,42 @@ onMounted(() => {
   }
 })
 
-// Getrennte Listen: offen vs. erledigt (mit optionalem Member-Filter)
-const openTodos = computed(() => {
-  let list = todosStore.items.filter((t) => !t.is_done)
-  if (props.filterUserId !== undefined) {
-    list = list.filter((t) => t.assigned_to_user_id === props.filterUserId)
-  }
-  return list
-})
-const doneTodos = computed(() => {
-  let list = todosStore.items.filter((t) => t.is_done)
-  if (props.filterUserId !== undefined) {
-    list = list.filter((t) => t.assigned_to_user_id === props.filterUserId)
-  }
-  return list
+// Getrennte Listen: offen vs. erledigt (mit optionalem Personen-Filter:
+// Aufgaben, bei denen die Person eine der Zuständigen ist)
+const openTodos = computed(() => todosStore.items.filter((t) => !t.is_done && matchesFilter(t)))
+const doneTodos = computed(() => todosStore.items.filter((t) => t.is_done && matchesFilter(t)))
+
+// Avatar-Stapel pro Aufgabe (max. 3 + "+n"; Ex-Mitglieder zählen nicht)
+const stacks = computed(() => {
+  const map = new Map<string, AssigneeStack>()
+  for (const todo of todosStore.items) map.set(todo.id, assigneeStack(todo, todosStore.members))
+  return map
 })
 
-// Überfällig-Check
+function stackOf(todo: TodoItem): AssigneeStack {
+  return stacks.value.get(todo.id) ?? { shown: [], overflow: 0, label: '' }
+}
+
+// "Übernehmen" (noch niemand zuständig) bzw. "Ich helfe mit" (andere zuständig)
+function claimOf(todo: TodoItem) {
+  return claimAction(todo, authStore.user?.id, todosStore.members)
+}
+
+// "erledigt von X" (eine:r für alle)
+function doneByLabel(todo: TodoItem): string | null {
+  if (!todo.is_done || !todo.done_by_user_id) return null
+  if (todo.done_by_user_id === authStore.user?.id) return t('todos.doneByYou')
+  const name = getMemberName(todo.done_by_user_id)
+  return name ? t('todos.doneBy', { name: name.split(' ')[0] }) : null
+}
+
+// Überfällig-Check: Fälligkeit ist ein Kalendertag (gespeichert 00:00 UTC) und wird
+// mit „heute“ im Haushalt verglichen — nicht über new Date(), sonst wäre die Aufgabe
+// westlich von UTC schon am Fälligkeitstag überfällig (CASA-39)
 function isOverdue(todo: TodoItem): boolean {
-  if (!todo.due_date || todo.is_done) return false
-  return new Date(todo.due_date) < new Date(new Date().toDateString())
+  const due = todoDueDay(todo.due_date)
+  if (!due || todo.is_done) return false
+  return due < householdDateString(authStore.currentHousehold?.timezone)
 }
 
 // Mitglied-Name auflösen
@@ -114,11 +167,9 @@ function formatReminderDate(isoString: string): string {
   })
 }
 
-// Nächste zukünftige Erinnerung eines Todos
+// Nächste ausstehende Erinnerung (zukünftig und noch nicht gesendet)
 function getNextReminder(todo: TodoItem): string | null {
-  const now = new Date()
-  const future = todo.reminders.filter(r => new Date(r.remind_at) > now)
-  return future.length > 0 ? future[0].remind_at : null
+  return nextPendingReminder(todo.reminders)
 }
 
 // Reminder löschen
@@ -147,7 +198,7 @@ async function handleAddTodo() {
 
   const description = newDescription.value.trim() || undefined
   const dueDate = newDueDate.value || undefined
-  const assignedTo = newAssignedTo.value || undefined
+  const assignees = [...newAssignees.value]
   const remindersToAdd = newReminders.value.filter(r => r.trim() !== '')
 
   // Eingaben für die Wiederherstellung bei Fehler merken
@@ -155,31 +206,30 @@ async function handleAddTodo() {
     title: newTodoTitle.value,
     description: newDescription.value,
     dueDate: newDueDate.value,
-    assignedTo: newAssignedTo.value,
+    assignees,
     reminders: [...newReminders.value],
     showDetails: showAddDetails.value,
   }
 
   // Offline blockiert run() vor dem Zurücksetzen → nichts geht verloren
   await run(async () => {
-    // Felder sofort leeren (schnelles Erfassen) …
+    // Felder sofort leeren (schnelles Erfassen) … — die Zuständigen bleiben stehen
     newTodoTitle.value = ''
     newDescription.value = ''
     newDueDate.value = ''
-    newAssignedTo.value = props.filterUserId ?? ''
     newReminders.value = []
     showAddDetails.value = false
 
     let todoId: string | undefined
     try {
-      todoId = await todosStore.addTodo(title, description, assignedTo, dueDate)
+      todoId = await todosStore.addTodo(title, description, assignees, dueDate)
     } catch (err) {
       // … und bei Fehler wiederherstellen, falls inzwischen nichts Neues getippt wurde
       if (!newTodoTitle.value) {
         newTodoTitle.value = saved.title
         newDescription.value = saved.description
         newDueDate.value = saved.dueDate
-        newAssignedTo.value = saved.assignedTo
+        newAssignees.value = [...saved.assignees]
         newReminders.value = saved.reminders
         showAddDetails.value = saved.showDetails
       }
@@ -191,9 +241,11 @@ async function handleAddTodo() {
       await addReminders(todoId, remindersToAdd)
     }
 
-    // Bewusst jemand anderem (oder niemandem) zugewiesen → durch den Filter ausgeblendet
-    if (props.filterUserId !== undefined && assignedTo !== props.filterUserId) {
+    // Gefilterte Person bewusst abgewählt → durch den Filter ausgeblendet
+    if (props.filterUserId !== undefined && !assignees.includes(props.filterUserId)) {
       notifyInfo(t('todos.createdHidden', { name: props.filterUserName ?? '' }))
+    } else if (props.filterUnassigned && assignees.length > 0) {
+      notifyInfo(t('todos.createdHiddenAssigned'))
     }
   }, { key: `add:${title}`, error: t('todos.addError') })
   inputRef.value?.focus()
@@ -218,11 +270,20 @@ async function handleToggle(todo: TodoItem) {
   })
 }
 
+async function handleClaim(todo: TodoItem) {
+  await run(() => todosStore.claimTodo(todo.id), {
+    key: `claim:${todo.id}`,
+    error: t('todos.claimError'),
+  })
+}
+
 async function handleDelete(todoId: string) {
   const todo = todosStore.items.find(t => t.id === todoId)
   if (!todo) return
   // Vollständiger Snapshot (Tags, Erinnerungen, Status) fürs Undo
-  const snapshot: TodoItem = { ...todo, tags: [...todo.tags], reminders: [...todo.reminders] }
+  const snapshot: TodoItem = {
+    ...todo, tags: [...todo.tags], reminders: [...todo.reminders], assignee_ids: [...todo.assignee_ids],
+  }
 
   await run(() => todosStore.deleteTodo(todoId), {
     key: `delete:${todoId}`,
@@ -233,12 +294,16 @@ async function handleDelete(todoId: string) {
 }
 
 // Bearbeitung starten
+// Stand beim Start der Bearbeitung: Vergleichsbasis für Teil-Updates (CASA-09)
+let editOriginal: TodoItem | null = null
+
 function startEdit(todo: TodoItem) {
   editingId.value = todo.id
+  editOriginal = { ...todo }
   editTitle.value = todo.title
   editDescription.value = todo.description ?? ''
-  editDueDate.value = todo.due_date ?? ''
-  editAssignedTo.value = todo.assigned_to_user_id ?? ''
+  editDueDate.value = todoDueDay(todo.due_date) ?? ''
+  editAssignees.value = [...(todo.assignee_ids ?? [])]
   editNewReminders.value = []
   editTitleError.value = ''
   // Fokus aufs Titelfeld
@@ -268,13 +333,20 @@ async function saveEdit(todoId: string) {
 
   editSaving.value = true
   try {
-    const ok = await run(() => todosStore.updateTodo(todoId, {
+    const edit = {
       title,
       description: editDescription.value.trim() || null,
       due_date: editDueDate.value || null,
-      assigned_to_user_id: editAssignedTo.value || null,
-    }), { key: `save:${todoId}`, error: t('todos.saveError') })
-    if (!ok) return
+      assignee_ids: [...editAssignees.value],
+    }
+    // Nur geänderte Felder senden (CASA-09); nichts geändert → kein Request
+    const changes = editOriginal?.id === todoId ? changedTodoFields(editOriginal, edit) : edit
+    if (Object.keys(changes).length > 0) {
+      const ok = await run(() => todosStore.updateTodo(todoId, changes), {
+        key: `save:${todoId}`, error: t('todos.saveError'),
+      })
+      if (!ok) return
+    }
 
     // Neue Reminders hinzufügen
     await addReminders(todoId, editNewReminders.value.filter(r => r.trim() !== ''))
@@ -317,6 +389,10 @@ async function saveEdit(todoId: string) {
     >
       <span aria-hidden="true">{{ showAddDetails ? '▾' : '▸' }}</span>
       {{ showAddDetails ? $t('todos.detailsHide') : $t('todos.detailsShow') }}
+      <!-- Vorauswahl bleibt nach dem Erfassen stehen → auch eingeklappt sichtbar -->
+      <span v-if="!showAddDetails && newAssigneesSummary" class="details-toggle__summary">
+        · {{ $t('todos.assigneesFor', { names: newAssigneesSummary }) }}
+      </span>
     </button>
 
     <!-- Erweiterte Felder -->
@@ -335,17 +411,7 @@ async function saveEdit(todoId: string) {
         :title="$t('todos.dueDate')"
         :aria-label="$t('todos.dueDate')"
       />
-      <select
-        v-model="newAssignedTo"
-        class="add-details__input"
-        :title="$t('todos.assignTo')"
-        :aria-label="$t('todos.assignTo')"
-      >
-        <option value="">{{ $t('todos.noneAssigned') }}</option>
-        <option v-for="member in todosStore.members" :key="member.id" :value="member.id">
-          {{ member.display_name }}
-        </option>
-      </select>
+      <TodoAssigneePicker v-model="newAssignees" :members="todosStore.members" />
       <!-- Erinnerungen -->
       <div class="reminder-section">
         <label class="reminder-section__label">{{ $t('todos.reminders') }}</label>
@@ -412,23 +478,46 @@ async function saveEdit(todoId: string) {
                 <span class="todo-row__name">{{ todo.title }}</span>
                 <span v-if="isOverdue(todo)" class="overdue-badge">{{ $t('todos.overdue') }}</span>
               </div>
-              <div v-if="todo.description || todo.due_date || todo.assigned_to_user_id" class="todo-row__meta">
+              <div v-if="todo.description || todo.due_date || stackOf(todo).shown.length" class="todo-row__meta">
                 <span v-if="todo.description" class="todo-row__desc">{{ todo.description }}</span>
                 <span v-if="todo.due_date" class="todo-row__date" :class="{ 'todo-row__date--overdue': isOverdue(todo) }">
-                  {{ formatDateShort(todo.due_date) }}
+                  {{ formatDateShort(todoDueDay(todo.due_date)!) }}
                 </span>
-                <BaseAvatar
-                  v-if="todo.assigned_to_user_id && getMemberName(todo.assigned_to_user_id)"
-                  :name="getMemberName(todo.assigned_to_user_id)!"
-                  :user-id="todo.assigned_to_user_id"
-                  size="sm"
-                />
+                <!-- Zuständige: max. 3 Avatare + "+n" -->
+                <span
+                  v-if="stackOf(todo).shown.length"
+                  class="avatar-stack"
+                  role="img"
+                  :aria-label="$t('todos.assigneesAria', { names: stackOf(todo).label })"
+                  :title="stackOf(todo).label"
+                >
+                  <BaseAvatar
+                    v-for="member in stackOf(todo).shown"
+                    :key="member.id"
+                    :name="member.display_name"
+                    :user-id="member.id"
+                    size="sm"
+                  />
+                  <span v-if="stackOf(todo).overflow" class="avatar-stack__more" aria-hidden="true">
+                    +{{ stackOf(todo).overflow }}
+                  </span>
+                </span>
                 <!-- Nächste Erinnerung Badge -->
                 <span v-if="getNextReminder(todo)" class="reminder-badge">
                   <PhBell :size="12" weight="fill" />
                   {{ formatReminderDate(getNextReminder(todo)!) }}
                 </span>
               </div>
+              <!-- Ich übernehme / Ich helfe mit (nicht abhaken → click.stop) -->
+              <button
+                v-if="claimOf(todo)"
+                type="button"
+                class="claim-btn tap-target"
+                :title="claimOf(todo) === 'join' ? $t('todos.joinInHint') : $t('todos.claimSelfHint')"
+                @click.stop="handleClaim(todo)"
+              >
+                {{ claimOf(todo) === 'join' ? $t('todos.joinIn') : $t('todos.claimSelf') }}
+              </button>
             </div>
           </div>
           <div class="todo-row__actions">
@@ -453,13 +542,8 @@ async function saveEdit(todoId: string) {
             />
             <p v-if="editTitleError" class="field-error" role="alert">{{ editTitleError }}</p>
             <textarea v-model="editDescription" class="add-details__textarea" :placeholder="$t('todos.descriptionPlaceholder')" rows="2" />
-            <input v-model="editDueDate" type="date" class="add-details__input" :title="$t('todos.dueDate')" />
-            <select v-model="editAssignedTo" class="add-details__input" :title="$t('todos.assignTo')">
-              <option value="">{{ $t('todos.noneAssigned') }}</option>
-              <option v-for="member in todosStore.members" :key="member.id" :value="member.id">
-                {{ member.display_name }}
-              </option>
-            </select>
+            <input v-model="editDueDate" type="date" class="add-details__input" :title="$t('todos.dueDate')" :aria-label="$t('todos.dueDate')" />
+            <TodoAssigneePicker v-model="editAssignees" :members="todosStore.members" />
             <!-- Bestehende Reminders anzeigen/löschen -->
             <div class="reminder-section">
               <label class="reminder-section__label">{{ $t('todos.reminders') }}</label>
@@ -515,8 +599,8 @@ async function saveEdit(todoId: string) {
     <BaseEmptyState
       v-if="!todosStore.loading && openTodos.length === 0 && !(loadError && todosStore.items.length === 0)"
       :icon="PhListChecks"
-      :title="$t('todos.emptyOpenTitle')"
-      :subtitle="$t('todos.emptySubtitle')"
+      :title="filterUnassigned ? $t('todos.emptyUnassignedTitle') : $t('todos.emptyOpenTitle')"
+      :subtitle="filterUnassigned ? $t('todos.emptyUnassignedSubtitle') : $t('todos.emptySubtitle')"
     />
 
     <!-- Erledigte Todos (eingeklappt) -->
@@ -536,15 +620,29 @@ async function saveEdit(todoId: string) {
             <BaseCheckCircle :checked="todo.is_done" :label="todo.title" @toggle="handleToggle(todo)" />
             <div class="todo-row__content">
               <span class="todo-row__name">{{ todo.title }}</span>
-              <div v-if="todo.description || todo.due_date || todo.assigned_to_user_id" class="todo-row__meta">
+              <div v-if="todo.description || todo.due_date || stackOf(todo).shown.length || doneByLabel(todo)" class="todo-row__meta">
+                <!-- Eine:r für alle: wer abgehakt hat -->
+                <span v-if="doneByLabel(todo)" class="todo-row__done-by">{{ doneByLabel(todo) }}</span>
                 <span v-if="todo.description" class="todo-row__desc">{{ todo.description }}</span>
-                <span v-if="todo.due_date" class="todo-row__date">{{ formatDateShort(todo.due_date) }}</span>
-                <BaseAvatar
-                  v-if="todo.assigned_to_user_id && getMemberName(todo.assigned_to_user_id)"
-                  :name="getMemberName(todo.assigned_to_user_id)!"
-                  :user-id="todo.assigned_to_user_id"
-                  size="sm"
-                />
+                <span v-if="todo.due_date" class="todo-row__date">{{ formatDateShort(todoDueDay(todo.due_date)!) }}</span>
+                <span
+                  v-if="stackOf(todo).shown.length"
+                  class="avatar-stack"
+                  role="img"
+                  :aria-label="$t('todos.assigneesAria', { names: stackOf(todo).label })"
+                  :title="stackOf(todo).label"
+                >
+                  <BaseAvatar
+                    v-for="member in stackOf(todo).shown"
+                    :key="member.id"
+                    :name="member.display_name"
+                    :user-id="member.id"
+                    size="sm"
+                  />
+                  <span v-if="stackOf(todo).overflow" class="avatar-stack__more" aria-hidden="true">
+                    +{{ stackOf(todo).overflow }}
+                  </span>
+                </span>
                 <!-- Nächste Erinnerung Badge -->
                 <span v-if="getNextReminder(todo)" class="reminder-badge">
                   <PhBell :size="12" weight="fill" />
@@ -642,6 +740,10 @@ async function saveEdit(todoId: string) {
 }
 
 .details-toggle:hover {
+  color: var(--ink);
+}
+
+.details-toggle__summary {
   color: var(--ink);
 }
 
@@ -789,6 +891,62 @@ async function saveEdit(todoId: string) {
 .todo-row__date--overdue {
   color: var(--color-danger);
   font-weight: var(--font-weight-medium);
+}
+
+/* Zuständige: überlappende Avatare, Ring in Seitenfarbe trennt sie */
+.avatar-stack {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Wurzel-Element von BaseAvatar trägt auch die Scope-ID dieser Komponente */
+.avatar-stack > .base-avatar {
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+.avatar-stack > .base-avatar + .base-avatar {
+  margin-left: calc(-1 * var(--space-1-5));
+}
+
+.todo-row--overdue .avatar-stack > .base-avatar {
+  box-shadow: 0 0 0 2px var(--color-danger-soft);
+}
+
+.avatar-stack__more {
+  margin-left: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--sub);
+}
+
+.todo-row__done-by {
+  white-space: nowrap;
+}
+
+/* Übernehmen / Ich helfe mit */
+.claim-btn {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+  padding: var(--space-0-5) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-full);
+  background: var(--card);
+  color: var(--acc);
+  font-family: var(--font-family);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.claim-btn:hover {
+  background: var(--acc-soft);
+  border-color: var(--acc);
+}
+
+.claim-btn:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
 }
 
 /* Aktions-Buttons */

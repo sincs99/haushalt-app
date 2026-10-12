@@ -24,9 +24,11 @@ export const BADGE_EVENTS = [
   'chore_deleted',
   'chore_assignment_created',
   'chore_assignment_updated',
+  'chore_assignments_deleted',
   'pet_care_task_created',
   'pet_care_task_updated',
   'pet_care_task_deleted',
+  'pet_deleted',
   'plant_care_task_created',
   'plant_care_task_updated',
   'plant_care_task_deleted',
@@ -86,9 +88,26 @@ function onVisibilityChange(): void {
   if (document.visibilityState === 'visible') void refreshAppBadge()
 }
 
+/**
+ * Dem Service Worker den aktuellen Haushalt mitteilen: Er setzt die Zahl aus einer
+ * Push-Payload nur, wenn sie zu diesem Haushalt gehört (public/push-sw.js, CASA-40).
+ */
+function notifyServiceWorker(id: string | null): void {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+  navigator.serviceWorker.ready
+    .then((registration) => {
+      registration.active?.postMessage({ type: 'casa:current-household', householdId: id })
+    })
+    .catch(() => {
+      // Kein Service Worker (Dev, nicht unterstützt) — nichts zu tun
+    })
+}
+
 /** Aktuellen Haushalt setzen (null = abgemeldet → Zahl entfernen). */
 export function setAppBadgeHousehold(id: string | null): void {
+  const changed = id !== householdId
   householdId = id
+  if (changed) notifyServiceWorker(id)
   if (!badgeNavigator()) return
   if (!listening && typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', onVisibilityChange)

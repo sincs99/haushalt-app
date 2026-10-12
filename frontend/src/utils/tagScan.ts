@@ -4,7 +4,7 @@
  * TagScanView ruft resolve auf und entscheidet hier, ob direkt navigiert,
  * eine Bestätigung gezeigt oder ein Hinweis angezeigt wird.
  */
-import type { TagResolveResult } from '../types'
+import type { TagExecuteParams, TagResolveResult, TagTargetOption } from '../types'
 
 export type ScanErrorKind =
   | 'not_found'
@@ -14,6 +14,7 @@ export type ScanErrorKind =
   | 'unsupported'
   | 'already_done'
   | 'nothing_to_do'
+  | 'stale'
   | 'rate_limited'
   | 'offline'
   | 'unknown'
@@ -57,6 +58,7 @@ export function scanErrorKind(err: any): ScanErrorKind {
     case 410:
       return 'disabled'
     case 409:
+      if (code === 'TAG_CONFIRMATION_STALE') return 'stale'
       return code === 'FEEDING_DUPLICATE' ? 'already_done' : 'nothing_to_do'
     case 422:
       return code === 'TAG_ACTION_INVALID' || code === 'TAG_NOT_EXECUTABLE' ? 'unsupported' : 'unknown'
@@ -65,6 +67,17 @@ export function scanErrorKind(err: any): ScanErrorKind {
     default:
       return 'unknown'
   }
+}
+
+/**
+ * Parameter für execute: die Bestätigung aus resolve (welche Zuweisung bzw.
+ * welche Gießaufgaben angezeigt wurden, CASA-18) und beim Füttern der Slot.
+ */
+export function executeParams(result: TagResolveResult, slot: 'morning' | 'evening'): TagExecuteParams {
+  const params: TagExecuteParams = {}
+  if (result.action === 'pet.feed') params.slot = slot
+  if (result.confirm) params.confirm = result.confirm
+  return params
 }
 
 /** URL, die auf Chip bzw. QR-Code kommt. */
@@ -113,4 +126,25 @@ export function moduleRouteFor(result: Pick<TagResolveResult, 'action' | 'detail
     default:
       return '/dashboard'
   }
+}
+
+type Translate = (key: string) => string
+
+/**
+ * Anzeigename eines Tag-Ziels (Liste, Scan, Ergebnis). Pflegeaufgaben ohne eigene
+ * Bezeichnung liefert das Backend als Schlüssel ``target_care_type`` — übersetzt wie in
+ * der Pflanzenansicht; ``target_name`` (deutsch) bleibt Fallback für ältere Clients (CASA-59).
+ */
+export function localizedTargetName(
+  r: { target_name: string | null; target_care_type?: string | null },
+  t: Translate,
+): string | null {
+  if (r.target_care_type) return t(`plants.careTypes.${r.target_care_type}`)
+  return r.target_name
+}
+
+/** Eintrag im Ziel-Dropdown: „Pflanze – Pflegeart“ übersetzt, sonst ``name`` */
+export function localizedTargetOption(opt: TagTargetOption, t: Translate): string {
+  if (opt.care_type && opt.plant_name) return `${opt.plant_name} – ${t(`plants.careTypes.${opt.care_type}`)}`
+  return opt.name
 }

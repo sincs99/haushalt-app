@@ -1,5 +1,8 @@
 import api from '../api/client'
-import type { ReassignStoreResult, ShoppingItem, ShoppingList, ShoppingListCreatePayload, ShoppingListUpdatePayload } from '../types'
+import { deleteIdempotent } from './http'
+import type {
+  BulkAddResponse, ReassignStoreResult, ShoppingItem, ShoppingList, ShoppingListCreatePayload, ShoppingListUpdatePayload,
+} from '../types'
 
 export interface ShoppingRepository {
   // Lists
@@ -19,6 +22,8 @@ export interface ShoppingRepository {
     data: Partial<ShoppingItem>,
   ): Promise<ShoppingItem>
   remove(householdId: string, itemId: string): Promise<void>
+  /** Mehrere Items auf eine Liste, Dedupe gegen offene Items aller Listen (PD-M2) */
+  bulkAdd(householdId: string, listId: string, items: string[]): Promise<BulkAddResponse>
   // Stores
   fetchStores(householdId: string): Promise<string[]>
   reassignStore(householdId: string, fromStore: string, toStore: string | null): Promise<ReassignStoreResult>
@@ -51,7 +56,7 @@ export function createOnlineShoppingRepository(): ShoppingRepository {
     },
 
     async deleteList(householdId, listId, force = false) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/shopping-lists/${listId}`,
         { params: force ? { force: true } : undefined },
       )
@@ -94,9 +99,17 @@ export function createOnlineShoppingRepository(): ShoppingRepository {
     },
 
     async remove(householdId, itemId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/shopping-items/${itemId}`,
       )
+    },
+
+    async bulkAdd(householdId, listId, items) {
+      const { data } = await api.post<BulkAddResponse>(
+        `/api/households/${householdId}/shopping-items/bulk-add`,
+        { list_id: listId, items },
+      )
+      return data
     },
 
     // ── Stores ──

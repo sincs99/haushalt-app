@@ -202,6 +202,34 @@ class TestBalancesEndpoint:
         assert balances_by_id[str(user_a.id)]["saldo_rappen"] == -1000
 
 
+    def test_balances_flag_former_members(self, db, client, household_a, token_a, user_a, user_a2):
+        """PD-F2: Saldo eines ehemaligen Mitglieds bleibt sichtbar, mit is_member=false."""
+        from app.models import HouseholdMember
+
+        resp = client.post(
+            f"/api/households/{household_a.id}/expenses/",
+            json={"description": "Einkauf", "amount_rappen": 3000, "paid_by_user_id": str(user_a2.id),
+                  "split_type": "even", "participant_ids": [str(user_a.id), str(user_a2.id)]},
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert resp.status_code == 201, resp.text
+        db.query(HouseholdMember).filter_by(household_id=household_a.id, user_id=user_a2.id).delete()
+        db.commit()
+
+        data = client.get(
+            f"/api/households/{household_a.id}/expenses/balances",
+            headers={"Authorization": f"Bearer {token_a}"},
+        ).json()
+        by_id = {b["user_id"]: b for b in data["balances"]}
+        assert by_id[str(user_a.id)]["is_member"] is True
+        assert by_id[str(user_a2.id)]["is_member"] is False
+        assert by_id[str(user_a2.id)]["saldo_rappen"] == 1500
+        assert by_id[str(user_a2.id)]["display_name"] == user_a2.display_name
+        # Ausgleichsvorschlag mit dem ehemaligen Mitglied bleibt möglich
+        assert data["settlements"] == [
+            {"from_user_id": str(user_a.id), "to_user_id": str(user_a2.id), "amount_rappen": 1500}
+        ]
+
 class TestBalancesScoping:
     def test_balances_cross_household_403(self, client, household_b, token_a):
         """User aus Household A bekommt für Household B ein 403."""

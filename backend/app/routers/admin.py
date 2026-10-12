@@ -157,7 +157,7 @@ def list_households(
     return [_household_out(db, h) for h in households]
 
 
-@router.patch("/households/{household_id}/plan", response_model=HouseholdAdminOut)
+@router.put("/households/{household_id}/plan", response_model=HouseholdAdminOut)
 def set_household_plan(
     household_id: uuid.UUID,
     body: SetPlanRequest,
@@ -219,7 +219,7 @@ def list_users(
     ]
 
 
-@router.patch("/users/{user_id}", response_model=UserAdminOut)
+@router.put("/users/{user_id}", response_model=UserAdminOut)
 def update_user(
     user_id: uuid.UUID,
     body: UpdateUserRequest,

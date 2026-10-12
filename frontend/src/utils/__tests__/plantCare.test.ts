@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { adviceTasks, careTaskName, daysUntil, dueText, isWaterDue, mergeCareNotes, planAdvice } from '../plantCare'
+import {
+  adviceKey, adviceTasks, careTaskName, daysUntil, dueText, isWaterDue, mergeCareNotes, planAdvice, planItems, selectPlan,
+} from '../plantCare'
 import type { PlantCareStatus } from '../../types'
 
 const t = (key: string, params?: Record<string, unknown>) =>
@@ -75,8 +77,21 @@ describe('KI-Pflegevorschlag → Pflegeaufgaben', () => {
     ]
     expect(planAdvice(advice, existing)).toEqual({
       create: [{ care_type: 'repot', interval_days: 720 }],
-      update: [{ id: 'w', interval_days: 7 }],
+      update: [{ id: 'w', care_type: 'water', from: 10, interval_days: 7 }],
     })
+  })
+
+  it('selectPlan übernimmt nur angehakte Einträge (PD-P5)', () => {
+    const existing = [{ id: 'w', care_type: 'water' as const, label: null, interval_days: 10 }]
+    const plan = planAdvice(advice, existing)
+    expect(planItems(plan).map(adviceKey)).toEqual(['update:w', 'create:fertilize', 'create:repot'])
+    expect(selectPlan(plan, null)).toEqual(plan)
+    expect(selectPlan(plan, ['create:repot'])).toEqual({
+      create: [{ care_type: 'repot', interval_days: 720 }],
+      update: [],
+    })
+    // Alte Auswahl, Aufgabe inzwischen ersetzt → nichts Unerwartetes übernehmen
+    expect(selectPlan(planAdvice(advice, [{ ...existing[0], id: 'neu' }]), ['update:w']).update).toEqual([])
   })
 
   it('planAdvice leaves labelled custom tasks alone', () => {

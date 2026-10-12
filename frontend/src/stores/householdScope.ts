@@ -1,10 +1,16 @@
 /**
  * Haushaltswechsel: Alle haushaltsbezogenen Stores leeren.
  *
- * Wird in App.vue aufgerufen, bevor der neue Haushalt geladen wird. Ohne das zeigen
- * Ansichten, die ihre Daten nur beim Öffnen laden (Haustiere, Pflanzen, Notizen, Essen),
- * weiter die Daten des alten Haushalts — und Aktionen darauf gingen gegen den neuen
- * Haushalt (Logik-Review L-07). Der Auth-Store (Haushaltsliste, User) bleibt unberührt.
+ * Wird vom Auth-Store bei JEDEM Wechsel von currentHouseholdId aufgerufen (auch von/nach
+ * `null`, z. B. letzten Haushalt verlassen und neuen anlegen) und beim Logout
+ * (auth._clearState), bevor App.vue den neuen Haushalt lädt. Ohne das zeigen Ansichten, die ihre Daten nur beim Öffnen laden
+ * (Haustiere, Pflanzen, Notizen, Essen), weiter die Daten des alten Haushalts — und
+ * Aktionen darauf gingen gegen den neuen Haushalt (Logik-Review L-07); nach Logout +
+ * Login eines anderen Users sähe dieser die Daten des Vorgängers (CASA-12).
+ *
+ * Erhöht ausserdem die Haushalts-Generation: Antworten von Requests, die vor dem Reset
+ * gestartet wurden, werden von den Stores verworfen (utils/householdGuard.ts).
+ * Der Auth-Store (Haushaltsliste, User) bleibt unberührt.
  */
 import { useShoppingStore } from './shopping'
 import { useTodosStore } from './todos'
@@ -19,9 +25,14 @@ import { usePetsStore } from './pets'
 import { usePlantsStore } from './plants'
 import { useNotesStore } from './notes'
 import { useFoodStore } from './food'
-import { useTasksStore } from './tasks'
+import { useAiStore } from './ai'
+import { useDocumentsStore } from './documents'
+import { useTagsStore } from './tags'
+import { bumpHouseholdGeneration } from '../utils/householdGuard'
 
 export function resetHouseholdScopedStores(): void {
+  bumpHouseholdGeneration()
+
   const shopping = useShoppingStore()
   shopping.items = []
   shopping.lists = []
@@ -37,8 +48,15 @@ export function resetHouseholdScopedStores(): void {
   expenses.expenses = []
   expenses.balances = null
   expenses.members = []
+  expenses.hasMore = false
+  expenses.deletedExpenses = []
+  expenses.deletedLoaded = false
 
-  useSettlementsStore().settlements = []
+  const settlements = useSettlementsStore()
+  settlements.settlements = []
+  settlements.hasMore = false
+  settlements.deletedSettlements = []
+  settlements.deletedLoaded = false
 
   const chores = useChoresStore()
   chores.chores = []
@@ -58,6 +76,7 @@ export function resetHouseholdScopedStores(): void {
   usePlantsStore().reset()
   useNotesStore().reset()
   useFoodStore().reset()
-  useTasksStore().reset()
-  // ai, documents und tags setzen sich selbst über einen Watch auf currentHouseholdId zurück
+  useAiStore().reset()
+  useDocumentsStore().reset()
+  useTagsStore().$reset()
 }

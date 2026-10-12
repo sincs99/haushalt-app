@@ -405,7 +405,7 @@ def test_admin_overview_and_lists(client, db, platform_admin, token_a, household
 
 def test_admin_sets_plan_manually(client, db, platform_admin, token_a, household_b, billing):
     expires = (datetime.now(timezone.utc) + timedelta(days=90)).isoformat()
-    resp = client.patch(
+    resp = client.put(
         f"/api/admin/households/{household_b.id}/plan",
         json={"plan": "premium", "expires_at": expires, "note": "Beta-Tester"},
         headers=_auth(token_a),
@@ -415,12 +415,12 @@ def test_admin_sets_plan_manually(client, db, platform_admin, token_a, household
     sub = db.query(Subscription).filter_by(household_id=household_b.id).one()
     assert sub.provider == "manual" and sub.note == "Beta-Tester"
 
-    resp = client.patch(f"/api/admin/households/{household_b.id}/plan", json={"plan": "free"}, headers=_auth(token_a))
+    resp = client.put(f"/api/admin/households/{household_b.id}/plan", json={"plan": "free"}, headers=_auth(token_a))
     assert resp.json()["effective_plan"] == "free"
 
-    resp = client.patch(f"/api/admin/households/{household_b.id}/plan", json={"plan": "gold"}, headers=_auth(token_a))
+    resp = client.put(f"/api/admin/households/{household_b.id}/plan", json={"plan": "gold"}, headers=_auth(token_a))
     assert resp.status_code == 422
-    resp = client.patch(f"/api/admin/households/{uuid.uuid4()}/plan", json={"plan": "free"}, headers=_auth(token_a))
+    resp = client.put(f"/api/admin/households/{uuid.uuid4()}/plan", json={"plan": "free"}, headers=_auth(token_a))
     assert resp.status_code == 404
 
 
@@ -429,10 +429,10 @@ def test_admin_deactivates_user(client, db, platform_admin, token_a, user_b, tok
     db.commit()
 
     # Sich selbst sperren → 422
-    resp = client.patch(f"/api/admin/users/{platform_admin.id}", json={"is_active": False}, headers=_auth(token_a))
+    resp = client.put(f"/api/admin/users/{platform_admin.id}", json={"is_active": False}, headers=_auth(token_a))
     assert resp.status_code == 422
 
-    resp = client.patch(f"/api/admin/users/{user_b.id}", json={"is_active": False}, headers=_auth(token_a))
+    resp = client.put(f"/api/admin/users/{user_b.id}", json={"is_active": False}, headers=_auth(token_a))
     assert resp.status_code == 200
     assert resp.json()["is_active"] is False
     # Gesperrt: Token-Nutzung 401 (ACCOUNT_DISABLED), Login 403, Refresh widerrufen
@@ -444,7 +444,7 @@ def test_admin_deactivates_user(client, db, platform_admin, token_a, user_b, tok
     assert db.query(RefreshToken).filter_by(user_id=user_b.id).one().revoked_at is not None
 
     # Entsperren
-    resp = client.patch(f"/api/admin/users/{user_b.id}", json={"is_active": True}, headers=_auth(token_a))
+    resp = client.put(f"/api/admin/users/{user_b.id}", json={"is_active": True}, headers=_auth(token_a))
     assert resp.json()["is_active"] is True
     assert client.get("/api/auth/me", headers=_auth(token_b)).status_code == 200
 

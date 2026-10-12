@@ -254,11 +254,13 @@ def delete_account(
     user_id = current_user.id
     left_households: list[uuid.UUID] = []
 
-    memberships = db.query(HouseholdMember).filter_by(user_id=user_id).all()
-    for membership in memberships:
-        household_id = membership.household_id
-        if not membership_service.leave(db, membership).household_deleted:
+    household_ids = [m.household_id for m in db.query(HouseholdMember).filter_by(user_id=user_id).all()]
+    released_by_household: dict[uuid.UUID, list[str]] = {}
+    for household_id in household_ids:
+        result = membership_service.leave(db, household_id, user_id)
+        if result is not None and not result.household_deleted:
             left_households.append(household_id)
+            released_by_household[household_id] = result.released_areas
 
     user = db.get(User, user_id)
     now = datetime.now(timezone.utc)
@@ -275,7 +277,11 @@ def delete_account(
         emit_to_household_sync(
             household_id,
             "household_member_left",
-            {"household_id": str(household_id), "user_id": str(user_id)},
+            {
+                "household_id": str(household_id),
+                "user_id": str(user_id),
+                "released": released_by_household.get(household_id, []),
+            },
             evict_user_id=user_id,
         )
     disconnect_user_sync(user_id, "revoked")

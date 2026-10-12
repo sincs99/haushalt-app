@@ -174,6 +174,50 @@ def test_delete_orphan_files(db, household_a, user_a, pet_a):
     assert len(db.get(Document, doc.id).files) == 1
 
 
+def test_untracked_storage_files_are_removed_after_grace(db, household_a, user_a, tmp_path):
+    """CASA-27: Datei auf der Platte ohne DB-Zeile (Commit gescheitert) → nach 24 h weg."""
+    import os
+
+    from app.routers.files import delete_untracked_storage_files
+    from app.services.storage import LocalStorageService
+
+    storage = LocalStorageService(str(tmp_path))
+    tracked_path = storage.save(str(household_a.id), "a.pdf", b"%PDF-1", ".pdf")
+    untracked_old = storage.save(str(household_a.id), "b.pdf", b"%PDF-2", ".pdf")
+    untracked_new = storage.save(str(household_a.id), "c.pdf", b"%PDF-3", ".pdf")
+    db.add(StoredFile(household_id=household_a.id, original_name="a.pdf", mime_type="application/pdf",
+                      size_bytes=6, storage_path=tracked_path, uploaded_by_user_id=user_a.id))
+    db.commit()
+    old = (datetime.now(timezone.utc) - ORPHAN_FILE_GRACE - timedelta(hours=1)).timestamp()
+    for path in (tracked_path, untracked_old):
+        os.utime(tmp_path / path, (old, old))
+
+    with patch("app.routers.files._storage", storage):
+        assert delete_untracked_storage_files(db) == 1
+
+    assert (tmp_path / tracked_path).exists()
+    assert not (tmp_path / untracked_old).exists()
+    assert (tmp_path / untracked_new).exists()
+
+
+def test_upload_commit_failure_removes_file_from_storage(client, db, household_a, token_a):
+    """CASA-27: scheitert der Commit nach dem Schreiben, bleibt keine Datei ohne Zeile liegen."""
+    from sqlalchemy.exc import OperationalError
+
+    def failing_commit():
+        raise OperationalError("COMMIT", {}, Exception("connection lost"))
+
+    with patch("app.routers.files._storage") as mock_storage, patch.object(db, "commit", failing_commit):
+        mock_storage.save.return_value = f"{household_a.id}/x.pdf"
+        resp = client.post(
+            f"/api/households/{household_a.id}/files/",
+            headers=_auth(token_a),
+            files={"file": ("a.pdf", b"%PDF-1.4 test", "application/pdf")},
+        )
+    assert resp.status_code == 500
+    mock_storage.delete.assert_called_once_with(f"{household_a.id}/x.pdf")
+
+
 # ---------------------------------------------------------------------------
 # Dokumentliste ohne N+1
 # ---------------------------------------------------------------------------

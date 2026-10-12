@@ -82,3 +82,4 @@ frontend/coverage/
 frontend/qa/*
 !frontend/qa/mobile-audit.cjs
 !frontend/qa/seed-testdata.py
+.hypothesis/

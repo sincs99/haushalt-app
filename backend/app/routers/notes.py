@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import HouseholdMember, Note
 from app.socket_manager import emit_to_household_sync
@@ -37,7 +38,10 @@ class NoteCreate(BaseModel):
         return v.strip()
 
 
-class NoteUpdate(BaseModel):
+class NoteUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Note → 422 (app/core/patch_schema.py)
+    __orm_model__ = Note
+
     title: str | None = Field(None, min_length=1, max_length=150)
     body: str | None = Field(None, max_length=5000)
     tag: str | None = Field(None, max_length=50)

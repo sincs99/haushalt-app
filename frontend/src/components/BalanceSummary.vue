@@ -1,27 +1,45 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useAuthStore } from '../stores/auth'
 import { useExpensesStore } from '../stores/expenses'
 import { useSettlementsStore } from '../stores/settlements'
 import { useToast } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatRappen, parseAmountToRappen } from '../utils/money'
-import { localDateString } from '../utils/dates'
+import { householdDateString } from '../utils/dates'
+import { balanceUserName, settlementParties, splitBalances } from '../utils/balances'
 import BaseCard from './ui/BaseCard.vue'
 import BaseButton from './ui/BaseButton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseDialog from './ui/BaseDialog.vue'
 import BaseErrorState from './ui/BaseErrorState.vue'
-import type { SettlementEntry } from '../types'
+import type { SettlementEntry, SettlementWarning } from '../types'
 
+const authStore = useAuthStore()
 const expensesStore = useExpensesStore()
 const settlementsStore = useSettlementsStore()
 const { notifySuccess, notifyError, notifyInfo } = useToast()
 const { t } = useI18n()
 
 function resolveUserName(userId: string): string {
-  const member = expensesStore.members.find(m => m.id === userId)
-  return member?.display_name ?? t('common.formerMember')
+  return balanceUserName(userId, expensesStore.members, expensesStore.balances?.balances ?? [])
+    ?? t('common.formerMember')
 }
+
+// Ehemalige Mitglieder getrennt und gekennzeichnet (PD-F2)
+const balanceGroups = computed(() =>
+  splitBalances(expensesStore.balances?.balances ?? [], expensesStore.members),
+)
+const formerWithSaldo = computed(() => balanceGroups.value.former.some(e => e.saldo_rappen !== 0))
+// Ausgleich mit ehemaligen Mitgliedern bleibt möglich: auch sie im Dialog wählbar
+const parties = computed(() =>
+  settlementParties(expensesStore.members, expensesStore.balances?.balances ?? []).map(p => ({
+    id: p.id,
+    label: p.former
+      ? `${p.display_name ?? t('common.formerMember')} (${t('expenses.balance.formerMemberBadge')})`
+      : (p.display_name ?? ''),
+  })),
+)
 
 const hasExpenses = computed(() => expensesStore.expenses.length > 0)
 const hasSettlements = computed(() => (expensesStore.balances?.settlements.length ?? 0) > 0)
@@ -49,6 +67,22 @@ const dialogDate = ref('')
 const dialogNote = ref('')
 const settlementSaving = ref(false)
 const settlementFormId = `settlement-form-${Math.random().toString(36).slice(2, 9)}`
+// Client-ID pro geöffnetem Dialog: Retry/Doppelklick legt keinen zweiten Ausgleich an (CASA-08)
+const dialogClientId = ref('')
+// Plausibilitätswarnungen (PD-F3): einmal anzeigen, zweiter Klick speichert trotzdem
+const dialogWarnings = ref<SettlementWarning[]>([])
+const dialogOpenDebt = ref(0)
+const acknowledgedKey = ref('')
+
+// Eingaben geändert → Warnungen gelten nicht mehr
+watch([dialogFrom, dialogTo, dialogAmount], () => {
+  dialogWarnings.value = []
+  acknowledgedKey.value = ''
+})
+
+function warningText(w: SettlementWarning): string {
+  return t(`settlements.warnings.${w}`, { amount: formatRappen(dialogOpenDebt.value) })
+}
 
 // Salden erneut laden (nach Ladefehler)
 const retryingBalances = ref(false)
@@ -65,9 +99,12 @@ function openSettlementDialog(s: SettlementEntry) {
   dialogFrom.value = s.from_user_id
   dialogTo.value = s.to_user_id
   dialogAmount.value = (s.amount_rappen / 100).toFixed(2)
-  // Lokales Datum (toISOString() wäre nachts noch „gestern“)
-  dialogDate.value = localDateString()
+  // Haushaltsdatum (Zeitzone aus /me), sonst lokales Gerätedatum (CASA-39)
+  dialogDate.value = householdDateString(authStore.currentHousehold?.timezone)
   dialogNote.value = ''
+  dialogClientId.value = crypto.randomUUID()
+  dialogWarnings.value = []
+  acknowledgedKey.value = ''
   showSettlementDialog.value = true
 }
 
@@ -88,16 +125,35 @@ async function confirmSettlement() {
     return
   }
 
+  const payload = {
+    id: dialogClientId.value || undefined,
+    from_user_id: dialogFrom.value,
+    to_user_id: dialogTo.value,
+    amount_rappen: rappen,
+    settled_date: dialogDate.value || undefined,
+    note: dialogNote.value.trim() || undefined,
+  }
+  const key = `${payload.from_user_id}|${payload.to_user_id}|${rappen}`
+
   settlementSaving.value = true
   try {
-    await settlementsStore.create({
-      from_user_id: dialogFrom.value,
-      to_user_id: dialogTo.value,
-      amount_rappen: rappen,
-      settled_date: dialogDate.value || undefined,
-      note: dialogNote.value.trim() || undefined,
-    })
-    notifySuccess(t('settlements.created'))
+    // Erst prüfen (doppelt erfasst? mehr als die offene Schuld?) — warnen, nicht verbieten
+    if (acknowledgedKey.value !== key) {
+      const check = await settlementsStore.check(payload)
+      if (check && check.warnings.length > 0) {
+        dialogWarnings.value = check.warnings
+        dialogOpenDebt.value = check.open_debt_rappen
+        acknowledgedKey.value = key
+        return
+      }
+    }
+    const created = await settlementsStore.create(payload)
+    // Gleichzeitig von der Gegenseite erfasst → gespeichert, aber deutlich darauf hinweisen
+    if (created?.warnings?.includes('DUPLICATE_RECENT') && !dialogWarnings.value.includes('DUPLICATE_RECENT')) {
+      notifyInfo(t('settlements.createdWithWarning'))
+    } else {
+      notifySuccess(t('settlements.created'))
+    }
     showSettlementDialog.value = false
   } catch (e) {
     notifyError(t('settlements.saveError'), e)
@@ -112,7 +168,7 @@ async function confirmSettlement() {
     <div class="balance-summary">
       <!-- Salden pro Mitglied -->
       <div
-        v-for="entry in expensesStore.balances.balances"
+        v-for="entry in balanceGroups.current"
         :key="entry.user_id"
         class="balance-row"
       >
@@ -123,6 +179,27 @@ async function confirmSettlement() {
         <span class="balance-row__saldo" :style="{ color: saldoColor(entry.saldo_rappen) }">
           {{ formatSaldo(entry.saldo_rappen) }}
         </span>
+      </div>
+
+      <!-- Ehemalige Mitglieder: Saldo bleibt, sie sehen den Haushalt aber nicht mehr (PD-F2) -->
+      <div v-if="balanceGroups.former.length > 0" class="former-section">
+        <div
+          v-for="entry in balanceGroups.former"
+          :key="entry.user_id"
+          class="balance-row"
+        >
+          <div class="balance-row__left">
+            <BaseAvatar :name="resolveUserName(entry.user_id)" :user-id="entry.user_id" size="sm" />
+            <span class="balance-row__name">{{ resolveUserName(entry.user_id) }}</span>
+            <span class="former-badge">{{ $t('expenses.balance.formerMemberBadge') }}</span>
+          </div>
+          <span class="balance-row__saldo" :style="{ color: saldoColor(entry.saldo_rappen) }">
+            {{ formatSaldo(entry.saldo_rappen) }}
+          </span>
+        </div>
+        <p v-if="formerWithSaldo" class="former-hint">
+          {{ $t('expenses.balance.formerMemberHint') }}
+        </p>
       </div>
 
       <!-- Ausgleich-Sektion -->
@@ -176,13 +253,13 @@ async function confirmSettlement() {
       <label class="dialog-label">
         {{ $t('settlements.from') }}
         <select v-model="dialogFrom" class="dialog-select">
-          <option v-for="m in expensesStore.members" :key="m.id" :value="m.id">{{ m.display_name }}</option>
+          <option v-for="p in parties" :key="p.id" :value="p.id">{{ p.label }}</option>
         </select>
       </label>
       <label class="dialog-label">
         {{ $t('settlements.to') }}
         <select v-model="dialogTo" class="dialog-select">
-          <option v-for="m in expensesStore.members" :key="m.id" :value="m.id">{{ m.display_name }}</option>
+          <option v-for="p in parties" :key="p.id" :value="p.id">{{ p.label }}</option>
         </select>
       </label>
       <label class="dialog-label">
@@ -197,15 +274,38 @@ async function confirmSettlement() {
         {{ $t('settlements.note') }}
         <input v-model="dialogNote" type="text" maxlength="200" class="dialog-input" :placeholder="$t('settlements.notePlaceholder')" />
       </label>
+
+      <!-- Plausibilitätswarnungen (PD-F3) -->
+      <div v-if="dialogWarnings.length > 0" class="settlement-warning" role="alert">
+        <strong>{{ $t('settlements.warningTitle') }}</strong>
+        <ul>
+          <li v-for="w in dialogWarnings" :key="w">{{ warningText(w) }}</li>
+        </ul>
+      </div>
     </form>
     <template #footer>
       <BaseButton variant="ghost" size="sm" @click="showSettlementDialog = false">{{ $t('common.cancel') }}</BaseButton>
-      <BaseButton variant="primary" size="sm" type="submit" :form="settlementFormId" :loading="settlementSaving">{{ $t('settlements.confirm') }}</BaseButton>
+      <BaseButton variant="primary" size="sm" type="submit" :form="settlementFormId" :loading="settlementSaving">
+        {{ dialogWarnings.length > 0 ? $t('settlements.saveAnyway') : $t('settlements.confirm') }}
+      </BaseButton>
     </template>
   </BaseDialog>
 </template>
 
 <style scoped>
+.settlement-warning {
+  padding: var(--space-3);
+  background: var(--color-warning-soft);
+  border-radius: var(--radius-sm);
+  color: var(--color-warning-strong);
+  font-size: var(--text-sm);
+}
+
+.settlement-warning ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+}
+
 .balance-summary {
   display: flex;
   flex-direction: column;
@@ -223,6 +323,30 @@ async function confirmSettlement() {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.former-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-warning-soft);
+  border-radius: var(--radius-sm);
+}
+
+.former-badge {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-warning-strong);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.former-hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-warning-strong);
 }
 
 .balance-row__name {

@@ -287,6 +287,22 @@ describe('plants store', () => {
     expect(s.careStatus[0].tasks[0].next_due_at).toBe('2024-03-17')
   })
 
+  it('completeCareTask: heute schon erledigt → Server-Stand übernehmen, kein Log (CASA-29)', async () => {
+    const s = usePlantsStore()
+    repo.fetchCareLog.mockResolvedValue([log({ id: 'first' })])
+    await s.fetchCareLog('p1')
+    s.careStatus = [status()]
+    const serverTask = task({ next_due_at: '2024-03-15', last_done_at: '2024-03-08' })
+    repo.completeCareTask.mockResolvedValue({ task: serverTask, log: null, changed: false })
+
+    await expect(s.completeCareTask('p1', 't1')).resolves.toBeNull()
+    expect(s.careStatus[0].tasks[0].next_due_at).toBe('2024-03-15')
+    expect(s.careLog.map(l => l.id)).toEqual(['first'])
+
+    // waterPlant liefert nur tatsächlich neue Einträge
+    await expect(s.waterPlant('p1')).resolves.toEqual([])
+  })
+
   it('completeCareTask rolls back tasks and status on failure', async () => {
     repo.completeCareTask.mockRejectedValue(new Error('fail'))
     repo.fetchCareTasks.mockResolvedValue([task()])
@@ -474,6 +490,21 @@ describe('plants store', () => {
       expect(repo.update).toHaveBeenCalledWith('h1', 'p1', {
         care_notes: 'Hell stellen.', species: 'Monstera deliciosa',
       })
+    })
+
+    it('applies only the selected tasks (PD-P5)', async () => {
+      repo.fetchCareTasks.mockResolvedValue([task({ id: 'w', interval_days: 10 })])
+      repo.createCareTask.mockResolvedValue(task({ id: 'r', care_type: 'repot', interval_days: 720 }))
+      repo.update.mockResolvedValue(plant({ care_notes: 'Hell stellen.' }))
+      const s = usePlantsStore()
+      s.plants = [plant()]
+
+      // Gießintervall bewusst behalten (abgewählt), nur Umtopfen übernehmen
+      const result = await s.applyCareAdvice(plant(), advice, ['create:repot'])
+
+      expect(result).toEqual({ created: 1, updated: 0 })
+      expect(repo.updateCareTask).not.toHaveBeenCalled()
+      expect(repo.createCareTask).toHaveBeenCalledWith('h1', 'p1', { care_type: 'repot', interval_days: 720 })
     })
 
     it('keeps existing species and does not rewrite identical notes', async () => {

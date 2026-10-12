@@ -86,7 +86,7 @@ for i, t in enumerate([
     "Wohnungsabnahme vorbereiten: Löcher spachteln, Backofen reinigen, Kalk entfernen"]):
     due = (dt.datetime.combine(today, dt.time(9)) + dt.timedelta(days=i - 2)).isoformat() + "Z"
     call("post", H + "/todos/", tok, json={"title": t, "description": "Längere Beschreibung mit Details." if i % 2 else None,
-                                         "due_date": due, "assigned_to_user_id": [uid, uid2, None][i % 3],
+                                         "due_date": due, "assignee_ids": [[uid], [uid, uid2], []][i % 3],
                                          "tags": ["Finanzen", "Dringend", "Wohnung-Übergabe"][: i % 4]})
 
 # --- Chores

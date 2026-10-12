@@ -32,13 +32,74 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Install test and lint dependencies
-        run: pip install pytest httpx pytest-cov ruff
+        run: pip install pytest httpx pytest-cov ruff hypothesis
 
       - name: Lint (ruff)
         run: ruff check .
 
       - name: Run tests with coverage
         run: pytest -q --cov=app --cov-report=term
+
+  # Echte PostgreSQL-DB: Migrationen (hoch + eine zurück + wieder hoch) und die
+  # pg-Lane (tests/pg/: Races, Locks, Drift-Check Modelle ↔ Migrationen).
+  backend-postgres:
+    name: Backend (PostgreSQL 16, alembic, pytest -m pg)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: casa
+          POSTGRES_PASSWORD: casa
+          POSTGRES_DB: casa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U casa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://casa:casa@localhost:5432/casa
+      # Admin-URL: die pg-Lane legt pro Lauf eine eigene Wegwerf-DB an
+      TEST_PG_URL: postgresql://casa:casa@localhost:5432/postgres
+      JWT_SECRET_KEY: ci-only-secret-key-for-tests-min-32-chars-xyz
+      CORS_ORIGINS: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx hypothesis
+
+      - name: Migrate fresh database (alembic upgrade head)
+        run: alembic upgrade head
+
+      - name: PostgreSQL test lane (pytest -m pg)
+        run: pytest -m pg -q
+
+      - name: Downgrade one revision and upgrade again
+        run: alembic downgrade -1 && alembic upgrade head
+
+      # CASA-07 / PD-D2: Backup → Update → Restore (scripts/restore-db.sh) → exakter
+      # Tabellenvergleich → alembic upgrade head; Gegenprobe mit kaputtem Dump
+      - name: Install PostgreSQL client (pg_dump/pg_restore/psql)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Restore drill
+        working-directory: .
+        env:
+          PG_ADMIN_URL: postgresql://casa:casa@localhost:5432/postgres
+          PYTHON: python
+        run: scripts/restore-drill.sh
 
   frontend:
     name: Frontend (locales, typecheck, vitest)

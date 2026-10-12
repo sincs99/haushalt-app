@@ -5,6 +5,7 @@ import { createOnlineDocumentsRepository } from '../repositories/documentsReposi
 import { createOnlineFilesRepository } from '../repositories/filesRepository'
 import { prepareImageForUpload } from '../utils/imageUpload'
 import type { DocumentCategory, DocumentItem, DocumentMeta, StorageUsage } from '../types'
+import { captureHousehold } from '../utils/householdGuard'
 
 const PAGE_SIZE = 30
 /** Max. Seiten pro Dokument, wie Backend (MAX_FILES_PER_DOCUMENT) */
@@ -45,6 +46,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     if (!householdId) return
 
     const seq = ++requestSeq
+    const inScope = captureHousehold(householdId)
     loading.value = true
     try {
       const page = await repo.fetchPage(householdId, {
@@ -53,7 +55,7 @@ export const useDocumentsStore = defineStore('documents', () => {
         limit: PAGE_SIZE,
         offset: 0,
       })
-      if (seq !== requestSeq) return
+      if (seq !== requestSeq || !inScope()) return
       items.value = page.items
       total.value = page.total
     } finally {
@@ -66,6 +68,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     if (!householdId || loadingMore.value || !hasMore.value) return
 
     const seq = requestSeq
+    const inScope = captureHousehold(householdId)
     loadingMore.value = true
     try {
       const page = await repo.fetchPage(householdId, {
@@ -74,7 +77,7 @@ export const useDocumentsStore = defineStore('documents', () => {
         limit: PAGE_SIZE,
         offset: items.value.length,
       })
-      if (seq !== requestSeq) return
+      if (seq !== requestSeq || !inScope()) return
       // Duplikate vermeiden (Socket-Events können Offsets verschieben)
       const known = new Set(items.value.map((i) => i.id))
       items.value.push(...page.items.filter((i) => !known.has(i.id)))
@@ -87,7 +90,9 @@ export const useDocumentsStore = defineStore('documents', () => {
   async function fetchStorage() {
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
-    storage.value = await repo.fetchStorage(householdId)
+    const inScope = captureHousehold(householdId)
+    const result = await repo.fetchStorage(householdId)
+    if (inScope()) storage.value = result
   }
 
   async function setCategory(value: DocumentCategory | null) {

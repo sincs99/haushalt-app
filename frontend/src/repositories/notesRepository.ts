@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type { NoteItem } from '../types'
 
 export interface NotesRepository {
@@ -51,7 +52,7 @@ export function createOnlineNotesRepository(): NotesRepository {
     },
 
     async remove(householdId, noteId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/notes/${noteId}`,
       )
     },

@@ -31,10 +31,10 @@ from app.models import (
     Todo,
     TodoReminder,
 )
-from app.services.attention import attention_count
+from app.services.attention import CHORE_LOOKBACK, attention_count
 from app.services.balance_service import compute_user_saldo
 from app.services.chore_scheduler import today_in_tz
-from app.services.event_times import to_household_time
+from app.services.event_times import on_day, to_household_time
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -64,10 +64,15 @@ class DashboardChoreItem(BaseModel):
     id: uuid.UUID
     title: str
     assigned_user_id: uuid.UUID | None
+    due_date: date
+    is_overdue: bool
 
 
 class DashboardChoreSection(BaseModel):
-    items: list[DashboardChoreItem]  # max 3, fällig heute
+    # max 3: heute fällig und überfällig (wie Badge/Widget, services/attention.py),
+    # Überfällige zuerst
+    items: list[DashboardChoreItem]
+    overdue_count: int = 0
 
 
 class DashboardShoppingSection(BaseModel):
@@ -158,7 +163,6 @@ def get_dashboard(
     # Tagesgrenzen in Haushaltszeit, explizit nach UTC (Termine und Fälligkeiten sind
     # in UTC gespeichert; SQLite würde den Offset beim Vergleich sonst verwerfen)
     today_start = datetime.combine(today, dt_time.min, tzinfo=tz).astimezone(timezone.utc)
-    today_end = datetime.combine(today, dt_time.max, tzinfo=tz).astimezone(timezone.utc)
 
     # ------------------------------------------------------------------
     # 1. Todos
@@ -212,25 +216,39 @@ def get_dashboard(
     ]
 
     # ------------------------------------------------------------------
-    # 2. Chores (fällig heute)
+    # 2. Chores: heute fällig und überfällig (PD-C2, CASA-43) — gleiche Regel wie
+    #    Badge/Widget: offen, Ämtli aktiv, höchstens CHORE_LOOKBACK zurück
     # ------------------------------------------------------------------
-    chore_assignments = (
+    open_chores_query = (
         db.query(ChoreAssignment, Chore.title)
         .join(Chore, ChoreAssignment.chore_id == Chore.id)
         .filter(
             ChoreAssignment.household_id == household_id,
-            ChoreAssignment.due_date == today,
             ChoreAssignment.completed_at.is_(None),
+            Chore.active.is_(True),
+            ChoreAssignment.due_date <= today,
+            ChoreAssignment.due_date >= today - CHORE_LOOKBACK,
         )
+    )
+    chore_overdue_count = open_chores_query.filter(ChoreAssignment.due_date < today).count()
+    chore_assignments = (
+        open_chores_query.order_by(ChoreAssignment.due_date.asc(), Chore.title.asc())
         .limit(3)
         .all()
     )
 
+    # Zuweisung an ein Ex-Mitglied gilt als "niemand" (PD-H1, wie Badge/Widget)
+    member_ids = {
+        row[0]
+        for row in db.query(HouseholdMember.user_id).filter(HouseholdMember.household_id == household_id)
+    }
     chore_items = [
         DashboardChoreItem(
             id=assignment.id,
             title=title,
-            assigned_user_id=assignment.assigned_user_id,
+            assigned_user_id=assignment.assigned_user_id if assignment.assigned_user_id in member_ids else None,
+            due_date=assignment.due_date,
+            is_overdue=assignment.due_date < today,
         )
         for assignment, title in chore_assignments
     ]
@@ -264,8 +282,8 @@ def get_dashboard(
         db.query(Event)
         .filter(
             Event.household_id == household_id,
-            Event.starts_at >= today_start,
-            Event.starts_at <= today_end,
+            # Auch mehrtägige Termine, die heute noch laufen (PD-K3)
+            on_day(today, tz),
         )
         .order_by(Event.starts_at.asc())
         .limit(5)
@@ -291,7 +309,8 @@ def get_dashboard(
     care_tasks = (
         db.query(PetCareTask, Pet.name.label("pet_name"))
         .join(Pet, PetCareTask.pet_id == Pet.id)
-        .filter(PetCareTask.household_id == household_id)
+        # Archivierte Tiere nicht mehr anzeigen (PD-P2, Pets-Bereich)
+        .filter(PetCareTask.household_id == household_id, Pet.archived.is_(False))
         .order_by(
             case((PetCareTask.next_due_at < today, 0), else_=1),  # Überfällige zuerst
             PetCareTask.next_due_at.asc(),
@@ -378,7 +397,7 @@ def get_dashboard(
             overdue_count=overdue_count,
             items=todo_items,
         ),
-        chores=DashboardChoreSection(items=chore_items),
+        chores=DashboardChoreSection(items=chore_items, overdue_count=chore_overdue_count),
         shopping=DashboardShoppingSection(
             open_count=shopping_open_count,
             top_items=top_item_names,

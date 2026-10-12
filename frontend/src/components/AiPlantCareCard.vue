@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { PhSparkle } from '@phosphor-icons/vue'
 import { useAiStore } from '../stores/ai'
-import { planAdvice } from '../utils/plantCare'
+import { adviceKey, planAdvice, planItems } from '../utils/plantCare'
 import type { AiPlantCareAdvice, PlantCareTask } from '../types'
 import AiPlantAdvice from './AiPlantAdvice.vue'
 import BaseButton from './ui/BaseButton.vue'
@@ -24,13 +24,37 @@ const props = defineProps<{
   busy?: boolean
   done?: boolean
 }>()
-const emit = defineEmits<{ apply: [advice: AiPlantCareAdvice] }>()
+/** `selected`: angehakte Plan-Einträge (Schlüssel aus `adviceKey`, PD-P5). */
+const emit = defineEmits<{ apply: [advice: AiPlantCareAdvice, selected: string[]] }>()
 
 const aiStore = useAiStore()
 const { t } = useI18n()
 
 const advice = computed(() => aiStore.plantAdvice)
 const plan = computed(() => (advice.value ? planAdvice(advice.value, props.existingTasks ?? []) : null))
+
+// Vorschau pro Aufgabe „alt → neu“ mit Abwählen (PD-P5). Gemerkt wird, was abgewählt
+// wurde — neue Einträge (z. B. nach Nachladen der Aufgaben) sind standardmässig an.
+const deselected = ref(new Set<string>())
+watch(advice, () => { deselected.value = new Set() })
+
+const items = computed(() => (plan.value ? planItems(plan.value) : []).map(item => {
+  const task = t(`plants.careTypes.${item.care_type}`)
+  return {
+    key: adviceKey(item),
+    text: 'id' in item
+      ? t('ai.plant.planUpdate', { task, from: item.from, to: item.interval_days })
+      : t('ai.plant.planCreate', { task, to: item.interval_days }),
+  }
+}))
+const selectedKeys = computed(() => items.value.map(i => i.key).filter(key => !deselected.value.has(key)))
+
+function toggle(key: string) {
+  const next = new Set(deselected.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  deselected.value = next
+}
 
 onMounted(() => {
   aiStore.fetchStatus()
@@ -64,15 +88,24 @@ async function fetchAdvice() {
 
     <div v-if="advice" class="ai-plant__result">
       <AiPlantAdvice :advice="advice" />
-      <p v-if="plan && (plan.create.length || plan.update.length)" class="ai-plant__plan">
-        {{ t('ai.plant.applyPlan', { create: plan.create.length, update: plan.update.length }) }}
-      </p>
+      <fieldset v-if="items.length > 0 && !done" class="ai-plant__plan">
+        <legend class="ai-plant__plan-title">{{ t('ai.plant.planTitle') }}</legend>
+        <label v-for="item in items" :key="item.key" class="ai-plant__plan-item">
+          <input
+            type="checkbox"
+            :checked="!deselected.has(item.key)"
+            :disabled="busy"
+            @change="toggle(item.key)"
+          />
+          <span>{{ item.text }}</span>
+        </label>
+      </fieldset>
       <BaseButton
         type="button"
         size="sm"
         :loading="busy"
         :disabled="busy || done"
-        @click="emit('apply', advice)"
+        @click="emit('apply', advice, selectedKeys)"
       >
         {{ done ? t('ai.plant.adopted') : applyLabel }}
       </BaseButton>
@@ -100,11 +133,36 @@ async function fetchAdvice() {
   background: var(--chip);
 }
 
-.ai-plant__hint,
-.ai-plant__plan {
+.ai-plant__hint {
   margin: 0;
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
+}
+
+.ai-plant__plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.ai-plant__plan-title {
+  padding: 0;
+  margin-bottom: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+}
+
+.ai-plant__plan-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  font-size: var(--text-sm);
+  color: var(--ink);
 }
 
 .ai-plant__error {

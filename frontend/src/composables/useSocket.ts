@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { io, type Socket } from 'socket.io-client'
 import { API_BASE } from '../api/client'
+import { isForeignHouseholdPayload } from '../utils/householdGuard'
 
 let socket: Socket | null = null
 const isConnected = ref(false)
@@ -8,6 +9,24 @@ const isConnected = ref(false)
 // Aktuelles Access-Token. Socket.IO liest es über die auth-Funktion bei jedem
 // (Re-)Connect neu, damit automatische Reconnects nie mit einem alten Token laufen.
 let currentToken: string | null = null
+
+/**
+ * Room-Status des aktuellen Haushalts (CASA-46). Der Server meldet einen gescheiterten
+ * `join_household` nur über ein `error`-Event — verbunden heisst also noch nicht, dass
+ * Events des Haushalts ankommen. Der Sync-Punkt zeigt „verbunden“ erst bei 'joined'.
+ */
+export type RoomStatus = 'none' | 'joining' | 'joined' | 'failed'
+const roomStatus = ref<RoomStatus>('none')
+// Haushalt, dessen Room wir betreten wollen bzw. betreten haben
+let targetHouseholdId: string | null = null
+let joinSeq = 0
+let joinAttempt = 0
+let joinRetryTimer: ReturnType<typeof setTimeout> | null = null
+// Wartezeiten zwischen erneuten Beitrittsversuchen; danach erst wieder bei Reconnect/Wechsel
+const JOIN_RETRY_DELAYS_MS = [2_000, 5_000, 15_000, 30_000, 60_000]
+
+// Registrierte Listener → Wrapper mit Haushaltsfilter (pro Callback und Event, mehrfach möglich)
+const wrappedHandlers = new Map<(...args: any[]) => void, Map<string, Array<(...args: any[]) => void>>>()
 
 // Reconnect-Mechanismus: Callbacks werden bei automatischem Reconnect aufgerufen
 const reconnectCallbacks = new Set<() => void>()
@@ -72,8 +91,20 @@ function connect(token: string) {
     sessionEndReason = data?.reason ?? null
   })
 
+  // Gescheiterter join_household (nicht angemeldet, kein Mitglied, Serverfehler):
+  // Status zeigen statt „verbunden“ und den Beitritt später erneut versuchen
+  s.on('error', () => {
+    if (roomStatus.value !== 'joining') return
+    roomStatus.value = 'failed'
+    scheduleJoinRetry()
+  })
+
   s.on('disconnect', (reason) => {
     isConnected.value = false
+    // Nach einem Verbindungsabbruch ist der Socket in keinem Room mehr; den erneuten
+    // Beitritt macht der Reconnect-Callback (App.vue)
+    clearJoinRetry()
+    if (roomStatus.value !== 'none') roomStatus.value = 'none'
     if (reason !== 'io server disconnect') return // alles andere verbindet Socket.IO selbst neu
 
     const ended = sessionEndReason
@@ -108,24 +139,81 @@ function updateToken(token: string) {
   if (!socket.active) socket.connect()
 }
 
-function joinHousehold(householdId: string) {
+function clearJoinRetry() {
+  if (joinRetryTimer) clearTimeout(joinRetryTimer)
+  joinRetryTimer = null
+}
+
+function scheduleJoinRetry() {
+  clearJoinRetry()
+  if (joinAttempt >= JOIN_RETRY_DELAYS_MS.length) return
+  const householdId = targetHouseholdId
+  const delay = JOIN_RETRY_DELAYS_MS[joinAttempt++]
+  joinRetryTimer = setTimeout(() => {
+    joinRetryTimer = null
+    if (householdId && householdId === targetHouseholdId && socket?.connected) emitJoin(householdId)
+  }, delay)
+}
+
+function emitJoin(householdId: string) {
   if (!socket) return
-  socket.emit('join_household', { household_id: householdId })
+  const seq = ++joinSeq
+  roomStatus.value = 'joining'
+  // Ack kommt, wenn der Server-Handler fertig ist — ein `error` käme vorher an
+  socket.emit('join_household', { household_id: householdId }, () => {
+    if (seq !== joinSeq || roomStatus.value !== 'joining') return
+    roomStatus.value = 'joined'
+    joinAttempt = 0
+  })
+}
+
+function joinHousehold(householdId: string) {
+  if (householdId !== targetHouseholdId) joinAttempt = 0
+  targetHouseholdId = householdId
+  clearJoinRetry()
+  emitJoin(householdId)
 }
 
 function leaveHousehold(householdId: string) {
+  if (householdId === targetHouseholdId) {
+    targetHouseholdId = null
+    joinSeq++
+    clearJoinRetry()
+    roomStatus.value = 'none'
+  }
   if (!socket) return
   socket.emit('leave_household', { household_id: householdId })
 }
 
+/**
+ * Listener registrieren. Payloads mit `household_id` eines anderen als des aktuellen
+ * Haushalts werden verworfen (CASA-12) — z. B. Events, die zwischen Wechsel und
+ * `leave_household` noch aus dem alten Room kommen.
+ */
 function on(event: string, callback: (...args: any[]) => void) {
   if (!socket) return
-  socket.on(event, callback)
+  const handler = (...args: any[]) => {
+    if (isForeignHouseholdPayload(args[0], targetHouseholdId)) return
+    callback(...args)
+  }
+  let perEvent = wrappedHandlers.get(callback)
+  if (!perEvent) {
+    perEvent = new Map()
+    wrappedHandlers.set(callback, perEvent)
+  }
+  const list = perEvent.get(event) ?? []
+  list.push(handler)
+  perEvent.set(event, list)
+  socket.on(event, handler)
 }
 
 function off(event: string, callback: (...args: any[]) => void) {
-  if (!socket) return
-  socket.off(event, callback)
+  const perEvent = wrappedHandlers.get(callback)
+  const handler = perEvent?.get(event)?.pop()
+  if (!handler) return
+  if (perEvent!.get(event)!.length === 0) perEvent!.delete(event)
+  if (perEvent!.size === 0) wrappedHandlers.delete(callback)
+  socket?.off(event, handler)
 }
 
 function onReconnect(callback: () => void) {
@@ -140,9 +228,14 @@ function disconnect() {
   currentToken = null
   sessionEndReason = null
   refreshBlocked = false
+  targetHouseholdId = null
+  joinSeq++
+  clearJoinRetry()
+  roomStatus.value = 'none'
   if (!socket) return
   const s = socket
   socket = null
+  wrappedHandlers.clear()
   s.disconnect()
   isConnected.value = false
   hasConnectedBefore = false
@@ -161,5 +254,6 @@ export function useSocket() {
     offReconnect,
     disconnect,
     isConnected,
+    roomStatus,
   }
 }

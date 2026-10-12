@@ -283,12 +283,16 @@ def test_complete_sets_next_due_and_logs(
     assert [entry["id"] for entry in log] == [data["log"]["id"]]
 
 
-def test_complete_without_body_and_log_ordering(client, household_a, token_a, plant_a):
+def test_complete_without_body_and_log_ordering(client, db, household_a, token_a, plant_a):
     task = _create_task(client, household_a, plant_a, token_a)
     url = f"{_base(household_a)}/{plant_a.id}/care-tasks/{task['id']}/complete"
     first = client.post(url, headers=_auth(token_a))
     assert first.status_code == 200
     assert first.json()["log"]["note"] is None
+    # Pro Haushaltstag nur einmal (CASA-29) → erste Erledigung auf gestern legen
+    row = db.get(PlantCareTask, uuid.UUID(task["id"]))
+    row.last_done_at = _today() - timedelta(days=1)
+    db.commit()
     second = client.post(url, headers=_auth(token_a), json={"note": "nochmal"})
     log = client.get(f"{_base(household_a)}/{plant_a.id}/care-log", headers=_auth(token_a)).json()
     assert [e["id"] for e in log] == [second.json()["log"]["id"], first.json()["log"]["id"]]

@@ -303,7 +303,9 @@ haushalt.example.com {
 | **Backend-Container startet nicht** | `docker compose logs backend` prüfen → meistens fehlende DB-Verbindung oder Migrationsfehler |
 | **"CORS error" im Browser** | `CORS_ORIGINS` in `.env` muss die exakte URL enthalten, über die du zugreifst (z.B. `http://203.0.113.50`) |
 | **Migrationen schlagen fehl** | `docker compose logs backend` → Alembic-Fehlermeldung prüfen. Bei Schema-Konflikten: `docker compose exec backend alembic history` |
-| **Frontend zeigt weisse Seite** | `docker compose logs frontend` → Nginx-Fehler prüfen. Häufig: Build-Fehler im Frontend-Container |
+| **Frontend zeigt weisse Seite** | `docker compose logs frontend` → Nginx-Fehler prüfen. Häufig: Build-Fehler im Frontend-Container (der Image-Build bricht auch bei Typfehlern ab: `npm run build` inkl. `vue-tsc`) |
+| **Alle Nutzer teilen sich ein Rate-Limit / Logs zeigen nur eine IP** | Docker-Netz liegt ausserhalb von `172.16.0.0/12` → `TRUSTED_PROXY_CIDRS` / `FORWARDED_ALLOW_IPS` in `.env` setzen (siehe [deployment.md §2.1](./deployment.md#21-echte-client-ip-vertrauenswürdige-proxies)) |
+| **Frontend-Container „unhealthy“** | `docker compose exec frontend wget -qO- http://127.0.0.1/nginx-health` und `docker compose logs frontend` (ungültiger Eintrag in `TRUSTED_PROXY_CIDRS` stoppt nginx beim Start) |
 | **DB-Daten verschwunden** | `docker compose down` **ohne** `-v` Flag verwenden! Das `-v` Flag löscht alle Volumes inkl. Datenbank |
 | **Docker Compose nicht gefunden** | Ältere Docker-Versionen: `docker-compose` (mit Bindestrich) statt `docker compose` verwenden |
 | **Container starten, aber App nicht erreichbar** | Windows Firewall + Cloud-Firewall prüfen (siehe [Schritt 6](#schritt-6-windows-firewall-konfigurieren)) |

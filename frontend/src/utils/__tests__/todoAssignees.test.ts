@@ -6,6 +6,7 @@ import {
   claimAction,
   isAssignedTo,
   isUnassigned,
+  namedStack,
   openUnassignedCount,
   openCountFor,
   sameAssignees,
@@ -133,5 +134,25 @@ describe('isUnassigned / openUnassignedCount (Tab "Offen")', () => {
       todo({ id: '4', assignee_ids: [], is_done: true }),
     ]
     expect(openUnassignedCount(items, members)).toBe(2)
+  })
+})
+
+describe('namedStack (Dashboard)', () => {
+  const people = [
+    { user_id: 'anna', display_name: 'Anna Muster' },
+    { user_id: 'ben', display_name: 'Ben' },
+    { user_id: 'carla', display_name: 'Carla' },
+    { user_id: 'dora', display_name: 'Dora' },
+  ]
+
+  it('zeigt höchstens drei Personen und zählt den Rest', () => {
+    const stack = namedStack(people)
+    expect(stack.shown.map(p => p.user_id)).toEqual(['anna', 'ben', 'carla'])
+    expect(stack.overflow).toBe(1)
+    expect(stack.label).toBe('Anna Muster, Ben, Carla, Dora')
+  })
+
+  it('leer ohne Zuständige', () => {
+    expect(namedStack([])).toEqual({ shown: [], overflow: 0, label: '' })
   })
 })

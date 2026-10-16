@@ -402,7 +402,7 @@ Korrekturen und Prüfnachweise: [Audit vom 7. Oktober 2026](qa/current-audit-fix
 | DELETE | `/api/households/{id}/members/{user_id}` | ✅ Admin | Mitglied entfernen (204) |
 | GET | `/api/households/{id}/finance-summary` | ✅ | Finanz-Zusammenfassung eines Monats (`month`, Default aktueller Monat) |
 | **Dashboard und Aufgaben** | | | |
-| GET | `/api/households/{id}/dashboard` | ✅ | Aggregierte Startseite (Aufgaben, Ämtli heute + überfällig wie die Badge-Zahl, Einkauf, Finanzen) |
+| GET | `/api/households/{id}/dashboard` | ✅ | Aggregierte Startseite (Aufgaben und Ämtli heute + überfällig wie die Badge-Zahl, jeweils mit `assignees` = aktuelle Zuständige mit Namen; Einkauf, Finanzen) |
 | GET | `/api/households/{id}/dashboard/badge` | ✅ | Zahl am App-Icon für die aufrufende Person (`{count}`) |
 | GET/POST/DELETE | `/api/households/{id}/widget-token` | ✅ | Nur-Lese-Schlüssel fürs Homescreen-Widget anzeigen/erzeugen/widerrufen |
 | GET | `/api/widget/summary` | Widget-Schlüssel | Widget-Daten (fällig heute, Einkauf, Termine) — [`widget.md`](widget.md) |

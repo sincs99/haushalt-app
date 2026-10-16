@@ -30,6 +30,7 @@ from app.models import (
     ShoppingItem,
     Todo,
     TodoReminder,
+    User,
 )
 from app.services.attention import CHORE_LOOKBACK, attention_count
 from app.services.balance_service import compute_user_saldo
@@ -46,12 +47,19 @@ def _as_utc(dt: datetime) -> datetime:
 # ---------------------------------------------------------------------------
 
 
+class DashboardAssignee(BaseModel):
+    user_id: uuid.UUID
+    display_name: str
+
+
 class DashboardTodoItem(BaseModel):
     id: uuid.UUID
     title: str
     due_date: datetime | None
     is_overdue: bool
     type: str  # "todo" oder "chore"
+    # Zuständige, die noch Mitglied sind (leer = offen für alle)
+    assignees: list[DashboardAssignee] = []
 
 
 class DashboardTodoSection(BaseModel):
@@ -66,6 +74,8 @@ class DashboardChoreItem(BaseModel):
     assigned_user_id: uuid.UUID | None
     due_date: date
     is_overdue: bool
+    # Zuständige Person mit Namen (leer = niemand bzw. Ex-Mitglied)
+    assignees: list[DashboardAssignee] = []
 
 
 class DashboardChoreSection(BaseModel):
@@ -164,6 +174,22 @@ def get_dashboard(
     # in UTC gespeichert; SQLite würde den Offset beim Vergleich sonst verwerfen)
     today_start = datetime.combine(today, dt_time.min, tzinfo=tz).astimezone(timezone.utc)
 
+    # Aktuelle Mitglieder mit Namen: Zuweisungen an Ex-Mitglieder gelten als
+    # "niemand" (PD-H1, wie Badge/Widget)
+    member_names = {
+        user_id: display_name
+        for user_id, display_name in db.query(HouseholdMember.user_id, User.display_name)
+        .join(User, User.id == HouseholdMember.user_id)
+        .filter(HouseholdMember.household_id == household_id)
+    }
+
+    def assignees_of(user_ids) -> list[DashboardAssignee]:
+        return [
+            DashboardAssignee(user_id=uid, display_name=member_names[uid])
+            for uid in user_ids
+            if uid in member_names
+        ]
+
     # ------------------------------------------------------------------
     # 1. Todos
     # ------------------------------------------------------------------
@@ -211,6 +237,7 @@ def get_dashboard(
             due_date=t.due_date,
             is_overdue=t.due_date is not None and _as_utc(t.due_date) < today_start,
             type="todo",
+            assignees=assignees_of(t.assignee_ids),
         )
         for t in top_todos
     ]
@@ -237,18 +264,14 @@ def get_dashboard(
         .all()
     )
 
-    # Zuweisung an ein Ex-Mitglied gilt als "niemand" (PD-H1, wie Badge/Widget)
-    member_ids = {
-        row[0]
-        for row in db.query(HouseholdMember.user_id).filter(HouseholdMember.household_id == household_id)
-    }
     chore_items = [
         DashboardChoreItem(
             id=assignment.id,
             title=title,
-            assigned_user_id=assignment.assigned_user_id if assignment.assigned_user_id in member_ids else None,
+            assigned_user_id=assignment.assigned_user_id if assignment.assigned_user_id in member_names else None,
             due_date=assignment.due_date,
             is_overdue=assignment.due_date < today,
+            assignees=assignees_of([assignment.assigned_user_id] if assignment.assigned_user_id else []),
         )
         for assignment, title in chore_assignments
     ]

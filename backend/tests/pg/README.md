@@ -76,3 +76,9 @@ Tests ohne Parallelität weiterhin in die SQLite-Lane.
 Job `backend-postgres` in `.github/workflows/ci.yml`: `postgres:16`-Service,
 `alembic upgrade head`, `pytest -m pg`, danach `alembic downgrade -1 && alembic upgrade head` und der
 Restore-Drill `scripts/restore-drill.sh` (Backup → Update → Restore → Vergleich → Upgrade, CASA-07).
+
+Zusätzlich führt dieser Job neun Sicherheits-Paralleltests außerhalb von `tests/pg/` aus:
+`tests/test_auth_concurrency_postgres.py` und `tests/test_upload_ai_postgres.py`.
+Sie nutzen `TEST_AUTH_POSTGRES_URL` bzw. `SECURITY_TEST_DATABASE_URL` und eine separat
+angelegte lokale Wegwerf-Datenbank `test_security`; `TEST_PG_URL` allein aktiviert sie nicht.
+Diese Tests verändern ihr Testschema und dürfen nur gegen eigens angelegte Testdatenbanken laufen.

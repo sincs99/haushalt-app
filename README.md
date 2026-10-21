@@ -44,7 +44,9 @@ Rezeptvorschläge aus vorhandenen Zutaten und Pflanzenpflege-Hinweise über die 
 |---|---|---|
 | `ANTHROPIC_API_KEY` | leer | API-Schlüssel (<https://console.anthropic.com>); leer = KI deaktiviert |
 | `AI_DAILY_LIMIT_PER_HOUSEHOLD` | `50` | KI-Aufrufe pro Haushalt und Tag (UTC), danach HTTP 429 |
-| `AI_REQUEST_TIMEOUT_SECONDS` | `90` | Timeout pro Versuch (das SDK wiederholt höchstens einmal) |
+| `AI_DAILY_LIMIT_PER_USER` | `20` | KI-Aufrufe pro Konto und UTC-Tag über alle Haushalte |
+| `AI_DAILY_LIMIT_GLOBAL` | `1000` | KI-Aufrufe insgesamt pro UTC-Tag für den gemeinsamen Anbieterschlüssel |
+| `AI_REQUEST_TIMEOUT_SECONDS` | `90` | Timeout pro Versuch; keine automatischen Wiederholungen |
 | `AI_MAX_CONCURRENT_REQUESTS` | `4` | gleichzeitige KI-Aufrufe pro Backend-Prozess |
 
 Eintragen in `.env` (Docker-Dev) bzw. `.env.prod` (Produktion). Der Schlüssel bleibt im Backend; das Frontend ruft den Anbieter nie direkt. Zusätzlich muss ein **Admin den Assistenten pro Haushalt einschalten** (Einstellungen → KI-Assistent); dort steht auch der Hinweis, dass Eingaben (Zutaten, Pflanzenart) an die Anthropic-API gesendet werden. Pro Aufruf gilt ausserdem ein IP-Limit von 10/min.
@@ -124,7 +126,7 @@ cd frontend && npm audit --omit=dev --audit-level=high
 
 Stand 2026-10-10: Backend 1159 Tests (1093 auf SQLite, 66 in der PostgreSQL-Lane), Coverage 95 %; Frontend 727 Tests in 56 Dateien, Coverage 83,4 % (Statements); 1312 i18n-Schlüssel; 46 Alembic-Revisionen (Kopf `cal1a2b3c4d5`). Details: [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md).
 
-Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` selbst und brauchen keine laufende Datenbank; nur die PostgreSQL-Lane (`backend/tests/pg/README.md`) legt mit `TEST_PG_URL` eine frische Test-Datenbank an (`alembic upgrade head`) und wird sonst übersprungen. Die Tests des KI-Assistenten mocken den Anthropic-Client und brauchen keinen API-Schlüssel. Wer `DATABASE_URL` in der Shell gesetzt hat, sollte sie vor `pytest` entfernen, sonst laufen die Tests gegen diese Datenbank.
+Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` selbst und brauchen für die SQLite-Lane keine laufende Datenbank. Die PostgreSQL-Lane ([`backend/tests/pg/README.md`](backend/tests/pg/README.md)) legt mit `TEST_PG_URL` eine frische Test-Datenbank an (`alembic upgrade head`) und wird sonst übersprungen. Neun zusätzliche Sicherheits-Paralleltests verwenden separat `TEST_AUTH_POSTGRES_URL` und `SECURITY_TEST_DATABASE_URL`; die CI führt sie gegen eine eigene Wegwerf-Datenbank `test_security` aus. Diese URLs dürfen nur auf eigens dafür angelegte lokale Testdatenbanken zeigen. Die Tests des KI-Assistenten mocken den Anthropic-Client und brauchen keinen API-Schlüssel. Wer `DATABASE_URL` in der Shell gesetzt hat, sollte sie vor `pytest` entfernen, sonst laufen die Tests gegen diese Datenbank.
 
 ## Produktion
 
@@ -134,7 +136,8 @@ Fehler-Monitoring über `SENTRY_DSN`. Siehe [`docs/deployment.md`](docs/deployme
 
 - [`docs/deployment.md`](docs/deployment.md): Docker-Deployment hinter Nginx Proxy Manager, Updates, Rollback, Web Push
 - [`docs/DEPLOYMENT-WINDOWS-SERVER.md`](docs/DEPLOYMENT-WINDOWS-SERVER.md): Einrichtung auf einem Windows-Server
-- [`docs/security/`](docs/security/): Sicherheits-Reviews (zuletzt `ai-assistant-review.md`)
+- [`docs/security/`](docs/security/): Sicherheits-Reviews
+- [`docs/security/audit-remediation-2026-10-21.md`](docs/security/audit-remediation-2026-10-21.md): Sicherheitskorrekturen vom 21. Oktober 2026, lokale Testnachweise und noch offene Betriebsprüfungen
 - [`docs/qa/logic-review.md`](docs/qa/logic-review.md): Logik-Review der Geschäftsregeln (Szenarien pro Modul, behobene Fehler, offene Produktentscheidungen)
 - [`docs/qa/current-audit-fixes.md`](docs/qa/current-audit-fixes.md): Korrekturen vom 7. Oktober 2026, lokale Prüfnachweise und Hinweise zum gemeinsamen Frontend-/Backend-Deployment
 - [`docs/ai-assistant.md`](docs/ai-assistant.md): KI-Assistent (Architektur, Datenschutz, Kosten, Erweiterung)
@@ -187,11 +190,7 @@ Es werden automatisch maximal **14 Backups** vorgehalten; ältere werden gelösc
 ```
 
 Das passende Uploads-Archiv wird mit wiederhergestellt (oder explizit mit `-UploadsFile`). Das Skript fragt vor dem Überschreiben der Datenbank nach einer Bestätigung.  
-Nach dem Restore empfiehlt es sich, das Backend neu zu starten:
-
-```powershell
-docker compose restart backend
-```
+Das Skript startet ein zuvor laufendes Backend nach erfolgreichem Restore selbst und prüft dessen Zustand. Bei Fehlern nach dem Datenbanktausch bleibt es angehalten; vor einem manuellen Start müssen Datenbank und Uploads wieder zusammenpassen. Wiederaufnahme und Rückweg: [`docs/deployment.md`](docs/deployment.md), Abschnitt 4 „Rollback und Wiederherstellung“.
 
 ### ⚠️ Wichtige Warnungen
 

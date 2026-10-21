@@ -5,6 +5,7 @@ import { useAuthStore } from './auth'
 import { createOnlineNotesRepository } from '../repositories/notesRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import type { NoteItem, HouseholdMemberInfo } from '../types'
+import { createRequestGuard } from '../utils/householdGuard'
 
 export const useNotesStore = defineStore('notes', () => {
   // Repositories — einmal im Store-Setup erstellen
@@ -18,6 +19,8 @@ export const useNotesStore = defineStore('notes', () => {
 
   // Interner State für Race-Condition-Schutz
   const pendingTempIds = new Set<string>()
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
 
   // Computed
   const pinnedNotes = computed(() =>
@@ -38,15 +41,14 @@ export const useNotesStore = defineStore('notes', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'notes')
 
     loading.value = true
     try {
       const result = await repo.fetchAll(householdId)
-      assertDataGeneration(generation)
-      items.value = result
+      if (active()) items.value = result
     } finally {
-      assertDataGeneration(generation)
-      if (generation === currentDataGeneration()) loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -55,10 +57,10 @@ export const useNotesStore = defineStore('notes', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'members')
 
     const result = await householdRepo.fetchMembers(householdId)
-    assertDataGeneration(generation)
-    members.value = result
+    if (active()) members.value = result
   }
 
   async function addNote(title: string, body?: string, tag?: string) {

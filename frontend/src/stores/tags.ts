@@ -5,11 +5,13 @@ import { useAuthStore } from './auth'
 import { createOnlineTagsRepository } from '../repositories/tagsRepository'
 import type {
   TagCreatePayload,
+  TagExecuteParams,
   TagExecuteResult,
   TagInfo,
   TagResolveResult,
   TagTargetType,
 } from '../types'
+import { createRequestGuard } from '../utils/householdGuard'
 
 export const useTagsStore = defineStore('tags', () => {
   const repo = scopeRepository(createOnlineTagsRepository())
@@ -18,6 +20,8 @@ export const useTagsStore = defineStore('tags', () => {
   const items = ref<TagInfo[]>([])
   const targets = ref<TagTargetType[]>([])
   const loading = ref(false)
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
 
   // Computed
   const sortedTags = computed(() =>
@@ -39,14 +43,13 @@ export const useTagsStore = defineStore('tags', () => {
     const actionGeneration = currentDataGeneration()
     const householdId = currentHouseholdId()
     if (!householdId) return
+    const active = captureRequest(householdId, 'tags')
     loading.value = true
     try {
-      const scopedResult = await repo.fetchAll(householdId)
-      assertDataGeneration(actionGeneration)
-      items.value = scopedResult
+      const result = await repo.fetchAll(householdId)
+      if (active()) items.value = result
     } finally {
-      assertDataGeneration(actionGeneration)
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -54,9 +57,9 @@ export const useTagsStore = defineStore('tags', () => {
     const actionGeneration = currentDataGeneration()
     const householdId = currentHouseholdId()
     if (!householdId) return
-    const scopedResult = await repo.fetchTargets(householdId)
-    assertDataGeneration(actionGeneration)
-    targets.value = scopedResult
+    const active = captureRequest(householdId, 'targets')
+    const result = await repo.fetchTargets(householdId)
+    if (active()) targets.value = result
   }
 
   async function createTag(payload: TagCreatePayload): Promise<TagInfo | undefined> {
@@ -137,7 +140,7 @@ export const useTagsStore = defineStore('tags', () => {
     return repo.resolve(token)
   }
 
-  function executeToken(token: string, params?: { slot?: 'morning' | 'evening' }): Promise<TagExecuteResult> {
+  function executeToken(token: string, params?: TagExecuteParams): Promise<TagExecuteResult> {
     return repo.execute(token, params)
   }
 

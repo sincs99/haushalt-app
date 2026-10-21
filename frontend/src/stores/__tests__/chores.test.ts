@@ -111,6 +111,18 @@ describe('chores store', () => {
       await s.updateChore('c1', { weekday: 2 } as any)
       expect(repo.fetchAssignments).toHaveBeenCalledTimes(1)
     })
+
+    it('does not refetch for an unchanged full payload, but does on pause/reactivate', async () => {
+      const s = useChoresStore()
+      s.chores = [chore()]
+      repo.fetchAssignments.mockResolvedValue([])
+      repo.updateChore.mockResolvedValue(chore({ title: 'New' }))
+      await s.updateChore('c1', { title: 'New', recurrence: 'weekly', weekday: 0, day_of_month: null, active: true } as any)
+      expect(repo.fetchAssignments).not.toHaveBeenCalled()
+      repo.updateChore.mockResolvedValue(chore({ active: false }))
+      await s.updateChore('c1', { active: false } as any)
+      expect(repo.fetchAssignments).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('removeChore', () => {
@@ -275,6 +287,13 @@ describe('chores store', () => {
       s.handleAssignmentCreated(assignment({ id: 'early', due_date: '2024-01-01' }))
       s.handleAssignmentCreated(assignment({ id: 'early', due_date: '2024-01-01' }))
       expect(s.assignments.map(a => a.id)).toEqual(['early', 'late'])
+    })
+
+    it('handleAssignmentsDeleted drops the deleted assignments (CASA-16)', () => {
+      const s = useChoresStore()
+      s.assignments = [assignment({ id: 'a1' }), assignment({ id: 'a2', due_date: '2024-01-08' }), assignment({ id: 'a3', chore_id: 'c2' })]
+      s.handleAssignmentsDeleted({ chore_id: 'c1', ids: ['a2', 'unknown'] })
+      expect(s.assignments.map(a => a.id)).toEqual(['a1', 'a3'])
     })
 
     it('handleAssignmentUpdated only replaces known assignments', () => {

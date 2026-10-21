@@ -10,6 +10,7 @@ const { repo, householdRepo, auth } = vi.hoisted(() => ({
     remove: vi.fn(),
     addReminder: vi.fn(),
     deleteReminder: vi.fn(),
+    claim: vi.fn(),
   },
   householdRepo: { fetchMembers: vi.fn() },
   auth: { currentHouseholdId: 'h1' as string | null, user: { id: 'u1' } },
@@ -31,7 +32,8 @@ function todo(over: Partial<TodoItem> = {}): TodoItem {
     household_id: 'h1',
     title: 'Task',
     description: null,
-    assigned_to_user_id: null,
+    assignee_ids: [],
+    done_by_user_id: null,
     due_date: null,
     is_done: false,
     created_by_user_id: 'u1',
@@ -203,9 +205,19 @@ describe('todos store', () => {
       expect(id).not.toBe('t1')
       expect(repo.create.mock.calls[0][1]).toMatchObject({ title: 'Alt', tags: ['x'] })
       expect(repo.update).toHaveBeenCalledWith('h1', id, { is_done: true })
-      // Nur die zukünftige Erinnerung wird wieder angelegt
+      // Nur die zukünftige Erinnerung wird wieder angelegt — vor dem Erledigt-Status
+      // (an erledigte Aufgaben lehnt der Server Erinnerungen ab)
       expect(repo.addReminder).toHaveBeenCalledTimes(1)
       expect(repo.addReminder).toHaveBeenCalledWith('h1', id, '2999-01-01T00:00:00Z')
+      expect(repo.addReminder.mock.invocationCallOrder[0]).toBeLessThan(repo.update.mock.invocationCallOrder[0])
+    })
+
+    it('does not restore reminders that were already sent', async () => {
+      const s = useTodosStore()
+      repo.create.mockImplementation(async (_h: string, p: { id: string; title: string }) => todo({ id: p.id, title: p.title }))
+      const sent = { ...reminder('r1', '2999-01-01T00:00:00Z'), notified_at: '2026-01-01T00:00:00Z' }
+      await s.restoreTodo(todo({ reminders: [sent] }))
+      expect(repo.addReminder).not.toHaveBeenCalled()
     })
 
     it('rethrows when the todo cannot be created', async () => {
@@ -233,6 +245,88 @@ describe('todos store', () => {
       await expect(s.updateTodo('t1', { title: 'New', description: null })).rejects.toThrow()
       expect(s.items[0].title).toBe('Old')
       expect(s.items[0].description).toBe('d')
+    })
+  })
+
+  describe('Zuständige (mehrere Personen)', () => {
+    it('addTodo sendet assignee_ids und zeigt sie sofort', async () => {
+      const s = useTodosStore()
+      let resolve!: (t: TodoItem) => void
+      repo.create.mockReturnValue(new Promise(r => (resolve = r)))
+      const p = s.addTodo('Keller', undefined, ['u1', 'u2'])
+      expect(s.items[0].assignee_ids).toEqual(['u1', 'u2'])
+      expect(repo.create.mock.calls[0][1]).toMatchObject({ assignee_ids: ['u1', 'u2'] })
+      resolve(todo({ id: s.items[0].id, assignee_ids: ['u1', 'u2'] }))
+      await p
+    })
+
+    it('updateTodo mit assignee_ids: optimistisch, Rollback bei Fehler', async () => {
+      const s = useTodosStore()
+      s.items = [todo({ assignee_ids: ['u1'] })]
+      let reject!: (e: Error) => void
+      repo.update.mockReturnValue(new Promise((_, r) => (reject = r)))
+      const p = s.updateTodo('t1', { assignee_ids: ['u1', 'u2'] })
+      expect(s.items[0].assignee_ids).toEqual(['u1', 'u2'])
+      reject(new Error('fail'))
+      await expect(p).rejects.toThrow('fail')
+      expect(s.items[0].assignee_ids).toEqual(['u1'])
+    })
+
+    it('updateTodo übernimmt den Server-Stand (neue Version)', async () => {
+      const s = useTodosStore()
+      s.items = [todo({ assignee_ids: ['u1'], version: 1 })]
+      repo.update.mockResolvedValue(todo({ assignee_ids: ['u2'], version: 2 }))
+      await s.updateTodo('t1', { assignee_ids: ['u2'] })
+      expect(s.items[0].version).toBe(2)
+    })
+
+    it('claimTodo fügt mich sofort hinzu und übernimmt die Server-Antwort', async () => {
+      const s = useTodosStore()
+      s.items = [todo({ assignee_ids: ['u2'] })]
+      let resolve!: (t: TodoItem) => void
+      repo.claim.mockReturnValue(new Promise(r => (resolve = r)))
+      const p = s.claimTodo('t1')
+      expect(s.items[0].assignee_ids).toEqual(['u2', 'u1'])
+      resolve(todo({ assignee_ids: ['u2', 'u1'], version: 2 }))
+      await p
+      expect(repo.claim).toHaveBeenCalledWith('h1', 't1')
+      expect(s.items[0].version).toBe(2)
+    })
+
+    it('claimTodo: Rollback bei Fehler, kein Request wenn schon zuständig', async () => {
+      const s = useTodosStore()
+      s.items = [todo({ assignee_ids: ['u2'] })]
+      repo.claim.mockRejectedValue(new Error('fail'))
+      await expect(s.claimTodo('t1')).rejects.toThrow('fail')
+      expect(s.items[0].assignee_ids).toEqual(['u2'])
+
+      s.items = [todo({ assignee_ids: ['u1'] })]
+      repo.claim.mockReset()
+      await s.claimTodo('t1')
+      expect(repo.claim).not.toHaveBeenCalled()
+    })
+
+    it('setDone merkt mich als "erledigt von", Wiederöffnen leert es; Rollback stellt es wieder her', async () => {
+      const s = useTodosStore()
+      s.items = [todo()]
+      let resolve!: (t: TodoItem) => void
+      repo.update.mockReturnValue(new Promise(r => (resolve = r)))
+      const p = s.setDone('t1', true)
+      expect(s.items[0].done_by_user_id).toBe('u1')
+      resolve(todo({ is_done: true, done_by_user_id: 'u1', version: 2 }))
+      await p
+
+      repo.update.mockRejectedValue(new Error('fail'))
+      await expect(s.setDone('t1', false)).rejects.toThrow('fail')
+      expect(s.items[0].done_by_user_id).toBe('u1')
+      expect(s.items[0].is_done).toBe(true)
+    })
+
+    it('restoreTodo stellt alle Zuständigen wieder her', async () => {
+      const s = useTodosStore()
+      repo.create.mockImplementation(async (_h: string, p: { id: string }) => todo({ id: p.id }))
+      await s.restoreTodo(todo({ assignee_ids: ['u1', 'u2'] }))
+      expect(repo.create.mock.calls[0][1]).toMatchObject({ assignee_ids: ['u1', 'u2'] })
     })
   })
 

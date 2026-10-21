@@ -2,8 +2,9 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import axios from 'axios'
 import api, { API_BASE, authRequestConfig } from '../api/client'
-import type { UserInfo, HouseholdInfo, MeResponse } from '../types'
-import { sessionMarker, SESSION_MARKER_KEY, takeLegacyRefreshToken } from '../services/tokenStorage'
+import type { UserInfo, HouseholdInfo, MeResponse, TokenResponse } from '../types'
+import { nativeRefreshToken, sessionMarker, SESSION_MARKER_KEY, takeLegacyRefreshToken } from '../services/tokenStorage'
+import { isNativeApp } from '../services/platform'
 import { useToast } from '../composables/useToast'
 import i18n from '../i18n'
 import { resetHouseholdScopedStores } from './householdScope'
@@ -27,6 +28,8 @@ function isAuthRejection(err: any): boolean {
 interface TokenPayload {
   access_token: string
   expires_in: number
+  /** Nur in nativen Apps gefüllt (Web: HttpOnly-Cookie) */
+  refresh_token?: string | null
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -93,11 +96,18 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Alte localStorage-Tokens (vor H-01) einmalig gegen den Cookie tauschen
     const legacyRefreshToken = takeLegacyRefreshToken()
-
+    // Native App: Refresh-Token aus dem Geräte-Speicher (kein Cookie)
     const generation = currentSessionGeneration()
-    if (legacyRefreshToken || sessionMarker.isSet()) {
+    const storedNativeToken = isNativeApp() ? await nativeRefreshToken.get() : null
+    if (generation !== currentSessionGeneration()) {
+      _registerStorageListener()
+      isInitialized.value = true
+      _authReadyResolve()
+      return
+    }
+    if (legacyRefreshToken || storedNativeToken || sessionMarker.isSet()) {
       try {
-        // Access-Token wird nie persistiert → immer über den Cookie neu holen
+        // Access-Token wird nie persistiert: Cookie oder nativen Refresh-Token verwenden.
         await _refreshWith(legacyRefreshToken)
         assertSessionGeneration(generation)
         await fetchMe()
@@ -112,6 +122,7 @@ export const useAuthStore = defineStore('auth', () => {
           // Cookie fehlt/abgelaufen/revoked (Backend hat ihn gelöscht) → ausgeloggt
           _clearState()
           sessionExpired.value = true
+          await _unsubscribePushLocally()
         } else if (!token.value) {
           // Netzwerkfehler beim Refresh → Sitzung vermutlich noch gültig, "offline eingeloggt"
           hasOfflineSession.value = true
@@ -154,23 +165,24 @@ export const useAuthStore = defineStore('auth', () => {
     const generation = currentSessionGeneration()
     const expectedSubject = token.value ? tokenSubject(token.value) : user.value?.id
     // Direkter axios call OHNE Interceptor (um Endlos-Loop zu vermeiden).
-    // Der Refresh-Token kommt aus dem HttpOnly-Cookie (withCredentials); nur bei der
+    // Web: Der Refresh-Token kommt aus dem HttpOnly-Cookie (withCredentials); nur bei der
     // einmaligen Migration steht der alte localStorage-Token im Body.
-    const body = legacyRefreshToken ? { refresh_token: legacyRefreshToken } : {}
-    const response = await credentialRequest(() => {
+    await credentialRequest(async () => {
+      const storedToken = legacyRefreshToken ?? (isNativeApp() ? await nativeRefreshToken.get() : null)
       assertSessionGeneration(generation)
-      return axios.post(`${API_BASE}/api/auth/refresh`, body, authRequestConfig())
+      const body = storedToken ? { refresh_token: storedToken } : {}
+      const response = await axios.post(`${API_BASE}/api/auth/refresh`, body, authRequestConfig())
+      assertSessionGeneration(generation)
+      const nextSubject = tokenSubject(response.data.access_token)
+      if (expectedSubject && nextSubject !== expectedSubject) {
+        // Another tab replaced the shared cookie. Never replay this principal's
+        // in-flight mutations using that other principal's newly issued JWT.
+        _clearState(false)
+        void import('../router').then(({ default: router }) => router.replace('/login'))
+        throw new ScopeChangedError()
+      }
+      await _installTokens(response.data, generation)
     })
-    assertSessionGeneration(generation)
-    const nextSubject = tokenSubject(response.data.access_token)
-    if (expectedSubject && nextSubject !== expectedSubject) {
-      // Another tab replaced the shared cookie. Never replay this principal's
-      // in-flight mutations using that other principal's newly issued JWT.
-      _clearState(false)
-      void import('../router').then(({ default: router }) => router.replace('/login'))
-      throw new ScopeChangedError()
-    }
-    _applyTokens(response.data)
   }
 
   function tokenSubject(value: string): string | undefined {
@@ -182,11 +194,60 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /** Übernimmt den Access-Token einer Login-/Register-/Refresh-Antwort (Cookie setzt der Browser). */
-  function _applyTokens(data: TokenPayload) {
+  async function _installTokens(data: TokenPayload, generation: number) {
+    assertSessionGeneration(generation)
+    if (isNativeApp() && data.refresh_token) {
+      await nativeRefreshToken.set(data.refresh_token)
+      assertSessionGeneration(generation)
+    }
     token.value = data.access_token
     hasOfflineSession.value = false
     sessionExpired.value = false
     sessionMarker.set()
+  }
+
+  function _applyTokens(data: TokenPayload) {
+    const generation = currentSessionGeneration()
+    return credentialRequest(() => _installTokens(data, generation))
+  }
+
+  /** Password changes rotate credentials too, so order them with refresh/login/logout. */
+  async function changePassword(currentPassword: string, newPassword: string): Promise<TokenResponse> {
+    const generation = currentSessionGeneration()
+    if (!isAuthenticated.value || _logoutPromise) throw new ScopeChangedError()
+    if (!token.value) {
+      await refresh()
+      assertSessionGeneration(generation)
+    }
+    const send = () => credentialRequest(async () => {
+      assertSessionGeneration(generation)
+      const { data } = await axios.put<TokenResponse>(
+        `${API_BASE}/api/account/password`,
+        { current_password: currentPassword, new_password: newPassword },
+        authRequestConfig({ Authorization: `Bearer ${token.value}` }),
+      )
+      await _installTokens(data, generation)
+      return data
+    })
+    try {
+      return await send()
+    } catch (error) {
+      assertSessionGeneration(generation)
+      if (!isAuthRejection(error)) throw error
+      try {
+        await refresh()
+      } catch (refreshError) {
+        assertSessionGeneration(generation)
+        if (isAuthRejection(refreshError)) await logout({ reason: 'expired' })
+        throw refreshError
+      }
+      assertSessionGeneration(generation)
+      return send()
+    }
+  }
+
+  function markEmailVerified() {
+    if (user.value) user.value.email_verified = true
   }
 
   /**
@@ -213,16 +274,16 @@ export const useAuthStore = defineStore('auth', () => {
     if (_logoutPromise) await _logoutPromise
     _clearState()
     const generation = currentSessionGeneration()
-    const response = await credentialRequest(() => {
+    await credentialRequest(async () => {
       assertSessionGeneration(generation)
-      return axios.post(
-      `${API_BASE}/api/auth/login`,
-      new URLSearchParams({ username: email, password }),
-      authRequestConfig({ 'Content-Type': 'application/x-www-form-urlencoded' }),
+      const response = await axios.post(
+        `${API_BASE}/api/auth/login`,
+        new URLSearchParams({ username: email, password }),
+        authRequestConfig({ 'Content-Type': 'application/x-www-form-urlencoded' }),
       )
+      await _installTokens(response.data, generation)
     })
     assertSessionGeneration(generation)
-    _applyTokens(response.data)
 
     await fetchMe()
   }
@@ -234,11 +295,12 @@ export const useAuthStore = defineStore('auth', () => {
     password: string,
     displayName: string,
     options: { householdName: string } | { inviteCode: string },
+    acceptTerms = false,
   ) {
     if (_logoutPromise) await _logoutPromise
     _clearState()
     const generation = currentSessionGeneration()
-    const payload: Record<string, string> = {
+    const payload: Record<string, string | boolean> = {
       email,
       password,
       display_name: displayName,
@@ -248,12 +310,13 @@ export const useAuthStore = defineStore('auth', () => {
     } else {
       payload.invite_code = options.inviteCode
     }
-    const response = await credentialRequest(() => {
+    if (acceptTerms) payload.accept_terms = true
+    await credentialRequest(async () => {
       assertSessionGeneration(generation)
-      return axios.post(`${API_BASE}/api/auth/register`, payload, authRequestConfig())
+      const response = await axios.post(`${API_BASE}/api/auth/register`, payload, authRequestConfig())
+      await _installTokens(response.data, generation)
     })
     assertSessionGeneration(generation)
-    _applyTokens(response.data)
 
     await fetchMe()
   }
@@ -273,6 +336,8 @@ export const useAuthStore = defineStore('auth', () => {
       id: data.id,
       email: data.email,
       display_name: data.display_name,
+      email_verified: data.email_verified === true,
+      is_platform_admin: data.is_platform_admin === true,
     }
     households.value = data.households
 
@@ -287,6 +352,48 @@ export const useAuthStore = defineStore('auth', () => {
       currentHouseholdId.value = null
       localStorage.removeItem(HOUSEHOLD_KEY)
     }
+  }
+
+  // ── Mitgliedschaft neu prüfen (CASA-49) ──
+
+  let _revalidatePromise: Promise<void> | null = null
+
+  /**
+   * Lädt /me neu und behandelt den aktuellen Haushalt als verlassen, wenn er fehlt.
+   * Aufgerufen nach einem Socket-Reconnect (Entfernung verpasst, solange offline), bei
+   * 403 NOT_HOUSEHOLD_MEMBER auf den aktuellen Haushalt und beim entsprechenden
+   * Socket-`error`. Single-Flight; Fehler (offline) werden verschluckt.
+   */
+  async function revalidateMembership(): Promise<void> {
+    if (!token.value) return
+    if (_revalidatePromise) return _revalidatePromise
+    const generation = currentSessionGeneration()
+    const pending = (async () => {
+      const previousId = currentHouseholdId.value
+      const previousName = households.value.find(h => h.id === previousId)?.name ?? ''
+      try {
+        await fetchMe()
+      } catch {
+        return // Offline/Serverfehler — der nächste Anlass prüft erneut
+      }
+      if (generation !== currentSessionGeneration() || !previousId || households.value.some(h => h.id === previousId)) return
+      // Eigener Austritt läuft gerade → die View meldet und navigiert selbst
+      if (_ownLeaves.has(previousId)) return
+      _announceRemoval(previousName)
+    })()
+    _revalidatePromise = pending
+    try {
+      await _revalidatePromise
+    } finally {
+      if (_revalidatePromise === pending) _revalidatePromise = null
+    }
+  }
+
+  /** Socket-`error` vom Server: nicht (mehr) Mitglied des Haushalts → wie 403 behandeln. */
+  function handleSocketError(data: { code?: string; household_id?: string } | null | undefined) {
+    if (data?.code !== 'NOT_HOUSEHOLD_MEMBER') return
+    if (data.household_id && data.household_id !== currentHouseholdId.value) return
+    void revalidateMembership()
   }
 
   // ── Switch Household ──
@@ -315,7 +422,7 @@ export const useAuthStore = defineStore('auth', () => {
     const reason = options?.reason ?? 'expired'
     // Privacy boundary is synchronous; network cleanup must not retain private
     // notes, dialogs or pending optimistic rollback snapshots in the next login.
-    _clearState()
+    _clearState(true, false)
     sessionExpired.value = reason === 'expired'
 
     // Socket zuerst trennen: Der Logout-Aufruf beendet serverseitig alle Verbindungen
@@ -338,8 +445,16 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Best-effort: Backend revoked den Refresh-Token aus dem Cookie und löscht den Cookie.
     // Ob ein Cookie existiert, sieht JS nicht (HttpOnly) — der Endpunkt ist idempotent.
+    // Native App: Token aus dem Geräte-Speicher im Body mitschicken.
     try {
-      await credentialRequest(() => axios.post(`${API_BASE}/api/auth/logout`, {}, authRequestConfig()))
+      await credentialRequest(async () => {
+        try {
+          const storedToken = isNativeApp() ? await nativeRefreshToken.get() : null
+          await axios.post(`${API_BASE}/api/auth/logout`, storedToken ? { refresh_token: storedToken } : {}, authRequestConfig())
+        } finally {
+          if (isNativeApp()) await nativeRefreshToken.clear()
+        }
+      })
     } catch {
       // Ignore — Logout ist best-effort
     }
@@ -358,12 +473,27 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  // ── Internal: State zurücksetzen (async) ──
+  /**
+   * Push-Subscription dieses Browsers abmelden, ohne das Backend zu fragen (kein gültiger
+   * Access-Token mehr). Das Backend räumt den Endpoint beim nächsten Versand auf (410).
+   */
+  async function _unsubscribePushLocally() {
+    try {
+      const { disablePush } = await import('../services/pushService')
+      await disablePush({ notifyBackend: false })
+    } catch {
+      // Best-effort
+    }
+  }
 
-  function _clearState(broadcast = true) {
+  // ── Internal: State synchron zurücksetzen, native Ablage geordnet leeren ──
+
+  function _clearState(broadcast = true, clearNative = true) {
     scopeKey.value++
     invalidateSessionScope()
     _refreshPromise = null
+    _revalidatePromise = null
+    _ownLeaves.clear()
     resetHouseholdScopedStores()
     token.value = null
     hasOfflineSession.value = false
@@ -373,6 +503,9 @@ export const useAuthStore = defineStore('auth', () => {
     // Löscht den Marker → storage-Event in anderen Tabs (Cross-Tab-Logout)
     if (broadcast) sessionMarker.clear()
     localStorage.removeItem(HOUSEHOLD_KEY)
+    if (clearNative && isNativeApp()) {
+      void credentialRequest(() => nativeRefreshToken.clear()).catch(() => {})
+    }
   }
 
   // ── Cross-Tab Storage Listener ──
@@ -388,6 +521,7 @@ export const useAuthStore = defineStore('auth', () => {
       if (event.newValue === null) {
         // Anderer Tab hat sich abgemeldet (Cookie ist weg) → lokalen Zustand verwerfen
         _clearState(false)
+        void _unsubscribePushLocally()
         // Navigiere zu /login OHNE redirect und OHNE Backend-Logout-Call
         import('../router').then(({ default: router }) => {
           router.push('/login')
@@ -407,29 +541,37 @@ export const useAuthStore = defineStore('auth', () => {
 
   // ── Socket-Event-Handler für Household-Events ──
 
-  function handleHouseholdUpdated(data: { id: string; name: string; ai_enabled?: boolean }) {
+  function handleHouseholdUpdated(data: { id: string; name: string; ai_enabled?: boolean; plan?: string }) {
     const h = households.value.find(h => h.id === data.id)
     if (!h) return
     h.name = data.name
     if (typeof data.ai_enabled === 'boolean') h.ai_enabled = data.ai_enabled
+    if (typeof data.plan === 'string') h.plan = data.plan
   }
 
   function handleMemberJoined(_data: { household_id: string; user_id: string; display_name: string; role: string }) {
     // Kein State-Update nötig im auth store — HouseholdView refetcht Members
   }
 
-  function handleMemberLeft(data: { household_id: string; user_id: string }) {
-    _handleRemoval(data.household_id, data.user_id)
+  /** Payload von household_member_left/_removed; `released` = freigegebene Bereiche (PD-H1). */
+  interface MemberDepartedPayload {
+    household_id: string
+    user_id: string
+    released?: string[]
   }
 
-  function handleMemberRemoved(data: { household_id: string; user_id: string }) {
-    _handleRemoval(data.household_id, data.user_id)
+  function handleMemberLeft(data: MemberDepartedPayload) {
+    _handleRemoval(data.household_id, data.user_id, data.released)
+  }
+
+  function handleMemberRemoved(data: MemberDepartedPayload) {
+    _handleRemoval(data.household_id, data.user_id, data.released)
   }
 
   // ── Haushalt verlassen ──
 
   /** Haushalte, die der User gerade selbst verlässt (Socket-Event ist dann keine „Entfernung“). */
-  const _ownLeaves = new Set<string>()
+  const _ownLeaves = new Map<string, { generation: number; confirmed: boolean }>()
 
   /**
    * Eigener Austritt: `request` ruft die API auf. Das Socket-Event `household_member_left`
@@ -442,13 +584,22 @@ export const useAuthStore = defineStore('auth', () => {
     request: () => Promise<unknown>,
   ): Promise<'/dashboard' | '/no-household'> {
     const generation = currentSessionGeneration()
-    _ownLeaves.add(householdId)
+    const operation = { generation, confirmed: false }
+    _ownLeaves.set(householdId, operation)
     try {
-      await request()
+      try {
+        await request()
+      } catch (error) {
+        // The server can confirm our departure via the socket before DELETE
+        // resolves. That household switch cancels the old HTTP scope; the
+        // confirmed departure is still successful in this same login session.
+        assertSessionGeneration(generation)
+        if (!operation.confirmed || (error as { code?: string })?.code !== 'ERR_CANCELED') throw error
+      }
       assertSessionGeneration(generation)
       _dropHousehold(householdId)
     } finally {
-      _ownLeaves.delete(householdId)
+      if (_ownLeaves.get(householdId) === operation) _ownLeaves.delete(householdId)
     }
     return households.value.length > 0 ? '/dashboard' : '/no-household'
   }
@@ -465,9 +616,11 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  function _handleRemoval(householdId: string, userId: string) {
+  function _handleRemoval(householdId: string, userId: string, released?: string[]) {
     // Eigener Austritt läuft gerade → still entfernen, die View meldet und navigiert
-    if (userId === user.value?.id && _ownLeaves.has(householdId)) {
+    const ownLeave = _ownLeaves.get(householdId)
+    if (userId === user.value?.id && ownLeave?.generation === currentSessionGeneration()) {
+      ownLeave.confirmed = true
       _dropHousehold(householdId)
       return
     }
@@ -480,6 +633,15 @@ export const useAuthStore = defineStore('auth', () => {
           // Best-effort — der nächste Start lädt /me ohnehin
         })
       }
+      // Der Server hat die offenen Zuständigkeiten der Person freigegeben (PD-H1):
+      // betroffene Listen des aktuellen Haushalts neu laden
+      if (householdId === currentHouseholdId.value) {
+        import('../services/memberDeparture')
+          .then(({ refetchAfterMemberDeparture }) => refetchAfterMemberDeparture(released))
+          .catch(() => {
+            // Best-effort — beim nächsten Reconnect/Öffnen wird ohnehin neu geladen
+          })
+      }
       return
     }
     // Betrifft es den EIGENEN User im AKTUELLEN Haushalt?
@@ -487,25 +649,31 @@ export const useAuthStore = defineStore('auth', () => {
       const removedName = households.value.find(h => h.id === householdId)?.name ?? ''
       // Haushalt aus Liste entfernen
       households.value = households.value.filter(h => h.id !== householdId)
-
-      // Toast + Navigation
-      const { showToast } = useToast()
-      const { t } = i18n.global
-
       if (households.value.length > 0) {
         // Auf ersten verbleibenden Haushalt wechseln
         switchHousehold(households.value[0].id)
-        showToast(t('household.switchedTo', { name: households.value[0].name }), 'info')
       } else {
-        // Kein Haushalt mehr → Zustand "kein Haushalt"
         currentHouseholdId.value = null
         localStorage.removeItem(HOUSEHOLD_KEY)
-        showToast(t('household.youWereRemoved', { name: removedName }), 'info')
-        // Navigation analog logout()
-        import('../router').then(({ default: router }) => {
-          router.replace('/no-household')
-        })
       }
+      _announceRemoval(removedName)
+    }
+  }
+
+  /** Toast + Navigation, nachdem der aktuelle Haushalt weggefallen ist (Liste schon aktualisiert). */
+  function _announceRemoval(removedName: string) {
+    const { showToast } = useToast()
+    const { t } = i18n.global
+
+    if (households.value.length > 0) {
+      showToast(t('household.switchedTo', { name: households.value[0].name }), 'info')
+    } else {
+      // Kein Haushalt mehr → Zustand "kein Haushalt"
+      showToast(t('household.youWereRemoved', { name: removedName }), 'info')
+      // Navigation analog logout()
+      import('../router').then(({ default: router }) => {
+        router.replace('/no-household')
+      })
     }
   }
 
@@ -527,16 +695,22 @@ export const useAuthStore = defineStore('auth', () => {
     initialize,
     login,
     register,
+    changePassword,
     fetchMe,
     refresh,
     refreshForSocket,
     switchHousehold,
     leaveHousehold,
+    revalidateMembership,
     logout,
+    markEmailVerified,
+    /** Neues Token-Paar übernehmen (z. B. nach Passwort-Änderung, die andere Geräte abmeldet). */
+    applyTokenResponse: _applyTokens,
     // Socket-Event-Handler
     handleHouseholdUpdated,
     handleMemberJoined,
     handleMemberLeft,
     handleMemberRemoved,
+    handleSocketError,
   }
 })

@@ -15,6 +15,20 @@ describe('translateApiError', () => {
     )
   })
 
+  it('translates the generic DB conflict code (409 CONFLICT_RETRY) in DE and EN', () => {
+    const err = axiosError({ code: 'CONFLICT_RETRY', message: 'The data was changed concurrently.' }, 409)
+    const previous = i18n.global.locale.value
+    try {
+      for (const locale of ['de', 'en'] as const) {
+        i18n.global.locale.value = locale
+        expect(translateApiError(err)).toBe(t('errors.CONFLICT_RETRY'))
+        expect(translateApiError(err)).not.toBe('The data was changed concurrently.')
+      }
+    } finally {
+      i18n.global.locale.value = previous
+    }
+  })
+
   it('falls back to detail.message for unknown codes', () => {
     expect(translateApiError(axiosError({ code: 'NOPE_NOT_A_CODE', message: 'Fallback text' }))).toBe(
       'Fallback text',

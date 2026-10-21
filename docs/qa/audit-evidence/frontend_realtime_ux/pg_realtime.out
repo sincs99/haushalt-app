@@ -1,0 +1,23 @@
+NOTICE:  database "audit_fe_rt_1" does not exist, skipping
+== P1 chore schedule change: what is emitted? ==
+assignments before: [('c2b25c12', '2026-10-13')]
+emits during GET (materialize): ['chore_assignment_created']
+PATCH 200
+emits after schedule PATCH: ['chore_updated']
+assignments after: [('10ce1ecd', '2026-10-15')] | emits: ['chore_assignment_created']
+complete on stale assignment c2b25c12 -> 404 {'code': 'CHORE_ASSIGNMENT_NOT_FOUND', 'message': 'Assignment not found'}
+== P2 notes: stale full-payload save overwrites other member's edit ==
+A save status 200 final body: PW: alt | has version field: False
+== P3 expenses: stale full-payload edit overwrites amount ==
+A edit status 200 final amount: 10000 | version field: False | updated_at: 2026-10-10T07:00:05.853257Z
+== P4 shopping: create-retry after delete recreates (documented M0 limit) ==
+create 201 v 1
+delete by Ben 204
+retry create -> 201 (201 = resurrected)
+== P5 bulk reassign: version bumped server-side but payload has no versions ==
+reassign 200 {'updated': 1, 'to_store': 'Coop'}
+emits: [('shopping_items_bulk_updated', {'item_ids': ['f3e5b9f3-955e-4763-b542-2b663596ec2e'], 'changes': {'store': 'Coop'}})]
+item version before 1 after 2
+== P6 double DELETE ==
+second delete: 204 404
+== P7 meal_plan_updated payload from poll decide vs food ==

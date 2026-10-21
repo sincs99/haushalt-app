@@ -194,11 +194,12 @@ const adviceApplied = ref(false)
 // Neue Pflanze (Navigation) → Zustand zurücksetzen
 watch(plantId, () => { adviceApplied.value = false })
 
-async function handleApplyAdvice(advice: AiPlantCareAdvice) {
+async function handleApplyAdvice(advice: AiPlantCareAdvice, selected: string[]) {
   if (!plant.value || adviceApplying.value) return
   adviceApplying.value = true
   try {
-    await plantsStore.applyCareAdvice(plant.value, advice)
+    // Nur die angehakten Aufgaben; geänderte Intervalle verschieben die Fälligkeit (PD-P4/P5)
+    await plantsStore.applyCareAdvice(plant.value, advice, selected)
     adviceApplied.value = true
     showToast(t('ai.plant.applied'), 'success')
   } catch (err) {
@@ -263,7 +264,9 @@ async function handleSaveTask() {
 function handleComplete(taskId: string) {
   return run(() => plantsStore.completeCareTask(plantId.value, taskId), {
     key: `complete-${taskId}`,
-    success: () => {
+    success: (log) => {
+      // null: heute schon erledigt (auch von jemand anderem) → kein zweiter Eintrag (CASA-29)
+      if (log === null) return t('plants.alreadyDoneToday')
       const task = plantsStore.careTasks.find(c => c.id === taskId)
       return task ? t('plants.completed', { date: formatDate(task.next_due_at) }) : undefined
     },

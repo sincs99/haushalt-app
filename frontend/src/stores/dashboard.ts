@@ -4,6 +4,23 @@ import { ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlineDashboardRepository } from '../repositories/dashboardRepository'
 import type { DashboardResponse } from '../types'
+import { createRequestGuard } from '../utils/householdGuard'
+
+/**
+ * Weitere Socket-Events, nach denen das Dashboard neu lädt (CASA-43): Ämtli
+ * angelegt/geändert/pausiert/gelöscht, Tiere (Pflegeaufgaben hängen am Tier) und
+ * Kalender (Löschen entfernt seine Termine). Die übrigen Quellen bindet App.vue einzeln.
+ */
+export const DASHBOARD_EXTRA_EVENTS = [
+  'chore_created',
+  'chore_updated',
+  'chore_deleted',
+  'chore_assignments_deleted',
+  'pet_created',
+  'pet_updated',
+  'pet_deleted',
+  'calendar_deleted',
+] as const
 
 export const useDashboardStore = defineStore('dashboard', () => {
   const repo = scopeRepository(createOnlineDashboardRepository())
@@ -16,6 +33,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
   // Debounce-Timer für Invalidierung
   let invalidateTimer: ReturnType<typeof setTimeout> | null = null
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
 
   // Actions
   async function fetchDashboard() {
@@ -23,22 +42,22 @@ export const useDashboardStore = defineStore('dashboard', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'dashboard')
 
     loading.value = true
     try {
-      const scopedResult = await repo.fetchDashboard(householdId)
-      assertDataGeneration(actionGeneration)
-      data.value = scopedResult
+      const result = await repo.fetchDashboard(householdId)
+      if (!active()) return
+      data.value = result
       loadError.value = false
     } catch (e) {
       assertDataGeneration(actionGeneration)
       if (isScopeChanged(e)) throw e
       // Nicht weiterwerfen: wird auch ungewartet (Socket-Invalidierung, App-Start) aufgerufen
       console.error('Failed to fetch dashboard:', e)
-      loadError.value = true
+      if (active()) loadError.value = true
     } finally {
-      assertDataGeneration(actionGeneration)
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -46,7 +65,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   function invalidate() {
     if (invalidateTimer) clearTimeout(invalidateTimer)
     invalidateTimer = setTimeout(() => {
-      fetchDashboard()
+      fetchDashboard().catch(() => {})
     }, 500)
   }
 

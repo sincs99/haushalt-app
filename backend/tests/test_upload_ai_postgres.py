@@ -22,10 +22,10 @@ from starlette.datastructures import Headers
 
 from app.core.config import settings
 from app.database import Base
-from app.models import AiBudgetCounter, AiUsage, Household, StoredFile, User
+from app.models import AiBudgetCounter, AiUsage, AiUserUsage, Household, StoredFile, User
 from app.routers import files
 from app.services.ai import usage
-from app.services.ai.errors import AiDailyLimitReached
+from app.services.ai.errors import AiDailyLimitReached, AiUserDailyLimitReached
 from app.services.storage import LocalStorageService
 
 
@@ -65,7 +65,7 @@ def test_postgres_upload_waits_then_rechecks_committed_quota(pg_sessions, tmp_pa
     sessions, engine, user_id, household_ids = pg_sessions
     household_id = household_ids[0]
     payload = b"%PDF-fixture"
-    monkeypatch.setattr(files, "household_storage_quota", lambda: len(payload))
+    monkeypatch.setattr(files, "household_storage_quota", lambda _db, _household_id: len(payload))
     monkeypatch.setattr(files, "_storage", LocalStorageService(str(tmp_path)))
     first_saved, release_first, second_started = threading.Event(), threading.Event(), threading.Event()
     second_pid = []
@@ -163,7 +163,7 @@ def test_postgres_concurrent_new_counter_reservations_are_atomic(pg_sessions, mo
             ready.wait(timeout=3)
             try:
                 return usage.reserve_call(db, household_id, user_id)
-            except AiDailyLimitReached:
+            except (AiDailyLimitReached, AiUserDailyLimitReached):
                 return None
 
     with ThreadPoolExecutor(max_workers=2) as workers:
@@ -171,7 +171,7 @@ def test_postgres_concurrent_new_counter_reservations_are_atomic(pg_sessions, mo
     assert sum(result is not None for result in results) == 1
     with sessions() as db:
         assert db.query(AiBudgetCounter).filter_by(scope_key="global").one().calls == 1
-        assert db.query(AiBudgetCounter).filter_by(scope_key=f"user:{user_id}").one().calls == 1
+        assert db.query(AiUserUsage).filter_by(user_id=user_id).one().calls == 1
         assert sum(row.calls for row in db.query(AiUsage).all()) == 1
 
 

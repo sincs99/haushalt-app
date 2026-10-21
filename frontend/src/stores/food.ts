@@ -7,6 +7,7 @@ import type {
   Recipe, RecipeCreatePayload, RecipeUpdatePayload,
   MealPlanEntry, MealPlanAssignPayload, AddToShoppingResponse,
 } from '../types'
+import { captureHousehold, createRequestGuard } from '../utils/householdGuard'
 
 /**
  * Gibt den ISO-Datums-String des Montags der aktuellen Woche zurück.
@@ -36,17 +37,19 @@ export const useFoodStore = defineStore('food', () => {
   const currentWeekStart = ref(getMonday())
   const loading = ref(false)
 
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
+
   // ── Recipe Actions ──
 
   async function fetchRecipes() {
     const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'recipes')
 
-    const scopedResult = await repo.fetchRecipes(householdId)
-    assertDataGeneration(actionGeneration)
-
-    recipes.value = scopedResult
+    const result = await repo.fetchRecipes(householdId)
+    if (active()) recipes.value = result
   }
 
   async function createRecipe(payload: RecipeCreatePayload): Promise<Recipe | undefined> {
@@ -91,7 +94,19 @@ export const useFoodStore = defineStore('food', () => {
 
     await repo.deleteRecipe(householdId, id)
     assertDataGeneration(actionGeneration)
+    removeRecipeLocally(id)
+  }
+
+  /**
+   * Rezept entfernen; geplante Mahlzeiten behalten den Namen als Freitext — wie der
+   * Server beim Löschen (PD-M3, CASA-52).
+   */
+  function removeRecipeLocally(id: string) {
+    const name = recipes.value.find(r => r.id === id)?.name
     recipes.value = recipes.value.filter(r => r.id !== id)
+    weekPlan.value = weekPlan.value.map(e => (e.recipe_id === id
+      ? { ...e, recipe_id: null, recipe: null, free_text: e.recipe?.name ?? name ?? e.free_text }
+      : e))
   }
 
   /** Favorit optimistisch umschalten (Liste und eingebettete Rezepte im Wochenplan), Rollback bei Fehler. */
@@ -103,8 +118,9 @@ export const useFoodStore = defineStore('food', () => {
     const previous = recipe.is_favorite
     setFavoriteLocally(id, !previous)
     try {
-      return await updateRecipe(id, { is_favorite: !previous })
+      const updated = await updateRecipe(id, { is_favorite: !previous })
       assertDataGeneration(actionGeneration)
+      return updated
     } catch (error) {
       assertDataGeneration(actionGeneration)
       if (isScopeChanged(error)) throw error
@@ -134,12 +150,12 @@ export const useFoodStore = defineStore('food', () => {
 
     const week = weekDate ?? currentWeekStart.value
     const requestId = ++weekRequestId
+    const inScope = captureHousehold(householdId)
     loading.value = true
     try {
       const plan = await repo.fetchWeekPlan(householdId, week)
-      // Veraltete Antwort verwerfen
-      assertDataGeneration(actionGeneration)
-      if (requestId !== weekRequestId) return
+      // Veraltete Antwort verwerfen (neuere Woche angefragt oder Haushalt gewechselt)
+      if (requestId !== weekRequestId || !inScope()) return
       weekPlan.value = plan
     } catch (error) {
       assertDataGeneration(actionGeneration)
@@ -187,11 +203,12 @@ export const useFoodStore = defineStore('food', () => {
     return assignMeal(entry.date, { recipe_id: entry.recipe_id ?? null, free_text: entry.free_text ?? null })
   }
 
-  async function addMissingToShopping(entryId: string): Promise<AddToShoppingResponse | undefined> {
+  /** Fehlende Zutaten auf die Liste `listId` (aktive Liste) setzen; Dedupe macht der Server (PD-M2). */
+  async function addMissingToShopping(entryId: string, listId?: string | null): Promise<AddToShoppingResponse | undefined> {
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
-    return repo.addMissingToShopping(householdId, entryId)
+    return repo.addMissingToShopping(householdId, entryId, listId ?? undefined)
   }
 
   function navigateWeek(direction: -1 | 1) {
@@ -226,10 +243,16 @@ export const useFoodStore = defineStore('food', () => {
   }
 
   function handleRecipeDeleted(data: { id: string }) {
-    recipes.value = recipes.value.filter(r => r.id !== data.id)
+    removeRecipeLocally(data.id)
   }
 
   function handleMealPlanUpdated(data: MealPlanEntry) {
+    // Unvollständige Payload (ältere Server senden nach einem Abstimmungs-Entscheid
+    // nur {date}) nicht übernehmen — der Tag erschiene sonst leer (CASA-19): neu laden
+    if (!data?.id) {
+      fetchWeekPlan().catch(() => {})
+      return
+    }
     const idx = weekPlan.value.findIndex(e => e.date === data.date)
     if (idx !== -1) {
       weekPlan.value[idx] = data

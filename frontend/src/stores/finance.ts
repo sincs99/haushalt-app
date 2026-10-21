@@ -4,6 +4,7 @@ import { ref } from 'vue'
 import { useAuthStore } from './auth'
 import { createOnlineFinanceRepository } from '../repositories/financeRepository'
 import { translateApiError } from '../utils/apiErrors'
+import { createRequestGuard } from '../utils/householdGuard'
 import type { Budget, RecurringBill, FinanceSummary, RecurringBillCreatePayload, RecurringBillUpdatePayload, BudgetUpsertPayload, Expense } from '../types'
 
 export const useFinanceStore = defineStore('finance', () => {
@@ -16,28 +17,37 @@ export const useFinanceStore = defineStore('finance', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
+  // Rechnungs-Events ändern pending_bills der Übersicht → gebündelt neu laden (CASA-42)
+  let summaryTimer: ReturnType<typeof setTimeout> | null = null
+  function debouncedFetchSummary() {
+    if (summaryTimer) clearTimeout(summaryTimer)
+    summaryTimer = setTimeout(() => {
+      const hid = useAuthStore().currentHouseholdId
+      if (hid && summary.value) fetchSummary(hid).catch(() => {})
+    }, 300)
+  }
+
   // Actions
   async function fetchSummary(householdId?: string) {
     const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
+    const active = captureRequest(hid, 'summary')
 
     loading.value = true
     error.value = null
     try {
-      const scopedResult = await repo.getSummary(hid)
-      assertDataGeneration(actionGeneration)
-      summary.value = scopedResult
+      const result = await repo.getSummary(hid)
+      if (active()) summary.value = result
     } catch (e: any) {
-      assertDataGeneration(actionGeneration)
-      if (isScopeChanged(e)) throw e
-      error.value = translateApiError(e)
+      if (active()) error.value = translateApiError(e)
       // Weiterwerfen, damit die Ansicht einen Fehlerzustand zeigen kann
       throw e
     } finally {
-      assertDataGeneration(actionGeneration)
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -46,11 +56,11 @@ export const useFinanceStore = defineStore('finance', () => {
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
+    const active = captureRequest(hid, 'budget')
 
     try {
-      const scopedResult = await repo.getBudget(hid, month)
-      assertDataGeneration(actionGeneration)
-      budget.value = scopedResult
+      const result = await repo.getBudget(hid, month)
+      if (active()) budget.value = result
     } catch (e: any) {
       assertDataGeneration(actionGeneration)
       if (isScopeChanged(e)) throw e
@@ -86,11 +96,12 @@ export const useFinanceStore = defineStore('finance', () => {
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
+    const active = captureRequest(hid, 'bills')
 
     try {
-      const scopedResult = await repo.fetchBills(hid)
-      assertDataGeneration(actionGeneration)
-      bills.value = scopedResult
+      // Inklusive inaktiver Rechnungen — die Verwaltung zeigt und reaktiviert sie
+      const result = await repo.fetchBills(hid, true)
+      if (active()) bills.value = result
     } catch (e: any) {
       assertDataGeneration(actionGeneration)
       if (isScopeChanged(e)) throw e
@@ -108,7 +119,9 @@ export const useFinanceStore = defineStore('finance', () => {
     try {
       const created = await repo.createBill(hid, payload)
       assertDataGeneration(actionGeneration)
-      bills.value.push(created)
+      if (!bills.value.some(b => b.id === created.id)) bills.value.push(created)
+      await fetchSummary(hid).catch(() => {})
+      assertDataGeneration(actionGeneration)
       return created
     } catch (e: any) {
       assertDataGeneration(actionGeneration)
@@ -130,6 +143,8 @@ export const useFinanceStore = defineStore('finance', () => {
       assertDataGeneration(actionGeneration)
       const idx = bills.value.findIndex(b => b.id === billId)
       if (idx !== -1) bills.value[idx] = updated
+      await fetchSummary(hid).catch(() => {})
+      assertDataGeneration(actionGeneration)
       return updated
     } catch (e: any) {
       assertDataGeneration(actionGeneration)
@@ -149,6 +164,7 @@ export const useFinanceStore = defineStore('finance', () => {
       await repo.removeBill(hid, billId)
       assertDataGeneration(actionGeneration)
       bills.value = bills.value.filter(b => b.id !== billId)
+      await fetchSummary(hid).catch(() => {})
     } catch (e: any) {
       assertDataGeneration(actionGeneration)
       if (isScopeChanged(e)) throw e
@@ -157,7 +173,8 @@ export const useFinanceStore = defineStore('finance', () => {
     }
   }
 
-  async function bookBill(billId: string, paidByUserId?: string): Promise<Expense | undefined> {
+  /** `month` (YYYY-MM-01) bucht einen vergessenen Monat nach (max. 12 Monate zurück, PD-F4) */
+  async function bookBill(billId: string, paidByUserId?: string, month?: string): Promise<Expense | undefined> {
     const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const hid = authStore.currentHouseholdId
@@ -165,7 +182,9 @@ export const useFinanceStore = defineStore('finance', () => {
 
     error.value = null
     try {
-      const expense = await repo.bookBill(hid, billId, paidByUserId)
+      const expense = month
+        ? await repo.bookBill(hid, billId, paidByUserId, month)
+        : await repo.bookBill(hid, billId, paidByUserId)
       // Summary nachladen (pending_bills) — scheitert das, ist die Rechnung trotzdem gebucht
       assertDataGeneration(actionGeneration)
       await fetchSummary(hid).catch(() => {})
@@ -180,14 +199,23 @@ export const useFinanceStore = defineStore('finance', () => {
   }
 
   // Socket handlers
+  // Budget-Events gelten nur für ihren Monat: ein Budget für einen anderen Monat darf
+  // „Noch verfügbar“ des angezeigten Monats nicht überschreiben (CASA-42)
   function handleBudgetUpdated(data: Budget) {
+    const shownMonth = summary.value?.month ?? budget.value?.month
+    if (shownMonth && shownMonth !== data.month) return
     budget.value = data
-    // Also update summary if loaded
     if (summary.value) {
       summary.value.budget_rappen = data.amount_rappen
-      if (summary.value.budget_rappen !== null) {
-        summary.value.remaining_rappen = data.amount_rappen - summary.value.total_spent_rappen
-      }
+      summary.value.remaining_rappen = data.amount_rappen - summary.value.total_spent_rappen
+    }
+  }
+
+  function handleBudgetDeleted(data: { month: string }) {
+    if (budget.value?.month === data.month) budget.value = null
+    if (summary.value && summary.value.month === data.month) {
+      summary.value.budget_rappen = null
+      summary.value.remaining_rappen = null
     }
   }
 
@@ -195,24 +223,27 @@ export const useFinanceStore = defineStore('finance', () => {
     const idx = bills.value.findIndex(b => b.id === bill.id)
     if (idx === -1) bills.value.push(bill)
     else bills.value[idx] = bill
+    debouncedFetchSummary()
   }
 
   function handleBillUpdated(bill: RecurringBill) {
     const idx = bills.value.findIndex(b => b.id === bill.id)
     if (idx !== -1) bills.value[idx] = bill
     else bills.value.push(bill)
+    debouncedFetchSummary()
   }
 
   function handleBillDeleted(data: { id: string }) {
     bills.value = bills.value.filter(b => b.id !== data.id)
+    debouncedFetchSummary()
   }
 
-  function handleBillBooked(_data: { bill_id: string; expense_id: string }) {
-    // Mark bill as booked in summary
-    if (summary.value) {
-      const pending = summary.value.pending_bills.find(b => b.id === _data.bill_id)
-      if (pending) pending.is_booked_this_month = true
-    }
+  function handleBillBooked(data: { bill_id: string; expense_id: string; booked_month?: string }) {
+    // Nur markieren, wenn die Buchung den angezeigten Monat betrifft (Nachbuchung, PD-F4)
+    if (!summary.value) return
+    if (data.booked_month && data.booked_month !== summary.value.month) return
+    const pending = summary.value.pending_bills.find(b => b.id === data.bill_id)
+    if (pending) pending.is_booked_this_month = true
   }
 
   return {
@@ -233,6 +264,7 @@ export const useFinanceStore = defineStore('finance', () => {
     bookBill,
     // Socket handlers
     handleBudgetUpdated,
+    handleBudgetDeleted,
     handleBillCreated,
     handleBillUpdated,
     handleBillDeleted,

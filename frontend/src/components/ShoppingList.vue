@@ -8,6 +8,7 @@ import { useAsyncAction } from '../composables/useAsyncAction'
 import { useI18n } from 'vue-i18n'
 import { PhX, PhShoppingCart, PhCaretDown, PhPlus, PhDotsThreeVertical } from '@phosphor-icons/vue'
 import type { ShoppingItem } from '../types'
+import type { ShoppingItemEdit } from '../utils/shoppingEdit'
 import BaseSkeleton from './ui/BaseSkeleton.vue'
 import BaseAvatar from './ui/BaseAvatar.vue'
 import BaseEmptyState from './ui/BaseEmptyState.vue'
@@ -162,6 +163,19 @@ const availableCategories = computed(() => {
   return [...cats].sort()
 })
 
+// ── Hinweis „steht schon auf der Liste“ (PD-S1) ──
+// Nur ein Hinweis — doppelt hinzufügen bleibt möglich (andere Menge, anderes Geschäft).
+const duplicateHint = computed(() => {
+  const name = newItemName.value.trim()
+  if (name.length < 2) return null
+  const dupes = shoppingStore.findOpenDuplicates(name)
+  if (dupes.length === 0) return null
+  const onActive = dupes.find(i => i.list_id === shoppingStore.activeListId)
+  if (onActive) return t('shopping.alreadyOnList', { name: onActive.name })
+  const listName = shoppingStore.lists.find(l => l.id === dupes[0].list_id)?.name ?? ''
+  return t('shopping.alreadyOnOtherList', { name: dupes[0].name, list: listName })
+})
+
 // ── Actions ──
 async function handleAddItem() {
   const name = newItemName.value.trim()
@@ -236,9 +250,15 @@ function handleItemTap(item: ShoppingItem) {
   showEditSheet.value = true
 }
 
-async function handleEditSave(data: { name: string; quantity: string | null; store: string | null; category: string | null }) {
+async function handleEditSave(data: Partial<ShoppingItemEdit>) {
   if (!editItem.value) return
   const itemId = editItem.value.id
+  // Nichts geändert → kein Request (sonst würde ein alter Stand zurückgeschrieben)
+  if (Object.keys(data).length === 0) {
+    showEditSheet.value = false
+    editItem.value = null
+    return
+  }
   const ok = await run(() => shoppingStore.updateItem(itemId, data), {
     key: 'editSave',
     error: t('shopping.toggleError'),
@@ -333,6 +353,7 @@ async function confirmDissolve() {
         <PhPlus :size="20" weight="bold" />
       </button>
     </form>
+    <p v-if="duplicateHint" class="quick-add__hint" role="status">{{ duplicateHint }}</p>
 
     <!-- Store-Chips -->
     <div v-if="storeChips.length > 1" class="store-chips">
@@ -565,6 +586,12 @@ async function confirmDissolve() {
   background: var(--card);
   color: var(--ink);
   transition: border-color var(--transition-fast);
+}
+
+.quick-add__hint {
+  margin: calc(-1 * var(--space-1)) 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-warning-strong);
 }
 
 .quick-add__input::placeholder {

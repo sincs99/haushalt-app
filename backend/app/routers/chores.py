@@ -8,14 +8,16 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import Chore, ChoreAssignment, Household, HouseholdMember
 from app.services.chore_scheduler import (
-    materialize_due_assignments,
+    materialize_and_emit,
     next_due_dates,
     today_in_tz,
 )
 from app.services.household_checks import assert_users_in_household
+from app.services.locking import lock_row
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -40,7 +42,10 @@ class ChoreCreate(BaseModel):
         return v
 
 
-class ChoreUpdate(BaseModel):
+class ChoreUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Chore → 422 (app/core/patch_schema.py)
+    __orm_model__ = Chore
+
     title: str | None = Field(None, min_length=1, max_length=100)
     description: str | None = Field(None, max_length=500)
     recurrence: str | None = None
@@ -267,7 +272,8 @@ def update_chore(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    chore = db.get(Chore, chore_id)
+    # Sperre: Materialisierung (FOR UPDATE auf Chores) und Änderung laufen nacheinander
+    chore = lock_row(db, Chore, chore_id)
     if chore is None or chore.household_id != household_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -291,31 +297,46 @@ def update_chore(
         key in update_data and update_data[key] != getattr(chore, key)
         for key in ("recurrence", "weekday", "day_of_month")
     )
+    pausing = update_data.get("active") is False and chore.active
+    reactivating = update_data.get("active") is True and not chore.active
+
+    household = db.get(Household, household_id)
+    today = today_in_tz(household.timezone)
+    deleted_ids: list[uuid.UUID] = []
+
+    new_recurrence = update_data.get("recurrence", chore.recurrence)
+    new_weekday = update_data.get("weekday", chore.weekday)
+    new_day_of_month = update_data.get("day_of_month", chore.day_of_month)
 
     if schedule_changed:
-        new_recurrence = update_data.get("recurrence", chore.recurrence)
-        new_weekday = update_data.get("weekday", chore.weekday)
-        new_day_of_month = update_data.get("day_of_month", chore.day_of_month)
-
         _validate_recurrence_fields(new_recurrence, new_weekday, new_day_of_month)
 
-        household = db.get(Household, household_id)
-        today = today_in_tz(household.timezone)
-
-        # anchor_date neu berechnen
+    if schedule_changed or reactivating:
+        # anchor_date neu: nächster Termin ab heute. Bei Reaktivierung kein Nachholen
+        # der Pause (PD-C1) — sonst entstünden sofort überfällige Termine.
         update_data["anchor_date"] = _compute_anchor_date(
             new_recurrence, new_weekday, new_day_of_month, today
         )
 
-        # Zukünftige, unerledigte Assignments löschen und ihre Rotations-Plätze
+    if schedule_changed or pausing:
+        # Künftige, unerledigte Assignments löschen und ihre Rotations-Plätze
         # zurückgeben — sonst überspringt die Neuplanung so viele Personen,
-        # wie Assignments gelöscht wurden
-        deleted = db.query(ChoreAssignment).filter(
-            ChoreAssignment.chore_id == chore.id,
-            ChoreAssignment.due_date > today,
-            ChoreAssignment.completed_at == None,  # noqa: E711
-        ).delete()
-        chore.next_rotation_index = max(0, chore.next_rotation_index - deleted)
+        # wie Assignments gelöscht wurden. Pausieren (PD-C1) löscht auch den
+        # heutigen offenen Termin: ein pausiertes Ämtli meldet und zählt nicht mehr.
+        delete_from = today if pausing else today + timedelta(days=1)
+        deleted_ids = [
+            row.id
+            for row in db.query(ChoreAssignment.id).filter(
+                ChoreAssignment.chore_id == chore.id,
+                ChoreAssignment.due_date >= delete_from,
+                ChoreAssignment.completed_at.is_(None),
+            )
+        ]
+        if deleted_ids:
+            db.query(ChoreAssignment).filter(ChoreAssignment.id.in_(deleted_ids)).delete(
+                synchronize_session=False
+            )
+            chore.next_rotation_index = max(0, chore.next_rotation_index - len(deleted_ids))
 
     # Felder setzen
     for key, value in update_data.items():
@@ -329,6 +350,21 @@ def update_chore(
         "chore_updated",
         ChoreResponse.model_validate(chore).model_dump(mode="json"),
     )
+    if deleted_ids:
+        # Andere Clients entfernen die Termine (sonst Phantom-Einträge → 404 beim Abhaken)
+        emit_to_household_sync(
+            household_id,
+            "chore_assignments_deleted",
+            {
+                "chore_id": str(chore.id),
+                "household_id": str(household_id),
+                "ids": [str(i) for i in deleted_ids],
+            },
+        )
+    if chore.active and (schedule_changed or reactivating):
+        # Neue Termine sofort anlegen und melden (statt erst beim nächsten Laden)
+        materialize_and_emit(db, household)
+        db.refresh(chore)
     return chore
 
 
@@ -384,19 +420,10 @@ def list_assignments(
             ),
         )
 
-    # 1. Materialisierung triggern
-    new_assignments = materialize_due_assignments(db, household)
+    # 1. Materialisierung triggern (+ chore_assignment_created für neue Termine)
+    materialize_and_emit(db, household)
 
-    # 2. Socket-Events für neu erzeugte Assignments
-    for a in new_assignments:
-        db.refresh(a)
-        emit_to_household_sync(
-            household_id,
-            "chore_assignment_created",
-            ChoreAssignmentResponse.model_validate(a).model_dump(mode="json"),
-        )
-
-    # 3. Assignments im Fenster zurückgeben
+    # 2. Assignments im Fenster zurückgeben
     return (
         db.query(ChoreAssignment)
         .filter(

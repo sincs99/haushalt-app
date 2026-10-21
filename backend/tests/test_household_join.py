@@ -11,7 +11,7 @@ from app.models import Household, HouseholdMember
 # ---------------------------------------------------------------------------
 # 1. Join mit gültigem Code → 200, HouseholdMember existiert danach
 # ---------------------------------------------------------------------------
-def test_join_with_valid_code(client, db, household_a, user_b, token_b):
+def test_join_with_valid_code(client, db, household_a, user_a, user_b, token_b):
     """User B tritt Household A bei → 200, Membership existiert."""
     resp = client.post(
         "/api/households/join",
@@ -108,7 +108,7 @@ def test_after_join_can_read_new_household_shopping(
 # 6. Nach Join: Drittes Household weiterhin gesperrt → 403
 # ---------------------------------------------------------------------------
 def test_after_join_still_no_access_to_third_household(
-    client, db, household_a, user_b, token_b
+    client, db, household_a, user_a, user_b, token_b
 ):
     """Nach Beitritt zu A hat User B keinen Zugriff auf ein drittes Household."""
     # Drittes Household anlegen
@@ -183,7 +183,7 @@ def test_two_households_cannot_have_same_invite_code(db):
 # ---------------------------------------------------------------------------
 # 10. Join mit Kleinbuchstaben + Whitespace → 200 (Normalisierung)
 # ---------------------------------------------------------------------------
-def test_join_with_lowercase_and_whitespace(client, db, household_a, user_b, token_b):
+def test_join_with_lowercase_and_whitespace(client, db, household_a, user_a, user_b, token_b):
     """Join mit Kleinbuchstaben und Whitespace → 200 (Normalisierung)."""
     # household_a.invite_code ist "ALPHA123"
     messy_code = "  alpha123  "
@@ -209,7 +209,7 @@ def _auth(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_join_with_not_yet_expired_code(client, db, household_a, token_b):
+def test_join_with_not_yet_expired_code(client, db, household_a, user_a, token_b):
     household_a.invite_code_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
     db.commit()
     resp = client.post(
@@ -218,7 +218,7 @@ def test_join_with_not_yet_expired_code(client, db, household_a, token_b):
     assert resp.status_code == 200
 
 
-def test_join_with_expired_code_is_rejected(client, db, household_a, user_b, token_b):
+def test_join_with_expired_code_is_rejected(client, db, household_a, user_a, user_b, token_b):
     household_a.invite_code_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
     db.commit()
     resp = client.post(
@@ -232,7 +232,7 @@ def test_join_with_expired_code_is_rejected(client, db, household_a, user_b, tok
     )
 
 
-def test_register_with_expired_code_is_rejected(client, db, household_a):
+def test_register_with_expired_code_is_rejected(client, db, household_a, user_a):
     household_a.invite_code_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
     db.commit()
     resp = client.post(

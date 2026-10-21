@@ -146,7 +146,7 @@ def test_last_member_leaving_deletes_household_files(client, db, tmp_path, house
     orphan.write_bytes(b"x")
     other = storage.save(str(household_b.id), "b.pdf", b"%PDF-1", ".pdf")
 
-    with patch("app.routers.households._storage", storage):
+    with patch("app.services.membership._storage", storage):
         resp = client.post(f"/api/households/{household_a.id}/leave", headers=_auth(token_a))
     assert resp.status_code == 204
 
@@ -158,7 +158,7 @@ def test_last_member_leaving_deletes_household_files(client, db, tmp_path, house
 def test_leaving_with_remaining_members_keeps_files(client, db, tmp_path, household_a, token_a, user_a, user_a2):
     storage = LocalStorageService(str(tmp_path))
     own = storage.save(str(household_a.id), "a.pdf", b"%PDF-1", ".pdf")
-    with patch("app.routers.households._storage", storage):
+    with patch("app.services.membership._storage", storage):
         resp = client.post(f"/api/households/{household_a.id}/leave", headers=_auth(token_a))
     assert resp.status_code == 204
     assert (tmp_path / own).exists()
@@ -174,3 +174,19 @@ def test_storage_refuses_to_delete_upload_root(tmp_path):
         else:
             raise AssertionError(f"delete_household({bad!r}) did not raise")
     assert tmp_path.exists()
+
+
+def test_cleanup_deletes_upload_dirs_of_deleted_households(db, tmp_path, household_a):
+    """Periodischer Cleanup: Ordner ohne Haushalt weg, bestehende und Nicht-UUID-Ordner bleiben."""
+    from app.services.file_cleanup import delete_orphan_household_dirs
+
+    storage = LocalStorageService(str(tmp_path))
+    kept = storage.save(str(household_a.id), "a.pdf", b"%PDF-1", ".pdf")
+    gone_id = str(uuid.uuid4())
+    storage.save(gone_id, "b.pdf", b"%PDF-1", ".pdf")
+    (tmp_path / "not-a-household").mkdir()
+
+    assert delete_orphan_household_dirs(db, storage) == 1
+    assert not (tmp_path / gone_id).exists()
+    assert (tmp_path / kept).exists()
+    assert (tmp_path / "not-a-household").exists()

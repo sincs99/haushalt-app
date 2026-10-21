@@ -58,3 +58,5 @@ def downgrade() -> None:
     op.drop_table('users')
     op.drop_table('households')
     # ### end Alembic commands ###
+    # Enum-Typ bleibt sonst stehen und blockiert ein erneutes upgrade (CASA-56)
+    sa.Enum(name='member_role').drop(op.get_bind(), checkfirst=True)

@@ -11,14 +11,18 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.core.config import settings
+from app.core.db_errors import install_db_error_handlers
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.log_redaction import install_tag_token_redaction
 from app.core.rate_limit import limiter
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import SessionLocal
 from app.routers import (
+    account,
+    admin,
     ai,
     auth,
+    billing,
     budgets,
     calendars,
     chores,
@@ -29,6 +33,7 @@ from app.routers import (
     files,
     food,
     households,
+    meta,
     notes,
     pets,
     plants,
@@ -38,18 +43,41 @@ from app.routers import (
     settlements,
     shopping,
     tags,
-    tasks,
     todos,
     widget,
 )
 from app.services.file_cleanup import cleanup_loop
 from app.services.push_service import scheduler_loop
-from app.socket_manager import set_event_loop, socket_app
+from app.socket_manager import (
+    set_event_loop,
+    socket_app,
+    start_control_listener,
+    stop_control_listener,
+)
 
 logger = logging.getLogger("uvicorn.error")
 
 # Tag-Tokens (NFC/QR) stehen im URL-Pfad → in Access-Logs schwärzen
 install_tag_token_redaction()
+
+
+def init_sentry() -> bool:
+    """Fehler-Monitoring, nur mit SENTRY_DSN. Keine Personendaten (send_default_pii=False)."""
+    dsn = settings.sentry_dsn.strip()
+    if not dsn:
+        return False
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=dsn,
+        environment=settings.environment,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+        send_default_pii=False,
+    )
+    return True
+
+
+_sentry_active = init_sentry()
 
 _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 
@@ -117,14 +145,18 @@ async def lifespan(app: FastAPI):
     token_ttl = f"{settings.access_token_expire_minutes}min"
 
     logger.info(
-        "Casa starting — env=%s, db=%s, cors=%s, token_ttl=%s",
+        "Casa starting — env=%s, db=%s, cors=%s, token_ttl=%s, rate_limit=%s, socket_queue=%s, sentry=%s",
         settings.environment,
         db_display,
         cors_display,
         token_ttl,
+        settings.rate_limit_storage_uri.split("://", 1)[0],
+        "redis" if settings.socketio_message_queue.strip() else "in-process",
+        "on" if _sentry_active else "off",
     )
 
     set_event_loop(asyncio.get_running_loop())
+    start_control_listener()
 
     push_task = None
     if settings.push_enabled:
@@ -136,6 +168,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    stop_control_listener()
     cleanup_task.cancel()
     if push_task:
         push_task.cancel()
@@ -148,6 +181,8 @@ app = FastAPI(title="Haushalt App API", lifespan=lifespan, redirect_slashes=Fals
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _custom_rate_limit_handler)
+# IntegrityError/StaleDataError/Deadlock → 409 CONFLICT_RETRY statt 500 (Safety-Net)
+install_db_error_handlers(app)
 
 # API-Zugriffe laufen über den Authorization-Header; nur der Refresh-Token des
 # Web-Clients ist ein HttpOnly-Cookie (Path=/api/auth), das mit withCredentials
@@ -167,6 +202,11 @@ app.add_middleware(
 app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth.router)
+app.include_router(account.router)
+app.include_router(meta.router)
+app.include_router(admin.router)
+app.include_router(billing.router)
+app.include_router(billing.webhook_router)
 app.include_router(shopping.list_router)
 app.include_router(shopping.router)
 app.include_router(todos.router)
@@ -176,7 +216,6 @@ app.include_router(expenses.router)
 app.include_router(settlements.router)
 app.include_router(chores.router)
 app.include_router(dashboard.router)
-app.include_router(tasks.router)
 app.include_router(budgets.router)
 app.include_router(recurring_bills.router)
 app.include_router(events.router)

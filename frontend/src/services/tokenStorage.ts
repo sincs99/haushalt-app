@@ -9,10 +9,11 @@
  *   Start, ob sich ein /refresh-Versuch lohnt (kein 401-Rauschen für Besucher der
  *   Login-Seite), und synchronisiert Login/Logout zwischen Tabs (storage-Event).
  *
- * Native Builds (Capacitor) haben keinen Browser-Cookie-Jar im selben Sinn. Dort
- * müsste der Refresh-Token per Body ausgetauscht werden (ohne den Header
- * `X-Requested-With: casa`; das Backend unterstützt diesen Pfad weiterhin) und in
- * SecureStorage abgelegt werden — nicht Teil des Web-Builds.
+ * Native Builds (Capacitor) haben keinen Browser-Cookie-Jar im selben Sinn. Dort wird
+ * der Refresh-Token per Body ausgetauscht (ohne den Header `X-Requested-With: casa`,
+ * siehe api/client.ts) und über `nativeRefreshToken` unten abgelegt: bevorzugt in einem
+ * SecureStorage-Plugin (Keychain/Keystore), sonst in Capacitor Preferences, zuletzt im
+ * localStorage der WebView (App-privat, aber unverschlüsselt — nur Entwicklung).
  */
 
 /** localStorage-Schlüssel des Sitzungs-Markers ("1" = Cookie-Sitzung vermutlich vorhanden). */
@@ -50,4 +51,58 @@ export function takeLegacyRefreshToken(): string | null {
   } catch {
     return null
   }
+}
+
+// ---------------------------------------------------------------------------
+// Native Builds: Refresh-Token-Ablage (docs/mobile-apps.md)
+// ---------------------------------------------------------------------------
+
+const NATIVE_REFRESH_KEY = 'haushalt_native_refresh'
+
+interface KeyValuePlugin {
+  get(options: { key: string }): Promise<{ value: string | null }>
+  set(options: { key: string; value: string }): Promise<void>
+  remove(options: { key: string }): Promise<void>
+}
+
+/** SecureStorage (capacitor-secure-storage-plugin) vor Preferences (@capacitor/preferences). */
+function nativePlugin(): KeyValuePlugin | null {
+  if (typeof window === 'undefined') return null
+  const plugins = (window as unknown as { Capacitor?: { Plugins?: Record<string, unknown> } }).Capacitor?.Plugins
+  const candidate = (plugins?.SecureStorage ?? plugins?.Preferences) as KeyValuePlugin | undefined
+  return candidate && typeof candidate.get === 'function' ? candidate : null
+}
+
+export const nativeRefreshToken = {
+  async get(): Promise<string | null> {
+    const plugin = nativePlugin()
+    if (plugin) {
+      try {
+        return (await plugin.get({ key: NATIVE_REFRESH_KEY })).value || null
+      } catch {
+        return null
+      }
+    }
+    return localStorage.getItem(NATIVE_REFRESH_KEY)
+  },
+  async set(token: string): Promise<void> {
+    const plugin = nativePlugin()
+    if (plugin) {
+      await plugin.set({ key: NATIVE_REFRESH_KEY, value: token })
+      return
+    }
+    localStorage.setItem(NATIVE_REFRESH_KEY, token)
+  },
+  async clear(): Promise<void> {
+    const plugin = nativePlugin()
+    if (plugin) {
+      try {
+        await plugin.remove({ key: NATIVE_REFRESH_KEY })
+      } catch {
+        // Best-effort
+      }
+      return
+    }
+    localStorage.removeItem(NATIVE_REFRESH_KEY)
+  },
 }

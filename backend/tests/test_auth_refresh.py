@@ -361,6 +361,23 @@ def test_secret_rotation_rejects_old_refresh_and_allows_new_login(client, user_a
         assert _refresh(client, new_pair["refresh_token"]).status_code == 200
 
 
+def test_disabled_account_cannot_use_grace_successor(client, user_a, db):
+    old_refresh = _login(client)["refresh_token"]
+    assert _refresh(client, old_refresh).status_code == 200
+    user_a.is_active = False
+    db.commit()
+    response = _refresh(client, old_refresh)
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == ErrorCode.ACCOUNT_DISABLED
+
+
+def test_repeated_grace_retries_keep_one_active_chain(client, user_a, db):
+    old_refresh = _login(client)["refresh_token"]
+    for _ in range(3):
+        assert _refresh(client, old_refresh).status_code == 200
+    assert db.query(RefreshToken).filter_by(user_id=user_a.id, revoked_at=None).count() == 1
+
+
 def test_legacy_unkeyed_refresh_hash_has_no_fallback(client, user_a, db):
     import hashlib
 

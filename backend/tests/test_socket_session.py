@@ -316,7 +316,8 @@ def test_disconnect_user_sync_runs_on_event_loop():
     assert called == [(user, "logout")]
 
 
-def test_eviction_fences_delayed_positive_membership_result_and_allows_fresh_join(fake_sio):
+@pytest.mark.parametrize("remote_control", [False, True])
+def test_eviction_fences_delayed_positive_membership_result_and_allows_fresh_join(fake_sio, remote_control):
     user, household = uuid.uuid4(), uuid.uuid4()
 
     async def scenario():
@@ -332,7 +333,13 @@ def test_eviction_fences_delayed_positive_membership_result_and_allows_fresh_joi
             with patch.object(socket_manager, "run_in_threadpool", stale_positive):
                 pending = asyncio.create_task(socket_manager.join_household(sid, {"household_id": str(household)}))
                 await asyncio.wait_for(queried.wait(), 2)
-                await socket_manager.emit_to_household(household, "household_member_removed", {}, evict_user_id=user)
+                if remote_control:
+                    await socket_manager.handle_control_message({
+                        "method": "evict_user", "household_id": str(household),
+                        "user_id": str(user), "host": "other-worker",
+                    })
+                else:
+                    await socket_manager.emit_to_household(household, "household_member_removed", {}, evict_user_id=user)
                 resume.set()
                 await asyncio.wait_for(pending, 2)
             assert f"household_{household}" not in sio.manager.get_rooms(sid, "/")
@@ -345,6 +352,21 @@ def test_eviction_fences_delayed_positive_membership_result_and_allows_fresh_joi
             await _cleanup(sid)
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("inactive,deleted", [(True, False), (False, True), (False, False)])
+def test_socket_user_lookup_rejects_disabled_or_deleted_accounts(inactive, deleted):
+    from types import SimpleNamespace
+
+    user_id = uuid.uuid4()
+    user = SimpleNamespace(
+        id=user_id, is_active=not inactive,
+        deleted_at=datetime.now(timezone.utc) if deleted else None,
+    )
+    with patch.object(socket_manager, "SessionLocal") as factory:
+        factory.return_value.__enter__.return_value.get.return_value = user
+        result = socket_manager._load_user_id(user_id)
+    assert result == (None if inactive or deleted else str(user_id))
 
 
 def test_eviction_waits_for_pending_room_entry_before_completing(fake_sio):
@@ -455,3 +477,55 @@ def test_sync_membership_removal_waits_for_eviction_completion():
             await asyncio.wait_for(worker, 2)
 
     asyncio.run(scenario())
+
+# ---------------------------------------------------------------------------
+# Mitgliedschaft neu prüfen (CASA-48)
+# ---------------------------------------------------------------------------
+
+
+def _not_member_errors(fake, sid):
+    return [c[2] for c in fake.calls if c[0] == "emit" and c[1] == "error" and c[3] == sid]
+
+
+def test_join_household_rechecks_membership_after_entering_room(fake_sio):
+    """Entfernung zwischen Prüfung und enter_room: Die Verbindung verlässt den Raum wieder."""
+    user, household = uuid.uuid4(), uuid.uuid4()
+
+    async def scenario():
+        sid = await _open(user, _token(user, 60))
+        with patch("app.socket_manager._is_household_member", side_effect=[True, False]):
+            await socket_manager.join_household(sid, {"household_id": str(household)})
+        rooms = sio.manager.get_rooms(sid, "/")
+        errors = _not_member_errors(fake_sio, sid)
+        await _cleanup(sid)
+        return rooms, errors
+
+    rooms, errors = asyncio.run(scenario())
+    assert f"household_{household}" not in rooms
+    assert errors == [
+        {"message": "Not a member of this household", "code": "NOT_HOUSEHOLD_MEMBER", "household_id": str(household)}
+    ]
+
+
+@pytest.mark.parametrize("still_member", [True, False])
+def test_reauth_rechecks_household_rooms(fake_sio, still_member):
+    user, household = uuid.uuid4(), uuid.uuid4()
+
+    async def scenario():
+        sid = await _open(user, _token(user, 60))
+        with patch("app.socket_manager._is_household_member", return_value=True):
+            await socket_manager.join_household(sid, {"household_id": str(household)})
+        assert f"household_{household}" in sio.manager.get_rooms(sid, "/")
+        with patch("app.socket_manager._is_household_member", return_value=still_member):
+            ack = await socket_manager.reauth(sid, {"token": _token(user, 3600)})
+        rooms = sio.manager.get_rooms(sid, "/")
+        errors = _not_member_errors(fake_sio, sid)
+        await _cleanup(sid)
+        return ack, rooms, errors
+
+    ack, rooms, errors = asyncio.run(scenario())
+    assert ack == {"ok": True}
+    assert (f"household_{household}" in rooms) is still_member
+    assert len(errors) == (0 if still_member else 1)
+    # Persönlicher Raum bleibt in jedem Fall
+    assert f"user_{user}" in rooms

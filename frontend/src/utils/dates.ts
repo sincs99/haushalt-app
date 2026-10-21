@@ -104,6 +104,24 @@ export function eventDate(iso: string): string {
   return iso.substring(0, 10)
 }
 
+/** Anzeige eines Termins in der Dashboard-Karte "Heute" (PD-K3) */
+export type TodayEventLabel =
+  | { kind: 'allDay' }
+  | { kind: 'time'; time: string }
+  | { kind: 'since'; date: string; time: string }
+
+/**
+ * Wie ein heutiger Termin im Dashboard beschriftet wird. Mehrtägige Termine, die
+ * vor `today` (Haushaltsdatum) begonnen haben, zeigen nicht die Startzeit von
+ * gestern, sondern "läuft seit …" — ganztägige bleiben "ganztägig" (wie im Kalender).
+ */
+export function todayEventLabel(ev: { starts_at: string; all_day: boolean }, today: string): TodayEventLabel {
+  if (ev.all_day) return { kind: 'allDay' }
+  const startDate = eventDate(ev.starts_at)
+  if (startDate < today) return { kind: 'since', date: startDate, time: eventTime(ev.starts_at) }
+  return { kind: 'time', time: eventTime(ev.starts_at) }
+}
+
 /**
  * Lokales Kalenderdatum als YYYY-MM-DD. Nicht `toISOString()` verwenden:
  * das liefert UTC, in der Schweiz zwischen 00:00 und 01:00/02:00 also gestern.
@@ -113,4 +131,41 @@ export function localDateString(date: Date = new Date()): string {
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')
   return `${y}-${m}-${d}`
+}
+
+/**
+ * Heutiges Datum (YYYY-MM-DD) in der Zeitzone des Haushalts (`timezone` aus
+ * GET /api/auth/me). Fälligkeiten von Ämtli und Aufgaben gelten im Haushalt,
+ * nicht auf dem Gerät — sonst ist unterwegs (andere Zeitzone) „heute“ falsch.
+ * Ohne bekannte Zeitzone: Gerätedatum.
+ */
+export function householdDateString(timeZone: string | null | undefined, now: Date = new Date()): string {
+  if (!timeZone) return localDateString(now)
+  try {
+    // en-CA formatiert als YYYY-MM-DD
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(now)
+  } catch {
+    return localDateString(now)
+  }
+}
+
+/** Kalenderdatum eines Todo-Fälligkeitstags: die API liefert 00:00 UTC, gemeint ist der Tag */
+export function todoDueDay(dueDate: string | null | undefined): string | null {
+  return dueDate ? dueDate.substring(0, 10) : null
+}
+
+/** Erster des Monats ("YYYY-MM-01") zu einem Datum "YYYY-MM-DD" */
+export function monthStart(dateStr: string): string {
+  return `${dateStr.substring(0, 7)}-01`
+}
+
+/** Monat ("YYYY-MM-01") um `delta` Monate verschoben */
+export function addMonths(monthStr: string, delta: number): string {
+  const y = Number(monthStr.substring(0, 4))
+  const m = Number(monthStr.substring(5, 7)) - 1 + delta
+  const year = y + Math.floor(m / 12)
+  const month = (((m % 12) + 12) % 12) + 1
+  return `${year}-${String(month).padStart(2, '0')}-01`
 }

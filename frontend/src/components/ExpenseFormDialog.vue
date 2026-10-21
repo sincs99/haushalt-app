@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useExpensesStore } from '../stores/expenses'
+import { useExpensesStore, apiErrorCode } from '../stores/expenses'
 import { useAuthStore } from '../stores/auth'
 import { useToast, errorText } from '../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { formatRappen, parseAmountToRappen } from '../utils/money'
-import { localDateString } from '../utils/dates'
+import { householdDateString } from '../utils/dates'
+import { diffExpense } from '../utils/expenseDiff'
 import type { Expense, SplitType, ExpenseShare } from '../types'
 import BaseButton from './ui/BaseButton.vue'
 import BaseInput from './ui/BaseInput.vue'
@@ -47,7 +48,11 @@ const selectedCategory = ref<string | null>(null)
 const participantIds = ref<string[]>([])
 const customShares = ref<Record<string, string>>({})
 const serverError = ref('')
+/** Hinweis nach 409: Ausgabe wurde inzwischen geändert, aktuelle Werte geladen */
+const conflictNotice = ref('')
 const submitting = ref(false)
+/** Stand, auf dem der Dialog basiert (Diff + If-Match); nach einem Konflikt der Server-Stand */
+const baseExpense = ref<Expense | null>(null)
 
 // Kategorie-Labels
 const categories = computed(() =>
@@ -58,6 +63,7 @@ const categories = computed(() =>
 )
 
 const isEditMode = computed(() => !!props.expense)
+const retroWarning = computed(() => isEditMode.value && !!baseExpense.value?.before_last_settlement)
 const dialogTitle = computed(() => isEditMode.value ? t('expenses.editExpense') : t('expenses.newExpense'))
 
 // Betrag parsen
@@ -117,32 +123,40 @@ watch(amountText, () => {
   if (amountError.value) validateAmount()
 })
 
+// Felder aus einer bestehenden Ausgabe füllen
+function fillFromExpense(expense: Expense) {
+  baseExpense.value = expense
+  description.value = expense.description
+  amountText.value = (expense.amount_rappen / 100).toFixed(2)
+  expenseDate.value = expense.expense_date
+  paidByUserId.value = expense.paid_by_user_id ?? ''
+  selectedCategory.value = expense.category ?? null
+  // Gespeicherten split_type aus dem Backend vorauswählen
+  splitType.value = expense.split_type
+  customShares.value = {}
+  for (const share of expense.shares) {
+    customShares.value[share.user_id] = (share.amount_rappen / 100).toFixed(2)
+  }
+  participantIds.value = expense.shares.map(s => s.user_id)
+}
+
 // Formular initialisieren/zurücksetzen
 function initForm() {
   serverError.value = ''
+  conflictNotice.value = ''
   amountError.value = ''
   submitting.value = false
 
   if (props.expense) {
     // Edit-Modus: Felder vorbefüllen
-    description.value = props.expense.description
-    amountText.value = (props.expense.amount_rappen / 100).toFixed(2)
-    expenseDate.value = props.expense.expense_date
-    paidByUserId.value = props.expense.paid_by_user_id ?? ''
-    selectedCategory.value = props.expense.category ?? null
-    // Gespeicherten split_type aus dem Backend vorauswählen
-    splitType.value = props.expense.split_type
-    customShares.value = {}
-    for (const share of props.expense.shares) {
-      customShares.value[share.user_id] = (share.amount_rappen / 100).toFixed(2)
-    }
-    participantIds.value = props.expense.shares.map(s => s.user_id)
+    fillFromExpense(props.expense)
   } else {
+    baseExpense.value = null
     // Neuer Eintrag: Defaults
     description.value = ''
     amountText.value = ''
-    // Lokales Datum: toISOString() wäre nachts noch „gestern“ (UTC)
-    expenseDate.value = localDateString()
+    // Haushaltsdatum (Zeitzone aus /me), sonst lokales Gerätedatum (CASA-39)
+    expenseDate.value = householdDateString(authStore.currentHousehold?.timezone)
     paidByUserId.value = authStore.user?.id ?? ''
     splitType.value = 'even'
     selectedCategory.value = null
@@ -179,9 +193,20 @@ function toggleParticipant(memberId: string) {
   }
 }
 
-function resolveUserName(userId: string): string {
-  const member = expensesStore.members.find(m => m.id === userId)
+function resolveUserName(userId: string | null | undefined): string {
+  const member = userId ? expensesStore.members.find(m => m.id === userId) : undefined
   return member?.display_name ?? t('common.formerMember')
+}
+
+function collectCustomShares(): ExpenseShare[] {
+  const shares: ExpenseShare[] = []
+  for (const memberId of Object.keys(customShares.value)) {
+    const parsed = parseAmountToRappen(customShares.value[memberId])
+    if (parsed !== null && parsed > 0) {
+      shares.push({ user_id: memberId, amount_rappen: parsed })
+    }
+  }
+  return shares
 }
 
 async function handleSubmit() {
@@ -206,40 +231,28 @@ async function handleSubmit() {
   submitting.value = true
 
   try {
-    if (isEditMode.value && props.expense) {
-      // Edit
-      const shares: ExpenseShare[] = []
-      if (splitType.value === 'custom') {
-        for (const memberId of Object.keys(customShares.value)) {
-          const parsed = parseAmountToRappen(customShares.value[memberId])
-          if (parsed !== null && parsed > 0) {
-            shares.push({ user_id: memberId, amount_rappen: parsed })
-          }
-        }
-      }
-
-      await expensesStore.editExpense(props.expense.id, {
-        description: description.value.trim(),
+    if (isEditMode.value && baseExpense.value) {
+      // Edit: nur geänderte Felder senden, mit Version (If-Match) — ein älterer Dialog
+      // überschreibt so keine Korrektur eines anderen Mitglieds (CASA-09, PD-F7)
+      const base = baseExpense.value
+      const payload = diffExpense(base, {
+        description: description.value,
         amount_rappen: parsedAmountRappen.value,
         paid_by_user_id: paidByUserId.value,
         expense_date: expenseDate.value,
+        category: selectedCategory.value,
         split_type: splitType.value,
-        category: selectedCategory.value || undefined,
-        ...(splitType.value === 'even'
-          ? { participant_ids: participantIds.value }
-          : { shares }),
+        participant_ids: participantIds.value,
+        shares: splitType.value === 'custom' ? collectCustomShares() : [],
       })
+      if (Object.keys(payload).length === 0) {
+        close()
+        return
+      }
+      await expensesStore.editExpense(base.id, payload, base.version)
     } else {
       // Create
-      const shares: ExpenseShare[] = []
-      if (splitType.value === 'custom') {
-        for (const memberId of Object.keys(customShares.value)) {
-          const parsed = parseAmountToRappen(customShares.value[memberId])
-          if (parsed !== null && parsed > 0) {
-            shares.push({ user_id: memberId, amount_rappen: parsed })
-          }
-        }
-      }
+      const shares = splitType.value === 'custom' ? collectCustomShares() : []
 
       await expensesStore.addExpense({
         description: description.value.trim(),
@@ -257,8 +270,19 @@ async function handleSubmit() {
     // Neue Ausgabe liegt auf dem Handy oft unter dem Falz → kurze Bestätigung
     notifySuccess(t('expenses.saved'))
   } catch (e: any) {
-    // Übersetzter Fehlercode statt rohem (oft englischem) detail
-    serverError.value = errorText(t('expenses.submitError'), e)
+    const code = apiErrorCode(e)
+    if (code === 'EXPENSE_VERSION_CONFLICT') {
+      // Inzwischen geändert: aktuellen Stand übernehmen, Nutzer prüft und speichert erneut
+      const current = e.response.data.detail.current as Expense | undefined
+      const fresh = current ?? (await expensesStore.refreshExpense(baseExpense.value!.id).catch(() => undefined))
+      if (fresh) fillFromExpense(fresh)
+      conflictNotice.value = t('expenses.conflictReloaded', { name: resolveUserName(fresh?.updated_by_user_id) })
+    } else if (code === 'EXPENSE_DELETED') {
+      serverError.value = t('expenses.deletedMeanwhile')
+    } else {
+      // Übersetzter Fehlercode statt rohem (oft englischem) detail
+      serverError.value = errorText(t('expenses.submitError'), e)
+    }
   } finally {
     submitting.value = false
   }
@@ -268,6 +292,10 @@ async function handleSubmit() {
 <template>
   <BaseDialog :open="modelValue" :title="dialogTitle" @close="close">
     <form :id="formId" class="dialog-form" novalidate @submit.prevent="handleSubmit">
+      <!-- Bereits ausgeglichen: Änderungen verschieben Salden nachträglich (PD-F2) -->
+      <p v-if="retroWarning" class="retro-warning" role="note">{{ $t('expenses.retroWarning') }}</p>
+      <p v-if="conflictNotice" class="conflict-notice" role="alert">{{ conflictNotice }}</p>
+
       <!-- Beschreibung -->
       <BaseInput
         v-model="description"
@@ -394,6 +422,16 @@ async function handleSubmit() {
           </span>
         </div>
       </div>
+
+      <!-- Wer hat erfasst / zuletzt geändert (PD-F1) -->
+      <p v-if="isEditMode && baseExpense" class="expense-audit">
+        <span v-if="baseExpense.created_by_user_id">
+          {{ $t('expenses.createdBy', { name: resolveUserName(baseExpense.created_by_user_id) }) }}
+        </span>
+        <span v-if="baseExpense.updated_by_user_id">
+          {{ $t('expenses.updatedBy', { name: resolveUserName(baseExpense.updated_by_user_id) }) }}
+        </span>
+      </p>
 
       <!-- Server-Fehler -->
       <p v-if="serverError" class="server-error" role="alert">{{ serverError }}</p>
@@ -566,6 +604,26 @@ async function handleSubmit() {
   color: var(--color-danger);
   font-weight: var(--font-weight-medium);
   margin-left: var(--space-2);
+}
+
+/* Hinweise: nachträgliche Saldo-Änderung, inzwischen geändert */
+.retro-warning,
+.conflict-notice {
+  margin: 0;
+  padding: var(--space-3);
+  background: var(--color-warning-soft);
+  border-radius: var(--radius-sm);
+  color: var(--color-warning-strong);
+  font-size: var(--text-sm);
+}
+
+.expense-audit {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--sub);
 }
 
 /* Server-Fehler */

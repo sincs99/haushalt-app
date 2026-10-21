@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PhWallet, PhCat, PhPlant, PhForkKnife, PhNote, PhFolderOpen, PhGear, PhCaretRight, PhSparkle } from '@phosphor-icons/vue'
+import { PhWallet, PhCat, PhPlant, PhForkKnife, PhNote, PhFolderOpen, PhGear, PhCaretRight, PhSparkle, PhArrowClockwise } from '@phosphor-icons/vue'
 import { useI18n } from 'vue-i18n'
 import { useAiStore } from '../stores/ai'
 import { useBackClose } from '../composables/useBackClose'
 import ConnectionStatus from './ConnectionStatus.vue'
+import { usePwaUpdate } from '../composables/usePwaUpdate'
 
 const props = defineProps<{
   open: boolean
@@ -18,6 +19,7 @@ const emit = defineEmits<{
 const router = useRouter()
 const { t } = useI18n()
 const aiStore = useAiStore()
+const { updateAvailable, reloadForUpdate } = usePwaUpdate()
 const panelRef = ref<HTMLElement | null>(null)
 let returnFocusTo: HTMLElement | null = null
 let previousOverflow = ''
@@ -106,10 +108,15 @@ const baseEntries = [
 // KI-Assistent nur, wenn auf dem Server eingerichtet und im Haushalt eingeschaltet
 const assistantEntry = { label: 'nav.assistant', sub: 'moreSheet.assistantSub', icon: PhSparkle, action: () => navigate('/assistant'), disabled: false, highlight: false }
 
+// Neue App-Version bereit: bleibt oben stehen, bis neu geladen wird (CASA-41)
+const updateEntry = { label: 'pwa.updateEntry', sub: 'pwa.updateEntrySub', icon: PhArrowClockwise, action: () => reloadForUpdate(), disabled: false, highlight: true }
+
 const entries = computed(() => {
-  if (!aiStore.enabledForHousehold) return baseEntries
   const settingsIdx = baseEntries.length - 1
-  return [...baseEntries.slice(0, settingsIdx), assistantEntry, baseEntries[settingsIdx]]
+  const list = aiStore.enabledForHousehold
+    ? [...baseEntries.slice(0, settingsIdx), assistantEntry, baseEntries[settingsIdx]]
+    : baseEntries
+  return updateAvailable.value ? [updateEntry, ...list] : list
 })
 
 watch(() => props.open, (isOpen) => {

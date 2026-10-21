@@ -2,13 +2,15 @@ import uuid
 import zoneinfo
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
+from app.core.patch_schema import PatchModel
 from app.database import get_db
 from app.models import (
     FeedingLog,
@@ -20,7 +22,9 @@ from app.models import (
     PetCareTask,
     StoredFile,
 )
-from app.routers.files import file_in_use, file_in_use_error, remove_from_storage
+from app.routers.files import file_in_use, file_in_use_error, lock_files, remove_from_storage
+from app.services.care_schedule import apply_care_task_update
+from app.services.client_ids import commit_or_get_existing, get_existing_by_client_id
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -58,7 +62,10 @@ class PetCreate(BaseModel):
     health_entries: list[HealthEntrySchema] | None = Field(None, max_length=50)
 
 
-class PetUpdate(BaseModel):
+class PetUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Pet → 422 (app/core/patch_schema.py)
+    __orm_model__ = Pet
+
     name: str | None = Field(None, min_length=1, max_length=80)
     species: str | None = Field(None, max_length=30)
     breed: str | None = Field(None, max_length=80)
@@ -91,9 +98,21 @@ class PetResponse(BaseModel):
     vet_name: str | None
     food_notes: str | None
     health_entries: list[HealthEntrySchema] | None
+    # Archiv (PD-P2): verstorben/abgegeben — Verlauf bleibt, Tier ist aus dem Alltag raus
+    archived: bool
+    archived_at: datetime | None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PetHistoryResponse(BaseModel):
+    """Umfang des Verlaufs, der beim endgültigen Löschen eines Tiers verloren geht."""
+
+    feedings: int
+    medications: int
+    medication_logs: int
+    care_tasks: int
 
 
 class FeedingCreate(BaseModel):
@@ -143,7 +162,10 @@ class CareTaskCreate(BaseModel):
     next_due_at: date
 
 
-class CareTaskUpdate(BaseModel):
+class CareTaskUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von PetCareTask → 422 (app/core/patch_schema.py)
+    __orm_model__ = PetCareTask
+
     name: str | None = Field(None, min_length=1, max_length=100)
     interval_days: int | None = Field(None, ge=1, le=3650)
     next_due_at: date | None = None
@@ -170,7 +192,10 @@ class MedicationCreate(BaseModel):
     active: bool = True
 
 
-class MedicationUpdate(BaseModel):
+class MedicationUpdate(PatchModel):
+    # null auf NOT-NULL-Spalten von Medication → 422 (app/core/patch_schema.py)
+    __orm_model__ = Medication
+
     name: str | None = Field(None, min_length=1, max_length=100)
     dosage: str | None = Field(None, max_length=50)
     schedule: str | None = Field(None, max_length=100)
@@ -188,6 +213,11 @@ class MedicationResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MedicationGive(BaseModel):
+    # Client-generierte ID der Gabe (Idempotenz bei Retry/Doppel-Tap, CASA-14)
+    id: uuid.UUID | None = None
 
 
 class MedicationLogResponse(BaseModel):
@@ -276,6 +306,23 @@ def _get_pet_or_404(
     return pet
 
 
+def _ensure_not_archived(pet: Pet) -> None:
+    """Archivierte Tiere werden nicht mehr gefüttert (PD-P2/P3)."""
+    if pet.archived:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(ErrorCode.PET_ARCHIVED, "Pet is archived"),
+        )
+
+
+def _emit_pet_updated(household_id: uuid.UUID, pet: Pet) -> None:
+    emit_to_household_sync(
+        household_id,
+        "pet_updated",
+        PetResponse.model_validate(pet).model_dump(mode="json"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -341,9 +388,10 @@ def feeding_status(
 ):
     today = _get_household_today(db, household_id)
 
+    # Archivierte Tiere werden nicht mehr gefüttert (PD-P2)
     pets = (
         db.query(Pet)
-        .filter(Pet.household_id == household_id)
+        .filter(Pet.household_id == household_id, Pet.archived.is_(False))
         .order_by(Pet.name)
         .all()
     )
@@ -387,9 +435,12 @@ def feed_all(
 ):
     today = _get_household_today(db, household_id)
 
+    # Feste Reihenfolge: parallele feed-all-Requests sperren die Unique-Einträge in
+    # derselben Reihenfolge (kein Deadlock). Archivierte Tiere nicht (PD-P3).
     pets = (
         db.query(Pet)
-        .filter(Pet.household_id == household_id)
+        .filter(Pet.household_id == household_id, Pet.archived.is_(False))
+        .order_by(Pet.id)
         .all()
     )
 
@@ -405,6 +456,9 @@ def feed_all(
         .all()
     }
 
+    # Savepoint pro Tier (CASA-13): Kollidiert eine parallele Einzelfütterung mit dem
+    # Unique (pet, date, slot), fällt nur dieses Tier weg — die übrigen werden trotzdem
+    # gefüttert. Zurückgegeben wird genau das, was dieser Request angelegt hat.
     created = []
     for pet in pets:
         if pet.id in already_fed_pet_ids:
@@ -418,15 +472,17 @@ def feed_all(
             fed_by_user_id=membership.user_id,
             date=today,
         )
-        db.add(feeding)
+        savepoint = db.begin_nested()
+        try:
+            db.add(feeding)
+            db.flush()
+        except IntegrityError:
+            savepoint.rollback()
+            continue
+        savepoint.commit()
         created.append(feeding)
 
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        # Bei Race-Condition: einfach leere Liste zurückgeben, Client refetcht
-        return []
+    db.commit()
 
     for feeding in created:
         db.refresh(feeding)
@@ -465,7 +521,10 @@ def update_pet(
     # photo_file_id Validierung
     if "photo_file_id" in update_data and update_data["photo_file_id"] is not None:
         file_id = update_data["photo_file_id"]
-        stored_file = db.get(StoredFile, file_id)
+        # Datei bis zum Commit sperren: parallele Zuordnung derselben Datei (Dokument,
+        # anderes Tier) wartet und sieht danach diese Referenz (CASA-28)
+        locked = lock_files(db, [file_id])
+        stored_file = locked[0] if locked else None
         if (
             stored_file is None
             or stored_file.household_id != household_id
@@ -490,23 +549,109 @@ def update_pet(
     db.commit()
     db.refresh(pet)
 
-    emit_to_household_sync(
-        household_id,
-        "pet_updated",
-        PetResponse.model_validate(pet).model_dump(mode="json"),
-    )
+    _emit_pet_updated(household_id, pet)
     return pet
 
 
-# DELETE /{pet_id} — Pet löschen
-@router.delete("/{pet_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_pet(
+# POST /{pet_id}/archive — Tier archivieren (verstorben/abgegeben), Verlauf bleibt
+@router.post("/{pet_id}/archive", response_model=PetResponse)
+def archive_pet(
     household_id: uuid.UUID,
     pet_id: uuid.UUID,
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
     pet = _get_pet_or_404(db, pet_id, household_id)
+    if not pet.archived:
+        pet.archived = True
+        pet.archived_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(pet)
+        _emit_pet_updated(household_id, pet)
+    return pet
+
+
+# POST /{pet_id}/unarchive — Tier wieder aktivieren
+@router.post("/{pet_id}/unarchive", response_model=PetResponse)
+def unarchive_pet(
+    household_id: uuid.UUID,
+    pet_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    pet = _get_pet_or_404(db, pet_id, household_id)
+    if pet.archived:
+        pet.archived = False
+        pet.archived_at = None
+        db.commit()
+        db.refresh(pet)
+        _emit_pet_updated(household_id, pet)
+    return pet
+
+
+# GET /{pet_id}/history — Umfang des Verlaufs (Warnung vor endgültigem Löschen)
+@router.get("/{pet_id}/history", response_model=PetHistoryResponse)
+def pet_history(
+    household_id: uuid.UUID,
+    pet_id: uuid.UUID,
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    _get_pet_or_404(db, pet_id, household_id)
+    return _history_counts(db, pet_id)
+
+
+def _history_counts(db: Session, pet_id: uuid.UUID) -> PetHistoryResponse:
+    def count(query) -> int:
+        return query.scalar() or 0
+
+    return PetHistoryResponse(
+        feedings=count(db.query(func.count(FeedingLog.id)).filter(FeedingLog.pet_id == pet_id)),
+        medications=count(db.query(func.count(Medication.id)).filter(Medication.pet_id == pet_id)),
+        medication_logs=count(
+            db.query(func.count(MedicationLog.id))
+            .join(Medication, MedicationLog.medication_id == Medication.id)
+            .filter(Medication.pet_id == pet_id)
+        ),
+        care_tasks=count(db.query(func.count(PetCareTask.id)).filter(PetCareTask.pet_id == pet_id)),
+    )
+
+
+def _has_records(db: Session, pet_id: uuid.UUID, history: PetHistoryResponse) -> bool:
+    """Verlauf = Fütterungen, Medikamentengaben, erledigte Pflege (nicht blosse Stammdaten)."""
+    if history.feedings or history.medication_logs:
+        return True
+    return (
+        db.query(PetCareTask.id)
+        .filter(PetCareTask.pet_id == pet_id, PetCareTask.last_done_at.isnot(None))
+        .first()
+        is not None
+    )
+
+
+# DELETE /{pet_id} — Pet endgültig löschen (inkl. Verlauf). Die App bietet zuerst
+# „Archivieren“ an und warnt mit den Zahlen aus GET /{pet_id}/history (PD-P2).
+# Mit Verlauf nur nach ausdrücklicher Bestätigung (?force=true), sonst 409 mit Zahlen.
+@router.delete("/{pet_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_pet(
+    household_id: uuid.UUID,
+    pet_id: uuid.UUID,
+    force: bool = Query(False, description="true: Tier samt Verlauf endgültig löschen"),
+    membership: HouseholdMember = Depends(verify_household_access),
+    db: Session = Depends(get_db),
+):
+    pet = _get_pet_or_404(db, pet_id, household_id)
+
+    # Verlauf nie still mitlöschen (wie MEDICATION_HAS_HISTORY): App bietet Archivieren an
+    if not force:
+        history = _history_counts(db, pet_id)
+        if _has_records(db, pet_id, history):
+            detail = error_detail(
+                ErrorCode.PET_HAS_HISTORY,
+                "Pet has feeding/medication/care history; archive it or delete with force=true",
+            )
+            detail["history"] = history.model_dump()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
     # StoredFile-Referenz merken für späteres physisches Löschen — nur wenn die
     # Datei von nichts anderem (Dokument, anderes Pet) referenziert wird
@@ -544,7 +689,7 @@ def create_feeding(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    _get_pet_or_404(db, pet_id, household_id)
+    _ensure_not_archived(_get_pet_or_404(db, pet_id, household_id))
 
     today = _get_household_today(db, household_id)
 
@@ -727,6 +872,20 @@ def delete_medication(
     _get_pet_or_404(db, pet_id, household_id)
     med = _get_medication_or_404(db, medication_id, pet_id, household_id)
 
+    # Gaben-Verlauf nie still mitlöschen (PD-P2 / CASA-15): stattdessen deaktivieren
+    has_history = (
+        db.query(MedicationLog.id).filter(MedicationLog.medication_id == medication_id).first()
+        is not None
+    )
+    if has_history:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=error_detail(
+                ErrorCode.MEDICATION_HAS_HISTORY,
+                "Medication has administration records; deactivate it instead",
+            ),
+        )
+
     db.delete(med)
     db.commit()
 
@@ -751,11 +910,38 @@ def give_medication(
     household_id: uuid.UUID,
     pet_id: uuid.UUID,
     medication_id: uuid.UUID,
+    response: Response,
+    body: MedicationGive | None = None,
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
+    """Gabe erfassen — immer möglich, auch mehrmals am Tag (PD-P1). Nie still
+    zusammenführen oder verwerfen; die App warnt vor einer zweiten Gabe kurz nach
+    der letzten. Nur dieselbe Gabe (gleiche Client-ID, z. B. Retry) wird nicht
+    doppelt geschrieben (CASA-14)."""
     _get_pet_or_404(db, pet_id, household_id)
-    _get_medication_or_404(db, medication_id, pet_id, household_id)
+    med = _get_medication_or_404(db, medication_id, pet_id, household_id)
+    client_id = body.id if body else None
+
+    def existing_for_this_medication(existing: MedicationLog) -> MedicationLog:
+        # Client-ID gehört zur Gabe eines anderen Medikaments → Konflikt
+        if existing.medication_id != medication_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=error_detail(ErrorCode.ENTITY_ID_CONFLICT, "Id is already in use"),
+            )
+        response.status_code = status.HTTP_200_OK
+        return existing
+
+    existing = get_existing_by_client_id(db, MedicationLog, client_id, household_id)
+    if existing is not None:
+        return existing_for_this_medication(existing)
+
+    if not med.active:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail(ErrorCode.MEDICATION_INACTIVE, "Medication is inactive"),
+        )
 
     log = MedicationLog(
         household_id=household_id,
@@ -763,8 +949,12 @@ def give_medication(
         given_at=datetime.now(timezone.utc),
         given_by_user_id=membership.user_id,
     )
+    if client_id is not None:
+        log.id = client_id
     db.add(log)
-    db.commit()
+    existing = commit_or_get_existing(db, MedicationLog, client_id, household_id)
+    if existing is not None:
+        return existing_for_this_medication(existing)
     db.refresh(log)
 
     emit_to_household_sync(
@@ -878,12 +1068,10 @@ def update_care_task(
     _get_pet_or_404(db, pet_id, household_id)
     task = _get_care_task_or_404(db, task_id, pet_id, household_id)
 
-    update_data = body.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(task, key, value)
-    # Neue Fälligkeit → zur neuen Fälligkeit wieder erinnern (wie bei Pflanzen)
-    if "next_due_at" in update_data:
-        task.notified_at = None
+    # Neue Fälligkeit bzw. geändertes Intervall → Fälligkeit/Erinnerung neu (PD-P4 / E-2)
+    apply_care_task_update(
+        task, body.model_dump(exclude_unset=True), _get_household_today(db, household_id)
+    )
 
     db.commit()
     db.refresh(task)

@@ -2,9 +2,10 @@ import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGener
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
+import { captureHousehold as captureSharedHousehold } from '../utils/householdGuard'
 import { createOnlinePlantsRepository } from '../repositories/plantsRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
-import { planAdvice, mergeCareNotes } from '../utils/plantCare'
+import { planAdvice, mergeCareNotes, selectPlan } from '../utils/plantCare'
 import { localDateString } from '../utils/dates'
 import type {
   AiPlantCareAdvice, Plant, PlantCreatePayload, PlantUpdatePayload, PlantCareStatus, PlantCareStatusTask,
@@ -63,7 +64,9 @@ export const usePlantsStore = defineStore('plants', () => {
 
   function captureHousehold(householdId: string) {
     const version = stateVersion
-    return () => version === stateVersion && useAuthStore().currentHouseholdId === householdId
+    // Gemeinsame Haushalts-/Sitzungs-Generation (Logout, Wechsel A → B → A; CASA-12)
+    const inScope = captureSharedHousehold(householdId)
+    return () => version === stateVersion && inScope()
   }
 
   function captureRequest(householdId: string, key: string) {
@@ -277,7 +280,10 @@ export const usePlantsStore = defineStore('plants', () => {
     return updated
   }
 
-  /** KERN-USECASE: Pflege erledigt (optimistic). Setzt Fälligkeit neu und schreibt einen Log-Eintrag. */
+  /**
+   * KERN-USECASE: Pflege erledigt (optimistic). Setzt Fälligkeit neu und schreibt einen Log-Eintrag.
+   * Liefert den Log-Eintrag; `null` = heute schon erledigt, der Server hat nichts geändert (CASA-29).
+   */
   async function completeCareTask(plantId: string, taskId: string, note?: string) {
     const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
@@ -321,9 +327,9 @@ export const usePlantsStore = defineStore('plants', () => {
       if (active()) {
         upsertCareTask(task)
         upsertStatusTask(task)
-        prependLog(log)
+        if (log) prependLog(log)
       }
-      return log
+      return log ?? null
     } catch (error) {
       assertDataGeneration(actionGeneration)
       if (isScopeChanged(error)) throw error
@@ -344,13 +350,12 @@ export const usePlantsStore = defineStore('plants', () => {
     }
   }
 
-  /** "Gegossen": erledigt alle Giessaufgaben der Pflanze. */
-  async function waterPlant(plantId: string) {
-    const actionGeneration = currentDataGeneration()
+  /** "Gegossen": erledigt alle Giessaufgaben der Pflanze. Liefert die neuen Log-Einträge. */
+  async function waterPlant(plantId: string): Promise<PlantCareLog[]> {
     const item = careStatus.value.find(s => s.plant_id === plantId)
     const waterTasks = item?.tasks.filter(t => t.care_type === 'water') ?? []
-    await Promise.all(waterTasks.map(t => completeCareTask(plantId, t.task_id)))
-    assertDataGeneration(actionGeneration)
+    const logs = await Promise.all(waterTasks.map(t => completeCareTask(plantId, t.task_id)))
+    return logs.filter((log): log is PlantCareLog => !!log)
   }
 
   /** "Alle fälligen giessen". */
@@ -376,9 +381,10 @@ export const usePlantsStore = defineStore('plants', () => {
   /**
    * KI-Vorschlag als Pflegeaufgaben übernehmen: gleiche Pflegeart wird aktualisiert,
    * fehlende angelegt. Liest die Aufgaben frisch vom Server (Fehler → Abbruch statt Duplikate).
-   * Liefert die Anzahl angelegter und aktualisierter Aufgaben.
+   * `selected`: in der Vorschau angehakte Einträge (PD-P5, Schlüssel aus `adviceKey`);
+   * ohne Angabe alle. Liefert die Anzahl angelegter und aktualisierter Aufgaben.
    */
-  async function applyAdviceTasks(plantId: string, advice: AiPlantCareAdvice) {
+  async function applyAdviceTasks(plantId: string, advice: AiPlantCareAdvice, selected?: string[] | null) {
     const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
@@ -386,7 +392,7 @@ export const usePlantsStore = defineStore('plants', () => {
 
     const existing = await repo.fetchCareTasks(householdId, plantId)
     assertDataGeneration(actionGeneration)
-    const plan = planAdvice(advice, existing)
+    const plan = selectPlan(planAdvice(advice, existing), selected)
     for (const task of plan.update) {
       await updateCareTask(plantId, task.id, { interval_days: task.interval_days })
       assertDataGeneration(actionGeneration)
@@ -399,9 +405,9 @@ export const usePlantsStore = defineStore('plants', () => {
   }
 
   /** Aufgaben + Pflegehinweise (angehängt) + Art (nur wenn leer) einer bestehenden Pflanze übernehmen. */
-  async function applyCareAdvice(plant: Plant, advice: AiPlantCareAdvice) {
+  async function applyCareAdvice(plant: Plant, advice: AiPlantCareAdvice, selected?: string[] | null) {
     const actionGeneration = currentDataGeneration()
-    const result = await applyAdviceTasks(plant.id, advice)
+    const result = await applyAdviceTasks(plant.id, advice, selected)
     assertDataGeneration(actionGeneration)
     const payload: PlantUpdatePayload = {}
     const notes = mergeCareNotes(plant.care_notes, advice.care_notes)

@@ -1,6 +1,7 @@
 import { internalRedirect } from '../utils/internalRedirect'
 import { createRouter, createWebHistory } from 'vue-router'
 import { waitForOverlayBack } from '../composables/useBackClose'
+import { applyHouseholdQuery } from './householdQuery'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -32,6 +33,29 @@ const router = createRouter({
       path: '/register',
       name: 'Register',
       component: () => import('../views/RegisterView.vue'),
+    },
+    {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: () => import('../views/ForgotPasswordView.vue'),
+    },
+    {
+      // Ziel des Links aus der «Passwort vergessen»-Mail
+      path: '/reset-password',
+      name: 'reset-password',
+      component: () => import('../views/ResetPasswordView.vue'),
+    },
+    {
+      // Ziel des Links aus der Bestätigungs-Mail (mit und ohne Login erreichbar)
+      path: '/verify-email',
+      name: 'verify-email',
+      component: () => import('../views/VerifyEmailView.vue'),
+    },
+    {
+      // Impressum, Datenschutz, AGB — ohne Login erreichbar (Pflicht vor der Anmeldung)
+      path: '/legal/:page(imprint|privacy|terms)',
+      name: 'legal',
+      component: () => import('../views/LegalView.vue'),
     },
     {
       path: '/no-household',
@@ -118,6 +142,13 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      // Betreiber-Ansicht; die View leitet Nicht-Admins zum Start um
+      path: '/admin',
+      name: 'admin',
+      component: () => import('../views/AdminView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/tags',
       name: 'tags',
       component: () => import('../views/TagsView.vue'),
@@ -184,6 +215,10 @@ router.beforeEach(async (to) => {
     ) {
       return { path: '/no-household' }
     }
+
+    // Push-Link eines anderen Haushalts (?hh=<id>): erst wechseln, dann öffnen (CASA-40)
+    const target = applyHouseholdQuery(to, authStore)
+    if (target) return target
   }
 })
 

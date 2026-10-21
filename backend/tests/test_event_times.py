@@ -168,3 +168,51 @@ def test_helpers():
     start, end = range_bounds(date(2026, 10, 5), date(2026, 10, 11), tz)
     assert start == datetime(2026, 10, 4, 22, tzinfo=timezone.utc)
     assert end == datetime(2026, 10, 11, 22, tzinfo=timezone.utc)
+
+
+# ---------------------------------------------------------------------------
+# Sommerzeit (CASA-35, PD-K4)
+# ---------------------------------------------------------------------------
+
+
+def test_dst_gap_start_rejected(client, household_a, token_a, calendar_a):
+    """02:30 am 29.03.2026 existiert in Zürich nicht → 422 mit eigenem Code (statt +1 h)."""
+    resp = client.post(
+        _url(household_a.id), headers=_auth(token_a),
+        json={"title": "Lücke", "calendar_id": str(calendar_a.id),
+              "starts_at": "2026-03-29T02:30:00", "ends_at": "2026-03-29T03:45:00"},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "EVENT_TIME_NONEXISTENT"
+
+
+def test_dst_gap_end_rejected(client, household_a, token_a, calendar_a):
+    """Ende in der Lücke (02:30–03:15 wurde bisher als "Ende vor Beginn" abgelehnt)."""
+    resp = client.post(
+        _url(household_a.id), headers=_auth(token_a),
+        json={"title": "Lücke", "calendar_id": str(calendar_a.id),
+              "starts_at": "2026-03-29T01:30:00", "ends_at": "2026-03-29T02:15:00"},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "EVENT_TIME_NONEXISTENT"
+
+
+def test_dst_gap_rejected_on_update(client, household_a, token_a, calendar_a):
+    ev = _create(client, household_a, token_a, calendar_a, starts_at="2026-03-29T09:00:00")
+    resp = client.patch(
+        _url(household_a.id, ev["id"]), headers=_auth(token_a), json={"starts_at": "2026-03-29T02:00:00"}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "EVENT_TIME_NONEXISTENT"
+
+
+def test_dst_overlap_uses_first_occurrence(client, household_a, token_a, calendar_a):
+    """02:30 am 25.10.2026 gibt es zweimal — dokumentiert: das erste Mal (Sommerzeit)."""
+    ev = _create(client, household_a, token_a, calendar_a, starts_at="2026-10-25T02:30:00")
+    assert ev["starts_at"] == "2026-10-25T02:30:00+02:00"
+
+
+def test_aware_time_in_gap_is_fine(client, household_a, token_a, calendar_a):
+    """Mit Offset ist der Zeitpunkt eindeutig — keine Ablehnung."""
+    ev = _create(client, household_a, token_a, calendar_a, starts_at="2026-03-29T01:30:00Z")
+    assert ev["starts_at"] == "2026-03-29T03:30:00+02:00"

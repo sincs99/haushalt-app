@@ -1,0 +1,25 @@
+book#1 201
+after rent booked: saldi={'Carla': -100000, 'Ben': -100000, 'Anna': 200000} sum=0 unassigned=0 suggestions=[('Carla', 'Anna', 100000), ('Ben', 'Anna', 100000)]
+groceries 201
+after groceries: saldi={'Carla': -103334, 'Ben': -93333, 'Anna': 196667} sum=0 unassigned=0 suggestions=[('Carla', 'Anna', 103334), ('Ben', 'Anna', 93333)]
+carla leaves 204
+after Carla left: saldi={'Carla': -103334, 'Ben': -93333, 'Anna': 196667} sum=0 unassigned=0 suggestions=[('Carla', 'Anna', 103334), ('Ben', 'Anna', 93333)]
+  settle Carla->Anna 103334: 201 
+  settle Ben->Anna 93333: 201 
+after recording all suggestions: saldi={'Carla': 0, 'Ben': 0, 'Anna': 0} sum=0 unassigned=0 suggestions=[]
+book#2 same month 409 BILL_ALREADY_BOOKED
+rent shares participants: ['Anna', 'Ben', 'Carla']
+Ben deletes Anna's rent expense: 204
+after Ben deleted rent expense (post-settlement): saldi={'Carla': 100000, 'Ben': 100000, 'Anna': -200000} sum=0 unassigned=0 suggestions=[('Anna', 'Carla', 100000), ('Anna', 'Ben', 100000)]
+re-book after delete 201
+rebooked rent participants: ['Anna', 'Ben']
+after re-book (2 members): saldi={'Carla': 100000, 'Ben': -50000, 'Anna': -50000} sum=0 unassigned=0 suggestions=[('Ben', 'Carla', 50000), ('Anna', 'Carla', 50000)]
+finance-summary total_spent 310000 pending [('Miete', True)]
+dashboard keys ['todos', 'chores', 'shopping', 'finance', 'events', 'pet_care_due', 'plants_water', 'upcoming_reminders']
+dashboard finance-ish: {'finance': {'saldo_rappen': -50000, 'currency': 'CHF'}}
+Carla reads balances after leaving: 403
+bill payer still Anna: True
+Anna leaves 204
+members now [(None, 'admin')]
+Ben books with ex-member default payer: 422 {"detail":{"code":"USERS_NOT_IN_HOUSEHOLD","message":"Users not in household: ['dc741227-f9db-453f-9ef6-5a888cff357b']"}}
+bill list shows payer: Anna

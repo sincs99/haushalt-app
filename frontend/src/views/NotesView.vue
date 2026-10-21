@@ -19,6 +19,7 @@ import BaseEmptyState from '../components/ui/BaseEmptyState.vue'
 import BaseErrorState from '../components/ui/BaseErrorState.vue'
 import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import { PhPushPin, PhNote, PhTrash, PhPlus } from '@phosphor-icons/vue'
+import { changedNoteFields } from '../utils/editDiff'
 
 const { t } = useI18n()
 const { run, isPending } = useAsyncAction()
@@ -124,12 +125,19 @@ async function handleSave() {
 
   editLoading.value = true
   try {
-    const ok = await run(() => store.updateNote(editingNote.value!.id, {
+    // Nur geänderte Felder senden (CASA-09); editingNote ist der Stand beim Öffnen
+    const original = editingNote.value
+    const changes = changedNoteFields(original, {
       title: editTitle.value.trim(),
       body: editBody.value,
       tag: editTag.value.trim() || null,
       pinned: editPinned.value,
-    }), { key: 'save', error: t('notes.saveError') })
+    })
+    if (Object.keys(changes).length === 0) {
+      closeEditDialog()
+      return
+    }
+    const ok = await run(() => store.updateNote(original.id, changes), { key: 'save', error: t('notes.saveError') })
     if (ok) closeEditDialog()
   } finally {
     editLoading.value = false

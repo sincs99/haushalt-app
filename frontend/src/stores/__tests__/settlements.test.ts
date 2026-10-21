@@ -25,6 +25,7 @@ const err = { isAxiosError: true, response: { status: 400, data: { detail: 'x' }
 beforeEach(() => {
   setActivePinia(createPinia())
   vi.resetAllMocks()
+  expensesStore.fetchBalances.mockResolvedValue(undefined)
   vi.useFakeTimers()
   auth.currentHouseholdId = HOUSEHOLD_ID
 })

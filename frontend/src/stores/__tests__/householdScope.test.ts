@@ -24,7 +24,6 @@ import { usePetsStore } from '../pets'
 import { usePlantsStore } from '../plants'
 import { useNotesStore } from '../notes'
 import { useFoodStore } from '../food'
-import { useTasksStore } from '../tasks'
 import { useCalendarStore } from '../calendar'
 import { useShoppingStore } from '../shopping'
 import { useTodosStore } from '../todos'
@@ -49,7 +48,11 @@ test.each([
   ['todos', () => useTodosStore().fetchTodos()],
   ['chores', () => useChoresStore().fetchChores()],
   ['expenses', () => useExpensesStore().fetchExpenses()],
+  ['deleted expenses', () => useExpensesStore().fetchDeleted()],
+  ['expense pagination', () => { const s = useExpensesStore(); s.hasMore = true; return s.loadMore() }],
   ['settlements', () => useSettlementsStore().fetchAll()],
+  ['deleted settlements', () => useSettlementsStore().fetchDeleted()],
+  ['settlement pagination', () => { const s = useSettlementsStore(); s.hasMore = true; return s.loadMore() }],
   ['finance', () => useFinanceStore().fetchSummary()],
   ['dashboard', () => useDashboardStore().fetchDashboard()],
   ['polls', () => usePollsStore().fetchPolls()],
@@ -57,7 +60,6 @@ test.each([
   ['pets', () => usePetsStore().fetchPets()],
   ['plants', () => usePlantsStore().fetchPlants()],
   ['food', () => useFoodStore().fetchRecipes()],
-  ['tasks', () => useTasksStore().fetchTasks()],
   ['documents', () => useDocumentsStore().fetchDocuments()],
   ['tags', () => useTagsStore().fetchTags()],
   ['ai', () => useAiStore().fetchSettings()],
@@ -90,6 +92,36 @@ test('a failed old delete cannot restore a private note into the next account', 
   expect(notes.items).toEqual([])
 })
 
+test('an old expense edit conflict cannot install private server state in the next account', async () => {
+  const pending = deferred<any>()
+  api.patch.mockReturnValueOnce(pending.promise)
+  const expenses = useExpensesStore()
+  const editing = expenses.editExpense('expense-A', { description: 'private edit' })
+  const rejected = expect(editing).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+  resetHouseholdScopedStores()
+  auth.user = { id: 'user-2' }
+  pending.reject({ response: { data: { detail: { code: 'EXPENSE_VERSION_CONFLICT', current: { id: 'expense-A', description: 'private server data' } } } } })
+  await rejected
+  expect(expenses.expenses).toEqual([])
+  expect(expenses.error).toBeNull()
+})
+
+test('a late assignee edit cannot roll back the same household todo in another session', async () => {
+  const pending = deferred<any>()
+  api.patch.mockReturnValueOnce(pending.promise)
+  const todos = useTodosStore()
+  todos.items = [{ id: 'todo-1', title: 'A private draft', assignee_ids: ['user-1'] } as any]
+  const editing = todos.updateTodo('todo-1', { title: 'A optimistic draft' })
+  const rejected = expect(editing).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+  resetHouseholdScopedStores()
+  auth.user = { id: 'user-2' }
+  todos.items = [{ id: 'todo-1', title: 'B current title', assignee_ids: ['user-2'] } as any]
+  pending.reject(new Error('late failure'))
+  await rejected
+  expect(todos.items[0].title).toBe('B current title')
+  expect(todos.items[0].assignee_ids).toEqual(['user-2'])
+})
+
 test('synchronously clears AI results, documents and NFC tag tokens as well', () => {
   useAiStore().plantAdvice = { care_notes: 'A private result' } as any
   useAiStore().recipeLoading = true
@@ -118,8 +150,6 @@ test('leert Haustiere, Pflanzen, Notizen, Essen, Aufgaben und Kalender', () => {
   const food = useFoodStore()
   food.recipes = [{ id: 'r1', name: 'Risotto' } as any]
   food.weekPlan = [{ id: 'm1', date: '2026-10-05' } as any]
-  const tasks = useTasksStore()
-  tasks.items = [{ id: 'u1', type: 'todo' } as any]
   const calendar = useCalendarStore()
   calendar.events = [{ id: 'e1', title: 'Zahnarzt' } as any]
   calendar.calendars = [{ id: 'c1', name: 'Allgemein' } as any]
@@ -135,7 +165,6 @@ test('leert Haustiere, Pflanzen, Notizen, Essen, Aufgaben und Kalender', () => {
   expect(notes.items).toEqual([])
   expect(food.recipes).toEqual([])
   expect(food.weekPlan).toEqual([])
-  expect(tasks.items).toEqual([])
   expect(calendar.events).toEqual([])
   expect(calendar.calendars).toEqual([])
 })

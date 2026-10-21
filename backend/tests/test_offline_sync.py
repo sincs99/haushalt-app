@@ -238,10 +238,11 @@ def test_todo_patch_and_claim_increment_version(
     client, household_a, token_a, todo_a
 ):
     url = f"{_todos_url(household_a.id)}{todo_a.id}"
-    resp = client.patch(url, headers=_auth(token_a), json={"is_done": True})
+    resp = client.patch(url, headers=_auth(token_a), json={"title": "Bad putzen"})
     assert resp.json()["version"] == 2
 
-    # Claim nutzt ein Core-UPDATE und muss version selbst erhöhen
+    # Claim nutzt Core-Statements und muss version selbst erhöhen
+    # (erledigte Aufgaben lassen sich nicht übernehmen → offen lassen)
     resp = client.post(f"{url}/claim", headers=_auth(token_a))
     assert resp.status_code == 200
     assert resp.json()["version"] == 3

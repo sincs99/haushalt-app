@@ -11,37 +11,39 @@ import uuid
 from datetime import date, datetime, timezone
 
 from sqlalchemy import update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import AiBudgetCounter, AiCallReservation, AiUsage
-from app.services.ai.errors import AiDailyLimitReached, AiUsageInfo
+from app.models import AiBudgetCounter, AiCallReservation, AiUsage, AiUserUsage
+from app.services import entitlements
+from app.services.ai.errors import AiDailyLimitReached, AiUsageInfo, AiUserDailyLimitReached
 
 
 def today_utc() -> date:
     return datetime.now(timezone.utc).date()
 
 
-def _increment(db: Session, model: type[AiBudgetCounter] | type[AiUsage], identity: dict, limit: int) -> None:
-    """Create-if-missing, then conditional UPDATE under the database row lock."""
+def _increment_below_limit(db: Session, model, key_column, key: uuid.UUID | str, day: date, limit: int) -> bool:
+    """Atomically create or increment one budget under its unique scope/day key."""
     if limit <= 0:
-        raise AiDailyLimitReached("Daily AI limit reached")
-    if db.query(model).filter_by(**identity).first() is None:
-        try:
-            # A competing insert must roll back only this savepoint, never the
-            # aggregate counters already reserved in the outer transaction.
-            with db.begin_nested():
-                db.add(model(**identity, calls=0))
-                db.flush()
-        except IntegrityError:
-            pass  # Unique scope/day winner is now visible under READ COMMITTED.
-    count = (
-        db.query(model).filter_by(**identity).filter(model.calls < limit)
-        .update({model.calls: model.calls + 1}, synchronize_session=False)
-    )
-    if count != 1:
-        raise AiDailyLimitReached("Daily AI limit reached")
+        return False
+    insert = postgresql.insert if db.get_bind().dialect.name == "postgresql" else sqlite.insert
+    values = {"day": day, "calls": 1, key_column.key: key}
+    if model is not AiBudgetCounter:
+        values["id"] = uuid.uuid4()
+    stmt = insert(model).values(**values)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[key_column, model.day],
+        set_={"calls": model.calls + 1},
+        where=model.calls < limit,
+    ).returning(model.calls)
+    return db.execute(stmt).first() is not None
+
+
+def daily_limit(db: Session, household_id: uuid.UUID) -> int:
+    """Preserve the existing household entitlement/plan allocation."""
+    return entitlements.limits_for_household_id(db, household_id).ai_daily_limit
 
 
 def reserve_call(db: Session, household_id: uuid.UUID, user_id: uuid.UUID) -> uuid.UUID:
@@ -50,9 +52,13 @@ def reserve_call(db: Session, household_id: uuid.UUID, user_id: uuid.UUID) -> uu
     reservation_id = uuid.uuid4()
     try:
         # Stable lock order, shared with release_call, avoids budget deadlocks.
-        _increment(db, AiBudgetCounter, {"scope_key": "global", "day": day}, settings.ai_daily_limit_global)
-        _increment(db, AiBudgetCounter, {"scope_key": f"user:{user_id}", "day": day}, settings.ai_daily_limit_per_user)
-        _increment(db, AiUsage, {"household_id": household_id, "day": day}, settings.ai_daily_limit_per_household)
+        household_limit = daily_limit(db, household_id)
+        if not _increment_below_limit(db, AiBudgetCounter, AiBudgetCounter.scope_key, "global", day, settings.ai_daily_limit_global):
+            raise AiDailyLimitReached("Global daily AI budget reached")
+        if not _increment_below_limit(db, AiUserUsage, AiUserUsage.user_id, user_id, day, settings.ai_daily_limit_per_user):
+            raise AiUserDailyLimitReached("Personal daily AI limit reached")
+        if not _increment_below_limit(db, AiUsage, AiUsage.household_id, household_id, day, household_limit):
+            raise AiDailyLimitReached("Household daily AI limit reached")
         db.add(AiCallReservation(
             id=reservation_id, household_id=household_id, user_id=user_id,
             day=day, state="reserved",
@@ -98,12 +104,16 @@ def release_call(db: Session, reservation_id: uuid.UUID) -> None:
     try:
         row = _claim(db, reservation_id, "released")
         if row is not None:
-            for key in ("global", f"user:{row.user_id}"):
-                db.execute(
-                    update(AiBudgetCounter)
-                    .where(AiBudgetCounter.scope_key == key, AiBudgetCounter.day == row.day, AiBudgetCounter.calls > 0)
-                    .values(calls=AiBudgetCounter.calls - 1)
-                )
+            db.execute(
+                update(AiBudgetCounter)
+                .where(AiBudgetCounter.scope_key == "global", AiBudgetCounter.day == row.day, AiBudgetCounter.calls > 0)
+                .values(calls=AiBudgetCounter.calls - 1)
+            )
+            db.execute(
+                update(AiUserUsage)
+                .where(AiUserUsage.user_id == row.user_id, AiUserUsage.day == row.day, AiUserUsage.calls > 0)
+                .values(calls=AiUserUsage.calls - 1)
+            )
             db.execute(
                 update(AiUsage)
                 .where(AiUsage.household_id == row.household_id, AiUsage.day == row.day, AiUsage.calls > 0)
@@ -117,4 +127,9 @@ def release_call(db: Session, reservation_id: uuid.UUID) -> None:
 
 def calls_today(db: Session, household_id: uuid.UUID) -> int:
     row = db.query(AiUsage).filter_by(household_id=household_id, day=today_utc()).first()
+    return row.calls if row else 0
+
+
+def user_calls_today(db: Session, user_id: uuid.UUID) -> int:
+    row = db.query(AiUserUsage).filter_by(user_id=user_id, day=today_utc()).first()
     return row.calls if row else 0

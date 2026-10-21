@@ -13,6 +13,7 @@ import type {
   CalendarUpdatePayload,
   HouseholdMemberInfo,
 } from '../types'
+import { createRequestGuard } from '../utils/householdGuard'
 
 /**
  * Berechnet den ISO-Datumstring (YYYY-MM-DD) des Montags der Woche,
@@ -53,6 +54,9 @@ export const useCalendarStore = defineStore('calendar', () => {
   // State — Calendars
   const calendars = ref<CalendarInfo[]>([])
 
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
+
   // ── Calendar Helpers ──
 
   function getCalendarColor(calendarId: string): string {
@@ -70,11 +74,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'calendars')
 
-    const scopedResult = await repo.fetchCalendars(householdId)
-    assertDataGeneration(actionGeneration)
-
-    calendars.value = scopedResult
+    const result = await repo.fetchCalendars(householdId)
+    if (active()) calendars.value = result
   }
 
   async function addCalendar(payload: CalendarCreatePayload) {
@@ -197,15 +200,14 @@ export const useCalendarStore = defineStore('calendar', () => {
 
     const from = fromDate ?? currentWeekStart.value
     const to = toDate ?? addDays(from, 6) // Sonntag der Woche
+    const active = captureRequest(householdId, 'events')
 
     loading.value = true
     try {
-      const scopedResult = await repo.fetchByRange(householdId, from, to)
-      assertDataGeneration(actionGeneration)
-      events.value = scopedResult
+      const result = await repo.fetchByRange(householdId, from, to)
+      if (active()) events.value = result
     } finally {
-      assertDataGeneration(actionGeneration)
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -214,11 +216,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'members')
 
-    const scopedResult = await householdRepo.fetchMembers(householdId)
-    assertDataGeneration(actionGeneration)
-
-    members.value = scopedResult
+    const result = await householdRepo.fetchMembers(householdId)
+    if (active()) members.value = result
   }
 
   async function addEvent(payload: CalendarEventCreatePayload) {
@@ -239,6 +240,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       calendar_id: payload.calendar_id,
       participant_ids: payload.participant_ids ?? [],
       note: payload.note ?? null,
+      reminder: payload.reminder ?? 'none',
       created_by_user_id: authStore.user?.id ?? '',
       created_at: new Date().toISOString(),
     }
@@ -326,7 +328,7 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   function navigateWeek(offset: number) {
     currentWeekStart.value = addDays(currentWeekStart.value, offset * 7)
-    fetchEvents()
+    fetchEvents().catch(() => {})
   }
 
   // ── Event Socket-Handler — Idempotente Merges (Server gewinnt immer) ──

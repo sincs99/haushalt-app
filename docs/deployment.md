@@ -135,12 +135,33 @@ Erstelle in Nginx Proxy Manager einen neuen **Proxy Host** für die Casa-Domain:
 
 **Proxy-Nachweis beim Betreiber:** In der tatsächlich erzeugten NPM-Konfiguration prüfen, dass `X-Forwarded-For` durch die echte Peer-Adresse ersetzt oder um diese ergänzt wird und `X-Forwarded-Proto` aus der TLS-Verbindung stammt. In `docker network inspect` dürfen keine unkontrollierten Workloads die konfigurierte vertrauenswürdige NPM-Adresse belegen. Das Frontend reicht eine einzelne bereinigte Client-IP weiter und akzeptiert nur `http`/`https` vom konfigurierten Proxy-Peer. Diese Repository-Konfiguration ersetzt keine Prüfung der vorhandenen Installation.
 
+### 2.1 Echte Client-IP: vertrauenswürdige Proxies
+
+Rate-Limits (Login, KI, …) und Logs brauchen die echte Client-IP. Sie kommt über zwei Stufen:
+
+| Stufe | Wer vertraut wem | Variable (`.env.prod`) | Default |
+|---|---|---|---|
+| Frontend-nginx | übernimmt `X-Forwarded-For` nur von NPM | `NPM_TRUSTED_PROXY_IP` | Pflichtwert: feste NPM-IP |
+| Backend (uvicorn) | übernimmt den Header nur vom Frontend-nginx | `CASA_FRONTEND_PROXY_IP` setzt `FORWARDED_ALLOW_IPS` | `172.30.0.3` |
+
+Die tatsächliche NPM-Adresse und das separate Frontend-/Backend-Netz prüfen:
+
+```powershell
+docker network inspect <NPM_NETWORK>
+docker network inspect haushalt-app_app_proxy
+```
+
+Bei einer Subnetz-Kollision `CASA_PROXY_SUBNET` und `CASA_FRONTEND_PROXY_IP` gemeinsam ändern.
+Symptom bei falscher NPM-Adresse: Nutzer teilen sich ein Rate-Limit, Logs zeigen nur die Proxy-IP.
+Keine pauschalen CIDRs oder `*` einsetzen. Die Nginx-Vorlage übernimmt ausschließlich
+`NPM_TRUSTED_PROXY_IP`; der bisherige `TRUSTED_PROXY_CIDRS`-Start-Hook wird nicht mehr eingebaut.
+
 ### Architektur-Überblick
 
 ```
 Internet → NPM (TLS) → casa-frontend:80 (Nginx)
-                          ├── /api/*       → backend:8000
-                          ├── /socket.io/* → backend:8000 (WebSocket)
+                          ├── /api/*       → backend:8000 ──┬── postgres:5432
+                          ├── /socket.io/* → backend:8000   └── redis:6379 (Rate-Limits, Socket.IO-Queue)
                           └── /*           → Vue SPA (statisch)
 ```
 
@@ -206,32 +227,74 @@ auf eine echte Kontaktadresse setzen (`mailto:…`) und das Backend neu starten.
 
 ---
 
-## 4. Rollback
+## 4. Rollback und Wiederherstellung
 
-### 4.1 Code-Rollback
+**Migrationen sind forward-only** (PD-D2). Ein Update mit Migration wird nicht per
+`alembic downgrade` und auch nicht per „alten Dump über die neue DB spielen“ zurückgenommen.
+Fehler nach einem Update werden mit einem weiteren Update behoben (Fix-Forward). Ein Restore
+ist **Disaster-Recovery** (Datenverlust, kaputte DB, missglücktes Update ohne Fix).
 
-Vorherigen Commit auschecken und Container neu bauen:
+### 4.1 Code-Rollback (nur ohne Migration)
+
+Enthielt das Update **keine** Migration (`backend/migrations/versions/` unverändert zwischen
+den beiden Ständen), genügt der alte Code:
 
 ```powershell
 git checkout <commit-hash>
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 ```
 
-### 4.2 Datenbank-Rollback
+Mit Migration startet alter Code gegen die neuere DB nicht (Alembic kennt die Revision nicht) —
+dann 4.2.
 
-Falls das Update ein DB-Schema-Migration enthielt, die rückgängig gemacht werden muss, stelle einen Backup-Dump wieder her:
+### 4.2 Wiederherstellung = passender alter Code + passender alter Dump
+
+Ein Dump gehört zu dem Code-Stand, mit dem er erstellt wurde. Rollback bedeutet deshalb immer
+**beides** zurück:
+
+1. Code auf den Stand des Backups bringen (`git checkout <commit>` — der Commit, der beim Backup
+   lief; das Backup vor jedem Update anlegen, siehe Abschnitt 6) und Images bauen:
+   `docker compose -f docker-compose.prod.yml --env-file .env.prod build`
+2. Dump (und Uploads) wiederherstellen:
 
 ```powershell
 .\scripts\restore-db.ps1 .\backups\casa-backup-YYYY-MM-DD_HH-mm.dump -ComposeFile docker-compose.prod.yml -EnvFile .env.prod
 ```
 
-> ⚠️ `restore-db.ps1` überschreibt die gesamte Datenbank. Erstelle **immer** ein Backup vor einem Update (siehe Abschnitt 6).
+Das Skript (CASA-07):
+
+- validiert das Upload-Archiv und bereitet seine Dateien separat vor,
+- stoppt das Backend (keine Schreibzugriffe während des Restores),
+- spielt den Dump in eine **frische** Datenbank mit eindeutigem Restore-Namen ein —
+  `pg_restore --single-transaction --exit-on-error`: jeder Fehler bricht ab, die Produktions-DB
+  bleibt dann unverändert,
+- tauscht erst danach: `haushalt` → `haushalt_before_restore_<Zeitstempel>`, Restore-Datenbank → `haushalt`,
+- stellt das Uploads-Archiv mit gleichem Zeitstempel wieder her (Hilfscontainer mit dem Upload-Volume),
+- startet ein zuvor laufendes Backend (`alembic upgrade head`) und wartet auf `/api/health`.
+
+Jeder Fehler beendet das Skript mit Exit-Code 1. Vor dem DB-Tausch kann das zuvor laufende Backend mit der ursprünglichen DB wieder starten. Nach dem Tausch bleibt es bei Fehlern angehalten. Die vorherige
+Datenbank bleibt als `haushalt_before_restore_<Zeitstempel>` liegen (Rückweg, falls der falsche
+Dump erwischt wurde); nach der Prüfung löschen (der Befehl steht in der Ausgabe) oder gleich
+`-DropOld` angeben (Löschung erst nach erfolgreichem Abschluss). Ohne Rückfrage (Automatisierung): `-Yes`.
+
+Ist der Code **neuer** als der Dump, migriert das Backend den wiederhergestellten Stand beim
+Start nach vorne — das ist der normale Weg nach Datenverlust (Dump von gestern + heutiger Code).
+
+> ⚠️ Der frühere Ablauf (`pg_restore --clean --if-exists` über die laufende DB) hinterliess bei
+> einem Dump von vor einem Update eine gemischte Datenbank und einen Backend-Neustart-Loop
+> (`DuplicateTable`). Nicht mehr so wiederherstellen.
+
+**Restore-Drill:** `scripts/restore-drill.sh` spielt den Ablauf gegen eine Wegwerf-DB durch
+(alte Revision → Backup → Update + neue Daten → Restore → exakter Vergleich aller Tabellen →
+`alembic upgrade head`; Gegenprobe mit kaputtem Dump). Läuft in CI im Job `backend-postgres`.
+Lokal: `PG_ADMIN_URL=postgresql://user:pw@localhost:5432/postgres scripts/restore-drill.sh`.
+Auf Linux-Hosts gibt es `scripts/restore-db.sh` mit derselben Logik wie `restore-db.ps1`.
 
 Das Restore-Skript benötigt das aktuelle Backend-Image mit `scripts/restore_uploads.py`. Es prüft das Upload-Archiv vor jeder Änderung an SQL oder vorhandenen Uploads und entpackt es zunächst in einen separaten Bereich des Upload-Volumes. Erlaubt sind nur reguläre Dateien und Verzeichnisse unter `uploads/`; Links, Geräte, Traversal-Pfade und doppelte Einträge werden abgelehnt. Standardgrenzen: 100.000 Einträge und 20 GiB entpackte Daten; zusätzlich muss genügend freier Speicher für die neue Kopie vorhanden sein. Größere Archive erst mit bewusst angepassten Grenzen vorbereiten.
 
-Vor dem SQL-Restore wird das Backend angehalten. `pg_restore` läuft mit `--single-transaction --exit-on-error`; bei Fehlern werden Uploads nicht ersetzt und der Dienst bleibt angehalten. Erst nach erfolgreicher Datenbank- und Upload-Wiederherstellung wird ein vorher laufendes Backend gestartet. Ein Fehler beim Upload-Tausch erhält den vorbereiteten Bereich mit der ausgegebenen Staging-ID; die Datenbank kann dann bereits den neuen Stand haben. In diesem Zustand den Dienst nicht starten, bis Dateibestand und Datenbank wieder zusammenpassen. Eine Wiederaufnahme verwendet ausschließlich diese geprüfte Staging-ID. Das ersetzt keine gemeinsame Transaktion über SQL und Dateisystem.
+Vor dem SQL-Restore wird das Backend angehalten. `pg_restore` läuft mit `--single-transaction --exit-on-error`; bei Fehlern vor dem DB-Tausch werden Uploads nicht ersetzt und ein zuvor laufender Dienst kann mit der ursprünglichen DB wieder starten. Erst nach erfolgreicher Datenbank- und Upload-Wiederherstellung wird ein vorher laufendes Backend gestartet. Ein Fehler beim Upload-Tausch erhält den vorbereiteten Bereich mit der ausgegebenen Staging-ID; die Datenbank kann dann bereits den neuen Stand haben. In diesem Zustand den Dienst nicht starten, bis Dateibestand und Datenbank wieder zusammenpassen. Eine Wiederaufnahme verwendet ausschließlich diese geprüfte Staging-ID. Das ersetzt keine gemeinsame Transaktion über SQL und Dateisystem.
 
-Nach einem fehlgeschlagenen Upload-Tausch und bereits erfolgreichem SQL-Restore den **Helper** mit der ausgegebenen Staging-ID wiederaufnehmen, nicht das gesamte PowerShell-Skript (dieses benötigt zur Vorbereitung ein laufendes Backend):
+Nach einem fehlgeschlagenen Upload-Tausch und bereits erfolgreichem SQL-Restore den **Helper** mit der ausgegebenen Staging-ID wiederaufnehmen, nicht das gesamte PowerShell-Skript (damit Datenbank und Uploads nicht erneut vorbereitet und getauscht werden):
 
 ```powershell
 docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm --no-deps --entrypoint python backend /app/scripts/restore_uploads.py apply <staging-id>
@@ -280,7 +343,18 @@ Erstellt mit gleichem Zeitstempel:
 - `backups\casa-backup-YYYY-MM-DD_HH-mm.dump` — komprimierter PostgreSQL-Dump
 - `backups\casa-uploads-YYYY-MM-DD_HH-mm.tar.gz` — alle hochgeladenen Dateien (Ablage-Dokumente, Tierfotos) aus dem Volume `uploaddata`
 
-Postgres- und Backend-Container müssen laufen (die Uploads werden über den Backend-Container gelesen). Das Skript hält maximal 14 Backups je Typ und rotiert ältere automatisch.
+Postgres- und Backend-Container müssen laufen (die Uploads werden über den Backend-Container gelesen).
+
+| Option | Wirkung |
+|---|---|
+| `-Consistent` | Stoppt das Backend während des Backups (meist < 1 Minute) — Dump und Uploads sind dann exakt ein Paar. Empfohlen für das nächtliche Backup. |
+| `-Keep 14` | Anzahl aufbewahrter Backups je Typ (Default 14 = zwei Wochen bei täglichem Lauf) |
+| `-CopyTo <Pfad>` | Kopiert das Paar zusätzlich an einen zweiten Ort (gleiche Aufbewahrung dort) |
+
+**Konsistenz ohne `-Consistent`:** Das Skript sichert zuerst die Datenbank (Snapshot), danach die
+Uploads. Jede Datei, auf die der Dump zeigt, ist damit im Archiv — ausser sie wurde genau zwischen
+den beiden Schritten gelöscht. Zusätzliche, neuere Dateien im Archiv sind harmlos (verwaiste
+Uploads räumt das Backend auf). Für ein garantiert passendes Paar `-Consistent` verwenden.
 
 ### 6.2 Restore
 
@@ -288,7 +362,7 @@ Postgres- und Backend-Container müssen laufen (die Uploads werden über den Bac
 .\scripts\restore-db.ps1 .\backups\casa-backup-YYYY-MM-DD_HH-mm.dump -ComposeFile docker-compose.prod.yml -EnvFile .env.prod
 ```
 
-Liegt neben dem Dump ein `casa-uploads-…tar.gz` mit gleichem Zeitstempel, werden auch die Uploads wiederhergestellt (bestehende Dateien werden ersetzt). Ein anderes Archiv lässt sich mit `-UploadsFile` angeben. Ohne Archiv bleiben die Dateien unverändert — Dokumente und Fotos aus dem Dump können dann auf fehlende Dateien zeigen.
+Ablauf und Voraussetzungen (passender Code-Stand!) siehe Abschnitt 4.2. Liegt neben dem Dump ein `casa-uploads-…tar.gz` mit gleichem Zeitstempel, werden auch die Uploads wiederhergestellt (bestehende Dateien werden ersetzt). Ein anderes Archiv lässt sich mit `-UploadsFile` angeben, `-NoUploads` lässt die Dateien unverändert — Dokumente und Fotos aus dem Dump können dann auf fehlende Dateien zeigen.
 
 ### 6.3 Restore in Throwaway-Projekt (zum Testen)
 
@@ -311,14 +385,59 @@ docker compose -f docker-compose.test.yml --env-file .env.test --project-name ca
 | Einstellung                              | Wert                                                                                       |
 |------------------------------------------|---------------------------------------------------------------------------------------------|
 | Programm                                 | `pwsh`                                                                                      |
-| Argumente                                | `-File C:\path\to\haushalt-app\scripts\backup-db.ps1 -ComposeFile docker-compose.prod.yml -EnvFile .env.prod` |
+| Argumente                                | `-File C:\path\to\haushalt-app\scripts\backup-db.ps1 -ComposeFile docker-compose.prod.yml -EnvFile .env.prod -Consistent -CopyTo \\nas\backup\casa` |
 | Starten in                               | `C:\path\to\haushalt-app`                                                                   |
 | Run whether user is logged on or not     | ✅                                                                                          |
 | Trigger                                  | Täglich, z.B. 03:00 Uhr                                                                    |
 
-### 6.5 Offsite-Kopie
+Der Task muss fehlschlagen dürfen: Das Skript endet bei jedem Fehler mit Exit-Code 1 — in der
+Aufgabenplanung „Verlauf“ aktivieren bzw. den letzten Laufergebnis-Code überwachen.
 
-Empfehlung: Den `backups\`-Ordner regelmässig auf ein zweites Laufwerk oder in Cloud-Speicher (z.B. OneDrive, S3) kopieren.
+### 6.5 Off-Host-Kopie und Aufbewahrung
+
+Ein Backup auf demselben Host schützt nicht vor Plattenausfall, Verschlüsselungstrojaner oder
+Diebstahl. Mindestens eine Kopie gehört auf ein anderes Gerät:
+
+- `-CopyTo` auf ein zweites Laufwerk, eine NAS-Freigabe (`\\nas\backup\casa`) oder einen
+  synchronisierten Cloud-Ordner (OneDrive/Dropbox). Der Task-Benutzer braucht Schreibrechte.
+- Besser zusätzlich versioniert und verschlüsselt, z. B. mit `restic` oder `rclone` in einem zweiten
+  Task nach dem Backup (S3, Backblaze B2, …) — dann überlebt auch ein versehentlich überschriebenes
+  Backup.
+- Aufbewahrung: täglich 14 (`-Keep`), am Off-Host-Ziel gern länger (z. B. 4 Wochen-/12 Monats-Stände
+  per restic `forget --keep-daily 14 --keep-weekly 8 --keep-monthly 12`).
+- Dumps und Uploads enthalten personenbezogene Daten (Ausgaben, Dokumente, Fotos): Ziel nur für den
+  Betreiber zugänglich, Cloud-Ziele verschlüsselt.
+- **Restore regelmässig üben** (z. B. quartalsweise): Abschnitt 6.3 mit einem echten Backup. CI prüft
+  den Ablauf zusätzlich mit `scripts/restore-drill.sh`.
+
+---
+
+## 6a. Monitoring, Alarmierung und Logs
+
+### Alarmierung über `/api/health`
+
+`GET /api/health` (ohne Login) prüft Backend **und** Datenbank: `200 {"status":"ok","db":true}`,
+bei DB-Problemen `503 {"status":"error","db":false}`. Von **ausserhalb** des Servers überwachen —
+ein Healthcheck im selben Docker merkt einen Host-Ausfall nicht:
+
+- Uptime Kuma (selbst gehostet, auf einem anderen Gerät), UptimeRobot, Better Stack o. ä.
+- Ziel: `https://<domain>/api/health`, Intervall 1–5 Minuten, Alarm bei Status ≠ 200 oder fehlendem
+  `"status":"ok"` nach 2–3 Fehlversuchen; Benachrichtigung per E-Mail/Push.
+- Zusätzlich das TLS-Zertifikat (Ablauf) überwachen, falls das Tool es anbietet.
+
+Docker-Healthchecks (`docker compose ps` → `healthy`): Backend prüft `/api/health`, Frontend prüft
+`/nginx-health` (nur nginx), Postgres `pg_isready`. Sie starten Container nicht automatisch neu,
+zeigen aber den Zustand und steuern die Startreihenfolge.
+
+### Log-Rotation
+
+Alle Container schreiben über den `json-file`-Treiber mit Rotation (`x-logging` in den Compose-
+Dateien): Default 5 Dateien à 10 MB pro Container, anpassbar mit `LOG_MAX_SIZE`/`LOG_MAX_FILE` in
+`.env.prod`. Die Einstellung gilt erst für neu erstellte Container (`up -d` nach der Änderung).
+Fehlersuche: `docker compose -f docker-compose.prod.yml logs --since 1h backend`.
+
+Ein Error-Tracking-Dienst (z. B. Sentry) ist nicht eingebaut; Fehler erscheinen als Traceback im
+Backend-Log.
 
 ---
 
@@ -363,3 +482,46 @@ powercfg /change hibernate-timeout-ac 0
 ### Warum das funktioniert
 
 `restart: unless-stopped` in `docker-compose.prod.yml` sorgt dafür, dass alle Container **automatisch starten**, sobald Docker Desktop läuft. Die drei Bedingungen oben stellen sicher, dass Docker Desktop nach jedem Reboot zuverlässig startet.
+
+---
+
+## 8. Mehrere Backend-Prozesse (Redis)
+
+`docker-compose.prod.yml` startet einen Redis-Container (ohne Persistenz) und setzt
+`RATE_LIMIT_STORAGE_URI` und `SOCKETIO_MESSAGE_QUEUE` darauf. Damit teilen sich alle
+Backend-Prozesse die Rate-Limit-Zähler und die Socket.IO-Räume, und Logout/Sperren
+trennen die Verbindungen eines Users in jedem Prozess (Kontrollkanal `casa:socket-control`).
+
+Mehr Worker einschalten (CPU-Kerne beachten, 2–4 reichen lange):
+
+```
+UVICORN_WORKERS=2
+```
+
+Ohne Redis (`SOCKETIO_MESSAGE_QUEUE` leer, `RATE_LIMIT_STORAGE_URI=memory://`) muss
+`UVICORN_WORKERS=1` bleiben. Fällt Redis aus, zählt jeder Prozess die Rate-Limits
+vorübergehend im Speicher weiter; Socket-Events erreichen dann nur noch Clients desselben Prozesses.
+
+## 9. Fehler-Monitoring (Sentry)
+
+Optional, ohne Personendaten (`send_default_pii=False`):
+
+```
+SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<project>
+SENTRY_TRACES_SAMPLE_RATE=0
+```
+
+Der Startup-Log zeigt `sentry=on`. Zusätzlich zum Health-Check `/api/health` (DB-Prüfung)
+empfiehlt sich ein externer Uptime-Monitor auf diese Adresse.
+
+## 10. E-Mail, Tarife und Betreiber-Zugang
+
+- **E-Mail** (Passwort vergessen, Bestätigung): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
+  `SMTP_PASSWORD`, `SMTP_TLS`, `MAIL_FROM`, `APP_BASE_URL` (öffentliche Adresse für Links).
+  Ohne `SMTP_HOST` bleiben die Funktionen in Produktion ausgeblendet.
+- **Tarife/Stripe** (nur SaaS-Betrieb): siehe [`monetization.md`](monetization.md).
+- **Plattform-Admin** (Betreiber-Ansicht `/admin`, Tarife manuell setzen, Konten sperren):
+
+```powershell
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend python -m scripts.make_platform_admin --email admin@example.com
+```

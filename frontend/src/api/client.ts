@@ -1,5 +1,7 @@
 import axios, { type AxiosRequestConfig } from 'axios'
 import { useAuthStore } from '../stores/auth'
+import { isNativeApp } from '../services/platform'
+import i18n from '../i18n'
 import {
   assertDataGeneration, assertSessionGeneration, currentDataGeneration,
   currentScopeSignal, currentSessionGeneration, ScopeChangedError,
@@ -33,10 +35,16 @@ export const CSRF_HEADER_VALUE = 'casa'
  * Dev-Setup auf einem anderen Origin läuft) plus CSRF-Header.
  */
 export function authRequestConfig(extraHeaders: Record<string, string> = {}): AxiosRequestConfig {
+  const headers = { 'Accept-Language': i18n.global.locale.value, ...extraHeaders }
+  if (isNativeApp()) {
+    // Native App: kein Cookie-Jar → ohne den Header liefert das Backend den
+    // Refresh-Token im Body (services/tokenStorage.ts, nativeRefreshToken)
+    return { timeout: 15_000, headers }
+  }
   return {
     timeout: 15_000,
     withCredentials: true,
-    headers: { [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE, ...extraHeaders },
+    headers: { [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE, ...headers },
   }
 }
 
@@ -57,6 +65,11 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${authStore.token}`
   } else {
     config.headers.delete('Authorization')
+  }
+  try {
+    config.headers['Accept-Language'] = i18n.global.locale.value
+  } catch {
+    // i18n nicht verfügbar (Tests) — Header weglassen
   }
   return config
 }, (error) => { throw error }, { synchronous: true })
@@ -107,7 +120,20 @@ api.interceptors.response.use(
       }
     }
 
-    // 403 wird NICHT als Auth-Fehler behandelt — durchreichen!
+    // 403 wird NICHT als Auth-Fehler behandelt — durchreichen! Ausnahme: "kein Mitglied"
+    // für den AKTUELLEN Haushalt heisst, die Entfernung wurde verpasst (z.B. offline):
+    // /me neu laden und den Haushalt als verlassen behandeln (CASA-49).
+    if (
+      error.response?.status === 403 &&
+      error.response?.data?.detail?.code === 'NOT_HOUSEHOLD_MEMBER'
+    ) {
+      const authStore = useAuthStore()
+      const householdId = authStore.currentHouseholdId
+      if (householdId && originalRequest?.url?.includes(`/api/households/${householdId}`)) {
+        void authStore.revalidateMembership()
+      }
+    }
+
     return Promise.reject(error)
   },
 )

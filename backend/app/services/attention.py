@@ -3,12 +3,17 @@ für das Homescreen-Widget.
 
 Gezählt wird, was bis heute (Zeitzone des Haushalts) fällig und offen ist:
 
-- Aufgaben (Todos), die der Person zugewiesen oder niemandem zugewiesen sind
+- Aufgaben (Todos), bei denen die Person (mit-)zuständig ist oder die niemandem
+  zugewiesen sind
 - Ämtli (Putzplan), die der Person zugewiesen oder niemandem zugewiesen sind
 - Tier- und Pflanzenpflege (gehört dem ganzen Haushalt)
 
 Bewusst nicht gezählt: Einkaufsliste (kein Termin), Termine (keine Aufgabe),
 Dokumente (Ablauf ist ein Hinweis, keine offene Arbeit).
+
+Zuweisungen an Personen, die nicht (mehr) Mitglied sind, gelten als "niemandem
+zugewiesen" (PD-H1) — wie beim Push, der dann an alle Mitglieder geht. Beim
+Austritt werden sie zwar freigegeben, Altbestand kann sie aber noch enthalten.
 """
 
 import uuid
@@ -16,18 +21,20 @@ import zoneinfo
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy import exists, not_, or_
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
     Chore,
     ChoreAssignment,
     Household,
+    HouseholdMember,
     Pet,
     PetCareTask,
     Plant,
     PlantCareTask,
     Todo,
+    TodoAssignee,
 )
 
 # Ämtli, die länger offen sind, zählen nicht mehr (der Putzplan zeigt
@@ -68,21 +75,28 @@ def due_items(db: Session, household: Household, user_id: uuid.UUID, locale: str
     start_of_today = datetime.combine(today, time.min, tzinfo=tz).astimezone(timezone.utc)
     end_of_today = datetime.combine(today, time.max, tzinfo=tz).astimezone(timezone.utc)
     items: list[DueItem] = []
+    member_ids = db.query(HouseholdMember.user_id).filter(HouseholdMember.household_id == household.id)
 
+    # Mehrere Zuständige: zählt für jede zuständige Person; sind nur Ex-Mitglieder
+    # (oder niemand) eingetragen, gilt die Aufgabe als "offen für alle"
     todos = (
         db.query(Todo)
+        .options(selectinload(Todo.assignee_links))
         .filter(
             Todo.household_id == household.id,
             Todo.is_done == False,  # noqa: E712
             Todo.due_date.isnot(None),
             Todo.due_date <= end_of_today,
-            or_(Todo.assigned_to_user_id == user_id, Todo.assigned_to_user_id.is_(None)),
+            or_(
+                exists().where(TodoAssignee.todo_id == Todo.id, TodoAssignee.user_id == user_id),
+                not_(exists().where(TodoAssignee.todo_id == Todo.id, TodoAssignee.user_id.in_(member_ids))),
+            ),
         )
         .order_by(Todo.due_date.asc())
         .all()
     )
     items += [
-        DueItem("todo", t.title, _as_utc(t.due_date) < start_of_today, t.assigned_to_user_id == user_id)
+        DueItem("todo", t.title, _as_utc(t.due_date) < start_of_today, user_id in t.assignee_ids)
         for t in todos
     ]
 
@@ -92,11 +106,13 @@ def due_items(db: Session, household: Household, user_id: uuid.UUID, locale: str
         .filter(
             ChoreAssignment.household_id == household.id,
             ChoreAssignment.completed_at.is_(None),
+            Chore.active.is_(True),  # pausierte Ämtli zählen nicht (CASA-17)
             ChoreAssignment.due_date <= today,
             ChoreAssignment.due_date >= today - CHORE_LOOKBACK,
             or_(
                 ChoreAssignment.assigned_user_id == user_id,
                 ChoreAssignment.assigned_user_id.is_(None),
+                ChoreAssignment.assigned_user_id.not_in(member_ids),
             ),
         )
         .order_by(ChoreAssignment.due_date.asc())
@@ -110,7 +126,11 @@ def due_items(db: Session, household: Household, user_id: uuid.UUID, locale: str
     pet_care = (
         db.query(PetCareTask, Pet.name)
         .join(Pet, PetCareTask.pet_id == Pet.id)
-        .filter(PetCareTask.household_id == household.id, PetCareTask.next_due_at <= today)
+        .filter(
+            PetCareTask.household_id == household.id,
+            PetCareTask.next_due_at <= today,
+            Pet.archived.is_(False),  # archivierte Tiere zählen nicht (PD-P2)
+        )
         .order_by(PetCareTask.next_due_at.asc())
         .all()
     )

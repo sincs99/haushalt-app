@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import time
 import uuid
@@ -10,16 +11,117 @@ import socketio
 from jwt import PyJWTError as JWTError
 from starlette.concurrency import run_in_threadpool
 
+from app.core.config import settings
 from app.core.security import decode_access_token_with_expiry
 from app.database import SessionLocal
 from app.models import HouseholdMember, User
 
 logger = logging.getLogger(__name__)
 
+
+def _build_client_manager():
+    """Redis-Message-Queue, damit Events alle Worker/Container erreichen (leer = ein Prozess)."""
+    url = settings.socketio_message_queue.strip()
+    if not url:
+        return None
+    return socketio.AsyncRedisManager(url)
+
+
 # cors_allowed_origins=[] deaktiviert Engine.IO-CORS bewusst —
 # CORS wird von FastAPIs CORSMiddleware gehandhabt (wirkt auch auf den /socket.io-Mount).
-sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=[])
+sio = socketio.AsyncServer(
+    async_mode="asgi", cors_allowed_origins=[], client_manager=_build_client_manager()
+)
 socket_app = socketio.ASGIApp(sio)
+
+# ---------------------------------------------------------------------------
+# Kontrollkanal für mehrere Prozesse
+#
+# Die Socket.IO-Message-Queue verteilt ``emit`` an alle Prozesse. Teilnehmerlisten
+# (``get_participants``) kennt aber jeder Prozess nur für seine eigenen Verbindungen.
+# «Alle Verbindungen eines Users trennen» (Logout, Sperre) und «User aus dem
+# Haushalts-Room werfen» laufen deshalb zusätzlich über einen eigenen Redis-Kanal:
+# jeder Prozess führt den Befehl für seine lokalen Verbindungen aus.
+# ---------------------------------------------------------------------------
+
+CONTROL_CHANNEL = "casa:socket-control"
+HOST_ID = uuid.uuid4().hex
+_control_task: asyncio.Task | None = None
+
+
+def _control_enabled() -> bool:
+    return bool(settings.socketio_message_queue.strip())
+
+
+async def _publish_control(message: dict) -> None:
+    if not _control_enabled():
+        return
+    try:
+        import redis.asyncio as aioredis
+
+        client = aioredis.from_url(settings.socketio_message_queue.strip())
+        try:
+            await client.publish(CONTROL_CHANNEL, json.dumps({**message, "host": HOST_ID}))
+        finally:
+            await client.aclose()
+    except Exception:
+        logger.warning("Socket control publish failed (%s)", message.get("method"), exc_info=True)
+
+
+async def handle_control_message(message: dict) -> None:
+    """Führt einen Kontroll-Befehl eines anderen Prozesses lokal aus."""
+    if message.get("host") == HOST_ID:
+        return
+    method = message.get("method")
+    try:
+        user_id = uuid.UUID(str(message.get("user_id")))
+    except ValueError:
+        return
+    if method == "disconnect_user":
+        await _disconnect_user_local(user_id, str(message.get("reason") or "revoked"))
+    elif method == "evict_user":
+        try:
+            household_id = uuid.UUID(str(message.get("household_id")))
+        except ValueError:
+            return
+        await _evict_user_local(household_id, user_id)
+
+
+async def control_listener() -> None:
+    """Hintergrund-Task (main.py lifespan): hört auf dem Kontrollkanal."""
+    import redis.asyncio as aioredis
+
+    while True:
+        try:
+            client = aioredis.from_url(settings.socketio_message_queue.strip())
+            pubsub = client.pubsub()
+            await pubsub.subscribe(CONTROL_CHANNEL)
+            logger.info("Socket control listener subscribed (%s)", CONTROL_CHANNEL)
+            async for raw in pubsub.listen():
+                if raw.get("type") != "message":
+                    continue
+                try:
+                    await handle_control_message(json.loads(raw["data"]))
+                except Exception:
+                    logger.warning("Socket control message failed", exc_info=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("Socket control listener lost Redis — retrying in 5s", exc_info=True)
+            await asyncio.sleep(5)
+
+
+def start_control_listener() -> None:
+    global _control_task
+    if _control_enabled() and _control_task is None:
+        _control_task = asyncio.create_task(control_listener())
+
+
+def stop_control_listener() -> None:
+    global _control_task
+    if _control_task is not None:
+        _control_task.cancel()
+        _control_task = None
 
 # Wird beim App-Start gesetzt (main.py), damit sync Endpoints emit aufrufen können
 _event_loop = None
@@ -39,7 +141,7 @@ def _load_user_id(uid: uuid.UUID) -> str | None:
     """Lädt die User-ID als String — Session wird sofort geschlossen."""
     with SessionLocal() as db:
         user = db.get(User, uid)
-        return str(user.id) if user else None
+        return str(user.id) if user and user.is_active and user.deleted_at is None else None
 
 
 def _is_household_member(household_id: uuid.UUID, user_id: uuid.UUID) -> bool:
@@ -85,7 +187,8 @@ class _MembershipFence:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
-# Single-worker Socket.IO deployment: only the event loop touches these fences.
+# Each worker's event loop owns its fences. Redis control messages run the same
+# local eviction path so delayed membership checks are fenced on every worker.
 # Active joins/evictions hold strong references; idle keys do not accumulate.
 _membership_fences: WeakValueDictionary[tuple[uuid.UUID, uuid.UUID], _MembershipFence] = WeakValueDictionary()
 
@@ -206,7 +309,37 @@ async def reauth(sid, data):
     session["exp"] = exp
     await sio.save_session(sid, session)
     _schedule_expiry(sid, exp)
+
+    # Mitgliedschaft neu prüfen (CASA-48): Wurde der User inzwischen aus einem Haushalt
+    # entfernt, dessen Raum diese Verbindung noch hält (z.B. Eviction verpasst), endet
+    # der Empfang hier spätestens.
+    for room in list(sio.manager.get_rooms(sid, "/")):
+        if not isinstance(room, str) or not room.startswith("household_"):
+            continue
+        try:
+            household_id = uuid.UUID(room.removeprefix("household_"))
+            is_member = await run_in_threadpool(_is_household_member, household_id, uid)
+        except Exception:
+            logger.warning("Socket reauth – membership check failed (sid=%s, room=%s)", sid, room, exc_info=True)
+            continue
+        if not is_member:
+            await sio.leave_room(sid, room)
+            await sio.emit("error", _not_member_error(household_id), to=sid)
+            logger.info("Socket reauth – left room %s, no longer a member (sid=%s)", room, sid)
     return {"ok": True}
+
+
+def _not_member_error(household_id: uuid.UUID) -> dict:
+    """Payload des ``error``-Events, wenn der User nicht (mehr) Mitglied ist.
+
+    ``code`` wie bei REST (403 NOT_HOUSEHOLD_MEMBER): der Client lädt /me neu und
+    behandelt den Haushalt als verlassen (CASA-49).
+    """
+    return {
+        "message": "Not a member of this household",
+        "code": "NOT_HOUSEHOLD_MEMBER",
+        "household_id": str(household_id),
+    }
 
 
 @sio.event
@@ -258,11 +391,7 @@ async def join_household(sid, data):
         return
 
     if not is_member:
-        await sio.emit(
-            "error",
-            {"message": "Not a member of this household"},
-            to=sid,
-        )
+        await sio.emit("error", _not_member_error(household_id), to=sid)
         return
 
     async with fence.lock:
@@ -278,6 +407,20 @@ async def join_household(sid, data):
             return
         # Eviction shares this lock: it cannot finish while enter_room is pending.
         await sio.enter_room(sid, _household_room(household_id))
+
+    # Erneut prüfen (CASA-48): Zwischen Prüfung und enter_room kann eine Entfernung
+    # samt Eviction gelaufen sein — die Eviction hätte diese sid dann noch nicht im
+    # Raum gefunden. Nach dem Beitritt ist jede spätere Eviction wirksam.
+    try:
+        still_member = await run_in_threadpool(_is_household_member, household_id, user_id)
+    except Exception:
+        logger.error("join_household – DB error on re-check (sid=%s)", sid, exc_info=True)
+        still_member = False
+    if not still_member:
+        await sio.leave_room(sid, _household_room(household_id))
+        await sio.emit("error", _not_member_error(household_id), to=sid)
+        return
+
     logger.info(
         "User %s joined room household_%s (sid=%s)", user_id, household_id, sid
     )
@@ -319,36 +462,47 @@ async def emit_to_household(
     """
     room = _household_room(household_id)
     if evict_user_id is not None:
-        fence = _membership_fence(uuid.UUID(str(household_id)), uuid.UUID(str(evict_user_id)))
-        # Increment before any await so every pending positive DB result is stale.
-        fence.generation += 1
-        async with fence.lock:
-            try:
-                await sio.emit(event_name, data, room=room)
-            except Exception:
-                # Notification delivery must never prevent authorization removal.
-                logger.exception("Membership notification failed for room %s; continuing eviction", room)
-            failed_sids: list[str] = []
-            for sid, _ in list(sio.manager.get_participants("/", _user_room(evict_user_id))):
-                try:
-                    await sio.leave_room(sid, room)
-                except Exception:
-                    logger.exception("Room eviction failed for sid=%s; disconnecting", sid)
-                    # Do not use end_session: its notification can itself fail.
-                    try:
-                        await sio.disconnect(sid)
-                        _cancel_expiry(sid)
-                    except Exception:
-                        # Preserve the expiry timer if transport cleanup fails.
-                        failed_sids.append(sid)
-                        logger.exception("Fallback disconnect failed for sid=%s", sid)
-            if failed_sids:
-                # All other SIDs have still been processed. Surface incomplete
-                # revocation to the waiting REST endpoint instead of claiming success.
-                raise RuntimeError(f"Could not evict {len(failed_sids)} socket connection(s)")
-        logger.info("Evicted user %s from room %s", evict_user_id, room)
+        try:
+            await _evict_user_local(household_id, evict_user_id, notification=(event_name, data))
+        finally:
+            # A local notification/transport failure must not suppress revocation
+            # on other workers. Each receiver advances its own membership fence.
+            await _publish_control(
+                {"method": "evict_user", "household_id": str(household_id), "user_id": str(evict_user_id)}
+            )
     else:
         await sio.emit(event_name, data, room=room)
+
+
+async def _evict_user_local(
+    household_id: uuid.UUID, user_id: uuid.UUID, *, notification: tuple[str, dict] | None = None
+) -> None:
+    room = _household_room(household_id)
+    fence = _membership_fence(uuid.UUID(str(household_id)), uuid.UUID(str(user_id)))
+    # Increment before any await so pending positive membership results are stale.
+    fence.generation += 1
+    async with fence.lock:
+        if notification is not None:
+            try:
+                await sio.emit(notification[0], notification[1], room=room)
+            except Exception:
+                logger.exception("Membership notification failed for room %s; continuing eviction", room)
+        failed_sids: list[str] = []
+        for sid, _ in list(sio.manager.get_participants("/", _user_room(user_id))):
+            try:
+                await sio.leave_room(sid, room)
+            except Exception:
+                logger.exception("Room eviction failed for sid=%s; disconnecting", sid)
+                try:
+                    await sio.disconnect(sid)
+                    _cancel_expiry(sid)
+                except Exception:
+                    # Keep the expiry timer if transport cleanup also fails.
+                    failed_sids.append(sid)
+                    logger.exception("Fallback disconnect failed for sid=%s", sid)
+        if failed_sids:
+            raise RuntimeError(f"Could not evict {len(failed_sids)} socket connection(s)")
+    logger.info("Evicted user %s from room %s", user_id, room)
 
 
 def _log_household_event_failure(future: Future) -> None:
@@ -394,10 +548,15 @@ def emit_to_household_sync(
         )
 
 
-async def disconnect_user(user_id: uuid.UUID, reason: str):
-    """Trennt alle Socket-Verbindungen eines Users (z.B. nach Logout)."""
+async def _disconnect_user_local(user_id: uuid.UUID, reason: str) -> None:
     for sid, _ in list(sio.manager.get_participants("/", _user_room(user_id))):
         await end_session(sid, reason)
+
+
+async def disconnect_user(user_id: uuid.UUID, reason: str):
+    """Trennt alle Socket-Verbindungen eines Users (z.B. nach Logout) — in allen Prozessen."""
+    await _disconnect_user_local(user_id, reason)
+    await _publish_control({"method": "disconnect_user", "user_id": str(user_id), "reason": reason})
 
 
 def disconnect_user_sync(user_id: uuid.UUID, reason: str):

@@ -11,16 +11,18 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { MeResponse } from '../../types'
 import { createMemoryStorage, deferred } from './helpers'
 
-const { axiosPost, api, router, showToast, disablePush, socketDisconnect } = vi.hoisted(() => ({
+const { axiosPost, axiosPut, api, router, showToast, disablePush, socketDisconnect, refetchAfterMemberDeparture } = vi.hoisted(() => ({
   axiosPost: vi.fn(),
+  axiosPut: vi.fn(),
   api: { get: vi.fn(), post: vi.fn() },
   router: { push: vi.fn(), replace: vi.fn(), currentRoute: { value: { fullPath: '/' } } },
   showToast: vi.fn(),
   disablePush: vi.fn(),
   socketDisconnect: vi.fn(),
+  refetchAfterMemberDeparture: vi.fn(),
 }))
 
-vi.mock('axios', () => ({ default: { post: axiosPost } }))
+vi.mock('axios', () => ({ default: { post: axiosPost, put: axiosPut } }))
 vi.mock('../../api/client', () => ({
   default: api,
   API_BASE: 'http://api.test',
@@ -31,16 +33,21 @@ vi.mock('../../api/client', () => ({
     headers: { 'X-Requested-With': 'casa', ...extra },
   }),
 }))
-vi.mock('../../composables/useToast', () => ({ useToast: () => ({ showToast }) }))
+vi.mock('../../composables/useToast', () => ({ clearToasts: vi.fn(), useToast: () => ({ showToast }) }))
 vi.mock('../../i18n', () => ({ default: { global: { t: (key: string) => key } } }))
 vi.mock('../../router', () => ({ default: router }))
 vi.mock('../../services/pushService', () => ({ disablePush }))
 vi.mock('../../composables/useSocket', () => ({ useSocket: () => ({ disconnect: socketDisconnect }) }))
-vi.mock('../householdScope', () => ({ resetHouseholdScopedStores: vi.fn() }))
+vi.mock('../../services/memberDeparture', () => ({ refetchAfterMemberDeparture }))
+vi.mock('../householdScope', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../householdScope')>()
+  return { resetHouseholdScopedStores: vi.fn(actual.resetHouseholdScopedStores) }
+})
 
 import { useAuthStore } from '../auth'
 import { SESSION_MARKER_KEY } from '../../services/tokenStorage'
 import { resetHouseholdScopedStores } from '../householdScope'
+import { currentScopeSignal, ScopeChangedError } from '../../services/sessionScope'
 
 const HOUSEHOLD_KEY = 'haushalt_household_id'
 const LEGACY_TOKEN_KEY = 'haushalt_tokens'
@@ -90,6 +97,36 @@ function jwtFor(subject: string): string {
 }
 
 describe('authority transitions', () => {
+  test('a pending password rotation finishes before logout and cannot reinstall credentials', async () => {
+    const pending = deferred<any>()
+    axiosPut.mockReturnValueOnce(pending.promise)
+    axiosPost.mockResolvedValue({})
+    const store = useAuthStore()
+    store.token = 'old-access'
+    const changing = store.changePassword('old-password', 'new-password')
+    const cancelled = expect(changing).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+    await vi.waitFor(() => expect(axiosPut).toHaveBeenCalled())
+    const loggingOut = store.logout({ reason: 'user' })
+    expect(store.token).toBeNull()
+    expect(axiosPost).not.toHaveBeenCalled()
+    pending.resolve(tokenResponse)
+    await cancelled
+    await loggingOut
+    expect(store.token).toBeNull()
+    expect(axiosPost).toHaveBeenCalledWith(LOGOUT_URL, {}, cookieRequest)
+  })
+
+  test('password change refreshes an expired same-user access token once', async () => {
+    const store = useAuthStore()
+    store.token = 'old-access'
+    axiosPut.mockRejectedValueOnce(httpError(401)).mockResolvedValueOnce(tokenResponse)
+    axiosPost.mockResolvedValueOnce(tokenResponse)
+    await store.changePassword('old-password', 'new-password')
+    expect(axiosPut).toHaveBeenCalledTimes(2)
+    expect(axiosPost).toHaveBeenCalledWith(REFRESH_URL, {}, cookieRequest)
+    expect(store.token).toBe('new-access')
+  })
+
   test('clears private state immediately while logout is still waiting on the network', async () => {
     const pending = deferred<any>()
     axiosPost.mockReturnValue(pending.promise)
@@ -204,7 +241,7 @@ describe('initialize', () => {
     expect(axiosPost).toHaveBeenCalledWith(REFRESH_URL, {}, cookieRequest)
     expect(store.token).toBe('new-access')
     expect(store.isAuthenticated).toBe(true)
-    expect(store.user).toEqual({ id: 'user-1', email: 'a@example.com', display_name: 'Anna' })
+    expect(store.user).toEqual({ id: 'user-1', email: 'a@example.com', display_name: 'Anna', email_verified: false, is_platform_admin: false })
     expect(store.currentHouseholdId).toBe('hh-2')
     expect(store.currentHousehold?.name).toBe('Ferienhaus')
   })
@@ -251,6 +288,18 @@ describe('initialize', () => {
     expect(localStorage.getItem(HOUSEHOLD_KEY)).toBeNull()
     expect(api.get).not.toHaveBeenCalled()
     expect(store.isInitialized).toBe(true)
+    // Stille abgelaufene Sitzung: Gerät lokal vom Push abmelden (CASA-47)
+    expect(disablePush).toHaveBeenCalledWith({ notifyBackend: false })
+  })
+
+  test('Netzwerkfehler beim Start meldet Push NICHT ab (Sitzung vermutlich gültig)', async () => {
+    markSession()
+    axiosPost.mockRejectedValue(networkError())
+    const store = useAuthStore()
+
+    await store.initialize()
+
+    expect(disablePush).not.toHaveBeenCalled()
   })
 
   test('Netzwerkfehler beim Refresh: "offline eingeloggt", Marker bleibt, kein Access-Token', async () => {
@@ -436,6 +485,22 @@ describe('Haushalte', () => {
     expect(showToast).not.toHaveBeenCalled()
   })
 
+  test('Austritt einer anderen Person lädt die freigegebenen Bereiche neu (PD-H1)', async () => {
+    api.get.mockResolvedValue(meResponse())
+    const store = useAuthStore()
+    await store.fetchMe()
+
+    store.handleMemberRemoved({ household_id: 'hh-1', user_id: 'user-2', released: ['todos', 'chores'] })
+    await vi.waitFor(() => expect(refetchAfterMemberDeparture).toHaveBeenCalledWith(['todos', 'chores']))
+
+    // Austritt in einem anderen (nicht aktiven) Haushalt: nichts neu laden
+    refetchAfterMemberDeparture.mockClear()
+    store.handleMemberLeft({ household_id: 'hh-2', user_id: 'user-2', released: ['todos'] })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(refetchAfterMemberDeparture).not.toHaveBeenCalled()
+  })
+
   test('member_left in einem fremden Haushalt löst kein /me aus', async () => {
     api.get.mockResolvedValue(meResponse())
     const store = useAuthStore()
@@ -481,6 +546,38 @@ describe('Haushalte', () => {
     expect(localStorage.getItem(HOUSEHOLD_KEY)).toBeNull()
   })
 
+  test.each([true, false])('socket-confirmed leave succeeds when its HTTP scope is cancelled (remaining household: %s)', async (remaining) => {
+    const response = meResponse()
+    if (!remaining) response.data.households = response.data.households.slice(0, 1)
+    api.get.mockResolvedValue(response)
+    const store = useAuthStore()
+    await store.fetchMe()
+    const signal = currentScopeSignal()
+    const leaving = store.leaveHousehold('hh-1', () => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(new ScopeChangedError()), { once: true })
+    }))
+    store.handleMemberLeft({ household_id: 'hh-1', user_id: 'user-1' })
+    expect(signal.aborted).toBe(true)
+    expect(await leaving).toBe(remaining ? '/dashboard' : '/no-household')
+    expect(showToast).not.toHaveBeenCalled()
+  })
+
+  test('a socket-confirmed departure still rejects after the login session changes', async () => {
+    api.get.mockResolvedValue(meResponse())
+    axiosPost.mockResolvedValue({})
+    const store = useAuthStore()
+    await store.fetchMe()
+    const pending = deferred<void>()
+    const leaving = store.leaveHousehold('hh-1', () => pending.promise)
+    const cancelled = expect(leaving).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+    store.handleMemberLeft({ household_id: 'hh-1', user_id: 'user-1' })
+    const loggingOut = store.logout({ reason: 'user' })
+    pending.reject(new ScopeChangedError())
+    await cancelled
+    await loggingOut
+    expect(store.currentHouseholdId).toBeNull()
+  })
+
   test('fehlgeschlagener Austritt lässt den Haushalt stehen', async () => {
     api.get.mockResolvedValue(meResponse())
     const store = useAuthStore()
@@ -493,6 +590,80 @@ describe('Haushalte', () => {
     // Spätere echte Entfernung wird wieder gemeldet
     store.handleMemberRemoved({ household_id: 'hh-1', user_id: 'user-1' })
     expect(showToast).toHaveBeenCalledWith('household.switchedTo', 'info')
+  })
+
+  test('jeder Haushaltswechsel leert die Stores — auch über null (CASA-12, R3)', async () => {
+    const { useShoppingStore } = await import('../shopping')
+    const store = useAuthStore()
+    store.currentHouseholdId = 'hh-1'
+    const shopping = useShoppingStore()
+
+    shopping.items = [{ id: 'a1', name: 'Privat A' } as any]
+    store.switchHousehold('hh-2')
+    expect(shopping.items).toEqual([])
+
+    // Letzten Haushalt verlassen (→ null), dann neuen anlegen/beitreten (null → hh-3)
+    store.currentHouseholdId = null
+    shopping.items = [{ id: 'x', name: 'Rest' } as any]
+    store.currentHouseholdId = 'hh-3'
+    expect(shopping.items).toEqual([])
+  })
+
+  test('revalidateMembership: verpasste Entfernung (offline) → nächster Haushalt + Hinweis (CASA-49)', async () => {
+    api.get.mockResolvedValueOnce(meResponse())
+    const store = useAuthStore()
+    store.token = 'access'
+    await store.fetchMe()
+    api.get.mockResolvedValueOnce(meResponse({ households: [{ id: 'hh-2', name: 'Ferienhaus', role: 'member', currency: 'CHF' }] }))
+
+    await store.revalidateMembership()
+
+    expect(store.currentHouseholdId).toBe('hh-2')
+    expect(showToast).toHaveBeenCalledWith('household.switchedTo', 'info')
+  })
+
+  test('revalidateMembership: letzter Haushalt weg → /no-household', async () => {
+    api.get.mockResolvedValueOnce(meResponse({ households: [{ id: 'hh-1', name: 'WG', role: 'member', currency: 'CHF' }] }))
+    const store = useAuthStore()
+    store.token = 'access'
+    await store.fetchMe()
+    api.get.mockResolvedValueOnce(meResponse({ households: [] }))
+
+    await store.revalidateMembership()
+
+    expect(store.currentHouseholdId).toBeNull()
+    expect(localStorage.getItem(HOUSEHOLD_KEY)).toBeNull()
+    expect(showToast).toHaveBeenCalledWith('household.youWereRemoved', 'info')
+    await vi.waitFor(() => expect(router.replace).toHaveBeenCalledWith('/no-household'))
+  })
+
+  test('revalidateMembership: noch Mitglied oder offline → kein Hinweis', async () => {
+    api.get.mockResolvedValue(meResponse())
+    const store = useAuthStore()
+    store.token = 'access'
+    await store.fetchMe()
+
+    await store.revalidateMembership()
+    api.get.mockRejectedValueOnce(networkError())
+    await store.revalidateMembership()
+
+    expect(store.currentHouseholdId).toBe('hh-1')
+    expect(showToast).not.toHaveBeenCalled()
+  })
+
+  test('Socket-error NOT_HOUSEHOLD_MEMBER für den aktuellen Haushalt prüft die Mitgliedschaft', async () => {
+    api.get.mockResolvedValue(meResponse())
+    const store = useAuthStore()
+    store.token = 'access'
+    await store.fetchMe()
+    api.get.mockClear()
+
+    store.handleSocketError({ code: 'NOT_HOUSEHOLD_MEMBER', household_id: 'hh-2' }) // nicht aktuell
+    store.handleSocketError({ code: 'SOMETHING_ELSE', household_id: 'hh-1' })
+    expect(api.get).not.toHaveBeenCalled()
+
+    store.handleSocketError({ code: 'NOT_HOUSEHOLD_MEMBER', household_id: 'hh-1' })
+    await vi.waitFor(() => expect(api.get).toHaveBeenCalledWith('/api/auth/me'))
   })
 
   test('household_updated übernimmt Name und KI-Opt-in', async () => {
@@ -568,6 +739,33 @@ describe('logout', () => {
 
     expect(axiosPost).toHaveBeenCalledTimes(1)
   })
+
+  test('leert alle haushaltsbezogenen Stores und erhöht die Generation (CASA-12)', async () => {
+    const { useShoppingStore } = await import('../shopping')
+    const { useExpensesStore } = await import('../expenses')
+    const { useNotesStore } = await import('../notes')
+    const { useDashboardStore } = await import('../dashboard')
+    const { householdGeneration } = await import('../../utils/householdGuard')
+    const store = useAuthStore()
+    store.token = 'access'
+    store.currentHouseholdId = 'hh-1'
+    const shopping = useShoppingStore()
+    shopping.items = [{ id: 'i1', name: 'Privat' } as any]
+    const expenses = useExpensesStore()
+    expenses.balances = { balances: [], settlements: [], unassigned_rappen: 0 } as any
+    useNotesStore().items = [{ id: 'n1' } as any]
+    useDashboardStore().data = { greeting: 'x' } as any
+    const before = householdGeneration()
+    axiosPost.mockResolvedValue({ data: {} })
+
+    await store.logout({ reason: 'user' })
+
+    expect(householdGeneration()).toBeGreaterThan(before)
+    expect(shopping.items).toEqual([])
+    expect(expenses.balances).toBeNull()
+    expect(useNotesStore().items).toEqual([])
+    expect(useDashboardStore().data).toBeNull()
+  })
 })
 
 describe('Cross-Tab-Sync über den Sitzungs-Marker', () => {
@@ -585,6 +783,8 @@ describe('Cross-Tab-Sync über den Sitzungs-Marker', () => {
     expect(store.isAuthenticated).toBe(false)
     expect(store.user).toBeNull()
     expect(axiosPost).not.toHaveBeenCalled()
+    // Push-Subscription gehört dem Browser: auch hier lokal abmelden (CASA-47)
+    await vi.waitFor(() => expect(disablePush).toHaveBeenCalledWith({ notifyBackend: false }))
   })
 
   test('Login in anderem Tab: Sitzung über den gemeinsamen Cookie übernehmen', async () => {

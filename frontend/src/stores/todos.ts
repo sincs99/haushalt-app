@@ -6,6 +6,8 @@ import { createOnlineTodosRepository } from '../repositories/todosRepository'
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import type { TodoItem, HouseholdMemberInfo } from '../types'
 import { upsertVersioned } from '../utils/syncVersion'
+import { createRequestGuard } from '../utils/householdGuard'
+import { createRetryIds } from '../utils/clientIds'
 
 export const useTodosStore = defineStore('todos', () => {
   // Repositories — einmal im Store-Setup erstellen
@@ -19,7 +21,11 @@ export const useTodosStore = defineStore('todos', () => {
 
   // Interner State für Race-Condition-Schutz
   const pendingToggles = new Set<string>()
-  function resetPending() { pendingToggles.clear() }
+  function resetPending() { pendingToggles.clear(); retryIds.clear() }
+  // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
+  const captureRequest = createRequestGuard()
+  // Manueller Retry eines gescheiterten Creates nutzt dieselbe Client-ID (CASA-45)
+  const retryIds = createRetryIds()
 
   // Actions
   async function fetchTodos() {
@@ -27,15 +33,14 @@ export const useTodosStore = defineStore('todos', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'todos')
 
     loading.value = true
     try {
-      const scopedResult = await repo.fetchAll(householdId)
-      assertDataGeneration(actionGeneration)
-      items.value = scopedResult
+      const result = await repo.fetchAll(householdId)
+      if (active()) items.value = result
     } finally {
-      assertDataGeneration(actionGeneration)
-      loading.value = false
+      if (active.latest()) loading.value = false
     }
   }
 
@@ -44,17 +49,16 @@ export const useTodosStore = defineStore('todos', () => {
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
+    const active = captureRequest(householdId, 'members')
 
-    const scopedResult = await householdRepo.fetchMembers(householdId)
-    assertDataGeneration(actionGeneration)
-
-    members.value = scopedResult
+    const result = await householdRepo.fetchMembers(householdId)
+    if (active()) members.value = result
   }
 
   async function addTodo(
     title: string,
     description?: string,
-    assignedToUserId?: string,
+    assigneeIds?: string[],
     dueDate?: string,
     tags?: string[],
   ): Promise<string | undefined> {
@@ -65,16 +69,19 @@ export const useTodosStore = defineStore('todos', () => {
 
     // 1. Optimistic: Sofort lokalen Eintrag mit endgültiger Client-ID erzeugen.
     //    Der Server übernimmt die ID → kein Temp-ID-Swap nötig.
-    const todoId = crypto.randomUUID()
+    const assignees = [...new Set(assigneeIds ?? [])]
+    const retryKey = JSON.stringify([householdId, title, description, assignees, dueDate, tags])
+    const todoId = retryIds.idFor(retryKey)
     const now = new Date().toISOString()
     const optimisticItem: TodoItem = {
       id: todoId,
       household_id: householdId,
       title,
       description: description ?? null,
-      assigned_to_user_id: assignedToUserId ?? null,
+      assignee_ids: assignees,
       due_date: dueDate ?? null,
       is_done: false,
+      done_by_user_id: null,
       created_by_user_id: authStore.user?.id ?? null,
       created_at: now,
       done_at: null,
@@ -91,7 +98,7 @@ export const useTodosStore = defineStore('todos', () => {
         id: todoId,
         title,
         description,
-        assigned_to_user_id: assignedToUserId,
+        assignee_ids: assignees,
         due_date: dueDate,
         tags,
       })
@@ -101,13 +108,19 @@ export const useTodosStore = defineStore('todos', () => {
       //    Socket-Event → egal wer zuerst kommt, es entsteht kein Duplikat.
       //    Kein Insert, falls das Todo inzwischen gelöscht wurde.
       upsertVersioned(items.value, serverItem, false)
+      retryIds.settled(retryKey)
       // ID zurückgeben, damit Aufrufer (z. B. Erinnerungen) nicht raten müssen
       return todoId
     } catch (error) {
+      // 4a. Antwort verloren, Socket-Echo schon da → Server hat angelegt, behalten
       assertDataGeneration(actionGeneration)
-      if (isScopeChanged(error)) throw error
-      // 4. Rollback bei Fehler
+      if (items.value.some(i => i.id === todoId && i.version > 0)) {
+        retryIds.settled(retryKey)
+        return todoId
+      }
+      // 4b. Rollback bei Fehler; bei Netzwerkfehler nutzt ein Retry dieselbe ID
       items.value = items.value.filter(i => i.id !== todoId)
+      retryIds.failed(retryKey, todoId, error)
       throw error
     }
   }
@@ -139,7 +152,12 @@ export const useTodosStore = defineStore('todos', () => {
     const item = items.value.find(i => i.id === todoId)
     const previousIsDone = item?.is_done
     const previousDoneAt = item?.done_at ?? null
+    const previousDoneBy = item?.done_by_user_id ?? null
     if (item) {
+      // Eine:r für alle: wer abhakt, erledigt für alle (Server setzt done_by ebenso;
+      // war die Aufgabe schon erledigt, bleibt die bisherige Person)
+      if (isDone && !item.is_done) item.done_by_user_id = authStore.user?.id ?? null
+      if (!isDone) item.done_by_user_id = null
       item.is_done = isDone
       item.done_at = isDone ? new Date().toISOString() : null
     }
@@ -157,6 +175,7 @@ export const useTodosStore = defineStore('todos', () => {
       if (currentItem && previousIsDone !== undefined) {
         currentItem.is_done = previousIsDone
         currentItem.done_at = previousDoneAt
+        currentItem.done_by_user_id = previousDoneBy
       }
       throw error
     } finally {
@@ -175,21 +194,25 @@ export const useTodosStore = defineStore('todos', () => {
     const newId = await addTodo(
       snapshot.title,
       snapshot.description ?? undefined,
-      snapshot.assigned_to_user_id ?? undefined,
+      snapshot.assignee_ids?.length ? [...snapshot.assignee_ids] : undefined,
       snapshot.due_date ?? undefined,
       snapshot.tags?.length ? [...snapshot.tags] : undefined,
     )
+    assertDataGeneration(actionGeneration)
     if (!newId) return newId
+    // Erinnerungen: nur ausstehende, best effort (Aufgabe ist bereits zurück).
+    // Vor dem Erledigt-Status anlegen — an erledigte Aufgaben lehnt der Server
+    // Erinnerungen ab (422); beim Wiedereröffnen sind sie dann noch da.
+    const now = Date.now()
+    const future = (snapshot.reminders ?? []).filter(
+      r => !r.notified_at && new Date(r.remind_at).getTime() > now,
+    )
+    await Promise.allSettled(future.map(r => addReminder(newId, r.remind_at)))
     assertDataGeneration(actionGeneration)
     if (snapshot.is_done) {
       await setDone(newId, true)
       assertDataGeneration(actionGeneration)
     }
-    // Erinnerungen: nur zukünftige, best effort (Aufgabe ist bereits zurück)
-    const now = Date.now()
-    const future = (snapshot.reminders ?? []).filter(r => new Date(r.remind_at).getTime() > now)
-    await Promise.allSettled(future.map(r => addReminder(newId, r.remind_at)))
-    assertDataGeneration(actionGeneration)
     return newId
   }
 
@@ -202,21 +225,53 @@ export const useTodosStore = defineStore('todos', () => {
     const item = items.value.find(i => i.id === todoId)
     if (!item) return
 
-    // 1. Snapshot für Rollback
+    // 1. Snapshot für Rollback (Arrays werden ersetzt, nicht verändert)
     const snapshot = { ...item }
 
     // 2. Optimistic: Sofort aktualisieren
     Object.assign(item, data)
 
     try {
-      // 3. Server-Call
-      await repo.update(householdId, todoId, data)
+      // 3. Server-Call; Antwort trägt die neue Version (Socket-Events älterer
+      //    Stände werden danach verworfen)
+      const serverItem = await repo.update(householdId, todoId, data)
       assertDataGeneration(actionGeneration)
+      if (serverItem) upsertVersioned(items.value, serverItem, false)
     } catch (error) {
+      // 4. Rollback auf Snapshot — frisch nachschlagen (Socket kann ersetzt haben)
       assertDataGeneration(actionGeneration)
-      if (isScopeChanged(error)) throw error
-      // 4. Rollback auf Snapshot
-      Object.assign(item, snapshot)
+      const currentItem = items.value.find(i => i.id === todoId)
+      if (currentItem) Object.assign(currentItem, snapshot)
+      throw error
+    }
+  }
+
+  /**
+   * "Ich übernehme" / "Ich helfe mit": mich zu den Zuständigen hinzufügen, auch
+   * wenn schon andere eingetragen sind. Schon dabei → kein Request.
+   */
+  async function claimTodo(todoId: string) {
+    const actionGeneration = currentDataGeneration()
+    const authStore = useAuthStore()
+    const householdId = authStore.currentHouseholdId
+    const myId = authStore.user?.id
+    if (!householdId || !myId) return
+
+    const item = items.value.find(i => i.id === todoId)
+    if (!item || item.assignee_ids.includes(myId)) return
+
+    // Optimistic: sofort hinzufügen
+    item.assignee_ids = [...item.assignee_ids, myId]
+
+    try {
+      const serverItem = await repo.claim(householdId, todoId)
+      assertDataGeneration(actionGeneration)
+      if (serverItem) upsertVersioned(items.value, serverItem, false)
+    } catch (error) {
+      // Rollback: nur mich wieder entfernen (andere Änderungen per Socket bleiben)
+      assertDataGeneration(actionGeneration)
+      const currentItem = items.value.find(i => i.id === todoId)
+      if (currentItem) currentItem.assignee_ids = currentItem.assignee_ids.filter(id => id !== myId)
       throw error
     }
   }
@@ -354,6 +409,7 @@ export const useTodosStore = defineStore('todos', () => {
     setDone,
     restoreTodo,
     updateTodo,
+    claimTodo,
     deleteTodo,
     addReminder,
     deleteReminder,

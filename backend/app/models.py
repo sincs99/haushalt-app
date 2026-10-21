@@ -22,6 +22,10 @@ from sqlalchemy.orm import Mapped, mapped_column, object_session, relationship
 
 from app.database import Base
 
+# NOT-NULL-JSON-Spalten: Python-None wird SQL-NULL (verletzt den Constraint → Fehler)
+# statt des JSON-Literals 'null', das NOT NULL erfüllt und Lesepfade bricht (CASA-04).
+NonNullJSON = JSON(none_as_null=True)
+
 
 class SyncVersionMixin:
     """Änderungs-Metadaten für Offline-Sync (docs/offline-first-phase2.md, B2).
@@ -78,7 +82,15 @@ class Household(Base):
     ai_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Tarif ("free" | "premium"); nur relevant bei BILLING_ENABLED (services/entitlements.py).
+    # plan_expires_at: Ende der bezahlten Periode inkl. Karenz; None = unbefristet.
+    plan: Mapped[str] = mapped_column(String(20), nullable=False, default="free", server_default="free")
+    plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
 
+    subscriptions: Mapped[list["Subscription"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
     members: Mapped[list["HouseholdMember"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
@@ -174,10 +186,119 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+    # Zeitpunkt, zu dem die Adresse per Link bestätigt wurde (None = unbestätigt).
+    # Bestehende Konten vor dieser Funktion gelten als unbestätigt; die App bleibt
+    # nutzbar, nur kostenpflichtige Aktionen verlangen eine bestätigte Adresse.
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Konto gelöscht (anonymisiert): Login und Token-Nutzung sind gesperrt. Die Zeile
+    # bleibt, weil Ausgaben/Zahlungen ehemaliger Mitglieder auf sie verweisen.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Vom Plattform-Admin gesperrt (Missbrauch, Zahlungsstreit): Login gesperrt, Daten bleiben
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    # Betreiber-Zugang (routers/admin.py); wird nur per CLI/Admin vergeben, nie per API-Registrierung
+    is_platform_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Zustimmung zu Nutzungsbedingungen/Datenschutz bei der Registrierung (routers/meta.py)
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    terms_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     memberships: Mapped[list["HouseholdMember"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    account_tokens: Mapped[list["UserToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class Subscription(Base):
+    """Abo eines Haushalts bei einem Zahlungsanbieter (services/billing).
+
+    provider: "stripe" | "apple" | "google" | "manual" (Plattform-Admin).
+    status: Anbieter-Status (active, trialing, past_due, canceled, unpaid, expired …).
+    Pro Anbieter und Abo-ID genau eine Zeile; der Haushalt-Tarif wird aus dem
+    aktuellsten Abo abgeleitet (services/billing/service.py).
+    """
+
+    __tablename__ = "subscriptions"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_subscription_id", name="uq_subscriptions_provider_id"),
+        Index("ix_subscriptions_household_id", "household_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("households.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_subscription_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Freitext für manuelle Vergaben (Grund, Ticket) — nie an normale Nutzer ausgeliefert
+    note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    household: Mapped["Household"] = relationship(back_populates="subscriptions")
+
+
+class BillingEvent(Base):
+    """Verarbeitete Webhook-Ereignisse (Idempotenz: Anbieter liefern Events mehrfach)."""
+
+    __tablename__ = "billing_events"
+    __table_args__ = (UniqueConstraint("provider", "event_id", name="uq_billing_events_provider_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class UserToken(Base):
+    """Einmal-Token für Konto-Aktionen (Passwort zurücksetzen, E-Mail bestätigen).
+
+    Siehe services/account_tokens.py. Per-User, nicht per-Household.
+    """
+
+    __tablename__ = "user_tokens"
+    __table_args__ = (
+        Index("ix_user_tokens_user_purpose", "user_id", "purpose"),
+        Index("ix_user_tokens_token_hash", "token_hash", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    user: Mapped["User"] = relationship(back_populates="account_tokens")
 
 
 class RefreshToken(Base):
@@ -236,7 +357,9 @@ class PushSubscription(Base):
     endpoint: Mapped[str] = mapped_column(String(1000), unique=True, nullable=False)
     p256dh: Mapped[str] = mapped_column(String(255), nullable=False)
     auth: Mapped[str] = mapped_column(String(255), nullable=False)
-    locale: Mapped[str] = mapped_column(String(5), nullable=False, default="de")
+    locale: Mapped[str] = mapped_column(
+        String(5), nullable=False, default="de", server_default="de"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -286,7 +409,9 @@ class ShoppingList(SyncVersionMixin, Base):
     icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="shopping_lists")
@@ -343,13 +468,14 @@ class Todo(SyncVersionMixin, Base):
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    assigned_to_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
     due_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     is_done: Mapped[bool] = mapped_column(default=False)
+    # Wer abgehakt hat ("eine:r für alle"); leer, solange offen
+    done_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -359,13 +485,80 @@ class Todo(SyncVersionMixin, Base):
     done_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, server_default="[]")
+    tags: Mapped[list[str]] = mapped_column(NonNullJSON, nullable=False, server_default="[]")
 
     household: Mapped["Household"] = relationship(back_populates="todos")
     reminders: Mapped[list["TodoReminder"]] = relationship(
         back_populates="todo", cascade="all, delete-orphan",
         order_by="TodoReminder.remind_at",
     )
+    # Zuständige Personen (keine = offen für alle). Reihenfolge: wer zuerst eingetragen wurde
+    assignee_links: Mapped[list["TodoAssignee"]] = relationship(
+        back_populates="todo", cascade="all, delete-orphan",
+        order_by="(TodoAssignee.created_at, TodoAssignee.user_id)",
+    )
+
+    @property
+    def assignee_ids(self) -> list[uuid.UUID]:
+        return [link.user_id for link in self.assignee_links]
+
+    @assignee_ids.setter
+    def assignee_ids(self, user_ids) -> None:
+        """Setzt die Zuständigen (Duplikate werden ignoriert, Bestehende bleiben samt
+        Zeitpunkt). Bei einer Änderung zählt ``version`` hoch — Collection-Änderungen
+        allein lösen den Versions-Hook nicht aus (``include_collections=False``).
+        """
+        wanted = list(dict.fromkeys(user_ids))
+        current = {link.user_id: link for link in self.assignee_links}
+        if set(wanted) == set(current):
+            return
+        now = datetime.now(timezone.utc)
+        self.assignee_links = [
+            current.get(uid) or TodoAssignee(user_id=uid, household_id=self.household_id, created_at=now)
+            for uid in wanted
+        ]
+        self.updated_at = now
+
+    @property
+    def assigned_to_user_id(self) -> uuid.UUID | None:
+        """Veraltet (Übergang für alte PWA-Versionen): erste zuständige Person."""
+        links = self.assignee_links
+        return links[0].user_id if links else None
+
+
+class TodoAssignee(Base):
+    """Zuständige Person einer Aufgabe. PK (todo_id, user_id) macht "Ich übernehme"
+    race-sicher (INSERT … ON CONFLICT DO NOTHING)."""
+
+    __tablename__ = "todo_assignees"
+    __table_args__ = (
+        Index("ix_todo_assignees_user_id", "user_id"),
+    )
+
+    todo_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("todos.id", ondelete="CASCADE"), primary_key=True
+    )
+    # Konto gelöscht → Zuweisung verschwindet (wie früher SET NULL auf der Spalte)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc), server_default=func.now(),
+    )
+
+    todo: Mapped["Todo"] = relationship(back_populates="assignee_links")
+
+
+@event.listens_for(TodoAssignee, "before_insert")
+def _todo_assignee_household(mapper, connection, target):
+    # Beim Anlegen per Konstruktor (Todo(..., assignee_ids=[…])) kann household_id
+    # des Todos beim Setzen noch fehlen → hier vom Todo übernehmen
+    if target.household_id is None and target.todo is not None:
+        target.household_id = target.todo.household_id
 
 
 class TodoReminder(Base):
@@ -406,8 +599,18 @@ class Expense(Base):
     __table_args__ = (
         CheckConstraint("amount_rappen > 0", name="ck_expense_amount_positive"),
         Index("ix_expenses_household_date", "household_id", "expense_date"),
-        # Eine Buchung pro wiederkehrender Rechnung und Monat — auch bei gleichzeitigem Klick
-        UniqueConstraint("recurring_bill_id", "booked_month", name="uq_expense_bill_booked_month"),
+        # Eine (nicht gelöschte) Buchung pro wiederkehrender Rechnung und Monat — auch bei
+        # gleichzeitigem Klick. Eine gelöschte Buchung gibt den Monat frei; wiederherstellen
+        # lässt sie sich nur, solange der Monat nicht neu gebucht wurde (CASA-03).
+        Index(
+            "uq_expense_bill_booked_month",
+            "recurring_bill_id",
+            "booked_month",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+            sqlite_where=text("deleted_at IS NULL"),
+        ),
+        Index("ix_expenses_household_deleted", "household_id", "deleted_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -427,8 +630,9 @@ class Expense(Base):
         server_default="even",
     )
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # RESTRICT statt SET NULL: ohne Zahler verschieben sich alle Salden (PD-D1)
     paid_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
     )
     recurring_bill_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("recurring_bills.id", ondelete="SET NULL"), nullable=True
@@ -446,6 +650,22 @@ class Expense(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
+    )
+    # Optimistic Locking (PD-F7): jede Änderung erhöht die Version; PATCH/DELETE mit
+    # If-Match auf eine ältere Version → 409 EXPENSE_VERSION_CONFLICT
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    # Nachvollziehbarkeit (PD-F1): wer hat erfasst / zuletzt geändert / gelöscht
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    # Soft Delete: gelöschte Ausgaben zählen nirgends mehr (Salden, Budget, Rechnungen),
+    # bleiben aber sichtbar ("gelöscht von …") und wiederherstellbar (CASA-02/03)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
     shares: Mapped[list["ExpenseShare"]] = relationship(
@@ -473,8 +693,9 @@ class ExpenseShare(Base):
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
     )
+    # RESTRICT: Buchungen nie still mit einer Person löschen (Saldo-Neuberechnung, PD-D1)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     amount_rappen: Mapped[int] = mapped_column(Integer, nullable=False)
 
@@ -495,11 +716,12 @@ class Settlement(Base):
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
     )
+    # RESTRICT wie bei expense_shares.user_id (PD-D1)
     from_user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     to_user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     amount_rappen: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(
@@ -514,6 +736,11 @@ class Settlement(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    # Soft Delete (PD-F1): gelöschte Ausgleiche zählen nicht mehr, bleiben aber sichtbar
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
     household: Mapped["Household"] = relationship(back_populates="settlements")
@@ -570,7 +797,7 @@ class RecurringBill(Base):
         nullable=False,
         server_default="even",
     )
-    active: Mapped[bool] = mapped_column(nullable=False, server_default="true")
+    active: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
     # Standard-Zahler beim Buchen (änderbar pro Buchung); ohne Zahler kein Buchen
     paid_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -605,12 +832,12 @@ class Chore(Base):
     )
     weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)
     day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    rotation_order: Mapped[list] = mapped_column(JSON, nullable=False)
+    rotation_order: Mapped[list] = mapped_column(NonNullJSON, nullable=False)
     next_rotation_index: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0"
     )
     anchor_date: Mapped[datetime] = mapped_column(Date, nullable=False)
-    active: Mapped[bool] = mapped_column(nullable=False, server_default="true")
+    active: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -669,7 +896,8 @@ class Calendar(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
@@ -678,19 +906,30 @@ class Calendar(Base):
     color: Mapped[str] = mapped_column(String(7), nullable=False)  # Hex "#RRGGBB"
     position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="calendars")
+    # Kein ORM-Cascade: Ein Kalender mit Terminen darf nicht verschwinden (CASA-20).
+    # passive_deletes="all" überlässt das der DB (FK RESTRICT) — ein parallel
+    # angelegter Termin lässt das Löschen scheitern statt mitgelöscht zu werden.
     events: Mapped[list["Event"]] = relationship(
-        back_populates="calendar", cascade="all, delete-orphan"
+        back_populates="calendar", passive_deletes="all"
     )
+
+
+EVENT_REMINDERS = ("none", "15m", "1h", "1d")
 
 
 class Event(Base):
     __tablename__ = "events"
     __table_args__ = (
         Index("ix_events_household_starts", "household_id", "starts_at"),
+        CheckConstraint(
+            "reminder IN ('none', '15m', '1h', '1d')", name="ck_events_reminder"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -700,7 +939,7 @@ class Event(Base):
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
     )
     calendar_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("calendars.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("calendars.id", ondelete="RESTRICT"), nullable=False
     )
     title: Mapped[str] = mapped_column(String(150), nullable=False)
     starts_at: Mapped[datetime] = mapped_column(
@@ -710,13 +949,22 @@ class Event(Base):
         DateTime(timezone=True), nullable=True
     )
     all_day: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    participant_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    participant_ids: Mapped[list] = mapped_column(NonNullJSON, nullable=False, default=list)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_by_user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    # Push-Erinnerung (PD-K1): none | 15m | 1h | 1d vor Beginn; ganztägig 08:00 am Tag
+    # bzw. am Vortag. notified_at = Claim des Schedulers, zurückgesetzt bei Zeit-/
+    # Erinnerungsänderung.
+    reminder: Mapped[str] = mapped_column(
+        String(4), nullable=False, default="none", server_default="none"
+    )
+    notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     household: Mapped["Household"] = relationship(back_populates="events")
@@ -847,6 +1095,14 @@ class Pet(Base):
     health_entries: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # health_entries Schema: [{"title": str, "subtitle": str, "severity": str}]
     # severity: "green" | "yellow" | "red"
+    # Archiviert (verstorben/abgegeben, PD-P2): Verlauf bleibt erhalten, das Tier
+    # erscheint aber nicht mehr in Fütterung, Dashboard, Erinnerungen und Tag-Zielen.
+    archived: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -907,7 +1163,9 @@ class Medication(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     dosage: Mapped[str | None] = mapped_column(String(50), nullable=True)
     schedule: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    active: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, server_default=text("true")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -982,7 +1240,8 @@ class Plant(Base):
     __tablename__ = "plants"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
@@ -997,7 +1256,9 @@ class Plant(Base):
         ForeignKey("stored_files.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="plants")
@@ -1021,7 +1282,8 @@ class PlantCareTask(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
@@ -1038,7 +1300,9 @@ class PlantCareTask(Base):
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     plant: Mapped["Plant"] = relationship(back_populates="care_tasks")
@@ -1051,7 +1315,8 @@ class PlantCareLog(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
@@ -1091,12 +1356,16 @@ class Recipe(Base):
     servings: Mapped[int] = mapped_column(Integer, nullable=False, server_default="2")
     cost_rappen: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    ingredients: Mapped[list] = mapped_column(JSON, nullable=False, server_default="[]")
-    steps: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
-    tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
-    is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    ingredients: Mapped[list] = mapped_column(NonNullJSON, nullable=False, server_default="[]")
+    steps: Mapped[list] = mapped_column(NonNullJSON, nullable=False, default=list, server_default="[]")
+    tags: Mapped[list] = mapped_column(NonNullJSON, nullable=False, default=list, server_default="[]")
+    is_favorite: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="recipes")
@@ -1152,12 +1421,15 @@ class Note(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="notes")
@@ -1168,7 +1440,8 @@ class StoredFile(Base):
     __table_args__ = (Index("ix_stored_files_household", "household_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
     )
     household_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False
@@ -1181,7 +1454,9 @@ class StoredFile(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="stored_files")
@@ -1239,12 +1514,15 @@ class Document(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
 
     household: Mapped["Household"] = relationship(back_populates="documents")
@@ -1276,7 +1554,7 @@ class DocumentFile(Base):
         primary_key=True,
         unique=True,
     )
-    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     document: Mapped["Document"] = relationship(back_populates="file_links")
     file: Mapped["StoredFile"] = relationship()
@@ -1316,7 +1594,9 @@ class Tag(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
     )
     last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -1358,7 +1638,10 @@ class AiUsage(Base):
 
 
 class AiBudgetCounter(Base):
-    """Aggregate UTC-day budget; keys survive account/household deletion."""
+    """Global UTC-day budget; survives account/household deletion.
+
+    Account allocations use the existing AiUserUsage table, not this table.
+    """
 
     __tablename__ = "ai_budget_counters"
     scope_key: Mapped[str] = mapped_column(String(48), primary_key=True)
@@ -1380,6 +1663,28 @@ class AiCallReservation(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     day: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     state: Mapped[str] = mapped_column(String(12), nullable=False, default="reserved")
+
+
+class AiUserUsage(Base):
+    """Tageszähler der KI-Aufrufe pro Person über alle Haushalte (PD-A2).
+
+    Zusätzlich zu ``AiUsage``: Wer in mehreren Haushalten ist, kann das Haushaltslimit
+    nicht vervielfachen. Ein Eintrag pro Person und Tag (UTC), nur ``calls``.
+    """
+
+    __tablename__ = "ai_user_usage"
+    __table_args__ = (
+        UniqueConstraint("user_id", "day", name="uq_ai_user_usage_user_day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 
 class WidgetToken(Base):

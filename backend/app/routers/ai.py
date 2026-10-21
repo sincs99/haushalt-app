@@ -4,7 +4,8 @@ Jede Feature-Anfrage durchläuft:
 1. Mitgliedschaft (``verify_household_access``)
 2. Schlüssel konfiguriert (sonst 503 ``AI_NOT_CONFIGURED``)
 3. Opt-in des Haushalts ``ai_enabled`` (sonst 403 ``AI_NOT_ENABLED``)
-4. IP-Limit (slowapi, 10/min) und Tageslimit des Haushalts (429 ``AI_DAILY_LIMIT_REACHED``)
+4. IP-Limit (slowapi, 10/min), Tageslimit des Haushalts (429 ``AI_DAILY_LIMIT_REACHED``)
+   und der Person über alle Haushalte (429 ``AI_USER_DAILY_LIMIT_REACHED``, PD-A2)
 
 Ergebnisse werden nicht gespeichert; das Frontend übernimmt sie über die
 bestehenden Endpunkte (Rezepte, Einkaufsliste).
@@ -24,6 +25,7 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models import Household, HouseholdMember, User
+from app.services import entitlements
 from app.services.ai import plant_care, recipe, usage
 from app.services.ai.errors import (
     AiBusy,
@@ -36,6 +38,7 @@ from app.services.ai.errors import (
     AiRefused,
     AiUnavailable,
     AiUsageInfo,
+    AiUserDailyLimitReached,
 )
 from app.services.ai.schemas import (
     PlantCareAdvice,
@@ -55,6 +58,7 @@ AI_RATE_LIMIT = "10/minute"
 class AiStatusResponse(BaseModel):
     enabled: bool
     daily_limit: int
+    user_daily_limit: int
 
 
 class AiSettingsResponse(BaseModel):
@@ -62,6 +66,9 @@ class AiSettingsResponse(BaseModel):
     available: bool
     calls_today: int
     daily_limit: int
+    # Persönliches Limit der anfragenden Person (über alle Haushalte)
+    user_calls_today: int
+    user_daily_limit: int
 
 
 class AiSettingsUpdate(BaseModel):
@@ -83,6 +90,7 @@ def get_ai_status(current_user: User = Depends(get_current_user)):
     return AiStatusResponse(
         enabled=settings.ai_available,
         daily_limit=settings.ai_daily_limit_per_household,
+        user_daily_limit=settings.ai_daily_limit_per_user,
     )
 
 
@@ -96,12 +104,14 @@ def _get_household(db: Session, household_id: uuid.UUID) -> Household:
     return household
 
 
-def _settings_response(db: Session, household: Household) -> AiSettingsResponse:
+def _settings_response(db: Session, household: Household, user_id: uuid.UUID) -> AiSettingsResponse:
     return AiSettingsResponse(
         ai_enabled=household.ai_enabled,
         available=settings.ai_available,
         calls_today=usage.calls_today(db, household.id),
-        daily_limit=settings.ai_daily_limit_per_household,
+        daily_limit=usage.daily_limit(db, household.id),
+        user_calls_today=usage.user_calls_today(db, user_id),
+        user_daily_limit=settings.ai_daily_limit_per_user,
     )
 
 
@@ -111,7 +121,7 @@ def get_ai_settings(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    return _settings_response(db, _get_household(db, household_id))
+    return _settings_response(db, _get_household(db, household_id), membership.user_id)
 
 
 @router.put("/settings", response_model=AiSettingsResponse)
@@ -130,7 +140,7 @@ def update_ai_settings(
         "household_updated",
         {"id": str(household.id), "name": household.name, "ai_enabled": household.ai_enabled},
     )
-    return _settings_response(db, household)
+    return _settings_response(db, household, membership.user_id)
 
 
 def require_ai_enabled(
@@ -144,7 +154,14 @@ def require_ai_enabled(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=error_detail(ErrorCode.AI_NOT_CONFIGURED, "AI assistant is not configured"),
         )
-    if not _get_household(db, household_id).ai_enabled:
+    household = _get_household(db, household_id)
+    # Tarif-Schranke nur im SaaS-Betrieb; Self-Hosting mit Limit 0 meldet weiterhin 429
+    if settings.billing_enabled and not entitlements.limits_for_household(household).ai_included:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=error_detail(ErrorCode.PLAN_UPGRADE_REQUIRED, "AI assistant is not included in this plan"),
+        )
+    if not household.ai_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=error_detail(ErrorCode.AI_NOT_ENABLED, "AI assistant is not enabled for this household"),
@@ -156,6 +173,7 @@ def require_ai_enabled(
 _ERROR_MAP: list[tuple[type[AiError], int, str, str]] = [
     (AiNotConfigured, 503, ErrorCode.AI_NOT_CONFIGURED, "AI assistant is not configured"),
     (AiDailyLimitReached, 429, ErrorCode.AI_DAILY_LIMIT_REACHED, "Daily AI budget reached"),
+    (AiUserDailyLimitReached, 429, ErrorCode.AI_USER_DAILY_LIMIT_REACHED, "Your personal daily AI limit is reached"),
     (AiRefused, 422, ErrorCode.AI_REFUSED, "The AI declined this request"),
     (AiPlantNotRecognized, 422, ErrorCode.AI_PLANT_NOT_RECOGNIZED, "The input was not recognized as a plant"),
     (AiInvalidOutput, 502, ErrorCode.AI_INVALID_OUTPUT, "The AI returned an unusable answer"),
@@ -186,10 +204,10 @@ def _run_feature(
     feature: Callable[[ReqT], tuple[ResT, AiUsageInfo]],
     body: ReqT,
 ) -> ResT:
-    """Tageslimit reservieren → Feature aufrufen → Tokens verbuchen."""
+    """Tageslimits reservieren → Feature aufrufen → Tokens verbuchen."""
     try:
         reservation_id = usage.reserve_call(db, household_id, user_id)
-    except AiDailyLimitReached as exc:
+    except (AiDailyLimitReached, AiUserDailyLimitReached) as exc:
         raise _to_http(exc)
 
     try:

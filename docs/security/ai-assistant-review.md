@@ -12,7 +12,7 @@
 
 | # | Schweregrad | Finding | Status |
 |---|---|---|---|
-| A-01 | 🟠 Mittel | Tageslimit nur pro Haushalt — ein Account kann weitere Haushalte gründen und so das Limit vervielfachen | 📝 Offen (Vorschlag unten) |
+| A-01 | 🟠 Mittel | Tageslimit nur pro Haushalt — ein Account kann weitere Haushalte gründen und so das Limit vervielfachen | ✅ Behoben: zusätzliches Limit pro Person (`AI_DAILY_LIMIT_PER_USER`, `ai_user_usage`, PD-A2) |
 | A-02 | 🟡 Gering | Antworten, die das SDK nicht ins Schema validieren kann, zählen als Aufruf, aber ohne Token-Zahlen | Akzeptiert |
 | A-03 | 🟡 Gering | Vorgelagerter Proxy (Nginx Proxy Manager) kann lange Anfragen abbrechen, obwohl der Aufruf abgerechnet wird | 📝 Doku (Betrieb) |
 | A-04 | 🟡 Gering | Inhaltliche Fehler der KI (z. B. Giftigkeit einer Pflanze falsch) | Mitigiert (Hinweise, Prüf-Ansicht) |

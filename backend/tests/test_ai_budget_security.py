@@ -1,18 +1,23 @@
 """Budget ownership and rollback regressions, no provider requests."""
 
+import uuid
 from datetime import date
 
 import pytest
 
 from app.core.config import settings
-from app.models import AiBudgetCounter, AiCallReservation, AiUsage
+from app.models import AiBudgetCounter, AiCallReservation, AiUsage, AiUserUsage
 from app.services.ai import usage
-from app.services.ai.errors import AiDailyLimitReached, AiUsageInfo
+from app.services.ai.errors import AiDailyLimitReached, AiUsageInfo, AiUserDailyLimitReached
 
 
 def _count(db, key):
     db.expire_all()
-    row = db.query(AiBudgetCounter).filter_by(scope_key=key).one_or_none()
+    row = (
+        db.query(AiUserUsage).filter_by(user_id=uuid.UUID(key[5:])).one_or_none()
+        if key.startswith("user:")
+        else db.query(AiBudgetCounter).filter_by(scope_key=key).one_or_none()
+    )
     return row.calls if row else 0
 
 
@@ -20,7 +25,7 @@ def test_account_budget_spans_households(db, household_a, household_b, user_a, m
     monkeypatch.setattr(settings, "ai_daily_limit_per_user", 1)
     household_a_id, household_b_id, user_id = household_a.id, household_b.id, user_a.id
     usage.reserve_call(db, household_a_id, user_id)
-    with pytest.raises(AiDailyLimitReached):
+    with pytest.raises(AiUserDailyLimitReached):
         usage.reserve_call(db, household_b_id, user_id)
     assert _count(db, "global") == 1
     assert _count(db, f"user:{user_id}") == 1
@@ -78,7 +83,8 @@ def test_completed_call_cannot_be_refunded_or_recorded_twice(db, household_a, us
 @pytest.mark.parametrize("setting", ["ai_daily_limit_global", "ai_daily_limit_per_user"])
 def test_disabled_aggregate_budget_cannot_dispatch(db, household_a, user_a, monkeypatch, setting):
     monkeypatch.setattr(settings, setting, 0)
-    with pytest.raises(AiDailyLimitReached):
+    expected = AiUserDailyLimitReached if setting == "ai_daily_limit_per_user" else AiDailyLimitReached
+    with pytest.raises(expected):
         usage.reserve_call(db, household_a.id, user_a.id)
     assert _count(db, "global") == 0
     assert db.query(AiCallReservation).count() == 0

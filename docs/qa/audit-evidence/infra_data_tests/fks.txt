@@ -1,0 +1,84 @@
+events.calendar_id -> calendars CASCADE
+chore_assignments.chore_id -> chores CASCADE
+document_files.document_id -> documents CASCADE
+event_poll_votes.option_id -> event_poll_options CASCADE
+event_poll_options.poll_id -> event_polls CASCADE
+event_poll_votes.poll_id -> event_polls CASCADE
+event_polls.decided_event_id -> events SET NULL
+expense_shares.expense_id -> expenses CASCADE
+ai_usage.household_id -> households CASCADE
+budgets.household_id -> households CASCADE
+calendars.household_id -> households CASCADE
+chore_assignments.household_id -> households CASCADE
+chores.household_id -> households CASCADE
+documents.household_id -> households CASCADE
+event_poll_options.household_id -> households CASCADE
+event_poll_votes.household_id -> households CASCADE
+event_polls.household_id -> households CASCADE
+events.household_id -> households CASCADE
+expense_shares.household_id -> households CASCADE
+expenses.household_id -> households CASCADE
+feeding_logs.household_id -> households CASCADE
+household_members.household_id -> households CASCADE
+meal_plan_entries.household_id -> households CASCADE
+medication_logs.household_id -> households CASCADE
+medications.household_id -> households CASCADE
+notes.household_id -> households CASCADE
+pet_care_tasks.household_id -> households CASCADE
+pets.household_id -> households CASCADE
+plant_care_logs.household_id -> households CASCADE
+plant_care_tasks.household_id -> households CASCADE
+plants.household_id -> households CASCADE
+recipes.household_id -> households CASCADE
+recurring_bills.household_id -> households CASCADE
+settlements.household_id -> households CASCADE
+shopping_items.household_id -> households CASCADE
+shopping_lists.household_id -> households CASCADE
+stored_files.household_id -> households CASCADE
+tags.household_id -> households CASCADE
+todo_reminders.household_id -> households CASCADE
+todos.household_id -> households CASCADE
+widget_tokens.household_id -> households CASCADE
+medication_logs.medication_id -> medications CASCADE
+feeding_logs.pet_id -> pets CASCADE
+medications.pet_id -> pets CASCADE
+pet_care_tasks.pet_id -> pets CASCADE
+plant_care_logs.care_task_id -> plant_care_tasks SET NULL
+plant_care_logs.plant_id -> plants CASCADE
+plant_care_tasks.plant_id -> plants CASCADE
+event_poll_options.recipe_id -> recipes SET NULL
+meal_plan_entries.recipe_id -> recipes SET NULL
+expenses.recurring_bill_id -> recurring_bills SET NULL
+refresh_tokens.replaced_by_id -> refresh_tokens SET NULL
+shopping_items.list_id -> shopping_lists CASCADE
+document_files.file_id -> stored_files CASCADE
+pets.photo_file_id -> stored_files SET NULL
+plants.photo_file_id -> stored_files SET NULL
+todo_reminders.todo_id -> todos CASCADE
+chore_assignments.assigned_user_id -> users SET NULL
+chore_assignments.completed_by_user_id -> users SET NULL
+chores.created_by_user_id -> users SET NULL
+documents.created_by_user_id -> users SET NULL
+event_poll_votes.user_id -> users NO ACTION
+event_polls.created_by_user_id -> users NO ACTION
+events.created_by_user_id -> users NO ACTION
+expense_shares.user_id -> users CASCADE
+expenses.paid_by_user_id -> users SET NULL
+feeding_logs.fed_by_user_id -> users NO ACTION
+household_members.user_id -> users NO ACTION
+medication_logs.given_by_user_id -> users NO ACTION
+notes.created_by_user_id -> users SET NULL
+plant_care_logs.done_by_user_id -> users SET NULL
+push_subscriptions.user_id -> users CASCADE
+recurring_bills.paid_by_user_id -> users SET NULL
+refresh_tokens.user_id -> users CASCADE
+settlements.created_by_user_id -> users SET NULL
+settlements.from_user_id -> users CASCADE
+settlements.to_user_id -> users CASCADE
+shopping_items.added_by_user_id -> users SET NULL
+shopping_items.assigned_to_user_id -> users SET NULL
+stored_files.uploaded_by_user_id -> users SET NULL
+tags.created_by_user_id -> users SET NULL
+todos.assigned_to_user_id -> users SET NULL
+todos.created_by_user_id -> users SET NULL
+widget_tokens.user_id -> users CASCADE

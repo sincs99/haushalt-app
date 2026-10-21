@@ -62,9 +62,14 @@ export interface TodoItem {
   household_id: string
   title: string
   description: string | null
-  assigned_to_user_id: string | null
+  /** Zuständige Personen; leer = offen für alle */
+  assignee_ids: string[]
+  /** @deprecated Übergangsfeld der API (erste zuständige Person) — nicht verwenden */
+  assigned_to_user_id?: string | null
   due_date: string | null
   is_done: boolean
+  /** Wer abgehakt hat (eine:r für alle); null solange offen */
+  done_by_user_id: string | null
   created_by_user_id: string | null
   created_at: string
   done_at: string | null
@@ -89,22 +94,14 @@ export interface NoteItem {
   updated_at: string
 }
 
-// ── Unified Tasks ──
-
-export interface UnifiedTask {
-  type: 'todo' | 'chore'
-  id: string
-  title: string
-  due_date: string | null
-  assigned_to_user_id: string | null
-  tags: string[]
-  recurring: boolean
-}
-
 export interface UserInfo {
   id: string
   email: string
   display_name: string
+  /** E-Mail-Adresse per Link bestätigt (false bei Konten vor dieser Funktion) */
+  email_verified?: boolean
+  /** Betreiber-Zugang (/admin) */
+  is_platform_admin?: boolean
 }
 
 // ── Expenses ──
@@ -128,6 +125,17 @@ export interface Expense {
   shares: ExpenseShare[]
   category: string | null
   recurring_bill_id: string | null
+  /** Gebuchter Monat einer wiederkehrenden Rechnung (YYYY-MM-01) */
+  booked_month?: string | null
+  /** Optimistic Locking: PATCH/DELETE mit If-Match (PD-F7) */
+  version: number
+  created_by_user_id?: string | null
+  updated_by_user_id?: string | null
+  /** Soft Delete: gesetzt, wenn gelöscht (Verlauf, wiederherstellbar) */
+  deleted_at?: string | null
+  deleted_by_user_id?: string | null
+  /** Datiert auf/vor dem letzten Ausgleich zwischen Beteiligten (PD-F2: Warnung) */
+  before_last_settlement?: boolean
 }
 
 export type SplitType = 'even' | 'custom'
@@ -144,7 +152,10 @@ export interface ExpenseCreatePayload {
   category?: string
 }
 
-export type ExpenseUpdatePayload = Partial<ExpenseCreatePayload>
+/** Teil-Update: nur geänderte Felder; `category: null` leert die Kategorie (CASA-38) */
+export type ExpenseUpdatePayload = Partial<Omit<ExpenseCreatePayload, 'category'>> & {
+  category?: string | null
+}
 
 // ── Budget ──
 
@@ -182,8 +193,7 @@ export interface RecurringBillCreatePayload {
   name: string
   amount_rappen: number
   day_of_month: number
-  category?: string
-  split_type?: SplitType
+  category?: string | null
   active?: boolean
   paid_by_user_id?: string | null
 }
@@ -193,7 +203,6 @@ export interface RecurringBillUpdatePayload {
   amount_rappen?: number
   day_of_month?: number
   category?: string | null
-  split_type?: SplitType
   active?: boolean
   paid_by_user_id?: string | null
 }
@@ -233,6 +242,9 @@ export interface BalanceEntry {
   settled_out_rappen: number
   settled_in_rappen: number
   saldo_rappen: number
+  /** false = ehemaliges Mitglied mit Ledger-Einträgen (PD-F2); fehlt bei älterer API */
+  is_member?: boolean
+  display_name?: string | null
 }
 
 export interface SettlementEntry {
@@ -254,9 +266,22 @@ export interface SettlementInfo {
   note: string | null
   created_by_user_id: string | null
   created_at: string
+  deleted_at?: string | null
+  deleted_by_user_id?: string | null
+  /** Nur in der Create-Antwort: Plausibilitätswarnungen (PD-F3) */
+  warnings?: SettlementWarning[]
+}
+
+export type SettlementWarning = 'DUPLICATE_RECENT' | 'EXCEEDS_OPEN_DEBT'
+
+export interface SettlementCheckResponse {
+  warnings: SettlementWarning[]
+  open_debt_rappen: number
 }
 
 export interface SettlementCreatePayload {
+  /** Client-generierte ID → idempotenter Create (Retry/Doppelklick) */
+  id?: string
   from_user_id: string
   to_user_id: string
   amount_rappen: number
@@ -277,6 +302,8 @@ export interface HouseholdInfo {
   role: string
   currency: string  // z.B. "CHF" — vom Backend via GET /api/auth/me
   ai_enabled?: boolean  // Opt-in für den KI-Assistenten (nur Admins schalten um)
+  plan?: string  // Geltender Tarif: 'free' | 'premium' | 'selfhosted' (ohne BILLING_ENABLED)
+  timezone?: string | null  // IANA-Zeitzone des Haushalts ("heute" in Haushaltszeit, CASA-39)
 }
 
 export interface HouseholdMemberInfo {
@@ -289,6 +316,8 @@ export interface MeResponse {
   id: string
   email: string
   display_name: string
+  email_verified?: boolean
+  is_platform_admin?: boolean
   households: HouseholdInfo[]
 }
 
@@ -372,10 +401,14 @@ export interface DashboardChoreItem {
   id: string
   title: string
   assigned_user_id: string | null
+  due_date: string            // "YYYY-MM-DD"
+  is_overdue: boolean
 }
 
 export interface DashboardChoreSection {
+  /** Heute fällig und überfällig (wie die Zahl am App-Icon), Überfällige zuerst */
   items: DashboardChoreItem[]
+  overdue_count: number
 }
 
 export interface DashboardShoppingSection {
@@ -475,9 +508,13 @@ export interface CalendarEvent {
   calendar_id: string
   participant_ids: string[]  // leer = ganzer Haushalt
   note: string | null
+  /** Push-Erinnerung vor Beginn (ganztägig: 08:00 am Tag bzw. Vortag) */
+  reminder: EventReminder
   created_by_user_id: string
   created_at: string
 }
+
+export type EventReminder = 'none' | '15m' | '1h' | '1d'
 
 export interface CalendarEventCreatePayload {
   title: string
@@ -487,6 +524,7 @@ export interface CalendarEventCreatePayload {
   calendar_id: string
   participant_ids?: string[]
   note?: string | null
+  reminder?: EventReminder
 }
 
 export type CalendarEventUpdatePayload = Partial<CalendarEventCreatePayload>
@@ -545,6 +583,8 @@ export interface PollDecidePayload {
 
 export interface MealDecidePayload {
   option_id: string
+  /** Belegten Tag ersetzen; ohne → 409 MEAL_PLAN_OCCUPIED (PD-M1) */
+  replace?: boolean
 }
 
 // ── Pets ──
@@ -574,7 +614,18 @@ export interface Pet {
   vet_name: string | null
   food_notes: string | null
   health_entries: HealthEntry[] | null
+  // Archiv (verstorben/abgegeben): Verlauf bleibt, keine Fütterung/Erinnerungen mehr
+  archived: boolean
+  archived_at: string | null
   created_at: string
+}
+
+/** Umfang des Verlaufs eines Tiers (Warnung vor endgültigem Löschen). */
+export interface PetHistory {
+  feedings: number
+  medications: number
+  medication_logs: number
+  care_tasks: number
 }
 
 export interface PetCreatePayload {
@@ -760,7 +811,9 @@ export interface PlantCareLog {
 
 export interface PlantCareCompleteResponse {
   task: PlantCareTask
-  log: PlantCareLog
+  /** null = heute schon erledigt (auch von jemand anderem) — kein zweiter Eintrag (CASA-29) */
+  log: PlantCareLog | null
+  changed: boolean
 }
 
 export interface PlantCareStatusTask {
@@ -804,8 +857,8 @@ export interface Recipe {
 export interface RecipeCreatePayload {
   name: string
   servings?: number
-  cost_rappen?: number
-  duration_min?: number
+  cost_rappen?: number | null
+  duration_min?: number | null
   ingredients?: string[]
   steps?: string[]
   tags?: string[]
@@ -818,6 +871,8 @@ export interface RecipeUpdatePayload {
   cost_rappen?: number | null
   duration_min?: number | null
   ingredients?: string[]
+  steps?: string[]
+  tags?: string[]
   is_favorite?: boolean
 }
 
@@ -837,6 +892,13 @@ export interface MealPlanAssignPayload {
 
 export interface AddToShoppingResponse {
   added: string[]
+  skipped: string[]
+  list_id: string
+}
+
+/** POST /shopping-items/bulk-add (PD-M2): angelegte Items + übersprungene Namen */
+export interface BulkAddResponse {
+  added: ShoppingItem[]
   skipped: string[]
   list_id: string
 }
@@ -894,6 +956,7 @@ export interface StorageUsage {
 export interface AiStatus {
   enabled: boolean      // Schlüssel auf dem Server gesetzt
   daily_limit: number
+  user_daily_limit?: number  // persönliches Limit über alle Haushalte
 }
 
 export interface AiSettings {
@@ -901,6 +964,9 @@ export interface AiSettings {
   available: boolean    // Schlüssel auf dem Server gesetzt
   calls_today: number
   daily_limit: number
+  // Persönliches Tageslimit der angemeldeten Person über alle Haushalte (PD-A2)
+  user_calls_today?: number
+  user_daily_limit?: number
 }
 
 export type AiLocale = 'de' | 'en'
@@ -979,6 +1045,8 @@ export interface TagInfo {
   target_type: string
   target_id: string | null
   target_name: string | null
+  /** Pflegeart ohne eigene Bezeichnung (CASA-59): übersetzen statt target_name */
+  target_care_type?: string | null
   target_missing: boolean
   action: TagActionKey
   created_by_user_id: string | null
@@ -990,7 +1058,11 @@ export interface TagInfo {
 
 export interface TagTargetOption {
   id: string
+  /** Deutscher Fallback-Name (ältere Clients) */
   name: string
+  /** Pflegeart ohne eigene Bezeichnung (CASA-59) samt Pflanze */
+  care_type?: string | null
+  plant_name?: string | null
 }
 
 export interface TagTargetType {
@@ -1015,12 +1087,20 @@ export interface TagResolveResult {
   target_type: string
   target_id: string | null
   target_name: string | null
+  target_care_type?: string | null
   navigate_only: boolean
   navigate_to: string | null
   description: string
   details: Record<string, any>
   can_execute: boolean
   reason: string | null
+  /** Bei execute unverändert zurückschicken (angezeigte Zuweisung/Aufgaben, CASA-18) */
+  confirm?: Record<string, unknown> | null
+}
+
+export interface TagExecuteParams {
+  slot?: 'morning' | 'evening'
+  confirm?: Record<string, unknown> | null
 }
 
 export interface TagExecuteResult {
@@ -1028,6 +1108,64 @@ export interface TagExecuteResult {
   action: TagActionKey
   household_id: string
   target_name: string | null
+  target_care_type?: string | null
   changed: boolean
+  /** z. B. ALREADY_DONE: wiederholter Scan, nichts geändert */
+  reason?: string | null
   result: Record<string, any>
+}
+
+// ── Billing / Tarife ──
+
+export interface BillingStatus {
+  billing_enabled: boolean
+  plan: string
+  plan_expires_at: string | null
+  limits: { max_members: number | null; storage_bytes: number; ai_daily_limit: number }
+  usage: { members: number; storage_bytes: number; ai_calls_today: number }
+  subscription: {
+    provider: string
+    status: string
+    current_period_end: string | null
+    cancel_at_period_end: boolean
+  } | null
+  checkout_available: boolean
+  portal_available: boolean
+  intervals: string[]
+}
+
+// ── Plattform-Admin ──
+
+export interface AdminOverview {
+  billing_enabled: boolean
+  users_total: number
+  users_active: number
+  users_deleted: number
+  households_total: number
+  households_by_plan: Record<string, number>
+  subscriptions_active: number
+}
+
+export interface AdminHousehold {
+  id: string
+  name: string
+  plan: string
+  effective_plan: string
+  plan_expires_at: string | null
+  member_count: number
+  storage_bytes: number
+  created_at: string
+  stripe_customer_id: string | null
+}
+
+export interface AdminUser {
+  id: string
+  email: string
+  display_name: string
+  created_at: string
+  is_active: boolean
+  is_platform_admin: boolean
+  email_verified: boolean
+  deleted: boolean
+  household_count: number
 }

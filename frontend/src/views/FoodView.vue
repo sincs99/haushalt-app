@@ -3,7 +3,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useFoodStore } from '../stores/food'
-import { usePollsStore } from '../stores/polls'
+import { mealPlanOccupiedEntry, usePollsStore } from '../stores/polls'
+import { useShoppingStore } from '../stores/shopping'
 import { useAuthStore } from '../stores/auth'
 import { useSocket } from '../composables/useSocket'
 import { useToast } from '../composables/useToast'
@@ -23,12 +24,14 @@ import BaseSkeleton from '../components/ui/BaseSkeleton.vue'
 import BaseErrorState from '../components/ui/BaseErrorState.vue'
 import PageHeader from '../components/ui/PageHeader.vue'
 import AiRecipeCard from '../components/AiRecipeCard.vue'
+import RecipeManager from '../components/RecipeManager.vue'
 import { useAiStore } from '../stores/ai'
 
 const foodStore = useFoodStore()
 const pollsStore = usePollsStore()
 const authStore = useAuthStore()
 const aiStore = useAiStore()
+const shoppingStore = useShoppingStore()
 const router = useRouter()
 const { on, off, onReconnect, offReconnect } = useSocket()
 const { t, locale } = useI18n()
@@ -229,12 +232,29 @@ async function switchToAssign() {
   openAssignDialog(date)
 }
 
+// ── Rezept aus dem Detail-Dialog bearbeiten ──
+const recipeManager = ref<InstanceType<typeof RecipeManager> | null>(null)
+
+async function editDetailRecipe() {
+  const recipe = detailEntry.value?.recipe
+  if (!recipe) return
+  // Aktuelle Fassung aus der Rezeptliste (der Eintrag kann ein älteres Objekt tragen)
+  const current = foodStore.recipes.find(r => r.id === recipe.id) ?? recipe
+  closeDetailDialog()
+  await nextTick()
+  await waitForOverlayBack()
+  recipeManager.value?.openEdit(current)
+}
+
 async function doAddToShopping() {
   const entry = detailEntry.value
   if (!entry) return
   let addedText = ''
   const ok = await run(async () => {
-    const result = await foodStore.addMissingToShopping(entry.id)
+    // Ziel = aktive Einkaufsliste (wie beim KI-Rezept, PD-M2); ohne geladene
+    // Listen die zuletzt gewählte aus dem Speicher holen
+    if (!shoppingStore.activeListId) await shoppingStore.fetchLists().catch(() => {})
+    const result = await foodStore.addMissingToShopping(entry.id, shoppingStore.activeListId)
     if (!result) return
     addedText = t('ai.recipe.addedMissing', { n: result.added.length }, result.added.length)
     if (result.skipped.length > 0) {
@@ -332,8 +352,26 @@ const decideOption = computed(() =>
   decidePoll.value?.options.find(o => o.id === decideOptionId.value) ?? null,
 )
 
+/**
+ * Belegter Tag (PD-M1): aus dem 409 des Servers oder schon lokal bekannt.
+ * Dann zeigt der Dialog das bestehende Essen und fragt, ob es ersetzt werden soll.
+ */
+const decideOccupied = ref<MealPlanEntry | null>(null)
+const decideExisting = computed<MealPlanEntry | null>(() => {
+  if (decideOccupied.value) return decideOccupied.value
+  const date = decidePoll.value?.decided_meal_date
+  return date ? getEntryForDate(date) ?? null : null
+})
+
+function formatMealDate(date: string): string {
+  return new Date(`${date}T00:00:00`).toLocaleDateString(dateLocale.value, {
+    weekday: 'short', day: 'numeric', month: 'numeric',
+  })
+}
+
 function openDecideDialog(poll: EventPoll) {
   decidePollId.value = poll.id
+  decideOccupied.value = null
   // Bei eindeutigem Gewinner vorauswählen, bei Gleichstand wählt man selbst
   decideOptionId.value = decideLeaders.value.length === 1 ? decideLeaders.value[0].id : null
 }
@@ -341,18 +379,32 @@ function openDecideDialog(poll: EventPoll) {
 function closeDecideDialog() {
   decidePollId.value = null
   decideOptionId.value = null
+  decideOccupied.value = null
 }
 
 async function confirmDecide() {
   const poll = decidePoll.value
   const option = decideOption.value
   if (!poll || !option) return
-  const ok = await run(() => pollsStore.mealDecidePoll(poll.id, option.id), {
+  // Ersetzen nur, wenn der Dialog das bestehende Essen gezeigt hat
+  const replace = !!decideExisting.value
+  let occupied = false
+  const ok = await run(async () => {
+    try {
+      await pollsStore.mealDecidePoll(poll.id, option.id, replace)
+    } catch (err) {
+      const existing = mealPlanOccupiedEntry(err)
+      if (!existing) throw err
+      // Tag inzwischen belegt (anderes Gerät): Dialog bleibt offen und fragt nach
+      decideOccupied.value = existing
+      occupied = true
+    }
+  }, {
     key: `decide:${poll.id}`,
-    success: t('food.pollDecidedToast', { option: option.label }),
+    success: () => (occupied ? undefined : t('food.pollDecidedToast', { option: option.label })),
     error: t('polls.decideError'),
   })
-  if (!ok) return
+  if (!ok || occupied) return
   closeDecideDialog()
   // Wochenplan neu laden (Ergebnis erscheint dort)
   foodStore.fetchWeekPlan().catch((err) => notifyError(t('common.loadError'), err))
@@ -561,6 +613,9 @@ async function doCreateMealPoll() {
     <!-- ── KI-Rezeptvorschlag (nur mit Server-Schlüssel und Opt-in des Haushalts) ── -->
     <AiRecipeCard v-if="aiStore.enabledForHousehold" />
 
+    <!-- ── Rezepte verwalten (erstellen, bearbeiten, löschen) ── -->
+    <RecipeManager ref="recipeManager" />
+
     <!-- ── Create Meal Poll Dialog ── -->
     <BaseDialog
       :open="showCreateMealPoll"
@@ -762,6 +817,9 @@ async function doCreateMealPoll() {
           <BaseButton variant="secondary" size="sm" @click="switchToAssign">
             {{ t('food.assignTitle') }}
           </BaseButton>
+          <BaseButton v-if="detailEntry?.recipe" variant="ghost" size="sm" @click="editDetailRecipe">
+            {{ t('food.editRecipe') }}
+          </BaseButton>
           <div class="dialog-actions__spacer" />
           <BaseButton variant="ghost" size="sm" @click="closeDetailDialog">
             {{ t('common.close') }}
@@ -799,6 +857,14 @@ async function doCreateMealPoll() {
           {{ t('food.decideWinner', { option: decideOption.label, n: decideOption.votes.length }, decideOption.votes.length) }}
         </p>
 
+        <!-- Tag schon belegt: bestehendes Essen zeigen und nachfragen (PD-M1) -->
+        <p v-if="decideExisting" class="decide-content__warning" role="alert">
+          {{ t('food.decideOccupied', {
+            date: formatMealDate(decideExisting.date),
+            meal: getDisplayName(decideExisting),
+          }) }}
+        </p>
+
         <p class="decide-content__hint">{{ t('food.decideHint') }}</p>
       </div>
 
@@ -815,7 +881,7 @@ async function doCreateMealPoll() {
             :loading="!!decidePoll && isPending(`decide:${decidePoll.id}`)"
             @click="confirmDecide"
           >
-            {{ t('food.decidePoll') }}
+            {{ decideExisting ? t('food.decideReplace') : t('food.decidePoll') }}
           </BaseButton>
         </div>
       </template>
@@ -1118,6 +1184,15 @@ async function doCreateMealPoll() {
   margin: 0;
   font-size: var(--text-sm);
   color: var(--ink);
+}
+
+.decide-content__warning {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  font-size: var(--text-sm);
+  color: var(--color-warning-strong);
 }
 
 .decide-content__hint {

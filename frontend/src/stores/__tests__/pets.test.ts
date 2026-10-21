@@ -9,6 +9,7 @@ import { deferred, HOUSEHOLD_ID, USER_ID } from './helpers'
 const { repo, householdRepo, auth } = vi.hoisted(() => ({
   repo: {
     fetchAll: vi.fn(), fetchFeedingStatus: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(),
+    archive: vi.fn(), unarchive: vi.fn(), fetchHistory: vi.fn(),
     createFeeding: vi.fn(), deleteFeeding: vi.fn(), feedAll: vi.fn(),
     fetchMedications: vi.fn(), createMedication: vi.fn(), updateMedication: vi.fn(),
     removeMedication: vi.fn(), giveMedication: vi.fn(), fetchMedicationLog: vi.fn(),
@@ -94,6 +95,53 @@ describe('Pets', () => {
     await expect(p).rejects.toThrow('x')
     expect(store.pets.map(x => x.id)).toEqual(['a', 'b'])
     expect(store.feedingStatus).toHaveLength(2)
+  })
+})
+
+describe('Löschen mit Verlauf (PD-P2)', () => {
+  test('removePet sendet force nur nach ausdrücklicher Bestätigung', async () => {
+    const store = usePetsStore()
+    store.pets = [pet('a'), pet('b')]
+    repo.remove.mockResolvedValue(undefined)
+    await store.removePet('a')
+    expect(repo.remove).toHaveBeenLastCalledWith(HOUSEHOLD_ID, 'a', false)
+    await store.removePet('b', { force: true })
+    expect(repo.remove).toHaveBeenLastCalledWith(HOUSEHOLD_ID, 'b', true)
+  })
+})
+
+describe('Archiv (PD-P2)', () => {
+  test('archivePet entfernt das Tier aus dem Fütterungsstatus, unarchivePet lädt ihn neu', async () => {
+    const store = usePetsStore()
+    store.pets = [pet('p1', { archived: false }), pet('p2', { archived: false })]
+    store.feedingStatus = [status('p1'), status('p2')]
+    repo.archive.mockResolvedValue(pet('p1', { archived: true }))
+    await store.archivePet('p1')
+    expect(store.pets[0].archived).toBe(true)
+    expect(store.feedingStatus.map(s => s.pet_id)).toEqual(['p2'])
+
+    repo.unarchive.mockResolvedValue(pet('p1', { archived: false }))
+    repo.fetchFeedingStatus.mockResolvedValue([status('p1'), status('p2')])
+    await store.unarchivePet('p1')
+    await vi.waitFor(() => expect(store.feedingStatus).toHaveLength(2))
+    expect(store.pets[0].archived).toBe(false)
+  })
+
+  test('Socket pet_updated mit archived=true entfernt den Fütterungsstatus', () => {
+    const store = usePetsStore()
+    store.pets = [pet('p1', { archived: false })]
+    store.feedingStatus = [status('p1')]
+    store.handlePetUpdated(pet('p1', { archived: true }))
+    expect(store.feedingStatus).toEqual([])
+    expect(repo.fetchFeedingStatus).not.toHaveBeenCalled()
+  })
+
+  test('fetchPetHistory liefert die Zahlen für die Lösch-Warnung', async () => {
+    const store = usePetsStore()
+    const history = { feedings: 3, medications: 1, medication_logs: 2, care_tasks: 0 }
+    repo.fetchHistory.mockResolvedValue(history)
+    await expect(store.fetchPetHistory('p1')).resolves.toEqual(history)
+    expect(repo.fetchHistory).toHaveBeenCalledWith(HOUSEHOLD_ID, 'p1')
   })
 })
 
@@ -185,11 +233,25 @@ describe('toggleFeeding', () => {
   test('feedAll lädt den Status danach neu — auch bei Fehler, und reicht den Fehler weiter', async () => {
     const store = usePetsStore()
     repo.feedAll.mockResolvedValue([feeding('f1')])
-    repo.fetchFeedingStatus.mockResolvedValue([])
-    await expect(store.feedAll('morning')).resolves.toEqual([feeding('f1')])
+    repo.fetchFeedingStatus.mockResolvedValue([status('p1', { morning: feeding('f1') })])
+    await expect(store.feedAll('morning')).resolves.toEqual({ created: [feeding('f1')], allFed: true, fed: 1, total: 1 })
     repo.feedAll.mockRejectedValue(new Error('x'))
     await expect(store.feedAll('evening')).rejects.toThrow('x')
     expect(repo.fetchFeedingStatus).toHaveBeenCalledTimes(2)
+  })
+
+  test('feedAll: „alle gefüttert“ nur, wenn der neu geladene Status das bestätigt (CASA-13)', async () => {
+    const store = usePetsStore()
+    // Race: Server legte nichts an (andere Person war schneller), Status zeigt aber 1 von 2
+    repo.feedAll.mockResolvedValue([])
+    repo.fetchFeedingStatus.mockResolvedValue([status('p1', { evening: feeding('x', 'evening') }), status('p2')])
+    await expect(store.feedAll('evening')).resolves.toMatchObject({ created: [], allFed: false, fed: 1, total: 2 })
+
+    // Status-Refetch scheitert: eigene Fütterungen sind trotzdem im Status
+    store.feedingStatus = [status('p1'), status('p2')]
+    repo.feedAll.mockResolvedValue([feeding('a', 'morning', 'p1'), feeding('b', 'morning', 'p2')])
+    repo.fetchFeedingStatus.mockRejectedValue(new Error('offline'))
+    await expect(store.feedAll('morning')).resolves.toMatchObject({ allFed: true, fed: 2, total: 2 })
   })
 
   test('undoFeedings löscht die angelegten Fütterungen und lädt den Status neu', async () => {
@@ -238,6 +300,17 @@ describe('Medikation', () => {
     store.handleMedicationGiven({ id: 'x', medication_id: 'm2' } as any)
     expect(store.medicationLogs.m1[0].id).toBe('sock')
     expect(store.medicationLogs.m2).toHaveLength(1)
+  })
+
+  test('giveMedication sendet eine Client-ID (Idempotenz bei Retry, CASA-14)', async () => {
+    const store = usePetsStore()
+    repo.giveMedication.mockResolvedValue({ id: 'g', medication_id: 'm1' })
+    await store.giveMedication('p1', 'm1')
+    await store.giveMedication('p1', 'm1')
+    const ids = repo.giveMedication.mock.calls.map(call => call[3])
+    expect(ids[0]).toMatch(/^[0-9a-f-]{36}$/)
+    // Jede bewusste Gabe ist eine neue Gabe (nie still zusammenführen)
+    expect(ids[1]).not.toBe(ids[0])
   })
 
   test('fetchMedicationLog kürzt auf 10 und schluckt Fehler', async () => {

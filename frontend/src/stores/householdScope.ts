@@ -1,10 +1,16 @@
 /**
  * Haushaltswechsel: Alle haushaltsbezogenen Stores leeren.
  *
- * Wird synchron vom Auth-Store bei Konto-/Haushaltswechsel und Logout aufgerufen. Ohne das zeigen
- * Ansichten, die ihre Daten nur beim Öffnen laden (Haustiere, Pflanzen, Notizen, Essen),
- * weiter die Daten des alten Haushalts — und Aktionen darauf gingen gegen den neuen
- * Haushalt (Logik-Review L-07). Der Auth-Store (Haushaltsliste, User) bleibt unberührt.
+ * Wird vom Auth-Store bei JEDEM Wechsel von currentHouseholdId aufgerufen (auch von/nach
+ * `null`, z. B. letzten Haushalt verlassen und neuen anlegen) und beim Logout
+ * (auth._clearState), bevor App.vue den neuen Haushalt lädt. Ohne das zeigen Ansichten, die ihre Daten nur beim Öffnen laden
+ * (Haustiere, Pflanzen, Notizen, Essen), weiter die Daten des alten Haushalts — und
+ * Aktionen darauf gingen gegen den neuen Haushalt (Logik-Review L-07); nach Logout +
+ * Login eines anderen Users sähe dieser die Daten des Vorgängers (CASA-12).
+ *
+ * Erhöht ausserdem die Haushalts-Generation: Antworten von Requests, die vor dem Reset
+ * gestartet wurden, werden von den Stores verworfen (utils/householdGuard.ts).
+ * Der Auth-Store (Haushaltsliste, User) bleibt unberührt.
  */
 import { useShoppingStore } from './shopping'
 import { useTodosStore } from './todos'
@@ -19,16 +25,16 @@ import { usePetsStore } from './pets'
 import { usePlantsStore } from './plants'
 import { useNotesStore } from './notes'
 import { useFoodStore } from './food'
-import { useTasksStore } from './tasks'
 import { useAiStore } from './ai'
 import { useDocumentsStore } from './documents'
 import { useTagsStore } from './tags'
-import { invalidateDataScope } from '../services/sessionScope'
+import { bumpHouseholdGeneration } from '../utils/householdGuard'
 import { clearToasts } from '../composables/useToast'
 
 export function resetHouseholdScopedStores(): void {
-  invalidateDataScope()
+  bumpHouseholdGeneration()
   clearToasts()
+
   const shopping = useShoppingStore()
   shopping.resetPending()
   shopping.items = []
@@ -48,13 +54,22 @@ export function resetHouseholdScopedStores(): void {
   expenses.expenses = []
   expenses.balances = null
   expenses.members = []
+  expenses.hasMore = false
+  expenses.deletedExpenses = []
+  expenses.deletedLoaded = false
   expenses.loading = false
   expenses.error = null
   expenses.balancesError = false
+  expenses.loadingMore = false
 
-  useSettlementsStore().settlements = []
-  useSettlementsStore().loading = false
-  useSettlementsStore().error = null
+  const settlements = useSettlementsStore()
+  settlements.settlements = []
+  settlements.hasMore = false
+  settlements.deletedSettlements = []
+  settlements.deletedLoaded = false
+  settlements.loading = false
+  settlements.error = null
+  settlements.loadingMore = false
 
   const chores = useChoresStore()
   chores.resetPending()
@@ -81,7 +96,6 @@ export function resetHouseholdScopedStores(): void {
   usePlantsStore().reset()
   useNotesStore().reset()
   useFoodStore().reset()
-  useTasksStore().reset()
   useAiStore().reset()
   useDocumentsStore().reset()
   useTagsStore().$reset()

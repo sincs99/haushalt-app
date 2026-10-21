@@ -18,11 +18,14 @@ RUN useradd -r -s /bin/false app \
     && chown -R app:app /app
 USER app
 
-# --workers 1: python-socketio ohne Message-Queue kann nicht multi-worker laufen
+# UVICORN_WORKERS: Standard 1. Mehr als 1 nur mit Redis für Rate-Limits und
+#   Socket.IO (RATE_LIMIT_STORAGE_URI, SOCKETIO_MESSAGE_QUEUE), sonst sehen die
+#   Prozesse weder dieselben Zähler noch dieselben Socket-Räume.
 # --proxy-headers: X-Forwarded-For wird zu request.client.host (für Rate-Limiting).
 #   Das Frontend-nginx setzt X-Forwarded-For auf genau die echte Client-IP.
 # --forwarded-allow-ips: Production Compose setzt ausschließlich die feste Adresse
 # des Frontend-Proxys im dedizierten Netz. Kein pauschales Vertrauen in Docker-Netze.
 # exec: uvicorn ersetzt die Shell und erhält SIGTERM direkt (sauberer Shutdown)
 ENV FORWARDED_ALLOW_IPS=127.0.0.1
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=\"$FORWARDED_ALLOW_IPS\""]
+ENV UVICORN_WORKERS=1
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers \"$UVICORN_WORKERS\" --proxy-headers --forwarded-allow-ips=\"$FORWARDED_ALLOW_IPS\""]

@@ -1,4 +1,5 @@
 import api from '../api/client'
+import { deleteIdempotent } from './http'
 import type { ChoreInfo, ChoreCreatePayload, ChoreUpdatePayload, ChoreAssignmentInfo } from '../types'
 
 export interface ChoresRepository {
@@ -38,7 +39,7 @@ export function createOnlineChoresRepository(): ChoresRepository {
     },
 
     async removeChore(householdId, choreId) {
-      await api.delete(
+      await deleteIdempotent(
         `/api/households/${householdId}/chores/${choreId}`,
       )
     },

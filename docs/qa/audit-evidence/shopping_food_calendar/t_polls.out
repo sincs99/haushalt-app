@@ -1,0 +1,31 @@
+== P1: concurrent decide (10 rounds x 3) ==
+ status sets: {(200, 400, 400)}
+ events titled Essen: 10  decided polls: 10
+== P2: option starts_at in API (L-13) ==
+ option starts_at: ['2026-10-17T17:00:00Z', '2026-10-18T10:00:00Z']
+== P3: decide twice / vote after decide / vote other poll option ==
+ vote w/ option of other poll 400 {"detail":{"code":"POLL_OPTION_INVALID","message":"Option does not belong to this poll"}}
+ vote 200 
+ change vote 200 
+ decide 200 
+ decide again 400 {"detail":{"code":"POLL_ALREADY_DECIDED","message":"Poll has already been decided"}}
+ vote after decide 400 {"detail":{"code":"POLL_ALREADY_DECIDED","message":"Poll has already been decided"}}
+== P4: delete decided event, then calendar ==
+ delete event 204 
+== P5: race decide vs delete calendar ==
+ (del,decide), poll status, has event: [((204, 500), 'offen', False), ((204, 500), 'entschieden', False), ((204, 500), 'entschieden', False), ((204, 500), 'offen', False), ((204, 500), 'offen', False), ((204, 500), 'entschieden', False)]
+== P6: poll w/o starts_at decides to 'now' ==
+ event starts: 2026-10-10T09:03:55.300327+02:00
+== P7: meal poll overwrites existing day entry ==
+ meal-decide 200 
+== P8: recipe deleted between vote and meal-decide ==
+ meal-decide pizza 200 
+== P9: concurrent meal-decide on 2 different polls, same date, no prior entry ==
+== P10: event poll with foreign-household recipe_id ==
+ event poll w/ foreign recipe 201 
+ meal poll w/ foreign recipe 400 {"detail":{"code":"POLL_OPTION_INVALID","message":"One or more recipe_ids do not belong to this household"}}
+== P11: meal_date on event poll / meal options with starts_at ==
+ event poll with meal_date 201 
+== P12: decide meal poll via /decide, event poll via /meal-decide ==
+== P13: ex-member's vote remains counted ==
+ Carla leaves 204 

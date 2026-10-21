@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { PhCopy, PhDeviceMobile, PhDownloadSimple } from '@phosphor-icons/vue'
 import BaseCard from './ui/BaseCard.vue'
@@ -8,11 +8,11 @@ import BaseDialog from './ui/BaseDialog.vue'
 import { API_BASE } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import { useToast } from '../composables/useToast'
-import { createOnlineWidgetRepository, type WidgetTokenStatus } from '../repositories/widgetRepository'
+import { createOnlineWidgetRepository } from '../repositories/widgetRepository'
+import { useWidgetToken } from '../composables/useWidgetToken'
 import { buildWidgetScript } from '../utils/widgetScript'
 import { translateApiError } from '../utils/apiErrors'
 import { formatDate } from '../utils/dates'
-import { assertDataGeneration, currentDataGeneration, isScopeChanged } from '../services/sessionScope'
 
 /**
  * Homescreen-Widget (Scriptable auf dem iPhone): Nur-Lese-Schlüssel erzeugen,
@@ -23,71 +23,29 @@ const { showToast } = useToast()
 const authStore = useAuthStore()
 const repo = createOnlineWidgetRepository()
 
-const status = ref<WidgetTokenStatus | null>(null)
-const busy = ref(false)
-const script = ref<string | null>(null) // nur direkt nach dem Erzeugen bekannt
 const confirmRevoke = ref(false)
 const confirmReplace = ref(false)
 
 const householdId = computed(() => authStore.currentHouseholdId)
 
-async function load() {
-  if (!householdId.value) return
-  const generation = currentDataGeneration()
-  try {
-    const result = await repo.fetchStatus(householdId.value)
-    assertDataGeneration(generation)
-    status.value = result
-  } catch {
-    if (generation === currentDataGeneration()) status.value = null
-  }
-}
+// Antworten für einen inzwischen gewechselten Haushalt werden verworfen (CASA-50)
+const { status, script, busy, load, create: createToken, revoke: revokeToken } = useWidgetToken(
+  householdId,
+  repo,
+  (token) => buildWidgetScript(API_BASE || window.location.origin, token, locale.value),
+  (error) => showToast(translateApiError(error), 'error'),
+)
 
 onMounted(load)
-watch(householdId, () => {
-  script.value = null
-  status.value = null
-  busy.value = false
-  load()
-})
 
 async function create() {
-  if (!householdId.value) return
-  const generation = currentDataGeneration()
   confirmReplace.value = false
-  busy.value = true
-  try {
-    const created = await repo.create(householdId.value)
-    assertDataGeneration(generation)
-    const baseUrl = API_BASE || window.location.origin
-    const generated = await buildWidgetScript(baseUrl, created.token, locale.value)
-    assertDataGeneration(generation)
-    script.value = generated
-    await load()
-  } catch (error) {
-    if (!isScopeChanged(error) && generation === currentDataGeneration()) showToast(translateApiError(error), 'error')
-  } finally {
-    if (generation === currentDataGeneration()) busy.value = false
-  }
+  await createToken()
 }
 
 async function revoke() {
-  if (!householdId.value) return
-  const generation = currentDataGeneration()
   confirmRevoke.value = false
-  busy.value = true
-  try {
-    await repo.revoke(householdId.value)
-    assertDataGeneration(generation)
-    script.value = null
-    await load()
-    assertDataGeneration(generation)
-    showToast(t('widget.revoked'), 'success')
-  } catch (error) {
-    if (!isScopeChanged(error) && generation === currentDataGeneration()) showToast(translateApiError(error), 'error')
-  } finally {
-    if (generation === currentDataGeneration()) busy.value = false
-  }
+  if (await revokeToken()) showToast(t('widget.revoked'), 'success')
 }
 
 async function copyScript() {

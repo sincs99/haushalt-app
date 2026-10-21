@@ -11,6 +11,7 @@ from app.core.error_codes import ErrorCode, error_detail
 from app.database import get_db
 from app.models import HouseholdMember, Todo, TodoReminder
 from app.services.client_ids import commit_or_get_existing, get_existing_by_client_id
+from app.services.household_checks import assert_users_in_household
 from app.socket_manager import emit_to_household_sync
 
 # ---------------------------------------------------------------------------
@@ -193,6 +194,9 @@ def create_todo(
         response.status_code = status.HTTP_200_OK
         return existing
 
+    if body.assigned_to_user_id is not None:
+        assert_users_in_household(db, household_id, [body.assigned_to_user_id])
+
     todo = Todo(
         household_id=household_id,
         title=body.title,
@@ -240,6 +244,8 @@ def update_todo(
         )
 
     update_data = body.model_dump(exclude_unset=True)
+    if update_data.get("assigned_to_user_id") is not None:
+        assert_users_in_household(db, household_id, [update_data["assigned_to_user_id"]])
 
     for field, value in update_data.items():
         setattr(item, field, value)

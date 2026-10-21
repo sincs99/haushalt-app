@@ -38,6 +38,10 @@ class AiUnavailable(AiError):
     """Netzwerkfehler, Timeout oder Fehlerantwort des Anbieters."""
 
 
+class AiNotDispatched(AiBusy):
+    """Local capacity rejected the call before any provider request was sent."""
+
+
 class AiRefused(AiError):
     """Das Modell (inkl. Fallback-Kette) hat die Anfrage abgelehnt (``stop_reason == "refusal"``)."""
 

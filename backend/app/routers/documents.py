@@ -41,6 +41,7 @@ from app.routers.files import (
     household_storage_used,
     remove_from_storage,
     store_upload,
+    upload_transaction,
 )
 from app.socket_manager import emit_to_household_sync
 
@@ -370,18 +371,11 @@ def upload_document(
         **meta.model_dump(),
     )
     stored: list[StoredFile] = []
-    try:
+    with upload_transaction(db):
         for upload in files:
             stored.append(store_upload(db, household_id, membership.user_id, upload))
         _append_files(doc, stored)
         db.add(doc)
-        db.commit()
-    except Exception:
-        # Alles oder nichts: bereits gespeicherte Dateien wieder entfernen
-        db.rollback()
-        for f in stored:
-            remove_from_storage(f.storage_path)
-        raise
     db.refresh(doc)
 
     _emit(household_id, "document_created", doc)

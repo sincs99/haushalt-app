@@ -31,9 +31,11 @@ from app.services.ai.errors import (
     AiError,
     AiInvalidOutput,
     AiNotConfigured,
+    AiNotDispatched,
     AiPlantNotRecognized,
     AiRefused,
     AiUnavailable,
+    AiUsageInfo,
 )
 from app.services.ai.schemas import (
     PlantCareAdvice,
@@ -153,7 +155,7 @@ def require_ai_enabled(
 # Fehler → (HTTP-Status, Code, Meldung). Reihenfolge: speziellste Klasse zuerst.
 _ERROR_MAP: list[tuple[type[AiError], int, str, str]] = [
     (AiNotConfigured, 503, ErrorCode.AI_NOT_CONFIGURED, "AI assistant is not configured"),
-    (AiDailyLimitReached, 429, ErrorCode.AI_DAILY_LIMIT_REACHED, "Daily AI limit reached for this household"),
+    (AiDailyLimitReached, 429, ErrorCode.AI_DAILY_LIMIT_REACHED, "Daily AI budget reached"),
     (AiRefused, 422, ErrorCode.AI_REFUSED, "The AI declined this request"),
     (AiPlantNotRecognized, 422, ErrorCode.AI_PLANT_NOT_RECOGNIZED, "The input was not recognized as a plant"),
     (AiInvalidOutput, 502, ErrorCode.AI_INVALID_OUTPUT, "The AI returned an unusable answer"),
@@ -161,8 +163,9 @@ _ERROR_MAP: list[tuple[type[AiError], int, str, str]] = [
     (AiUnavailable, 502, ErrorCode.AI_UNAVAILABLE, "AI service is unavailable"),
 ]
 
-# Bei diesen Fehlern hat die API nicht geantwortet → Aufruf zählt nicht zum Tageslimit
-_NOT_BILLED = (AiNotConfigured, AiBusy, AiUnavailable)
+# Only proven pre-dispatch failures can be refunded. Timeouts/provider errors
+# can have incurred work, so an unknown result keeps all three reservations.
+_NOT_DISPATCHED = (AiNotConfigured, AiNotDispatched)
 
 
 def _to_http(exc: AiError) -> HTTPException:
@@ -179,12 +182,13 @@ ResT = TypeVar("ResT")
 def _run_feature(
     db: Session,
     household_id: uuid.UUID,
-    feature: Callable[[ReqT], tuple[ResT, object]],
+    user_id: uuid.UUID,
+    feature: Callable[[ReqT], tuple[ResT, AiUsageInfo]],
     body: ReqT,
 ) -> ResT:
     """Tageslimit reservieren → Feature aufrufen → Tokens verbuchen."""
     try:
-        day = usage.reserve_call(db, household_id)
+        reservation_id = usage.reserve_call(db, household_id, user_id)
     except AiDailyLimitReached as exc:
         raise _to_http(exc)
 
@@ -192,12 +196,12 @@ def _run_feature(
         result, call_usage = feature(body)
     except AiError as exc:
         if exc.usage is not None:
-            usage.record_tokens(db, household_id, day, exc.usage)
-        elif isinstance(exc, _NOT_BILLED):
-            usage.release_call(db, household_id, day)
+            usage.record_tokens(db, reservation_id, exc.usage)
+        elif isinstance(exc, _NOT_DISPATCHED):
+            usage.release_call(db, reservation_id)
         raise _to_http(exc)
 
-    usage.record_tokens(db, household_id, day, call_usage)
+    usage.record_tokens(db, reservation_id, call_usage)
     return result
 
 
@@ -207,10 +211,11 @@ def suggest_recipe(
     request: Request,
     body: RecipeSuggestionRequest,
     household_id: uuid.UUID = Depends(require_ai_enabled),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Rezeptvorschlag aus vorhandenen Zutaten. Wird nicht gespeichert."""
-    return _run_feature(db, household_id, recipe.generate_recipe, body)
+    return _run_feature(db, household_id, current_user.id, recipe.generate_recipe, body)
 
 
 @router.post("/plant-care", response_model=PlantCareAdvice)
@@ -219,7 +224,8 @@ def suggest_plant_care(
     request: Request,
     body: PlantCareRequest,
     household_id: uuid.UUID = Depends(require_ai_enabled),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Pflegehinweise zu einer Pflanze (unabhängig von einem Pflanzen-Modell)."""
-    return _run_feature(db, household_id, plant_care.get_plant_care, body)
+    return _run_feature(db, household_id, current_user.id, plant_care.get_plant_care, body)

@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.core.rate_limit import limiter
-from app.models import AiUsage, Recipe
+from app.models import AiBudgetCounter, AiUsage, Recipe
 from app.services.ai import client as ai_client
 from app.services.ai.errors import AiNotConfigured
 from app.services.ai.schemas import (
@@ -155,7 +155,7 @@ def test_get_client_uses_key_timeout_and_few_retries(monkeypatch):
     try:
         c = ai_client.get_client()
         assert c.api_key == "sk-ant-test"
-        assert c.max_retries == 1
+        assert c.max_retries == 0
         assert c.timeout == settings.ai_request_timeout_seconds
     finally:
         ai_client._build_client.cache_clear()
@@ -454,16 +454,17 @@ def _request() -> httpx2.Request:
         ),
     ],
 )
-def test_sdk_errors_are_mapped_and_not_counted(client, db, token_a, ai_household, fake_client, error, status, code):
+def test_sdk_errors_are_mapped_and_conservatively_counted(client, db, token_a, ai_household, fake_client, error, status, code):
     fake_client.beta.messages.parse.side_effect = error()
     res = client.post(_recipe_url(ai_household), json=RECIPE_BODY, headers=_auth(token_a))
     assert res.status_code == status
     assert res.json()["detail"]["code"] == code
-    # Keine Antwort der API → zählt nicht zum Tageslimit
-    assert db.query(AiUsage).one().calls == 0
+    # No usable answer does not prove no provider work occurred.
+    assert db.query(AiUsage).one().calls == 1
+    assert {row.calls for row in db.query(AiBudgetCounter).all()} == {1}
 
 
-def test_concurrency_limit_returns_busy(client, token_a, ai_household, fake_client, monkeypatch):
+def test_concurrency_limit_returns_busy(client, db, token_a, ai_household, fake_client, monkeypatch):
     import threading
 
     slots = threading.BoundedSemaphore(1)
@@ -473,6 +474,8 @@ def test_concurrency_limit_returns_busy(client, token_a, ai_household, fake_clie
     assert res.status_code == 503
     assert res.json()["detail"]["code"] == "AI_BUSY"
     fake_client.beta.messages.parse.assert_not_called()
+    assert db.query(AiUsage).one().calls == 0
+    assert {row.calls for row in db.query(AiBudgetCounter).all()} == {0}
 
 
 # ---------------------------------------------------------------------------
@@ -514,6 +517,30 @@ def test_daily_limit_zero_blocks_everything(client, token_a, ai_household, fake_
     res = client.post(_recipe_url(ai_household), json=RECIPE_BODY, headers=_auth(token_a))
     assert res.status_code == 429
     fake_client.beta.messages.parse.assert_not_called()
+
+
+def test_new_self_created_household_cannot_reset_account_budget(
+    client, db, token_a, ai_household, fake_client, monkeypatch,
+):
+    monkeypatch.setattr(settings, "ai_daily_limit_per_user", 1)
+    fake_client.beta.messages.parse.return_value = _response(_recipe_output())
+    assert client.post(_recipe_url(ai_household), json=RECIPE_BODY, headers=_auth(token_a)).status_code == 200
+
+    created = client.post("/api/households/", json={"name": "Second fixture"}, headers=_auth(token_a))
+    assert created.status_code == 201
+    household_id = created.json()["id"]
+    enabled = client.put(
+        f"/api/households/{household_id}/ai/settings",
+        json={"ai_enabled": True}, headers=_auth(token_a),
+    )
+    assert enabled.status_code == 200
+    blocked = client.post(
+        f"/api/households/{household_id}/ai/recipe", json=RECIPE_BODY, headers=_auth(token_a),
+    )
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"]["code"] == "AI_DAILY_LIMIT_REACHED"
+    assert fake_client.beta.messages.parse.call_count == 1
+    assert db.query(AiBudgetCounter).filter_by(scope_key="global").one().calls == 1
 
 
 @pytest.mark.parametrize(

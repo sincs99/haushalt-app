@@ -6,8 +6,10 @@ Max 10 MB. Bilder werden mit Pillow validiert und auf max 1600px verkleinert.
 """
 
 import io
+import logging
 import re
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import BinaryIO
 from urllib.parse import quote
@@ -18,6 +20,7 @@ from PIL import Image, ImageOps
 from pillow_heif import register_heif_opener
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -25,7 +28,7 @@ from app.core.deps import verify_household_access
 from app.core.error_codes import ErrorCode, error_detail
 from app.core.rate_limit import limiter
 from app.database import get_db
-from app.models import Document, DocumentFile, HouseholdMember, Pet, Plant, StoredFile
+from app.models import Document, DocumentFile, Household, HouseholdMember, Pet, Plant, StoredFile
 from app.services.storage import LocalStorageService
 from app.socket_manager import emit_to_household_sync
 
@@ -54,6 +57,8 @@ JPEG_QUALITY = 85
 # ---------------------------------------------------------------------------
 
 _storage = LocalStorageService()
+logger = logging.getLogger(__name__)
+_PENDING_UPLOADS = "pending_upload_paths"
 
 # ---------------------------------------------------------------------------
 # Pydantic Schemas
@@ -240,6 +245,14 @@ def household_storage_quota() -> int:
 
 def check_storage_quota(db: Session, household_id: uuid.UUID, incoming_bytes: int) -> None:
     """Wirft STORAGE_QUOTA_EXCEEDED, wenn die neue Datei die Quota sprengen würde."""
+    # Serialize all uploads for this household until their outer commit/rollback.
+    # Under PostgreSQL READ COMMITTED the following SUM sees the preceding
+    # uploader's committed rows after waiting for this lock.
+    household = (
+        db.query(Household.id).filter(Household.id == household_id).with_for_update().first()
+    )
+    if household is None:
+        raise HTTPException(status_code=404, detail="Household not found")
     if household_storage_used(db, household_id) + incoming_bytes > household_storage_quota():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -250,6 +263,41 @@ def check_storage_quota(db: Session, household_id: uuid.UUID, incoming_bytes: in
         )
 
 
+@contextmanager
+def upload_transaction(db: Session):
+    """Own the DB commit and compensate every new blob on a failed upload.
+
+    Register paths before flushing metadata, including the upload which fails.
+    Both file and multipart-document endpoints use this boundary. Existing files
+    are never registered here. A process crash still requires backup/recovery;
+    a filesystem and a SQL transaction do not share an atomic commit protocol.
+    """
+    if _PENDING_UPLOADS in db.info or db.in_nested_transaction():
+        raise RuntimeError("Upload transactions cannot be nested")
+    paths: list[str] = []
+    db.info[_PENDING_UPLOADS] = paths
+    committing = False
+    try:
+        yield
+        committing = True
+        db.commit()
+    except BaseException as exc:
+        try:
+            db.rollback()
+        finally:
+            if committing and isinstance(exc, DBAPIError) and exc.connection_invalidated:
+                # The server may have committed before the connection failed.
+                # Deleting now could destroy committed attachments. A later
+                # recovery pass must reconcile these paths after DB recovery.
+                logger.error("Upload commit outcome unknown; retain for reconciliation: %s", paths)
+            else:
+                for path in paths:
+                    remove_from_storage(path)
+        raise
+    finally:
+        db.info.pop(_PENDING_UPLOADS, None)
+
+
 def store_upload(
     db: Session, household_id: uuid.UUID, user_id: uuid.UUID, file: UploadFile
 ) -> StoredFile:
@@ -257,11 +305,15 @@ def store_upload(
 
     Committet nicht — der Aufrufer entscheidet über die Transaktion.
     """
+    if _PENDING_UPLOADS not in db.info:
+        raise RuntimeError("store_upload requires upload_transaction")
+    original_name = (file.filename or "upload")[:255]
+    if any(ord(char) < 32 or ord(char) == 127 for char in original_name):
+        raise HTTPException(status_code=422, detail="File name contains control characters")
     # Chunk-basiertes Lesen mit frühzeitigem Abbruch (RAM-Exhaustion-Schutz)
     raw_data = read_upload_limited(file.file)
     processed_data, final_mime, ext = validate_upload(raw_data, file.content_type or "")
     check_storage_quota(db, household_id, len(processed_data))
-    original_name = (file.filename or "upload")[:255]
 
     storage_path = _storage.save(
         household_id=str(household_id),
@@ -269,6 +321,7 @@ def store_upload(
         data=processed_data,
         ext=ext,
     )
+    db.info[_PENDING_UPLOADS].append(storage_path)
 
     stored_file = StoredFile(
         household_id=household_id,
@@ -361,7 +414,7 @@ def remove_from_storage(storage_path: str) -> None:
     try:
         _storage.delete(storage_path)
     except Exception:
-        pass  # Datei wird ggf. zum Waisen, aber DB ist konsistent
+        logger.exception("Could not remove stored file %s", storage_path)
 
 
 def file_response_headers(stored_file: StoredFile) -> dict[str, str]:
@@ -393,8 +446,8 @@ def upload_file(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
-    stored_file = store_upload(db, household_id, membership.user_id, file)
-    db.commit()
+    with upload_transaction(db):
+        stored_file = store_upload(db, household_id, membership.user_id, file)
     db.refresh(stored_file)
 
     emit_to_household_sync(

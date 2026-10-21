@@ -88,6 +88,8 @@ async def _custom_rate_limit_handler(request: Request, exc: RateLimitExceeded) -
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup-Checks und Event-Loop für sync→async Bridge setzen."""
+    if settings.environment == "production" and not settings.refresh_cookie_secure:
+        raise RuntimeError("Production requires secure refresh cookies and HTTPS.")
     # JWT Secret Validierung
     if is_insecure_jwt_secret(settings.jwt_secret_key):
         raise RuntimeError(

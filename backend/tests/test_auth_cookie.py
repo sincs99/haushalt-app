@@ -117,7 +117,9 @@ class TestCookieDelivery:
         assert "set-cookie" not in resp.headers
 
     def test_cookie_is_secure_in_production(self, client, user_a):
-        with patch.object(settings, "environment", "production"):
+        with patch.object(settings, "environment", "production"), patch.object(
+            settings, "auth_cookie_secure", None
+        ):
             resp = _web_login(client)
         assert _refresh_morsel(resp)["secure"]
 

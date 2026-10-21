@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -58,8 +59,16 @@ def create_refresh_token() -> str:
 
 
 def hash_refresh_token(token: str) -> str:
-    """SHA-256-Hash eines Refresh-Tokens für DB-Speicherung."""
-    return hashlib.sha256(token.encode()).hexdigest()
+    """Key-bound digest: rotating the JWT secret invalidates refresh authority too.
+
+    There is deliberately no fallback to the old unkeyed SHA-256 hashes: the
+    first deployment of this change requires existing sessions to log in again.
+    """
+    return hmac.new(
+        settings.jwt_secret_key.encode(),
+        b"casa:refresh-token:v1\x00" + token.encode(),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 # ---------------------------------------------------------------------------

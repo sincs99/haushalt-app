@@ -2,6 +2,9 @@ import asyncio
 import logging
 import time
 import uuid
+from concurrent.futures import Future
+from dataclasses import dataclass, field
+from weakref import WeakValueDictionary
 
 import socketio
 from jwt import PyJWTError as JWTError
@@ -76,6 +79,26 @@ _expiry_timers: dict[str, asyncio.TimerHandle] = {}
 _background_tasks: set[asyncio.Task] = set()
 
 
+@dataclass
+class _MembershipFence:
+    generation: int = 0
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+
+# Single-worker Socket.IO deployment: only the event loop touches these fences.
+# Active joins/evictions hold strong references; idle keys do not accumulate.
+_membership_fences: WeakValueDictionary[tuple[uuid.UUID, uuid.UUID], _MembershipFence] = WeakValueDictionary()
+
+
+def _membership_fence(household_id: uuid.UUID, user_id: uuid.UUID) -> _MembershipFence:
+    key = (household_id, user_id)
+    fence = _membership_fences.get(key)
+    if fence is None:
+        fence = _MembershipFence()
+        _membership_fences[key] = fence
+    return fence
+
+
 def _schedule_expiry(sid: str, exp: float) -> None:
     _cancel_expiry(sid)
     delay = max(0.0, exp - time.time())
@@ -102,13 +125,16 @@ def _session_expired(session: dict) -> bool:
 
 async def end_session(sid: str, reason: str) -> None:
     """Teilt dem Client den Grund mit und trennt die Verbindung serverseitig."""
-    _cancel_expiry(sid)
     try:
         await sio.emit(SESSION_ENDED_EVENT, {"reason": reason}, to=sid)
+    except Exception:
+        logger.warning("Socket end notification failed (sid=%s); disconnecting", sid, exc_info=True)
+    try:
         await sio.disconnect(sid)
     except Exception:
         logger.warning("Socket end_session failed (sid=%s, reason=%s)", sid, reason, exc_info=True)
         return
+    _cancel_expiry(sid)
     logger.info("Socket session ended (sid=%s, reason=%s)", sid, reason)
 
 
@@ -213,7 +239,10 @@ async def join_household(sid, data):
         await sio.emit("error", {"message": "Invalid household_id"}, to=sid)
         return
 
-    # --- DB-Zugriff im Threadpool, damit der Event-Loop nicht blockiert ---
+    # Capture before awaiting the DB. An eviction invalidates this result even
+    # if the user leaves and rejoins while this old check is in flight.
+    fence = _membership_fence(household_id, user_id)
+    generation = fence.generation
     try:
         is_member = await run_in_threadpool(
             _is_household_member, household_id, user_id
@@ -236,7 +265,19 @@ async def join_household(sid, data):
         )
         return
 
-    await sio.enter_room(sid, _household_room(household_id))
+    async with fence.lock:
+        if generation != fence.generation:
+            await sio.emit("error", {"message": "Membership changed; retry room join"}, to=sid)
+            return
+        # The token may have expired or the socket disconnected during the DB read.
+        if not sio.manager.is_connected(sid, "/"):
+            return
+        session = await sio.get_session(sid)
+        if _session_expired(session):
+            await end_session(sid, "expired")
+            return
+        # Eviction shares this lock: it cannot finish while enter_room is pending.
+        await sio.enter_room(sid, _household_room(household_id))
     logger.info(
         "User %s joined room household_%s (sid=%s)", user_id, household_id, sid
     )
@@ -277,11 +318,44 @@ async def emit_to_household(
     mit einem manipulierten Client weiter alle Echtzeit-Events empfangen.
     """
     room = _household_room(household_id)
-    await sio.emit(event_name, data, room=room)
     if evict_user_id is not None:
-        for sid, _ in list(sio.manager.get_participants("/", _user_room(evict_user_id))):
-            await sio.leave_room(sid, room)
+        fence = _membership_fence(uuid.UUID(str(household_id)), uuid.UUID(str(evict_user_id)))
+        # Increment before any await so every pending positive DB result is stale.
+        fence.generation += 1
+        async with fence.lock:
+            try:
+                await sio.emit(event_name, data, room=room)
+            except Exception:
+                # Notification delivery must never prevent authorization removal.
+                logger.exception("Membership notification failed for room %s; continuing eviction", room)
+            failed_sids: list[str] = []
+            for sid, _ in list(sio.manager.get_participants("/", _user_room(evict_user_id))):
+                try:
+                    await sio.leave_room(sid, room)
+                except Exception:
+                    logger.exception("Room eviction failed for sid=%s; disconnecting", sid)
+                    # Do not use end_session: its notification can itself fail.
+                    try:
+                        await sio.disconnect(sid)
+                        _cancel_expiry(sid)
+                    except Exception:
+                        # Preserve the expiry timer if transport cleanup fails.
+                        failed_sids.append(sid)
+                        logger.exception("Fallback disconnect failed for sid=%s", sid)
+            if failed_sids:
+                # All other SIDs have still been processed. Surface incomplete
+                # revocation to the waiting REST endpoint instead of claiming success.
+                raise RuntimeError(f"Could not evict {len(failed_sids)} socket connection(s)")
         logger.info("Evicted user %s from room %s", evict_user_id, room)
+    else:
+        await sio.emit(event_name, data, room=room)
+
+
+def _log_household_event_failure(future: Future) -> None:
+    try:
+        future.result()
+    except Exception:
+        logger.exception("Scheduled household event/eviction failed")
 
 
 def emit_to_household_sync(
@@ -290,14 +364,29 @@ def emit_to_household_sync(
     """Synchroner Wrapper — aufgerufen aus sync FastAPI-Endpoints.
 
     Nutzt run_coroutine_threadsafe, da sync Endpoints in einem Thread laufen.
-    Emit und Eviction laufen in einer Coroutine, damit die Reihenfolge garantiert ist.
+    Membership removal waits for eviction before reporting HTTP success. Other
+    events remain asynchronous. This sync helper must not wait on its own loop.
     """
     if _event_loop is not None and _event_loop.is_running():
-        asyncio.run_coroutine_threadsafe(
+        if evict_user_id is not None:
+            try:
+                running_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                running_loop = None
+            if running_loop is _event_loop:
+                raise RuntimeError("Await emit_to_household for eviction on the event-loop thread")
+        future = asyncio.run_coroutine_threadsafe(
             emit_to_household(household_id, event_name, data, evict_user_id),
             _event_loop,
         )
+        future.add_done_callback(_log_household_event_failure)
+        if evict_user_id is not None:
+            # Do not cancel on timeout: the queued revocation must still finish.
+            # A stuck loop cannot make the REST endpoint falsely report success.
+            future.result(timeout=5)
     else:
+        if evict_user_id is not None:
+            raise RuntimeError("Socket event loop unavailable for membership eviction")
         logger.warning(
             "emit_to_household_sync: Event-Loop not available, event '%s' for household %s dropped",
             event_name,

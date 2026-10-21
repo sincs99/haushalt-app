@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     # Secure-Flag des Refresh-Token-Cookies (casa_rt). None = automatisch:
     # True in production (TLS am Proxy), False in development (http://localhost).
-    # Nur explizit setzen, wenn Produktion ohne HTTPS getestet wird (AUTH_COOKIE_SECURE=false).
+    # AUTH_COOKIE_SECURE=false is only allowed for local development, never production.
     auth_cookie_secure: bool | None = None
     # Speicher-Quota pro Haushalt über alle hochgeladenen Dateien (MB)
     household_storage_quota_mb: int = 1024
@@ -24,7 +24,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     # Kostenschutz: Aufrufe pro Haushalt und Tag (UTC), zusätzlich zum IP-Limit
     ai_daily_limit_per_household: int = 50
-    # Timeout pro API-Versuch in Sekunden; das SDK wiederholt höchstens einmal
+    # Account limit spans all households; global limit bounds the shared provider key.
+    ai_daily_limit_per_user: int = 100
+    ai_daily_limit_global: int = 1000
+    # Timeout per attempt; uncertain requests are not retried or refunded.
     ai_request_timeout_seconds: float = 90.0
     # Gleichzeitige KI-Aufrufe im Prozess (jeder belegt einen Worker-Thread)
     ai_max_concurrent_requests: int = 4

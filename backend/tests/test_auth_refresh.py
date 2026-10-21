@@ -348,3 +348,83 @@ def test_lazy_cleanup_removes_old_tokens(client, user_a, db):
     ]
     assert "expired_hash_test_123" not in remaining_hashes
     assert "revoked_hash_test_456" not in remaining_hashes
+
+
+def test_secret_rotation_rejects_old_refresh_and_allows_new_login(client, user_a):
+    old_pair = _login(client)
+    with patch.object(settings, "jwt_secret_key", "rotated-dummy-secret-with-at-least-32-characters"):
+        assert _refresh(client, old_pair["refresh_token"]).status_code == 401
+        assert client.get(
+            "/api/auth/me", headers={"Authorization": f"Bearer {old_pair['access_token']}"}
+        ).status_code == 401
+        new_pair = _login(client)
+        assert _refresh(client, new_pair["refresh_token"]).status_code == 200
+
+
+def test_legacy_unkeyed_refresh_hash_has_no_fallback(client, user_a, db):
+    import hashlib
+
+    raw = "legacy-dummy-refresh-token"
+    db.add(RefreshToken(
+        user_id=user_a.id,
+        token_hash=hashlib.sha256(raw.encode()).hexdigest(),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+    ))
+    db.commit()
+    assert _refresh(client, raw).status_code == 401
+
+
+def test_logout_with_ancestor_revokes_grace_successor_but_not_other_device(client, user_a, db):
+    from app.core.security import hash_refresh_token
+
+    token_a = _login(client)["refresh_token"]
+    other_device = _login(client)["refresh_token"]
+    token_b = _refresh(client, token_a).json()["refresh_token"]
+    token_c = _refresh(client, token_a).json()["refresh_token"]  # benign grace retry
+    assert _logout(client, token_a).status_code == 204
+    for raw in (token_a, token_b, token_c):
+        row = db.query(RefreshToken).filter_by(token_hash=hash_refresh_token(raw)).one()
+        assert row.revoked_at is not None
+        assert row.replaced_by_id is None
+    # Check another device before intentionally triggering user-wide reuse detection.
+    assert _refresh(client, other_device).status_code == 200
+    assert _refresh(client, token_c).status_code == 401
+
+
+def test_failed_rotation_rolls_back_old_revocation_and_new_token(client, user_a, db):
+    from app.core.security import hash_refresh_token
+    from app.routers import auth
+
+    raw = _login(client)["refresh_token"]
+    real_create = auth._create_token_pair
+
+    def fail_after_insert(user_id, session):
+        real_create(user_id, session)
+        raise RuntimeError("synthetic failure before rotation commit")
+
+    with patch.object(auth, "_create_token_pair", fail_after_insert):
+        with pytest.raises(RuntimeError, match="synthetic failure"):
+            _refresh(client, raw)
+    # The production DB dependency closes/rolls back on an exception. The shared
+    # test dependency intentionally leaves that to the test fixture.
+    db.rollback()
+    row = db.query(RefreshToken).filter_by(token_hash=hash_refresh_token(raw)).one()
+    assert row.revoked_at is None
+    assert row.replaced_by_id is None
+    assert db.query(RefreshToken).filter_by(user_id=user_a.id).count() == 1
+    assert _refresh(client, raw).status_code == 200
+
+
+def test_cleanup_keeps_recently_rotated_expired_ancestor_for_inflight_logout(client, user_a, db):
+    from app.core.security import hash_refresh_token
+    from app.routers.auth import _cleanup_expired_tokens
+
+    token_a = _login(client)["refresh_token"]
+    token_b = _refresh(client, token_a).json()["refresh_token"]
+    ancestor = db.query(RefreshToken).filter_by(token_hash=hash_refresh_token(token_a)).one()
+    ancestor.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    db.commit()
+    _cleanup_expired_tokens(user_a.id, db)
+    db.commit()
+    assert _logout(client, token_a).status_code == 204
+    assert _refresh(client, token_b).status_code == 401

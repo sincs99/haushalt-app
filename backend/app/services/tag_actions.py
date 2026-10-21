@@ -139,6 +139,20 @@ def _display_name(db: Session, user_id: uuid.UUID | None) -> str | None:
     return user.display_name if user else None
 
 
+def _member_display_name(
+    db: Session, household_id: uuid.UUID, user_id: uuid.UUID | None
+) -> str | None:
+    """Resolve current assignees in scope, including legacy invalid todo records."""
+    if user_id is None:
+        return None
+    return (
+        db.query(User.display_name)
+        .join(HouseholdMember, HouseholdMember.user_id == User.id)
+        .filter(HouseholdMember.household_id == household_id, User.id == user_id)
+        .scalar()
+    )
+
+
 def _iso(value: date | datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
@@ -655,7 +669,9 @@ def _describe_todo_done(ctx: TagContext) -> TagDescription:
         "is_done": todo.is_done,
         "done_at": _iso(todo.done_at),
         "due_date": _iso(todo.due_date),
-        "assigned_user_name": _display_name(ctx.db, todo.assigned_to_user_id),
+        "assigned_user_name": _member_display_name(
+            ctx.db, ctx.household.id, todo.assigned_to_user_id
+        ),
     }
     if todo.is_done:
         return TagDescription(todo.title, f"'{todo.title}' is already done", details, False, "ALREADY_DONE")

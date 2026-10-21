@@ -151,7 +151,7 @@ Prompt-Caching bringt hier nichts: Die Systemprompts liegen unter der Mindestlä
 
 Die Standardwerte 50 pro Haushalt, 20 pro Konto und 1000 global begrenzen die Summe unabhängig von neu gegründeten Haushalten und erhalten das bestehende persönliche Limit. Betreiber müssen das globale Limit anhand ihres freigegebenen Budgets konfigurieren und zusätzlich ein Ausgabenlimit beim Anbieter setzen; Aufrufzahlen sind keine feste Geldobergrenze. Ein Limit von 0 oder weniger sperrt Aufrufe. Es gibt keine Begrenzung der legitimen Haushaltszahl.
 
-Migration `b4c5d6e7f8a9` übernimmt die bisherige Summe der Haushaltszähler in den globalen Tageszähler. Vorhandene persönliche Verbräuche in `ai_user_usage` bleiben erhalten; der globale Schutz übernimmt pro Tag das Maximum der bekannten Haushalts- und Personensummen, ohne beide Darstellungen doppelt zu zählen. Tageswechsel erfolgen nach UTC, auch Erstattungen nach Mitternacht bleiben beim ursprünglichen Tag. Neue Regressionstests müssen vor Freigabe in einer isolierten PostgreSQL-Umgebung ausgeführt werden; lokale SQLite- und Mocktests ersetzen diese Parallelitätsnachweise nicht.
+Migration `b4c5d6e7f8a9` folgt auf die Tarif- und Abrechnungsmigration `b2c3d4e5f6a7`. Vorhandene persönliche Verbräuche in `ai_user_usage` bleiben erhalten; der globale Schutz übernimmt pro Tag das Maximum der bekannten Haushalts- und Personensummen, ohne beide Darstellungen doppelt zu zählen. Tageswechsel erfolgen nach UTC, auch Erstattungen nach Mitternacht bleiben beim ursprünglichen Tag. Neue Regressionstests müssen vor Freigabe in einer isolierten PostgreSQL-Umgebung ausgeführt werden; lokale SQLite- und Mocktests ersetzen diese Parallelitätsnachweise nicht.
 
 ## 6. Konfiguration
 

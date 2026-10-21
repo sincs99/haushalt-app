@@ -9,7 +9,7 @@ from tests.pg.harness import fresh_database, run_alembic
 
 
 def test_global_budget_backfill_preserves_account_history_and_does_not_double_count(pg_admin_url):
-    with fresh_database(pg_admin_url, upgrade_to="mas1a2b3c4d5") as url:
+    with fresh_database(pg_admin_url, upgrade_to="b2c3d4e5f6a7") as url:
         engine = create_engine(url)
         try:
             household_id, user_id = uuid.uuid4(), uuid.uuid4()
@@ -43,6 +43,6 @@ def test_global_budget_backfill_preserves_account_history_and_does_not_double_co
                     ), {"user": user_id}).all()
                 assert global_calls == list(zip(days, (7, 9, 2), strict=True))
                 assert account_calls == list(zip(days, (7, 4, 2), strict=True))
-                run_alembic(url, "downgrade", "mas1a2b3c4d5")
+                run_alembic(url, "downgrade", "b2c3d4e5f6a7")
         finally:
             engine.dispose()

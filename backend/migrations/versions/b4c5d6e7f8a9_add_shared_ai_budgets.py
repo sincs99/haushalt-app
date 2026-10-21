@@ -1,7 +1,7 @@
 """Add the global AI budget and idempotent call reservations.
 
 Revision ID: b4c5d6e7f8a9
-Revises: mas1a2b3c4d5
+Revises: b2c3d4e5f6a7
 """
 
 from alembic import op
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "b4c5d6e7f8a9"
-down_revision = "mas1a2b3c4d5"
+down_revision = "b2c3d4e5f6a7"
 branch_labels = None
 depends_on = None
 

@@ -234,6 +234,18 @@ Neuer CI-Job `dependency-audit` in `.github/workflows/ci.yml`: eigener Job ohne 
 
 ### H-10 — Befunde (Stand 2026-10-05, nicht blind aktualisiert)
 
+**Nachtrag 2026-10-21 (PR #39):** Der neue CI-Lauf meldete 17 Python-Advisories in drei Paketen sowie zwei Advisories für `follow-redirects`. Die folgenden gezielten Updates beheben die gemeldeten Versionsbereiche; eine grüne erneute CI-Prüfung steht bei dieser Änderung noch aus.
+
+| Paket | Bisher | Neuer Pin | Nachweis und Einordnung |
+|---|---|---|---|
+| aiohttp | 3.14.3 | 3.14.4 | Acht neue Befunde zu Ressourcenverbrauch, Parsern und Cookies; [Security-Release 3.14.4](https://github.com/aio-libs/aiohttp/releases/tag/v3.14.4). |
+| certifi | 2026.5.20 | 2026.10.19 | [PYSEC-2026-4320](https://github.com/pypa/advisory-database/blob/main/vulns/certifi/PYSEC-2026-4320.yaml): kompromittierte Intermediate-CA-Schlüssel; relevant für ausgehendes TLS. Images müssen den neuen CA-Bestand enthalten. |
+| Pillow | 12.3.0 | 13.0.0 | Acht neue CI-Befunde; kleinste dort ausgewiesene korrigierte Version. [Releasehinweise und inkompatible Änderungen](https://pillow.readthedocs.io/en/stable/releasenotes/13.0.0.html). |
+| yarl | 1.24.2 | 1.25.1 | Notwendiges Begleitupdate: [aiohttp-3.14.4-Metadaten](https://pypi.org/pypi/aiohttp/3.14.4/json) verlangen `yarl>=1.25.1,<2`. Der alte Pin wäre unauflösbar. |
+| follow-redirects | 1.16.0 | 1.16.1 | [Array-Header](https://github.com/follow-redirects/follow-redirects/security/advisories/GHSA-q3jh-wrc6-jgq8) und [Regex-Escaping](https://github.com/follow-redirects/follow-redirects/security/advisories/GHSA-8r9p-f939-6h3c) können Credential-Header beim Redirect weitergeben. Transitiv über axios; betrifft den Node-Transport. |
+
+Kompatibilitätsprüfung ohne lokale Installation: Backend und CI verwenden Python 3.12, Pillow 13 verlangt mindestens 3.11. Casa nutzt keine der entfernten Methoden; Bilder im Modus `I` werden im Uploadpfad vor dem JPEG-Speichern nach RGB konvertiert und nicht direkt als PNG geschrieben. `pillow-heif==1.8.0` verlangt laut [Paketmetadaten](https://pypi.org/pypi/pillow-heif/1.8.0/json) `pillow>=11.1.0` ohne Obergrenze. Die aktualisierten Python-Pakete sind auf PyPI nicht zurückgezogen; ihre Abhängigkeitsgrenzen passen zu den übrigen Pins. Das Frontend-Lockfile übernimmt Version, Tarball-URL und SHA-512-Integrität von [npm](https://registry.npmjs.org/follow-redirects/1.16.1); `1.16.1` erfüllt den bestehenden axios-Bereich `^1.16.0`. Installation, Bild-/Uploadtests und beide Audits erfolgen in CI; ein grüner Lauf wird hier nicht vorweggenommen.
+
 **Backend — `pip-audit -r backend/requirements.txt`**
 
 | Paket | Version | Fix | Advisories | Relevanz für Casa |

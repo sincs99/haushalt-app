@@ -12,6 +12,7 @@ import { createOnlineWidgetRepository, type WidgetTokenStatus } from '../reposit
 import { buildWidgetScript } from '../utils/widgetScript'
 import { translateApiError } from '../utils/apiErrors'
 import { formatDate } from '../utils/dates'
+import { assertDataGeneration, currentDataGeneration, isScopeChanged } from '../services/sessionScope'
 
 /**
  * Homescreen-Widget (Scriptable auf dem iPhone): Nur-Lese-Schlüssel erzeugen,
@@ -32,48 +33,60 @@ const householdId = computed(() => authStore.currentHouseholdId)
 
 async function load() {
   if (!householdId.value) return
+  const generation = currentDataGeneration()
   try {
-    status.value = await repo.fetchStatus(householdId.value)
+    const result = await repo.fetchStatus(householdId.value)
+    assertDataGeneration(generation)
+    status.value = result
   } catch {
-    status.value = null
+    if (generation === currentDataGeneration()) status.value = null
   }
 }
 
 onMounted(load)
 watch(householdId, () => {
   script.value = null
+  status.value = null
+  busy.value = false
   load()
 })
 
 async function create() {
   if (!householdId.value) return
+  const generation = currentDataGeneration()
   confirmReplace.value = false
   busy.value = true
   try {
     const created = await repo.create(householdId.value)
+    assertDataGeneration(generation)
     const baseUrl = API_BASE || window.location.origin
-    script.value = buildWidgetScript(baseUrl, created.token, locale.value)
+    const generated = await buildWidgetScript(baseUrl, created.token, locale.value)
+    assertDataGeneration(generation)
+    script.value = generated
     await load()
   } catch (error) {
-    showToast(translateApiError(error), 'error')
+    if (!isScopeChanged(error) && generation === currentDataGeneration()) showToast(translateApiError(error), 'error')
   } finally {
-    busy.value = false
+    if (generation === currentDataGeneration()) busy.value = false
   }
 }
 
 async function revoke() {
   if (!householdId.value) return
+  const generation = currentDataGeneration()
   confirmRevoke.value = false
   busy.value = true
   try {
     await repo.revoke(householdId.value)
+    assertDataGeneration(generation)
     script.value = null
     await load()
+    assertDataGeneration(generation)
     showToast(t('widget.revoked'), 'success')
   } catch (error) {
-    showToast(translateApiError(error), 'error')
+    if (!isScopeChanged(error) && generation === currentDataGeneration()) showToast(translateApiError(error), 'error')
   } finally {
-    busy.value = false
+    if (generation === currentDataGeneration()) busy.value = false
   }
 }
 

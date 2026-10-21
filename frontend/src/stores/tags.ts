@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -11,7 +12,7 @@ import type {
 } from '../types'
 
 export const useTagsStore = defineStore('tags', () => {
-  const repo = createOnlineTagsRepository()
+  const repo = scopeRepository(createOnlineTagsRepository())
 
   // State
   const items = ref<TagInfo[]>([])
@@ -35,27 +36,36 @@ export const useTagsStore = defineStore('tags', () => {
 
   // Actions
   async function fetchTags() {
+    const actionGeneration = currentDataGeneration()
     const householdId = currentHouseholdId()
     if (!householdId) return
     loading.value = true
     try {
-      items.value = await repo.fetchAll(householdId)
+      const scopedResult = await repo.fetchAll(householdId)
+      assertDataGeneration(actionGeneration)
+      items.value = scopedResult
     } finally {
+      assertDataGeneration(actionGeneration)
       loading.value = false
     }
   }
 
   async function fetchTargets() {
+    const actionGeneration = currentDataGeneration()
     const householdId = currentHouseholdId()
     if (!householdId) return
-    targets.value = await repo.fetchTargets(householdId)
+    const scopedResult = await repo.fetchTargets(householdId)
+    assertDataGeneration(actionGeneration)
+    targets.value = scopedResult
   }
 
   async function createTag(payload: TagCreatePayload): Promise<TagInfo | undefined> {
+    const actionGeneration = currentDataGeneration()
     const householdId = currentHouseholdId()
     if (!householdId) return
     // Kein Optimistic Create: der Token kommt vom Server
     const tag = await repo.create(householdId, payload)
+    assertDataGeneration(actionGeneration)
     upsert(tag)
     return tag
   }
@@ -64,6 +74,7 @@ export const useTagsStore = defineStore('tags', () => {
     tagId: string,
     payload: Partial<Pick<TagInfo, 'label' | 'enabled' | 'target_type' | 'target_id' | 'action'>>,
   ) {
+    const actionGeneration = currentDataGeneration()
     const householdId = currentHouseholdId()
     if (!householdId) return
     const item = items.value.find((t) => t.id === tagId)
@@ -74,8 +85,12 @@ export const useTagsStore = defineStore('tags', () => {
     if (payload.label !== undefined) item.label = payload.label
     if (payload.enabled !== undefined) item.enabled = payload.enabled
     try {
-      upsert(await repo.update(householdId, tagId, payload))
+      const updated = await repo.update(householdId, tagId, payload)
+      assertDataGeneration(actionGeneration)
+      upsert(updated)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       const current = items.value.find((t) => t.id === tagId)
       if (current) Object.assign(current, snapshot)
       throw error
@@ -83,18 +98,23 @@ export const useTagsStore = defineStore('tags', () => {
   }
 
   async function setEnabled(tagId: string, enabled: boolean) {
+    const actionGeneration = currentDataGeneration()
     await updateTag(tagId, { enabled })
+    assertDataGeneration(actionGeneration)
   }
 
   async function regenerateToken(tagId: string): Promise<TagInfo | undefined> {
+    const actionGeneration = currentDataGeneration()
     const householdId = currentHouseholdId()
     if (!householdId) return
     const tag = await repo.regenerateToken(householdId, tagId)
+    assertDataGeneration(actionGeneration)
     upsert(tag)
     return tag
   }
 
   async function deleteTag(tagId: string) {
+    const actionGeneration = currentDataGeneration()
     const householdId = currentHouseholdId()
     if (!householdId) return
     const idx = items.value.findIndex((t) => t.id === tagId)
@@ -103,7 +123,10 @@ export const useTagsStore = defineStore('tags', () => {
     items.value.splice(idx, 1)
     try {
       await repo.remove(householdId, tagId)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       items.value.splice(Math.min(idx, items.value.length), 0, removed)
       throw error
     }

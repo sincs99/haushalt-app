@@ -4,15 +4,16 @@
  */
 import type {} from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { HOUSEHOLD_ID } from './helpers'
+import { HOUSEHOLD_ID, deferred } from './helpers'
 
-const { auth } = vi.hoisted(() => ({
+const { auth, api } = vi.hoisted(() => ({
   auth: { currentHouseholdId: 'hh-1' as string | null, user: { id: 'user-1' } },
+  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
 }))
 
 // Kein echter API-Client: Die Stores werden hier nur befüllt und geleert
 vi.mock('../../api/client', () => ({
-  default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
+  default: api,
   API_BASE: '',
   authRequestConfig: () => ({}),
 }))
@@ -30,10 +31,77 @@ import { useTodosStore } from '../todos'
 import { useChoresStore } from '../chores'
 import { useExpensesStore } from '../expenses'
 import { usePollsStore } from '../polls'
+import { useAiStore } from '../ai'
+import { useDocumentsStore } from '../documents'
+import { useTagsStore } from '../tags'
+import { useFinanceStore } from '../finance'
+import { useSettlementsStore } from '../settlements'
+import { useDashboardStore } from '../dashboard'
 
 beforeEach(() => {
   setActivePinia(createPinia())
   auth.currentHouseholdId = HOUSEHOLD_ID
+})
+
+test.each([
+  ['notes', () => useNotesStore().fetchNotes()],
+  ['shopping', () => useShoppingStore().fetchItems()],
+  ['todos', () => useTodosStore().fetchTodos()],
+  ['chores', () => useChoresStore().fetchChores()],
+  ['expenses', () => useExpensesStore().fetchExpenses()],
+  ['settlements', () => useSettlementsStore().fetchAll()],
+  ['finance', () => useFinanceStore().fetchSummary()],
+  ['dashboard', () => useDashboardStore().fetchDashboard()],
+  ['polls', () => usePollsStore().fetchPolls()],
+  ['calendar', () => useCalendarStore().fetchEvents()],
+  ['pets', () => usePetsStore().fetchPets()],
+  ['plants', () => usePlantsStore().fetchPlants()],
+  ['food', () => useFoodStore().fetchRecipes()],
+  ['tasks', () => useTasksStore().fetchTasks()],
+  ['documents', () => useDocumentsStore().fetchDocuments()],
+  ['tags', () => useTagsStore().fetchTags()],
+  ['ai', () => useAiStore().fetchSettings()],
+] as const)('%s rejects a pending result across an account/household boundary', async (_name, fetch) => {
+  const pending = deferred<any>()
+  api.get.mockReturnValueOnce(pending.promise)
+  const request = fetch()
+  const rejected = expect(request).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+  resetHouseholdScopedStores()
+  auth.user = { id: 'user-2' }
+  auth.currentHouseholdId = 'household-2'
+  pending.resolve({ data: [] })
+  await rejected
+  expect(useNotesStore().items).toEqual([])
+  expect(useAiStore().settings).toBeNull()
+  expect(useDocumentsStore().items).toEqual([])
+})
+
+test('a failed old delete cannot restore a private note into the next account', async () => {
+  const pending = deferred<void>()
+  api.delete.mockReturnValueOnce(pending.promise)
+  const notes = useNotesStore()
+  notes.items = [{ id: 'private-A', household_id: HOUSEHOLD_ID, body: 'A secret' } as any]
+  const request = notes.deleteNote('private-A')
+  const rejected = expect(request).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+  resetHouseholdScopedStores()
+  auth.user = { id: 'user-2' }
+  pending.reject(new Error('late network failure'))
+  await rejected
+  expect(notes.items).toEqual([])
+})
+
+test('synchronously clears AI results, documents and NFC tag tokens as well', () => {
+  useAiStore().plantAdvice = { care_notes: 'A private result' } as any
+  useAiStore().recipeLoading = true
+  useDocumentsStore().items = [{ title: 'A private document' } as any]
+  useDocumentsStore().query = 'A private search'
+  useTagsStore().items = [{ token: 'A-private-token' } as any]
+  resetHouseholdScopedStores()
+  expect(useAiStore().plantAdvice).toBeNull()
+  expect(useAiStore().recipeLoading).toBe(false)
+  expect(useDocumentsStore().items).toEqual([])
+  expect(useDocumentsStore().query).toBe('')
+  expect(useTagsStore().items).toEqual([])
 })
 
 test('leert Haustiere, Pflanzen, Notizen, Essen, Aufgaben und Kalender', () => {

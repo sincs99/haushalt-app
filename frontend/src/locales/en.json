@@ -571,7 +571,7 @@
     "ENTITY_ID_CONFLICT": "This ID is already in use",
     "AI_NOT_CONFIGURED": "The AI assistant is not set up on this server",
     "AI_NOT_ENABLED": "The AI assistant is not turned on for this household",
-    "AI_DAILY_LIMIT_REACHED": "This household has reached its daily limit of AI requests – try again tomorrow",
+    "AI_DAILY_LIMIT_REACHED": "The daily limit of AI requests has been reached – try again tomorrow",
     "AI_REFUSED": "The AI declined this request. Please rephrase it.",
     "AI_INVALID_OUTPUT": "The AI did not return a usable answer – please try again",
     "AI_PLANT_NOT_RECOGNIZED": "This input was not recognized as a plant",

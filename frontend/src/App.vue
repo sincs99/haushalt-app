@@ -12,7 +12,6 @@ import { useDashboardStore } from './stores/dashboard'
 import { usePollsStore } from './stores/polls'
 import { usePetsStore } from './stores/pets'
 import { usePlantsStore } from './stores/plants'
-import { resetHouseholdScopedStores } from './stores/householdScope'
 import { useSocket } from './composables/useSocket'
 import { useConnectivity } from './composables/useConnectivity'
 import BaseAvatar from './components/ui/BaseAvatar.vue'
@@ -175,12 +174,6 @@ watch(
     }
 
     if (householdId) {
-      // Stores leeren bei Household-Wechsel (alle haushaltsbezogenen Stores, auch die
-      // der Ansichten, die ihre Daten nur beim Öffnen laden)
-      if (oldHouseholdId && oldHouseholdId !== householdId) {
-        resetHouseholdScopedStores()
-      }
-
       joinHousehold(householdId)
 
       // Neue Listener binden
@@ -264,7 +257,7 @@ watch(
       refreshAllStores()
     }
   },
-  { immediate: true }
+  { immediate: true, flush: 'sync' }
 )
 
 // Hintergrund-Aktualisierung aller Stores. Fehler werden hier bewusst
@@ -451,7 +444,7 @@ onUnmounted(() => {
 
     <!-- Hauptinhalt -->
     <main class="app-content">
-      <router-view />
+      <router-view :key="authStore.scopeKey" />
     </main>
 
     <!-- Mobile Bottom-Nav + More-Sheet -->
@@ -481,7 +474,7 @@ onUnmounted(() => {
   </div>
 
   <!-- Unauthenticated: nur Router-View (Login/Register) -->
-  <router-view v-else />
+  <router-view v-else :key="authStore.scopeKey" />
 
   <!-- Toast-Benachrichtigungen -->
   <Teleport to="body">

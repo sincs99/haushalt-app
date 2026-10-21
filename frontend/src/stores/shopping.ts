@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -32,7 +33,7 @@ function storeStoreFilter(householdId: string, store: string | null) {
 
 export const useShoppingStore = defineStore('shopping', () => {
   // Repository — einmal im Store-Setup erstellen
-  const repo = createOnlineShoppingRepository()
+  const repo = scopeRepository(createOnlineShoppingRepository())
 
   // State
   const items = ref<ShoppingItem[]>([])
@@ -44,6 +45,7 @@ export const useShoppingStore = defineStore('shopping', () => {
 
   // Interner State für Race-Condition-Schutz
   const pendingToggles = new Set<string>()
+  function resetPending() { pendingToggles.clear() }
 
   // ── Computed ──
 
@@ -54,11 +56,15 @@ export const useShoppingStore = defineStore('shopping', () => {
   // ── List Actions ──
 
   async function fetchLists() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    lists.value = await repo.fetchLists(householdId)
+    const scopedResult = await repo.fetchLists(householdId)
+    assertDataGeneration(actionGeneration)
+
+    lists.value = scopedResult
 
     // Aktive Liste aus localStorage oder erste Liste
     const stored = getStoredActiveListId(householdId)
@@ -79,6 +85,7 @@ export const useShoppingStore = defineStore('shopping', () => {
   }
 
   async function createList(name: string, icon?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -86,26 +93,31 @@ export const useShoppingStore = defineStore('shopping', () => {
     // Client-ID: ein Retry erzeugt keine doppelte Liste
     const newList = await repo.createList(householdId, { id: crypto.randomUUID(), name, icon })
     // Socket-Event kann schneller gewesen sein → Upsert statt push
+    assertDataGeneration(actionGeneration)
     upsertVersioned(lists.value, newList, true)
     lists.value.sort((a, b) => a.position - b.position)
     return newList
   }
 
   async function updateList(listId: string, data: ShoppingListUpdatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
     const updated = await repo.updateList(householdId, listId, data)
+    assertDataGeneration(actionGeneration)
     upsertVersioned(lists.value, updated, false)
   }
 
   async function deleteList(listId: string, force = false) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
     await repo.deleteList(householdId, listId, force)
+    assertDataGeneration(actionGeneration)
     lists.value = lists.value.filter(l => l.id !== listId)
 
     // Falls aktive Liste gelöscht wurde, erste verbleibende wählen
@@ -119,14 +131,18 @@ export const useShoppingStore = defineStore('shopping', () => {
   // ── Item Actions ──
 
   async function fetchItems() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
     loading.value = true
     try {
-      items.value = await repo.fetchAll(householdId)
+      const scopedResult = await repo.fetchAll(householdId)
+      assertDataGeneration(actionGeneration)
+      items.value = scopedResult
     } finally {
+      assertDataGeneration(actionGeneration)
       loading.value = false
     }
   }
@@ -134,10 +150,13 @@ export const useShoppingStore = defineStore('shopping', () => {
   // ── Store-Filter Actions ──
 
   async function fetchStores() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
-    stores.value = await repo.fetchStores(householdId)
+    const scopedResult = await repo.fetchStores(householdId)
+    assertDataGeneration(actionGeneration)
+    stores.value = scopedResult
 
     // Aktiven Filter aus localStorage validieren (case-insensitive → kanonische Schreibweise)
     const stored = getStoredStoreFilter(householdId)
@@ -159,6 +178,7 @@ export const useShoppingStore = defineStore('shopping', () => {
   }
 
   async function reassignStore(fromStore: string, toStore: string | null) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return { updated: 0 }
@@ -166,6 +186,7 @@ export const useShoppingStore = defineStore('shopping', () => {
     const result = await repo.reassignStore(householdId, fromStore, toStore)
 
     // Tatsächlich verwendeter Ziel-Store: Das Backend merged case-insensitive in
+    assertDataGeneration(actionGeneration)
     // eine bereits vorhandene Schreibweise (z. B. "coop" → "Coop").
     const targetStore = result.to_store ?? toStore
 
@@ -185,6 +206,7 @@ export const useShoppingStore = defineStore('shopping', () => {
     await fetchStores()
 
     // Filter resetten falls der aktive Store umbenannt/aufgelöst wurde
+    assertDataGeneration(actionGeneration)
     if (wasActiveFilter) {
       setStoreFilter(targetStore)
     }
@@ -193,16 +215,19 @@ export const useShoppingStore = defineStore('shopping', () => {
   }
 
   async function updateItem(itemId: string, data: Partial<ShoppingItem>) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
     const updated = await repo.update(householdId, itemId, data)
+    assertDataGeneration(actionGeneration)
     upsertVersioned(items.value, updated, false)
 
     // Stores-Liste neu laden falls sich Store geändert hat
     if ('store' in data) {
       await fetchStores()
+      assertDataGeneration(actionGeneration)
     }
   }
 
@@ -212,6 +237,7 @@ export const useShoppingStore = defineStore('shopping', () => {
     category?: string,
     store?: string,
   ): Promise<string | undefined> {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -249,6 +275,7 @@ export const useShoppingStore = defineStore('shopping', () => {
         category,
         store,
       })
+      assertDataGeneration(actionGeneration)
 
       // 3. Optimistischen Eintrag durch Server-Stand ersetzen. Gleiche ID wie das
       //    Socket-Event → egal wer zuerst kommt, es entsteht kein Duplikat.
@@ -256,6 +283,8 @@ export const useShoppingStore = defineStore('shopping', () => {
       upsertVersioned(items.value, serverItem, false)
       return itemId
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 4. Rollback bei Fehler
       items.value = items.value.filter(i => i.id !== itemId)
       throw error
@@ -270,6 +299,7 @@ export const useShoppingStore = defineStore('shopping', () => {
    * wird weitergereicht.
    */
   async function restoreItems(snapshots: ShoppingItem[]) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId || snapshots.length === 0) return
@@ -296,16 +326,21 @@ export const useShoppingStore = defineStore('shopping', () => {
           store: snap.store ?? undefined,
           assigned_to_user_id: snap.assigned_to_user_id ?? undefined,
         })
+        assertDataGeneration(actionGeneration)
         // Create kennt is_checked nicht → abgehakte Artikel nachträglich abhaken
         if (snap.is_checked) {
           serverItem = await repo.update(householdId, itemId, { is_checked: true })
+          assertDataGeneration(actionGeneration)
         }
         if (serverItem) upsertVersioned(items.value, serverItem, false)
       } catch (error) {
+        assertDataGeneration(actionGeneration)
+        if (isScopeChanged(error)) throw error
         items.value = items.value.filter(i => i.id !== itemId)
         throw error
       }
     }))
+    assertDataGeneration(actionGeneration)
     const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
     if (failed) throw failed.reason
   }
@@ -316,11 +351,13 @@ export const useShoppingStore = defineStore('shopping', () => {
    * (Snapshots fürs Undo) und die Anzahl der Fehlschläge.
    */
   async function deleteItems(itemIds: string[]) {
+    const actionGeneration = currentDataGeneration()
     const snapshots = new Map<string, ShoppingItem>()
     for (const i of items.value) {
       if (itemIds.includes(i.id)) snapshots.set(i.id, { ...i })
     }
     const results = await Promise.allSettled(itemIds.map(id => deleteItem(id).then(() => id)))
+    assertDataGeneration(actionGeneration)
     const removed: ShoppingItem[] = []
     let failed = 0
     let firstError: unknown
@@ -337,6 +374,7 @@ export const useShoppingStore = defineStore('shopping', () => {
   }
 
   async function toggleChecked(itemId: string) {
+    const actionGeneration = currentDataGeneration()
     if (pendingToggles.has(itemId)) return // Bereits in Flight → ignorieren
     pendingToggles.add(itemId)
 
@@ -362,7 +400,10 @@ export const useShoppingStore = defineStore('shopping', () => {
     try {
       // 2. Server-Call
       await repo.update(householdId, itemId, { is_checked: item.is_checked })
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 3. Rollback — frisch nachschlagen, da Socket-Events das Objekt ersetzt haben könnten
       const currentItem = items.value.find(i => i.id === itemId)
       if (currentItem) {
@@ -371,11 +412,13 @@ export const useShoppingStore = defineStore('shopping', () => {
       }
       throw error
     } finally {
+      assertDataGeneration(actionGeneration)
       pendingToggles.delete(itemId)
     }
   }
 
   async function toggleAssigned(itemId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -393,7 +436,10 @@ export const useShoppingStore = defineStore('shopping', () => {
 
     try {
       await repo.update(householdId, itemId, { assigned_to_user_id: newValue })
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       const current = items.value.find(i => i.id === itemId)
       if (current) current.assigned_to_user_id = prev
       throw error
@@ -401,6 +447,7 @@ export const useShoppingStore = defineStore('shopping', () => {
   }
 
   async function deleteItem(itemId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -416,7 +463,10 @@ export const useShoppingStore = defineStore('shopping', () => {
     try {
       // 3. Server-Call
       await repo.remove(householdId, itemId)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 4. Rollback: Item wieder einfügen an gleicher Position
       items.value.splice(itemIndex, 0, removedItem)
       throw error
@@ -478,6 +528,7 @@ export const useShoppingStore = defineStore('shopping', () => {
   }
 
   return {
+    resetPending,
     // State
     items,
     lists,

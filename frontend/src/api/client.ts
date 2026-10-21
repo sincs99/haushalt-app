@@ -1,4 +1,17 @@
 import axios, { type AxiosRequestConfig } from 'axios'
+import { useAuthStore } from '../stores/auth'
+import {
+  assertDataGeneration, assertSessionGeneration, currentDataGeneration,
+  currentScopeSignal, currentSessionGeneration, ScopeChangedError,
+} from '../services/sessionScope'
+
+declare module 'axios' {
+  interface AxiosRequestConfig<D = any, P = any> {
+    _sessionGeneration?: number
+    _dataGeneration?: number
+    _retried?: boolean
+  }
+}
 
 export const API_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -21,29 +34,50 @@ export const CSRF_HEADER_VALUE = 'casa'
  */
 export function authRequestConfig(extraHeaders: Record<string, string> = {}): AxiosRequestConfig {
   return {
+    timeout: 15_000,
     withCredentials: true,
     headers: { [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE, ...extraHeaders },
   }
 }
 
 // URLs die NICHT refresht werden sollen (kein Retry bei 401)
-const AUTH_URLS = ['/api/auth/login', '/api/auth/refresh', '/api/auth/logout']
+const AUTH_URLS = ['/api/auth/login', '/api/auth/register', '/api/auth/refresh', '/api/auth/logout']
 
 // Request-Interceptor: JWT als Bearer-Token
-api.interceptors.request.use(async (config) => {
-  const { useAuthStore } = await import('../stores/auth')
+api.interceptors.request.use((config) => {
+  config._sessionGeneration ??= currentSessionGeneration()
+  config._dataGeneration ??= currentDataGeneration()
+  assertSessionGeneration(config._sessionGeneration)
+  assertDataGeneration(config._dataGeneration)
   const authStore = useAuthStore()
+  // All ordinary requests are canceled at the authority boundary. Auth cookie
+  // operations use a separate, serialized transport in the auth store.
+  config.signal ??= currentScopeSignal()
   if (authStore.token) {
     config.headers.Authorization = `Bearer ${authStore.token}`
+  } else {
+    config.headers.delete('Authorization')
   }
   return config
-})
+}, (error) => { throw error }, { synchronous: true })
+
+function assertRequestScope(config: AxiosRequestConfig | undefined): void {
+  if (!config || config._sessionGeneration === undefined || config._dataGeneration === undefined) {
+    throw new ScopeChangedError()
+  }
+  assertSessionGeneration(config._sessionGeneration)
+  assertDataGeneration(config._dataGeneration)
+}
 
 // Response-Interceptor: Bei 401 → Refresh + Retry
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    assertRequestScope(response.config)
+    return response
+  },
   async (error) => {
     const originalRequest = error.config
+    assertRequestScope(originalRequest)
 
     // Nur bei 401, nicht bei auth-URLs, und nur einmal retrien
     if (
@@ -54,17 +88,18 @@ api.interceptors.response.use(
       originalRequest._retried = true
 
       try {
-        const { useAuthStore } = await import('../stores/auth')
         const authStore = useAuthStore()
+        if (!authStore.isAuthenticated) return Promise.reject(error)
         await authStore.refresh()
+        assertRequestScope(originalRequest)
 
         // Original-Request mit neuem Token wiederholen
         originalRequest.headers.Authorization = `Bearer ${authStore.token}`
         return api(originalRequest)
       } catch (refreshErr: any) {
+        assertRequestScope(originalRequest)
         // Refresh fehlgeschlagen → Logout NUR bei Auth-Rejection
         if (refreshErr?.response?.status === 401) {
-          const { useAuthStore } = await import('../stores/auth')
           const authStore = useAuthStore()
           await authStore.logout({ reason: 'expired' })
         }

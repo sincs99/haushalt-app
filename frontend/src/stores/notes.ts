@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -7,8 +8,8 @@ import type { NoteItem, HouseholdMemberInfo } from '../types'
 
 export const useNotesStore = defineStore('notes', () => {
   // Repositories — einmal im Store-Setup erstellen
-  const repo = createOnlineNotesRepository()
-  const householdRepo = createOnlineHouseholdsRepository()
+  const repo = scopeRepository(createOnlineNotesRepository())
+  const householdRepo = scopeRepository(createOnlineHouseholdsRepository())
 
   // State
   const items = ref<NoteItem[]>([])
@@ -33,24 +34,31 @@ export const useNotesStore = defineStore('notes', () => {
 
   // Actions
   async function fetchNotes() {
+    const generation = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
     loading.value = true
     try {
-      items.value = await repo.fetchAll(householdId)
+      const result = await repo.fetchAll(householdId)
+      assertDataGeneration(generation)
+      items.value = result
     } finally {
-      loading.value = false
+      assertDataGeneration(generation)
+      if (generation === currentDataGeneration()) loading.value = false
     }
   }
 
   async function fetchMembers() {
+    const generation = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    members.value = await householdRepo.fetchMembers(householdId)
+    const result = await householdRepo.fetchMembers(householdId)
+    assertDataGeneration(generation)
+    members.value = result
   }
 
   async function addNote(title: string, body?: string, tag?: string) {
@@ -95,6 +103,7 @@ export const useNotesStore = defineStore('notes', () => {
     tempItem: NoteItem,
     payload: { title: string; body?: string; tag?: string; pinned?: boolean },
   ): Promise<NoteItem> {
+    const actionGeneration = currentDataGeneration()
     const tempId = tempItem.id
     items.value.push(tempItem)
     pendingTempIds.add(tempId)
@@ -102,6 +111,7 @@ export const useNotesStore = defineStore('notes', () => {
     try {
       // 2. Server-Call via Repository
       const serverItem = await repo.create(householdId, payload)
+      assertDataGeneration(actionGeneration)
       pendingTempIds.delete(tempId)
 
       // 3. Defensive Duplikat-Prüfung: Socket könnte schneller gewesen sein
@@ -117,6 +127,8 @@ export const useNotesStore = defineStore('notes', () => {
       }
       return serverItem
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       pendingTempIds.delete(tempId)
       // 4. Rollback bei Fehler
       items.value = items.value.filter((i) => i.id !== tempId)
@@ -125,6 +137,7 @@ export const useNotesStore = defineStore('notes', () => {
   }
 
   async function updateNote(noteId: string, data: Partial<NoteItem>) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -141,7 +154,10 @@ export const useNotesStore = defineStore('notes', () => {
     try {
       // 3. Server-Call
       await repo.update(householdId, noteId, data)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 4. Rollback auf Snapshot
       Object.assign(item, snapshot)
       throw error
@@ -149,6 +165,7 @@ export const useNotesStore = defineStore('notes', () => {
   }
 
   async function togglePin(noteId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -163,7 +180,10 @@ export const useNotesStore = defineStore('notes', () => {
     try {
       // 2. Server-Call
       await repo.update(householdId, noteId, { pinned: item.pinned })
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 3. Rollback
       const currentItem = items.value.find((i) => i.id === noteId)
       if (currentItem) {
@@ -174,6 +194,7 @@ export const useNotesStore = defineStore('notes', () => {
   }
 
   async function deleteNote(noteId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -189,7 +210,10 @@ export const useNotesStore = defineStore('notes', () => {
     try {
       // 3. Server-Call
       await repo.remove(householdId, noteId)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 4. Rollback: Item wieder einfügen an gleicher Position
       items.value.splice(itemIndex, 0, removedItem)
       throw error
@@ -222,6 +246,8 @@ export const useNotesStore = defineStore('notes', () => {
 
   /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
   function reset() {
+    pendingTempIds.clear()
+    loading.value = false
     items.value = []
     members.value = []
   }

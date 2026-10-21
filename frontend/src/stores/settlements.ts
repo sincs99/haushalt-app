@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -7,7 +8,7 @@ import { translateApiError } from '../utils/apiErrors'
 import type { SettlementInfo, SettlementCreatePayload } from '../types'
 
 export const useSettlementsStore = defineStore('settlements', () => {
-  const repo = createOnlineSettlementsRepository()
+  const repo = scopeRepository(createOnlineSettlementsRepository())
 
   // State
   const settlements = ref<SettlementInfo[]>([])
@@ -28,6 +29,7 @@ export const useSettlementsStore = defineStore('settlements', () => {
 
   // Actions
   async function fetchAll(householdId?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
@@ -35,16 +37,22 @@ export const useSettlementsStore = defineStore('settlements', () => {
     loading.value = true
     error.value = null
     try {
-      settlements.value = await repo.fetchAll(hid)
+      const scopedResult = await repo.fetchAll(hid)
+      assertDataGeneration(actionGeneration)
+      settlements.value = scopedResult
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       error.value = translateApiError(e)
       throw e
     } finally {
+      assertDataGeneration(actionGeneration)
       loading.value = false
     }
   }
 
   async function create(payload: SettlementCreatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -53,6 +61,7 @@ export const useSettlementsStore = defineStore('settlements', () => {
     try {
       const created = await repo.create(householdId, payload)
       // Dedupe: falls Socket schneller war
+      assertDataGeneration(actionGeneration)
       const idx = settlements.value.findIndex(s => s.id === created.id)
       if (idx === -1) {
         settlements.value.unshift(created)
@@ -60,12 +69,15 @@ export const useSettlementsStore = defineStore('settlements', () => {
       debouncedFetchBalances()
       return created
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       error.value = translateApiError(e)
       throw e
     }
   }
 
   async function remove(settlementId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -77,8 +89,11 @@ export const useSettlementsStore = defineStore('settlements', () => {
 
     try {
       await repo.remove(householdId, settlementId)
+      assertDataGeneration(actionGeneration)
       debouncedFetchBalances()
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       // Rollback
       if (removed && idx !== -1) settlements.value.splice(idx, 0, removed)
       error.value = translateApiError(e)

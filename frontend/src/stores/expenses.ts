@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -8,8 +9,8 @@ import { translateApiError } from '../utils/apiErrors'
 import type { Expense, ExpenseCreatePayload, ExpenseUpdatePayload, BalancesResponse, HouseholdMemberInfo } from '../types'
 
 export const useExpensesStore = defineStore('expenses', () => {
-  const repo = createOnlineExpensesRepository()
-  const householdRepo = createOnlineHouseholdsRepository()
+  const repo = scopeRepository(createOnlineExpensesRepository())
+  const householdRepo = scopeRepository(createOnlineHouseholdsRepository())
 
   // State
   const expenses = ref<Expense[]>([])
@@ -40,6 +41,7 @@ export const useExpensesStore = defineStore('expenses', () => {
 
   // Actions
   async function fetchExpenses(householdId?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
@@ -47,24 +49,34 @@ export const useExpensesStore = defineStore('expenses', () => {
     loading.value = true
     error.value = null
     try {
-      expenses.value = await repo.fetchAll(hid)
+      const scopedResult = await repo.fetchAll(hid)
+      assertDataGeneration(actionGeneration)
+      expenses.value = scopedResult
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       error.value = translateApiError(e)
       throw e
     } finally {
+      assertDataGeneration(actionGeneration)
       loading.value = false
     }
   }
 
   async function fetchBalances(householdId?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
 
     try {
-      balances.value = await repo.getBalances(hid)
+      const scopedResult = await repo.getBalances(hid)
+      assertDataGeneration(actionGeneration)
+      balances.value = scopedResult
       balancesError.value = false
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       // Balances-Fehler nicht als Store-Error propagieren (nicht-kritisch),
       // aber merken, damit die Karte nicht still verschwindet
       balancesError.value = true
@@ -73,18 +85,24 @@ export const useExpensesStore = defineStore('expenses', () => {
   }
 
   async function fetchMembers(householdId?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
 
     try {
-      members.value = await householdRepo.fetchMembers(hid)
+      const scopedResult = await householdRepo.fetchMembers(hid)
+      assertDataGeneration(actionGeneration)
+      members.value = scopedResult
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       console.error('Failed to fetch members:', e)
     }
   }
 
   async function addExpense(payload: ExpenseCreatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -94,6 +112,7 @@ export const useExpensesStore = defineStore('expenses', () => {
       // Kein Optimistic Update — Split wird serverseitig berechnet
       const created = await repo.create(householdId, payload)
       // Socket-Event wird die Liste aktualisieren, aber wir fügen
+      assertDataGeneration(actionGeneration)
       // das Ergebnis trotzdem sofort ein (Dedupe im Handler)
       const idx = expenses.value.findIndex(e => e.id === created.id)
       if (idx === -1) {
@@ -103,12 +122,15 @@ export const useExpensesStore = defineStore('expenses', () => {
       debouncedFetchBalances()
       return created
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       error.value = translateApiError(e)
       throw e
     }
   }
 
   async function editExpense(expenseId: string, payload: ExpenseUpdatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -116,6 +138,7 @@ export const useExpensesStore = defineStore('expenses', () => {
     error.value = null
     try {
       const updated = await repo.update(householdId, expenseId, payload)
+      assertDataGeneration(actionGeneration)
       const idx = expenses.value.findIndex(e => e.id === updated.id)
       if (idx !== -1) {
         expenses.value[idx] = updated
@@ -123,12 +146,15 @@ export const useExpensesStore = defineStore('expenses', () => {
       debouncedFetchBalances()
       return updated
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       error.value = translateApiError(e)
       throw e
     }
   }
 
   async function removeExpense(expenseId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -140,8 +166,11 @@ export const useExpensesStore = defineStore('expenses', () => {
 
     try {
       await repo.remove(householdId, expenseId)
+      assertDataGeneration(actionGeneration)
       debouncedFetchBalances()
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       // Rollback
       if (removed && idx !== -1) expenses.value.splice(idx, 0, removed)
       error.value = translateApiError(e)

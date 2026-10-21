@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -5,7 +6,7 @@ import { createOnlineDashboardRepository } from '../repositories/dashboardReposi
 import type { DashboardResponse } from '../types'
 
 export const useDashboardStore = defineStore('dashboard', () => {
-  const repo = createOnlineDashboardRepository()
+  const repo = scopeRepository(createOnlineDashboardRepository())
 
   // State
   const data = ref<DashboardResponse | null>(null)
@@ -18,19 +19,25 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
   // Actions
   async function fetchDashboard() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
     loading.value = true
     try {
-      data.value = await repo.fetchDashboard(householdId)
+      const scopedResult = await repo.fetchDashboard(householdId)
+      assertDataGeneration(actionGeneration)
+      data.value = scopedResult
       loadError.value = false
     } catch (e) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       // Nicht weiterwerfen: wird auch ungewartet (Socket-Invalidierung, App-Start) aufgerufen
       console.error('Failed to fetch dashboard:', e)
       loadError.value = true
     } finally {
+      assertDataGeneration(actionGeneration)
       loading.value = false
     }
   }

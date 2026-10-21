@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -8,8 +9,8 @@ import { upsertVersioned } from '../utils/syncVersion'
 
 export const useTodosStore = defineStore('todos', () => {
   // Repositories — einmal im Store-Setup erstellen
-  const repo = createOnlineTodosRepository()
-  const householdRepo = createOnlineHouseholdsRepository()
+  const repo = scopeRepository(createOnlineTodosRepository())
+  const householdRepo = scopeRepository(createOnlineHouseholdsRepository())
 
   // State
   const items = ref<TodoItem[]>([])
@@ -18,27 +19,36 @@ export const useTodosStore = defineStore('todos', () => {
 
   // Interner State für Race-Condition-Schutz
   const pendingToggles = new Set<string>()
+  function resetPending() { pendingToggles.clear() }
 
   // Actions
   async function fetchTodos() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
     loading.value = true
     try {
-      items.value = await repo.fetchAll(householdId)
+      const scopedResult = await repo.fetchAll(householdId)
+      assertDataGeneration(actionGeneration)
+      items.value = scopedResult
     } finally {
+      assertDataGeneration(actionGeneration)
       loading.value = false
     }
   }
 
   async function fetchMembers() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
-    members.value = await householdRepo.fetchMembers(householdId)
+    const scopedResult = await householdRepo.fetchMembers(householdId)
+    assertDataGeneration(actionGeneration)
+
+    members.value = scopedResult
   }
 
   async function addTodo(
@@ -48,6 +58,7 @@ export const useTodosStore = defineStore('todos', () => {
     dueDate?: string,
     tags?: string[],
   ): Promise<string | undefined> {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -84,6 +95,7 @@ export const useTodosStore = defineStore('todos', () => {
         due_date: dueDate,
         tags,
       })
+      assertDataGeneration(actionGeneration)
 
       // 3. Optimistischen Eintrag durch Server-Stand ersetzen. Gleiche ID wie das
       //    Socket-Event → egal wer zuerst kommt, es entsteht kein Duplikat.
@@ -92,6 +104,8 @@ export const useTodosStore = defineStore('todos', () => {
       // ID zurückgeben, damit Aufrufer (z. B. Erinnerungen) nicht raten müssen
       return todoId
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 4. Rollback bei Fehler
       items.value = items.value.filter(i => i.id !== todoId)
       throw error
@@ -99,9 +113,11 @@ export const useTodosStore = defineStore('todos', () => {
   }
 
   async function toggleDone(todoId: string) {
+    const actionGeneration = currentDataGeneration()
     const item = items.value.find(i => i.id === todoId)
     if (!item) return
     await setDone(todoId, !item.is_done)
+    assertDataGeneration(actionGeneration)
   }
 
   /**
@@ -110,6 +126,7 @@ export const useTodosStore = defineStore('todos', () => {
    * lokal geladen ist (z. B. Abhaken im Dashboard).
    */
   async function setDone(todoId: string, isDone: boolean) {
+    const actionGeneration = currentDataGeneration()
     if (pendingToggles.has(todoId)) return // Bereits in Flight → ignorieren
 
     const authStore = useAuthStore()
@@ -130,8 +147,11 @@ export const useTodosStore = defineStore('todos', () => {
     try {
       // 2. Server-Call
       const serverItem = await repo.update(householdId, todoId, { is_done: isDone })
+      assertDataGeneration(actionGeneration)
       if (serverItem) upsertVersioned(items.value, serverItem, false)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 3. Rollback — frisch nachschlagen, da Socket-Events das Objekt ersetzt haben könnten
       const currentItem = items.value.find(i => i.id === todoId)
       if (currentItem && previousIsDone !== undefined) {
@@ -140,6 +160,7 @@ export const useTodosStore = defineStore('todos', () => {
       }
       throw error
     } finally {
+      assertDataGeneration(actionGeneration)
       pendingToggles.delete(todoId)
     }
   }
@@ -150,6 +171,7 @@ export const useTodosStore = defineStore('todos', () => {
    * verspätetes Lösch-Event der alten ID die Wiederherstellung nicht entfernt.
    */
   async function restoreTodo(snapshot: TodoItem): Promise<string | undefined> {
+    const actionGeneration = currentDataGeneration()
     const newId = await addTodo(
       snapshot.title,
       snapshot.description ?? undefined,
@@ -158,17 +180,21 @@ export const useTodosStore = defineStore('todos', () => {
       snapshot.tags?.length ? [...snapshot.tags] : undefined,
     )
     if (!newId) return newId
+    assertDataGeneration(actionGeneration)
     if (snapshot.is_done) {
       await setDone(newId, true)
+      assertDataGeneration(actionGeneration)
     }
     // Erinnerungen: nur zukünftige, best effort (Aufgabe ist bereits zurück)
     const now = Date.now()
     const future = (snapshot.reminders ?? []).filter(r => new Date(r.remind_at).getTime() > now)
     await Promise.allSettled(future.map(r => addReminder(newId, r.remind_at)))
+    assertDataGeneration(actionGeneration)
     return newId
   }
 
   async function updateTodo(todoId: string, data: Partial<TodoItem>) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -185,7 +211,10 @@ export const useTodosStore = defineStore('todos', () => {
     try {
       // 3. Server-Call
       await repo.update(householdId, todoId, data)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 4. Rollback auf Snapshot
       Object.assign(item, snapshot)
       throw error
@@ -193,6 +222,7 @@ export const useTodosStore = defineStore('todos', () => {
   }
 
   async function deleteTodo(todoId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -208,7 +238,10 @@ export const useTodosStore = defineStore('todos', () => {
     try {
       // 3. Server-Call
       await repo.remove(householdId, todoId)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 4. Rollback: Item wieder einfügen an gleicher Position
       items.value.splice(itemIndex, 0, removedItem)
       throw error
@@ -234,6 +267,7 @@ export const useTodosStore = defineStore('todos', () => {
   }
 
   async function addReminder(todoId: string, remindAt: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -257,6 +291,7 @@ export const useTodosStore = defineStore('todos', () => {
     try {
       const serverReminder = await repo.addReminder(householdId, todoId, remindAt)
       // Server-Reminder ersetzt Temp
+      assertDataGeneration(actionGeneration)
       const currentItem = items.value.find(i => i.id === todoId)
       if (currentItem) {
         currentItem.reminders = currentItem.reminders
@@ -264,6 +299,8 @@ export const useTodosStore = defineStore('todos', () => {
           .sort((a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime())
       }
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // Rollback
       const currentItem = items.value.find(i => i.id === todoId)
       if (currentItem) {
@@ -274,6 +311,7 @@ export const useTodosStore = defineStore('todos', () => {
   }
 
   async function deleteReminder(todoId: string, reminderId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -289,7 +327,10 @@ export const useTodosStore = defineStore('todos', () => {
 
     try {
       await repo.deleteReminder(householdId, todoId, reminderId)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // Rollback
       const currentItem = items.value.find(i => i.id === todoId)
       if (currentItem) {
@@ -300,6 +341,7 @@ export const useTodosStore = defineStore('todos', () => {
   }
 
   return {
+    resetPending,
     // State
     items,
     members,

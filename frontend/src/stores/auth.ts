@@ -1,11 +1,13 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import axios from 'axios'
 import api, { API_BASE, authRequestConfig } from '../api/client'
 import type { UserInfo, HouseholdInfo, MeResponse } from '../types'
 import { sessionMarker, SESSION_MARKER_KEY, takeLegacyRefreshToken } from '../services/tokenStorage'
 import { useToast } from '../composables/useToast'
 import i18n from '../i18n'
+import { resetHouseholdScopedStores } from './householdScope'
+import { assertSessionGeneration, currentSessionGeneration, invalidateSessionScope, ScopeChangedError, isScopeChanged } from '../services/sessionScope'
 
 const HOUSEHOLD_KEY = 'haushalt_household_id'
 
@@ -46,6 +48,23 @@ export const useAuthStore = defineStore('auth', () => {
    * Wird bei erfolgreicher Anmeldung und bei manuellem Logout zurückgesetzt.
    */
   const sessionExpired = ref(false)
+  const scopeKey = ref(0)
+
+  // This watcher runs before any next render or promise continuation, including
+  // direct membership-removal paths. Same-user JWT refresh does not change scope.
+  watch(currentHouseholdId, () => {
+    scopeKey.value++
+    resetHouseholdScopedStores()
+  }, { flush: 'sync' })
+
+  // Cookie responses must finish in order: a late refresh/login must not install
+  // its HttpOnly cookie after a later logout or login has already completed.
+  let credentialQueue: Promise<unknown> = Promise.resolve()
+  function credentialRequest<T>(request: () => Promise<T>): Promise<T> {
+    const result = credentialQueue.then(request, request)
+    credentialQueue = result.catch(() => {})
+    return result
+  }
 
   // Internes Promise-Setup für authReady
   let _authReadyResolve: () => void
@@ -75,15 +94,23 @@ export const useAuthStore = defineStore('auth', () => {
     // Alte localStorage-Tokens (vor H-01) einmalig gegen den Cookie tauschen
     const legacyRefreshToken = takeLegacyRefreshToken()
 
+    const generation = currentSessionGeneration()
     if (legacyRefreshToken || sessionMarker.isSet()) {
       try {
         // Access-Token wird nie persistiert → immer über den Cookie neu holen
         await _refreshWith(legacyRefreshToken)
+        assertSessionGeneration(generation)
         await fetchMe()
       } catch (err: any) {
+        if (isScopeChanged(err) || generation !== currentSessionGeneration()) {
+          _registerStorageListener()
+          isInitialized.value = true
+          _authReadyResolve()
+          return
+        }
         if (isAuthRejection(err)) {
           // Cookie fehlt/abgelaufen/revoked (Backend hat ihn gelöscht) → ausgeloggt
-          await _clearState()
+          _clearState()
           sessionExpired.value = true
         } else if (!token.value) {
           // Netzwerkfehler beim Refresh → Sitzung vermutlich noch gültig, "offline eingeloggt"
@@ -113,21 +140,45 @@ export const useAuthStore = defineStore('auth', () => {
     // Single-flight: concurrent callers teilen sich dasselbe Promise
     if (_refreshPromise) return _refreshPromise
 
-    _refreshPromise = _doRefresh(legacyRefreshToken)
+    const pending = _doRefresh(legacyRefreshToken)
+    _refreshPromise = pending
     try {
       await _refreshPromise
     } finally {
-      _refreshPromise = null
+      if (_refreshPromise === pending) _refreshPromise = null
     }
   }
 
   async function _doRefresh(legacyRefreshToken: string | null): Promise<void> {
+    if (_logoutPromise) throw new ScopeChangedError()
+    const generation = currentSessionGeneration()
+    const expectedSubject = token.value ? tokenSubject(token.value) : user.value?.id
     // Direkter axios call OHNE Interceptor (um Endlos-Loop zu vermeiden).
     // Der Refresh-Token kommt aus dem HttpOnly-Cookie (withCredentials); nur bei der
     // einmaligen Migration steht der alte localStorage-Token im Body.
     const body = legacyRefreshToken ? { refresh_token: legacyRefreshToken } : {}
-    const response = await axios.post(`${API_BASE}/api/auth/refresh`, body, authRequestConfig())
+    const response = await credentialRequest(() => {
+      assertSessionGeneration(generation)
+      return axios.post(`${API_BASE}/api/auth/refresh`, body, authRequestConfig())
+    })
+    assertSessionGeneration(generation)
+    const nextSubject = tokenSubject(response.data.access_token)
+    if (expectedSubject && nextSubject !== expectedSubject) {
+      // Another tab replaced the shared cookie. Never replay this principal's
+      // in-flight mutations using that other principal's newly issued JWT.
+      _clearState(false)
+      void import('../router').then(({ default: router }) => router.replace('/login'))
+      throw new ScopeChangedError()
+    }
     _applyTokens(response.data)
+  }
+
+  function tokenSubject(value: string): string | undefined {
+    try {
+      const payload = value.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+      const subject = JSON.parse(atob(payload)).sub
+      return typeof subject === 'string' ? subject : undefined
+    } catch { return undefined }
   }
 
   /** Übernimmt den Access-Token einer Login-/Register-/Refresh-Antwort (Cookie setzt der Browser). */
@@ -145,11 +196,13 @@ export const useAuthStore = defineStore('auth', () => {
    */
   async function refreshForSocket(): Promise<string | null> {
     if (_logoutPromise || !token.value) return null
+    const generation = currentSessionGeneration()
     try {
       await refresh()
+      assertSessionGeneration(generation)
       return token.value
     } catch (err: any) {
-      if (isAuthRejection(err)) await logout({ reason: 'expired' })
+      if (generation === currentSessionGeneration() && isAuthRejection(err)) await logout({ reason: 'expired' })
       return null
     }
   }
@@ -157,11 +210,18 @@ export const useAuthStore = defineStore('auth', () => {
   // ── Login ──
 
   async function login(email: string, password: string) {
-    const response = await api.post(
-      '/api/auth/login',
+    if (_logoutPromise) await _logoutPromise
+    _clearState()
+    const generation = currentSessionGeneration()
+    const response = await credentialRequest(() => {
+      assertSessionGeneration(generation)
+      return axios.post(
+      `${API_BASE}/api/auth/login`,
       new URLSearchParams({ username: email, password }),
       authRequestConfig({ 'Content-Type': 'application/x-www-form-urlencoded' }),
-    )
+      )
+    })
+    assertSessionGeneration(generation)
     _applyTokens(response.data)
 
     await fetchMe()
@@ -175,6 +235,9 @@ export const useAuthStore = defineStore('auth', () => {
     displayName: string,
     options: { householdName: string } | { inviteCode: string },
   ) {
+    if (_logoutPromise) await _logoutPromise
+    _clearState()
+    const generation = currentSessionGeneration()
     const payload: Record<string, string> = {
       email,
       password,
@@ -185,7 +248,11 @@ export const useAuthStore = defineStore('auth', () => {
     } else {
       payload.invite_code = options.inviteCode
     }
-    const response = await api.post('/api/auth/register', payload, authRequestConfig())
+    const response = await credentialRequest(() => {
+      assertSessionGeneration(generation)
+      return axios.post(`${API_BASE}/api/auth/register`, payload, authRequestConfig())
+    })
+    assertSessionGeneration(generation)
     _applyTokens(response.data)
 
     await fetchMe()
@@ -194,8 +261,14 @@ export const useAuthStore = defineStore('auth', () => {
   // ── Fetch Me ──
 
   async function fetchMe() {
+    const generation = currentSessionGeneration()
     const response = await api.get<MeResponse>('/api/auth/me')
+    assertSessionGeneration(generation)
     const data = response.data
+    if (user.value && user.value.id !== data.id) {
+      _clearState(false)
+      throw new ScopeChangedError()
+    }
     user.value = {
       id: data.id,
       email: data.email,
@@ -210,6 +283,9 @@ export const useAuthStore = defineStore('auth', () => {
         currentHouseholdId.value = data.households[0].id
         localStorage.setItem(HOUSEHOLD_KEY, currentHouseholdId.value!)
       }
+    } else {
+      currentHouseholdId.value = null
+      localStorage.removeItem(HOUSEHOLD_KEY)
     }
   }
 
@@ -237,6 +313,10 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function _doLogout(options?: { reason?: 'user' | 'expired' }): Promise<void> {
     const reason = options?.reason ?? 'expired'
+    // Privacy boundary is synchronous; network cleanup must not retain private
+    // notes, dialogs or pending optimistic rollback snapshots in the next login.
+    _clearState()
+    sessionExpired.value = reason === 'expired'
 
     // Socket zuerst trennen: Der Logout-Aufruf beendet serverseitig alle Verbindungen
     // des Users; diese hier soll darauf nicht mehr reagieren (kein Reconnect/Refresh).
@@ -247,12 +327,11 @@ export const useAuthStore = defineStore('auth', () => {
       // Best-effort
     }
 
-    // Gerät vom Push abmelden, damit nach dem Logout keine Erinnerungen mehr ankommen.
-    // Backend nur bei manuellem Logout informieren: Bei 'expired' ist der Access-Token
-    // ungültig, der 401-Interceptor würde erneut logout() aufrufen (Single-Flight-Deadlock).
+    // Unsubscribe the browser directly after clearing credentials. Do not let
+    // cleanup acquire a later account's token through the API refresh interceptor.
     try {
       const { disablePush } = await import('../services/pushService')
-      await disablePush({ notifyBackend: reason === 'user' })
+      await disablePush({ notifyBackend: false })
     } catch {
       // Best-effort
     }
@@ -260,13 +339,10 @@ export const useAuthStore = defineStore('auth', () => {
     // Best-effort: Backend revoked den Refresh-Token aus dem Cookie und löscht den Cookie.
     // Ob ein Cookie existiert, sieht JS nicht (HttpOnly) — der Endpunkt ist idempotent.
     try {
-      await axios.post(`${API_BASE}/api/auth/logout`, {}, authRequestConfig())
+      await credentialRequest(() => axios.post(`${API_BASE}/api/auth/logout`, {}, authRequestConfig()))
     } catch {
       // Ignore — Logout ist best-effort
     }
-
-    await _clearState()
-    sessionExpired.value = reason === 'expired'
 
     const { default: router } = await import('../router')
     if (reason === 'expired') {
@@ -284,14 +360,18 @@ export const useAuthStore = defineStore('auth', () => {
 
   // ── Internal: State zurücksetzen (async) ──
 
-  async function _clearState() {
+  function _clearState(broadcast = true) {
+    scopeKey.value++
+    invalidateSessionScope()
+    _refreshPromise = null
+    resetHouseholdScopedStores()
     token.value = null
     hasOfflineSession.value = false
     user.value = null
     currentHouseholdId.value = null
     households.value = []
     // Löscht den Marker → storage-Event in anderen Tabs (Cross-Tab-Logout)
-    sessionMarker.clear()
+    if (broadcast) sessionMarker.clear()
     localStorage.removeItem(HOUSEHOLD_KEY)
   }
 
@@ -307,16 +387,17 @@ export const useAuthStore = defineStore('auth', () => {
 
       if (event.newValue === null) {
         // Anderer Tab hat sich abgemeldet (Cookie ist weg) → lokalen Zustand verwerfen
-        if (!isAuthenticated.value) return
-        _clearState()
+        _clearState(false)
         // Navigiere zu /login OHNE redirect und OHNE Backend-Logout-Call
         import('../router').then(({ default: router }) => {
           router.push('/login')
         })
-      } else if (!token.value) {
+      } else {
+        _clearState(false)
+        const generation = currentSessionGeneration()
         // Anderer Tab hat sich angemeldet → Sitzung über den gemeinsamen Cookie übernehmen
         refresh()
-          .then(() => fetchMe())
+          .then(() => { assertSessionGeneration(generation); return fetchMe() })
           .catch(() => {
             // Best-effort — der nächste geschützte Request versucht es erneut
           })
@@ -360,9 +441,11 @@ export const useAuthStore = defineStore('auth', () => {
     householdId: string,
     request: () => Promise<unknown>,
   ): Promise<'/dashboard' | '/no-household'> {
+    const generation = currentSessionGeneration()
     _ownLeaves.add(householdId)
     try {
       await request()
+      assertSessionGeneration(generation)
       _dropHousehold(householdId)
     } finally {
       _ownLeaves.delete(householdId)
@@ -436,6 +519,7 @@ export const useAuthStore = defineStore('auth', () => {
     isInitialized,
     authReady,
     sessionExpired,
+    scopeKey,
     // Getters
     isAuthenticated,
     currentHousehold,

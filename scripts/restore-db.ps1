@@ -34,24 +34,25 @@ $DbUser      = "haushalt"
 $DbName      = "haushalt"
 $ServiceName = "postgres"
 $UploadsService = "backend"
-# Container-Pfade (Linux) — bewusst als Strings, Split-Path würde unter Windows "\" erzeugen
-$UploadsParent = "/app/data"
-$UploadsDir    = "/app/data/uploads"
-
 # --- 1. Prüfe ob Dump-Datei existiert ---
-if (-not (Test-Path $DumpFile)) {
+if (-not (Test-Path -LiteralPath $DumpFile -PathType Leaf)) {
     Write-Error "Die Dump-Datei '$DumpFile' wurde nicht gefunden."
     exit 1
 }
 
-$fileInfo = Get-Item $DumpFile
-if ($fileInfo.Length -eq 0) {
+$fileInfo = Get-Item -LiteralPath $DumpFile
+$DumpFile = $fileInfo.FullName
+if ($fileInfo.Length -lt 5) {
     Write-Error "Die Dump-Datei '$DumpFile' ist leer (0 Bytes)."
     exit 1
 }
 
 # Magic-Byte-Check
-$magicBytes = [System.IO.File]::ReadAllBytes($DumpFile)[0..4]
+$stream = [System.IO.File]::OpenRead($DumpFile)
+try {
+    $magicBytes = New-Object byte[] 5
+    if ($stream.Read($magicBytes, 0, 5) -ne 5) { throw "Dump header is incomplete" }
+} finally { $stream.Dispose() }
 $magic = [System.Text.Encoding]::ASCII.GetString($magicBytes)
 if ($magic -ne "PGDMP") {
     Write-Error "Die Datei '$DumpFile' ist kein gültiger PostgreSQL Custom-Format-Dump (Magic Bytes: '$magic' statt 'PGDMP')."
@@ -66,11 +67,12 @@ if (-not $UploadsFile) {
     if ($candidate -ne $fileInfo.FullName -and (Test-Path $candidate)) { $UploadsFile = $candidate }
 }
 if ($UploadsFile) {
-    if (-not (Test-Path $UploadsFile)) {
+    if (-not (Test-Path -LiteralPath $UploadsFile -PathType Leaf)) {
         Write-Error "Das Uploads-Archiv '$UploadsFile' wurde nicht gefunden."
         exit 1
     }
-    Write-Host "Uploads-Archiv: $((Get-Item $UploadsFile).FullName)" -ForegroundColor Cyan
+    $UploadsFile = (Get-Item -LiteralPath $UploadsFile).FullName
+    Write-Host "Uploads-Archiv: $UploadsFile" -ForegroundColor Cyan
 }
 else {
     Write-Host "⚠️  Kein Uploads-Archiv gefunden — hochgeladene Dateien bleiben unverändert." -ForegroundColor Yellow
@@ -123,7 +125,29 @@ if ($antwort -ne "j") {
     exit 0
 }
 
-# --- 4. Dump in Container kopieren und pg_restore ausführen ---
+# Uploads vollständig prüfen und separat im Volume vorbereiten, bevor SQL oder
+# vorhandene Uploads verändert werden. Keine tar-Extraktion auf das Live-Verzeichnis.
+$stageId = [Guid]::NewGuid().ToString("N")
+if ($UploadsFile) {
+    $archivePath = "/tmp/casa-uploads-$stageId.tar.gz"
+    docker compose @composeArgs cp $UploadsFile "${UploadsService}:$archivePath"
+    if ($LASTEXITCODE -ne 0) { throw "Uploads-Archiv konnte nicht kopiert werden." }
+    try {
+        docker compose @composeArgs exec -T $UploadsService python /app/scripts/restore_uploads.py stage $stageId --archive $archivePath
+        if ($LASTEXITCODE -ne 0) { throw "Uploads-Archivprüfung fehlgeschlagen. Datenbank und vorhandene Dateien sind unverändert." }
+    } finally {
+        docker compose @composeArgs exec -T $UploadsService rm -f -- $archivePath
+    }
+}
+
+# Während Datenbank und Uploads ersetzt werden, keine App-Schreibzugriffe zulassen.
+$backendWasRunning = $runningServices -contains $UploadsService
+if ($backendWasRunning) {
+    docker compose @composeArgs stop $UploadsService
+    if ($LASTEXITCODE -ne 0) { throw "Backend konnte nicht angehalten werden; Restore abgebrochen." }
+}
+
+# --- 4. Dump in Container kopieren und atomar pg_restore ausführen ---
 Write-Host ""
 Write-Host "Stelle Datenbank wieder her..." -ForegroundColor Cyan
 
@@ -136,13 +160,13 @@ try {
     }
 
     # Restore aus Datei im Container (kein stdin-Piping)
-    docker compose @composeArgs exec -T $ServiceName pg_restore --clean --if-exists -U $DbUser -d $DbName /tmp/casa-restore.dump
+    docker compose @composeArgs exec -T $ServiceName pg_restore --single-transaction --exit-on-error --clean --if-exists -U $DbUser -d $DbName /tmp/casa-restore.dump
     $restoreExitCode = $LASTEXITCODE
 }
 catch {
     # Aufräumen bei Fehler
     docker compose @composeArgs exec -T $ServiceName rm -f /tmp/casa-restore.dump 2>$null
-    Write-Error "Fehler beim Restore: $_"
+    Write-Error "Fehler beim Restore: $_. Backend bleibt angehalten; Uploads wurden nicht ersetzt."
     exit 1
 }
 finally {
@@ -153,12 +177,8 @@ finally {
 # --- 5. Ergebnis prüfen ---
 Write-Host ""
 if ($restoreExitCode -ne 0) {
-    # pg_restore gibt manchmal Warnungen mit Exit-Code != 0 aus,
-    # z.B. wenn Objekte nicht existieren die gelöscht werden sollen.
-    # --clean --if-exists minimiert das, aber es kann trotzdem vorkommen.
-    Write-Host "⚠️  pg_restore beendet mit Exit-Code $restoreExitCode." -ForegroundColor Yellow
-    Write-Host "   Dies kann durch Warnungen verursacht werden (z.B. nicht existierende Objekte)." -ForegroundColor Yellow
-    Write-Host "   Prüfe die Ausgabe oben auf tatsächliche Fehler." -ForegroundColor Yellow
+    Write-Error "pg_restore fehlgeschlagen (Exit-Code $restoreExitCode); Transaktion zurückgerollt. Uploads bleiben unverändert, Backend bleibt angehalten. Staging-ID: $stageId"
+    exit 1
 }
 else {
     Write-Host "═══════════════════════════════════════════" -ForegroundColor Green
@@ -170,23 +190,23 @@ else {
 if ($UploadsFile) {
     Write-Host ""
     Write-Host "Stelle Uploads wieder her..." -ForegroundColor Cyan
-    docker compose @composeArgs cp $UploadsFile "${UploadsService}:/tmp/casa-uploads.tar.gz"
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "docker compose cp des Uploads-Archivs fehlgeschlagen."
-        exit 1
-    }
-    # Bestehende Dateien ersetzen, damit keine Dateien ohne DB-Eintrag zurückbleiben
-    docker compose @composeArgs exec -T $UploadsService sh -c "find '$UploadsDir' -mindepth 1 -delete && tar -xzf /tmp/casa-uploads.tar.gz -C '$UploadsParent'"
+    # Der Service ist gestoppt. Ein kurzlebiger Helper erhält dasselbe Upload-Volume.
+    docker compose @composeArgs run --rm --no-deps --entrypoint python $UploadsService /app/scripts/restore_uploads.py apply $stageId
     $uploadsExitCode = $LASTEXITCODE
-    docker compose @composeArgs exec -T $UploadsService rm -f /tmp/casa-uploads.tar.gz 2>$null
     if ($uploadsExitCode -ne 0) {
-        Write-Error "Wiederherstellen der Uploads ist mit Exit-Code $uploadsExitCode fehlgeschlagen."
+        Write-Error "Upload-Restore fehlgeschlagen (Exit-Code $uploadsExitCode). Backend bleibt angehalten. Datenbank ist bereits wiederhergestellt; Staging-ID $stageId zur Wiederaufnahme prüfen."
         exit 1
     }
     Write-Host "  ✓ Uploads wiederhergestellt." -ForegroundColor Green
 }
 
-# --- 7. Empfehlung: Backend neu starten ---
+# --- 7. Backend erst nach vollständig erfolgreicher Wiederherstellung starten ---
+if ($backendWasRunning) {
+    docker compose @composeArgs start $UploadsService
+    if ($LASTEXITCODE -ne 0) { throw "Restore erfolgreich, aber Backend-Start fehlgeschlagen." }
+}
+
+# Einen zuvor angehaltenen Service nicht ungefragt starten.
 $restartCmd = "docker compose"
 $restartCmd += " -f $ComposeFile"
 if ($EnvFile)     { $restartCmd += " --env-file $EnvFile" }
@@ -194,6 +214,6 @@ if ($ProjectName) { $restartCmd += " --project-name $ProjectName" }
 $restartCmd += " restart backend"
 
 Write-Host ""
-Write-Host "📌 Empfehlung: Backend neu starten mit:" -ForegroundColor Cyan
+Write-Host "📌 Bei Bedarf Backend neu starten mit:" -ForegroundColor Cyan
 Write-Host "   $restartCmd" -ForegroundColor White
 Write-Host ""

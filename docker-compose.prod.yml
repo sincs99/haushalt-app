@@ -30,6 +30,12 @@ services:
     environment:
       DATABASE_URL: postgresql://haushalt:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt in .env.prod}@postgres:5432/haushalt
       UPLOAD_DIR: /app/data/uploads
+      ENVIRONMENT: production
+      AUTH_COOKIE_SECURE: "true"
+      FORWARDED_ALLOW_IPS: ${CASA_FRONTEND_PROXY_IP:-172.30.0.3}
+    networks:
+      - default
+      - app_proxy
     volumes:
       - uploaddata:/app/data/uploads
     # Kein ports: — Backend nur über Frontend-Nginx erreichbar
@@ -48,8 +54,11 @@ services:
       backend:
         condition: service_healthy
     networks:
-      - default
-      - npm
+      app_proxy:
+        ipv4_address: ${CASA_FRONTEND_PROXY_IP:-172.30.0.3}
+      npm: {}
+    environment:
+      NPM_TRUSTED_PROXY_IP: ${NPM_TRUSTED_PROXY_IP:?Exakte NPM-IP im gemeinsamen Netz in .env.prod setzen}
     # Kein ports: — NPM verbindet sich über das npm-Netzwerk
 
 volumes:
@@ -57,6 +66,11 @@ volumes:
   uploaddata:
 
 networks:
+  app_proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${CASA_PROXY_SUBNET:-172.30.0.0/29}
   npm:
     external: true
     name: "${NPM_NETWORK}"

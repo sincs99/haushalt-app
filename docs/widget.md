@@ -22,7 +22,9 @@ Tippen aufs Widget öffnet die App (Startseite).
 
 Einträge sind dieselben wie bei der Zahl am App-Icon (`backend/app/services/attention.py`): bis heute fällige offene Aufgaben und Ämtli (eigene oder niemandem zugewiesene), Tier- und Pflanzenpflege. Überfälliges steht oben und ist rot.
 
-Ohne Netz zeigt das Widget den letzten Stand mit Uhrzeit („Offline – Stand 08:15“). iOS aktualisiert Widgets nach eigenem Zeitplan; das Skript bittet um frühestens 15 Minuten.
+Ohne Netz zeigt das Widget den letzten, höchstens 24 Stunden alten Stand mit Uhrzeit („Offline – Stand 08:15“). Der Cache ist getrennt nach Server, Widget-Schlüssel und Sprache. Bei einer erkannten 401-/403-Antwort wird er gelöscht und keine Offline-Kopie angezeigt. Ein Schlüsselwiderruf kann eine bereits offline gespeicherte Kopie nicht aus der Ferne löschen. iOS aktualisiert Widgets nach eigenem Zeitplan; das Skript bittet um frühestens 15 Minuten.
+
+Nach einem Update der Vorlage das Skript neu erzeugen und auf dem iPhone ersetzen. Die frühere gemeinsame Datei `haushalt-widget.json` wird nicht übernommen; vorhandene alte Kopien lassen sich in Scriptable entfernen.
 
 ## Schlüssel und Sicherheit
 

@@ -536,6 +536,23 @@ function formatReminderDate(isoString: string): string {
   gap: var(--space-4);
 }
 
+@media (min-width: 1024px) {
+  .dashboard {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .dashboard > * {
+    min-width: 0;
+  }
+
+  .greeting,
+  .quick-actions {
+    grid-column: 1 / -1;
+  }
+}
+
 /* ── Greeting ── */
 .greeting {
   display: flex;

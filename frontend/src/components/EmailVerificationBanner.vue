@@ -59,7 +59,9 @@ async function resend() {
 
 <style scoped>
 .verify-banner {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'icon text close' '. action .';
   align-items: center;
   gap: var(--space-2);
   margin: 0 var(--space-4) var(--space-3);
@@ -71,17 +73,18 @@ async function resend() {
 }
 
 .verify-banner__icon {
-  flex-shrink: 0;
+  grid-area: icon;
 }
 
 .verify-banner__text {
-  flex: 1;
+  grid-area: text;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .verify-banner__action,
 .verify-banner__close {
-  flex-shrink: 0;
+  min-height: var(--touch-target);
   border: none;
   background: transparent;
   color: var(--color-primary);
@@ -90,9 +93,26 @@ async function resend() {
   cursor: pointer;
 }
 
+.verify-banner__action {
+  grid-area: action;
+  justify-self: start;
+  padding: var(--space-2) 0;
+  text-align: start;
+}
+
 .verify-banner__close {
+  grid-area: close;
+  min-width: var(--touch-target);
+  align-self: start;
   color: var(--color-text-secondary);
   font-size: var(--text-lg);
   line-height: 1;
+}
+
+@media (min-width: 640px) {
+  .verify-banner {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: 'icon text action close';
+  }
 }
 </style>

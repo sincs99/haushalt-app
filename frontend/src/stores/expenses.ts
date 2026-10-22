@@ -7,6 +7,7 @@ import { createOnlineExpensesRepository } from '../repositories/expensesReposito
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import { translateApiError } from '../utils/apiErrors'
 import { createRequestGuard } from '../utils/householdGuard'
+import { createDeletedHistory } from '../utils/deletedHistory'
 import { isStale } from '../utils/syncVersion'
 import type { Expense, ExpenseCreatePayload, ExpenseUpdatePayload, BalancesResponse, HouseholdMemberInfo } from '../types'
 
@@ -42,8 +43,10 @@ export const useExpensesStore = defineStore('expenses', () => {
   const hasMore = ref(false)
   const loadingMore = ref(false)
   /** Verlauf: gelöschte Ausgaben (nur geladen, wenn der Verlauf geöffnet ist) */
-  const deletedExpenses = ref<Expense[]>([])
-  const deletedLoaded = ref(false)
+  const deletedHistory = createDeletedHistory<Expense>((hid, params) => repo.fetchAll(hid, params), EXPENSES_PAGE_SIZE)
+  const { items: deletedExpenses, loaded: deletedLoaded, hasMore: deletedHasMore,
+    loading: deletedLoading, error: deletedError, fetch: fetchDeleted,
+    loadMore: loadMoreDeleted, reset: resetDeleted } = deletedHistory
 
   // Debounce-Timer für Balances-Refetch
   let balancesTimer: ReturnType<typeof setTimeout> | null = null
@@ -89,7 +92,7 @@ export const useExpensesStore = defineStore('expenses', () => {
   }
 
   function dropDeleted(id: string) {
-    deletedExpenses.value = deletedExpenses.value.filter(e => e.id !== id)
+    deletedHistory.drop(id)
   }
 
   // Actions
@@ -137,15 +140,7 @@ export const useExpensesStore = defineStore('expenses', () => {
     }
   }
 
-  async function fetchDeleted(householdId?: string) {
-    const actionGeneration = currentDataGeneration()
-    const hid = householdId ?? useAuthStore().currentHouseholdId
-    if (!hid) return
-    const deleted = await repo.fetchAll(hid, { deleted: true, limit: EXPENSES_PAGE_SIZE })
-    assertDataGeneration(actionGeneration)
-    deletedExpenses.value = deleted
-    deletedLoaded.value = true
-  }
+
 
   async function fetchBalances(householdId?: string) {
     const actionGeneration = currentDataGeneration()
@@ -273,7 +268,7 @@ export const useExpensesStore = defineStore('expenses', () => {
       await repo.remove(householdId, expenseId)
       assertDataGeneration(actionGeneration)
       debouncedFetchBalances()
-      if (deletedLoaded.value) fetchDeleted(householdId).catch(() => {})
+      if (deletedLoaded.value || deletedLoading.value) fetchDeleted(householdId).catch(() => {})
     } catch (e: any) {
       assertDataGeneration(actionGeneration)
       if (isScopeChanged(e)) throw e
@@ -324,7 +319,7 @@ export const useExpensesStore = defineStore('expenses', () => {
   function handleExpenseDeleted(data: { id: string }) {
     expenses.value = expenses.value.filter(e => e.id !== data.id)
     debouncedFetchBalances()
-    if (deletedLoaded.value) fetchDeleted().catch(() => {})
+    if (deletedLoaded.value || deletedLoading.value) fetchDeleted().catch(() => {})
   }
 
   return {
@@ -339,6 +334,11 @@ export const useExpensesStore = defineStore('expenses', () => {
     loadingMore,
     deletedExpenses,
     deletedLoaded,
+    deletedHasMore,
+    deletedLoading,
+    deletedError,
+    loadMoreDeleted,
+    resetDeleted,
     // Actions
     fetchExpenses,
     loadMore,

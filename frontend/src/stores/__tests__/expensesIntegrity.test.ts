@@ -140,6 +140,7 @@ describe('Löschen + Wiederherstellen (CASA-03)', () => {
     expect(repo.fetchAll).toHaveBeenCalledWith('h1', { deleted: true, limit: EXPENSES_PAGE_SIZE })
     expect(s.deletedExpenses).toHaveLength(1)
     repo.restore.mockResolvedValue(expense())
+    repo.fetchAll.mockResolvedValue([])
     await s.restoreExpense('e1')
     expect(s.deletedExpenses).toEqual([])
   })
@@ -165,4 +166,44 @@ describe('Mehr laden (CASA-23)', () => {
     await s.loadMore() // Ende erreicht → kein weiterer Request
     expect(repo.fetchAll).toHaveBeenCalledTimes(2)
   })
+})
+
+
+test('deleted history exposes all 51 records and resets paging with household scope', async () => {
+  const store = useExpensesStore()
+  const server = Array.from({ length: 51 }, (_, i) => expense({ id: `deleted-${i}`, deleted_at: "2026-10-01T10:00:00Z" }))
+  repo.fetchAll.mockImplementation(async (_hid, { offset = 0, limit }) => server.slice(offset, offset + limit))
+  await store.fetchDeleted()
+  expect(store.deletedExpenses).toHaveLength(50)
+  expect(store.deletedHasMore).toBe(true)
+  await store.loadMoreDeleted()
+  expect(store.deletedExpenses).toEqual(server)
+  expect(store.deletedHasMore).toBe(false)
+  expect(repo.fetchAll).toHaveBeenLastCalledWith('h1', { deleted: true, limit: 50, offset: 50 })
+  store.resetDeleted()
+  expect(store.deletedExpenses).toEqual([])
+  expect(store.deletedLoaded).toBe(false)
+  expect(store.deletedLoading).toBe(false)
+  expect(store.deletedError).toBe(false)
+  expect(store.deletedHasMore).toBe(false)
+})
+
+
+test('delete event refreshes history while its initial snapshot is still loading', async () => {
+  const store = useExpensesStore()
+  let resolveInitial!: (value: any[]) => void
+  const initial = new Promise<any[]>(resolve => { resolveInitial = resolve })
+  const newlyDeleted = expense({ id: "newly-deleted", deleted_at: "2026-10-22T10:00:00Z" })
+  repo.fetchAll.mockReturnValueOnce(initial).mockResolvedValue([newlyDeleted])
+  const pending = store.fetchDeleted()
+  expect(store.deletedLoaded).toBe(false)
+  expect(store.deletedLoading).toBe(true)
+  store.handleExpenseDeleted({ id: 'newly-deleted' })
+  resolveInitial([])
+  await pending
+  await Promise.resolve()
+  expect(repo.fetchAll).toHaveBeenCalledTimes(2)
+  expect(store.deletedExpenses).toEqual([newlyDeleted])
+  expect(store.deletedLoaded).toBe(true)
+  expect(store.deletedLoading).toBe(false)
 })

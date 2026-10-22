@@ -55,8 +55,7 @@ export function resetHouseholdScopedStores(): void {
   expenses.balances = null
   expenses.members = []
   expenses.hasMore = false
-  expenses.deletedExpenses = []
-  expenses.deletedLoaded = false
+  expenses.resetDeleted()
   expenses.loading = false
   expenses.error = null
   expenses.balancesError = false
@@ -65,8 +64,7 @@ export function resetHouseholdScopedStores(): void {
   const settlements = useSettlementsStore()
   settlements.settlements = []
   settlements.hasMore = false
-  settlements.deletedSettlements = []
-  settlements.deletedLoaded = false
+  settlements.resetDeleted()
   settlements.loading = false
   settlements.error = null
   settlements.loadingMore = false

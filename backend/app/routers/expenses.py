@@ -323,7 +323,7 @@ def list_expenses(
         validate_month(month, household_today(db, household_id))
         q = q.filter(Expense.expense_date >= month, Expense.expense_date < add_months(month, 1))
     if deleted:
-        q = q.filter(Expense.deleted_at.isnot(None)).order_by(Expense.deleted_at.desc())
+        q = q.filter(Expense.deleted_at.isnot(None)).order_by(Expense.deleted_at.desc(), Expense.id.desc())
     else:
         q = q.filter(Expense.deleted_at.is_(None)).order_by(
             Expense.expense_date.desc(), Expense.created_at.desc(), Expense.id

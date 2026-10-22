@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useExpensesStore, apiErrorCode } from '../stores/expenses'
 import { useAuthStore } from '../stores/auth'
 import { useToast, errorText } from '../composables/useToast'
+import { waitForOverlayBack } from '../composables/useBackClose'
 import { useI18n } from 'vue-i18n'
 import { formatRappen, parseAmountToRappen } from '../utils/money'
 import { householdDateString } from '../utils/dates'
 import { diffExpense } from '../utils/expenseDiff'
-import type { Expense, SplitType, ExpenseShare } from '../types'
+import { validateExpenseShares } from '../utils/expenseShares'
+import { expenseToDraft, mergeExpenseDraft, type ExpenseDraft } from '../utils/expenseDraft'
+import type { Expense, SplitType } from '../types'
 import BaseButton from './ui/BaseButton.vue'
 import BaseInput from './ui/BaseInput.vue'
 import BaseDialog from './ui/BaseDialog.vue'
@@ -48,10 +51,12 @@ const selectedCategory = ref<string | null>(null)
 const participantIds = ref<string[]>([])
 const customShares = ref<Record<string, string>>({})
 const serverError = ref('')
-/** Hinweis nach 409: Ausgabe wurde inzwischen geändert, aktuelle Werte geladen */
 const conflictNotice = ref('')
+const conflictExpense = ref<Expense | null>(null)
+const discardOpen = ref(false)
+const initialSnapshot = ref('')
 const submitting = ref(false)
-/** Stand, auf dem der Dialog basiert (Diff + If-Match); nach einem Konflikt der Server-Stand */
+/** Basis für Diff + If-Match; erst nach bewusster Konfliktauflösung auf den Serverstand setzen. */
 const baseExpense = ref<Expense | null>(null)
 
 // Kategorie-Labels
@@ -73,22 +78,17 @@ const parsedAmountRappen = computed(() => {
 })
 
 // Custom-Shares: Summen-Validierung
-const customSharesSum = computed(() => {
-  let sum = 0
-  for (const memberId of Object.keys(customShares.value)) {
-    const parsed = parseAmountToRappen(customShares.value[memberId])
-    if (parsed !== null) sum += parsed
-  }
-  return sum
-})
+const validatedShares = computed(() => validateExpenseShares(customShares.value))
+const customSharesSum = computed(() => validatedShares.value.total)
 
 const customSharesValid = computed(() => {
   if (parsedAmountRappen.value === null) return false
-  return customSharesSum.value === parsedAmountRappen.value
+  return validatedShares.value.valid && customSharesSum.value === parsedAmountRappen.value
 })
 
 // Submit-Validierung
 const canSubmit = computed(() => {
+  if (conflictExpense.value) return false
   if (!description.value.trim()) return false
   if (parsedAmountRappen.value === null) return false
   if (!paidByUserId.value) return false
@@ -126,24 +126,52 @@ watch(amountText, () => {
 // Felder aus einer bestehenden Ausgabe füllen
 function fillFromExpense(expense: Expense) {
   baseExpense.value = expense
-  description.value = expense.description
-  amountText.value = (expense.amount_rappen / 100).toFixed(2)
-  expenseDate.value = expense.expense_date
-  paidByUserId.value = expense.paid_by_user_id ?? ''
-  selectedCategory.value = expense.category ?? null
-  // Gespeicherten split_type aus dem Backend vorauswählen
-  splitType.value = expense.split_type
-  customShares.value = {}
-  for (const share of expense.shares) {
-    customShares.value[share.user_id] = (share.amount_rappen / 100).toFixed(2)
+  applyDraft(expenseToDraft(expense))
+}
+
+function currentDraft(): ExpenseDraft {
+  return {
+    description: description.value, amountText: amountText.value,
+    expenseDate: expenseDate.value, paidByUserId: paidByUserId.value,
+    selectedCategory: selectedCategory.value, splitType: splitType.value,
+    participantIds: [...participantIds.value], customShares: { ...customShares.value },
   }
-  participantIds.value = expense.shares.map(s => s.user_id)
+}
+
+function applyDraft(draft: ExpenseDraft) {
+  description.value = draft.description
+  amountText.value = draft.amountText
+  expenseDate.value = draft.expenseDate
+  paidByUserId.value = draft.paidByUserId
+  selectedCategory.value = draft.selectedCategory
+  splitType.value = draft.splitType
+  participantIds.value = [...draft.participantIds]
+  customShares.value = { ...draft.customShares }
+}
+
+const isDirty = computed(() => JSON.stringify(currentDraft()) !== initialSnapshot.value)
+
+function resolveConflict(keepLocal: boolean) {
+  const latest = conflictExpense.value
+  if (!latest || !baseExpense.value) return
+  const latestDraft = expenseToDraft(latest)
+  const draft = keepLocal
+    ? mergeExpenseDraft(expenseToDraft(baseExpense.value), currentDraft(), latestDraft)
+    : latestDraft
+  baseExpense.value = latest
+  applyDraft(draft)
+  initialSnapshot.value = JSON.stringify(latestDraft)
+  conflictExpense.value = null
+  conflictNotice.value = ''
+  validateAmount()
 }
 
 // Formular initialisieren/zurücksetzen
 function initForm() {
   serverError.value = ''
   conflictNotice.value = ''
+  conflictExpense.value = null
+  discardOpen.value = false
   amountError.value = ''
   submitting.value = false
 
@@ -165,19 +193,41 @@ function initForm() {
     if (expensesStore.members.length === 0) {
       expensesStore.fetchMembers().then(() => {
         if (props.modelValue && !isEditMode.value && participantIds.value.length === 0) {
+          const wasDirty = isDirty.value
           initMemberDefaults()
+          if (!wasDirty) initialSnapshot.value = JSON.stringify(currentDraft())
         }
       })
     }
   }
+  initialSnapshot.value = JSON.stringify(currentDraft())
 }
 
 // Watch open-State → Formular initialisieren
 watch(() => props.modelValue, (open) => {
   if (open) initForm()
-})
+}, { immediate: true })
 
 function close() {
+  if (submitting.value) return
+  if (isDirty.value) {
+    discardOpen.value = true
+    return
+  }
+  dismiss()
+}
+
+async function dismiss() {
+  const closingConfirmation = discardOpen.value
+  discardOpen.value = false
+  // The child first restores focus inside this dialog; then the parent restores
+  // focus to its original trigger, instead of leaving focus in a removed panel.
+  if (closingConfirmation) {
+    await nextTick()
+    // Child close also starts history.back(). Let its entry disappear before
+    // the parent checks/removes its own entry, otherwise a stale depth remains.
+    await waitForOverlayBack()
+  }
   emit('update:modelValue', false)
 }
 
@@ -196,17 +246,6 @@ function toggleParticipant(memberId: string) {
 function resolveUserName(userId: string | null | undefined): string {
   const member = userId ? expensesStore.members.find(m => m.id === userId) : undefined
   return member?.display_name ?? t('common.formerMember')
-}
-
-function collectCustomShares(): ExpenseShare[] {
-  const shares: ExpenseShare[] = []
-  for (const memberId of Object.keys(customShares.value)) {
-    const parsed = parseAmountToRappen(customShares.value[memberId])
-    if (parsed !== null && parsed > 0) {
-      shares.push({ user_id: memberId, amount_rappen: parsed })
-    }
-  }
-  return shares
 }
 
 async function handleSubmit() {
@@ -243,16 +282,16 @@ async function handleSubmit() {
         category: selectedCategory.value,
         split_type: splitType.value,
         participant_ids: participantIds.value,
-        shares: splitType.value === 'custom' ? collectCustomShares() : [],
+        shares: splitType.value === 'custom' ? validatedShares.value.shares : [],
       })
       if (Object.keys(payload).length === 0) {
-        close()
+        dismiss()
         return
       }
       await expensesStore.editExpense(base.id, payload, base.version)
     } else {
       // Create
-      const shares = splitType.value === 'custom' ? collectCustomShares() : []
+      const shares = splitType.value === 'custom' ? validatedShares.value.shares : []
 
       await expensesStore.addExpense({
         description: description.value.trim(),
@@ -266,17 +305,19 @@ async function handleSubmit() {
           : { shares }),
       })
     }
-    close()
+    dismiss()
     // Neue Ausgabe liegt auf dem Handy oft unter dem Falz → kurze Bestätigung
     notifySuccess(t('expenses.saved'))
   } catch (e: any) {
     const code = apiErrorCode(e)
     if (code === 'EXPENSE_VERSION_CONFLICT') {
-      // Inzwischen geändert: aktuellen Stand übernehmen, Nutzer prüft und speichert erneut
+      // Keep both versions until the user explicitly chooses how to resolve the conflict.
       const current = e.response.data.detail.current as Expense | undefined
       const fresh = current ?? (await expensesStore.refreshExpense(baseExpense.value!.id).catch(() => undefined))
-      if (fresh) fillFromExpense(fresh)
-      conflictNotice.value = t('expenses.conflictReloaded', { name: resolveUserName(fresh?.updated_by_user_id) })
+      conflictExpense.value = fresh ?? null
+      conflictNotice.value = fresh
+        ? t('expenses.conflictPreserved', { name: resolveUserName(fresh.updated_by_user_id) })
+        : t('expenses.conflictRefreshFailed')
     } else if (code === 'EXPENSE_DELETED') {
       serverError.value = t('expenses.deletedMeanwhile')
     } else {
@@ -295,6 +336,27 @@ async function handleSubmit() {
       <!-- Bereits ausgeglichen: Änderungen verschieben Salden nachträglich (PD-F2) -->
       <p v-if="retroWarning" class="retro-warning" role="note">{{ $t('expenses.retroWarning') }}</p>
       <p v-if="conflictNotice" class="conflict-notice" role="alert">{{ conflictNotice }}</p>
+      <section v-if="conflictExpense" class="conflict-details" :aria-label="$t('expenses.conflictLatest')">
+        <h3>{{ $t('expenses.conflictLatest') }}</h3>
+        <dl>
+          <dt>{{ $t('expenses.description') }}</dt><dd>{{ conflictExpense.description }}</dd>
+          <dt>{{ $t('expenses.amount') }}</dt><dd>{{ formatRappen(conflictExpense.amount_rappen) }}</dd>
+          <dt>{{ $t('expenses.date') }}</dt><dd>{{ conflictExpense.expense_date }}</dd>
+          <dt>{{ $t('expenses.payer') }}</dt><dd>{{ resolveUserName(conflictExpense.paid_by_user_id) }}</dd>
+          <dt>{{ $t('expenses.category') }}</dt><dd>{{ conflictExpense.category ? $t(`expenses.categories.${conflictExpense.category}`) : '—' }}</dd>
+          <dt>{{ $t('expenses.splitType') }}</dt><dd>{{ $t(conflictExpense.split_type === 'even' ? 'expenses.splitEven' : 'expenses.splitCustom') }}</dd>
+        </dl>
+        <ul>
+          <li v-for="share in conflictExpense.shares" :key="share.user_id">
+            {{ resolveUserName(share.user_id) }}: {{ formatRappen(share.amount_rappen) }}
+          </li>
+        </ul>
+        <p>{{ $t('expenses.conflictOverwriteHint') }}</p>
+        <div class="conflict-actions">
+          <BaseButton type="button" variant="secondary" @click="resolveConflict(true)">{{ $t('expenses.conflictKeepMine') }}</BaseButton>
+          <BaseButton type="button" variant="secondary" @click="resolveConflict(false)">{{ $t('expenses.conflictUseLatest') }}</BaseButton>
+        </div>
+      </section>
 
       <!-- Beschreibung -->
       <BaseInput
@@ -398,18 +460,25 @@ async function handleSubmit() {
 
       <!-- Individuell: Betrags-Felder pro Mitglied -->
       <div v-if="splitType === 'custom'" class="custom-shares">
+        <p :id="`${formId}-share-hint`" class="custom-shares__hint">{{ $t('expenses.customSplit.zeroHint') }}</p>
         <div
           v-for="member in expensesStore.members"
           :key="member.id"
           class="custom-share-row"
         >
-          <span class="custom-share-row__name">{{ member.display_name }}</span>
+          <label :for="`${formId}-share-${member.id}`" class="custom-share-row__name">{{ member.display_name }}</label>
           <input
+            :id="`${formId}-share-${member.id}`"
             v-model="customShares[member.id]"
             class="custom-share-row__input"
             inputmode="decimal"
             placeholder="0.00"
+            :aria-invalid="validatedShares.invalidIds.includes(member.id)"
+            :aria-describedby="validatedShares.invalidIds.includes(member.id) ? `${formId}-share-error-${member.id}` : `${formId}-share-hint`"
           />
+          <p v-if="validatedShares.invalidIds.includes(member.id)" :id="`${formId}-share-error-${member.id}`" class="custom-share-row__error" role="alert">
+            {{ $t('expenses.customSplit.invalidShare') }}
+          </p>
         </div>
         <div class="custom-shares__summary">
           <span>{{ $t('expenses.customSplit.allocated') }}: {{ formatRappen(customSharesSum) }}</span>
@@ -438,7 +507,7 @@ async function handleSubmit() {
     </form>
 
     <template #footer>
-      <BaseButton type="button" variant="secondary" @click="close">
+      <BaseButton type="button" variant="secondary" :disabled="submitting" @click="close">
         {{ $t('common.cancel') }}
       </BaseButton>
       <BaseButton
@@ -450,6 +519,13 @@ async function handleSubmit() {
       >
         {{ isEditMode ? $t('expenses.saveExpense') : $t('common.add') }}
       </BaseButton>
+    </template>
+  </BaseDialog>
+  <BaseDialog :open="modelValue && discardOpen" :title="$t('expenses.discardTitle')" @close="discardOpen = false">
+    <p>{{ $t('expenses.discardMessage') }}</p>
+    <template #footer>
+      <BaseButton type="button" variant="secondary" @click="discardOpen = false">{{ $t('expenses.keepEditing') }}</BaseButton>
+      <BaseButton type="button" variant="danger" @click="dismiss">{{ $t('expenses.discard') }}</BaseButton>
     </template>
   </BaseDialog>
 </template>
@@ -562,9 +638,41 @@ async function handleSubmit() {
 
 .custom-share-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
 }
+
+.custom-shares__hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.custom-share-row__error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+.custom-share-row__input[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+.conflict-details {
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.conflict-details h3 { margin-top: 0; }
+.conflict-details dt { font-weight: var(--font-weight-medium); }
+.conflict-details dd { margin: 0 0 var(--space-2); }
+.conflict-details ul { padding-left: var(--space-4); }
+.conflict-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
 .custom-share-row__name {
   flex: 1;

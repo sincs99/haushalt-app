@@ -360,7 +360,9 @@
     "submitError": "Ein Fehler ist aufgetreten",
     "customSplit": {
       "allocated": "Aufgeteilt",
-      "mismatch": "Summe stimmt nicht"
+      "mismatch": "Summe stimmt nicht",
+      "invalidShare": "Gib einen gültigen Anteil ab 0 mit höchstens zwei Dezimalstellen ein.",
+      "zeroHint": "Leere Felder und 0 bedeuten: kein Kostenanteil."
     },
     "balance": {
       "title": "Saldo",
@@ -389,6 +391,16 @@
     "deleteRetroTitle": "Bereits ausgeglichen",
     "deleteAnyway": "Trotzdem löschen",
     "conflictReloaded": "Die Ausgabe wurde inzwischen von {name} geändert. Die aktuellen Werte sind geladen – bitte prüfen und erneut speichern.",
+    "discardTitle": "Änderungen verwerfen?",
+    "discardMessage": "Deine ungespeicherten Eingaben gehen dabei verloren.",
+    "discard": "Verwerfen",
+    "keepEditing": "Weiter bearbeiten",
+    "conflictPreserved": "{name} hat diese Ausgabe inzwischen geändert. Deine Eingaben bleiben erhalten. Vergleiche sie mit dem aktuellen Stand und wähle, wie du weiterarbeiten möchtest.",
+    "conflictLatest": "Aktueller gespeicherter Stand",
+    "conflictOverwriteHint": "Mit «Meine Änderungen übernehmen» bleiben deine geänderten Felder erhalten; unveränderte Felder werden aktualisiert. Abweichende Änderungen an denselben Feldern ersetzt du beim nächsten Speichern.",
+    "conflictKeepMine": "Meine Änderungen übernehmen",
+    "conflictUseLatest": "Aktuellen Stand laden",
+    "conflictRefreshFailed": "Die Ausgabe wurde inzwischen geändert. Deine Eingaben bleiben erhalten; der aktuelle Stand konnte nicht geladen werden. Bitte versuche es erneut.",
     "deletedMeanwhile": "Die Ausgabe wurde inzwischen gelöscht.",
     "createdBy": "Erfasst von {name}",
     "updatedBy": "Zuletzt geändert von {name}",
@@ -405,6 +417,7 @@
       "restored": "Wiederhergestellt",
       "restoreError": "Konnte nicht wiederhergestellt werden.",
       "loadError": "Verlauf konnte nicht geladen werden.",
+      "loadMore": "Weitere Einträge laden",
       "settlementName": "Zahlung {from} → {to}"
     }
   },
@@ -823,7 +836,7 @@
     "deleted": "Katze gelöscht",
     "deleteConfirm": "Katze wirklich löschen?",
     "deleteHint": "Alle Fütterungsdaten gehen verloren.",
-    "feedingWidget": "{fed} von {total} gefüttert",
+    "feedingWidget": "{fed} von {total} Fütterungen erledigt",
     "emptyState": "Noch keine Katzen",
     "emptyStateHint": "Füge deine erste Katze hinzu",
     "createError": "Fehler beim Erstellen",

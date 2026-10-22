@@ -87,3 +87,43 @@ test('Mehr laden hängt die nächste Seite an', async () => {
   expect(store.settlements).toHaveLength(SETTLEMENTS_PAGE_SIZE + 1)
   expect(store.hasMore).toBe(false)
 })
+
+
+test('deleted history exposes all 51 records and resets paging with household scope', async () => {
+  const store = useSettlementsStore()
+  const server = Array.from({ length: 51 }, (_, i) => s(`deleted-${i}`, { deleted_at: "2026-10-01T10:00:00Z" }))
+  repo.fetchAll.mockImplementation(async (_hid, { offset = 0, limit }) => server.slice(offset, offset + limit))
+  await store.fetchDeleted()
+  expect(store.deletedSettlements).toHaveLength(50)
+  expect(store.deletedHasMore).toBe(true)
+  await store.loadMoreDeleted()
+  expect(store.deletedSettlements).toEqual(server)
+  expect(store.deletedHasMore).toBe(false)
+  expect(repo.fetchAll).toHaveBeenLastCalledWith(HOUSEHOLD_ID, { deleted: true, limit: 50, offset: 50 })
+  store.resetDeleted()
+  expect(store.deletedSettlements).toEqual([])
+  expect(store.deletedLoaded).toBe(false)
+  expect(store.deletedLoading).toBe(false)
+  expect(store.deletedError).toBe(false)
+  expect(store.deletedHasMore).toBe(false)
+})
+
+
+test('delete event refreshes history while its initial snapshot is still loading', async () => {
+  const store = useSettlementsStore()
+  let resolveInitial!: (value: any[]) => void
+  const initial = new Promise<any[]>(resolve => { resolveInitial = resolve })
+  const newlyDeleted = s("newly-deleted", { deleted_at: "2026-10-22T10:00:00Z" })
+  repo.fetchAll.mockReturnValueOnce(initial).mockResolvedValue([newlyDeleted])
+  const pending = store.fetchDeleted()
+  expect(store.deletedLoaded).toBe(false)
+  expect(store.deletedLoading).toBe(true)
+  store.handleSettlementDeleted({ id: 'newly-deleted' })
+  resolveInitial([])
+  await pending
+  await Promise.resolve()
+  expect(repo.fetchAll).toHaveBeenCalledTimes(2)
+  expect(store.deletedSettlements).toEqual([newlyDeleted])
+  expect(store.deletedLoaded).toBe(true)
+  expect(store.deletedLoading).toBe(false)
+})

@@ -142,7 +142,7 @@ onUnmounted(() => {
     </header>
 
     <!-- Hauptinhalt -->
-    <main class="app-content">
+    <main class="app-content" :class="{ 'app-content--dashboard': route.name === 'dashboard' }">
       <EmailVerificationBanner />
       <router-view :key="authStore.scopeKey" />
     </main>
@@ -242,10 +242,11 @@ onUnmounted(() => {
 }
 
 .top-bar__content {
-  max-width: 640px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: var(--space-2) var(--space-4);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
 }
@@ -261,6 +262,7 @@ onUnmounted(() => {
 
 .top-bar__nav {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
 }
 
@@ -344,6 +346,19 @@ onUnmounted(() => {
 @media (min-width: 768px) {
   .app-content {
     padding-bottom: var(--space-4);
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-content--dashboard {
+    max-width: 1120px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .top-bar__nav {
+    order: 3;
+    flex-basis: 100%;
   }
 }
 

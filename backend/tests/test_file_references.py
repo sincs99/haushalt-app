@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+import pytest
 from sqlalchemy import event
 
 from app.models import Document, DocumentFile, Pet, StoredFile
@@ -174,7 +175,8 @@ def test_delete_orphan_files(db, household_a, user_a, pet_a):
     assert len(db.get(Document, doc.id).files) == 1
 
 
-def test_untracked_storage_files_are_removed_after_grace(db, household_a, user_a, tmp_path):
+@pytest.mark.parametrize("legacy_windows_path", [False, True])
+def test_untracked_storage_files_are_removed_after_grace(db, household_a, user_a, tmp_path, legacy_windows_path):
     """CASA-27: Datei auf der Platte ohne DB-Zeile (Commit gescheitert) → nach 24 h weg."""
     import os
 
@@ -185,8 +187,9 @@ def test_untracked_storage_files_are_removed_after_grace(db, household_a, user_a
     tracked_path = storage.save(str(household_a.id), "a.pdf", b"%PDF-1", ".pdf")
     untracked_old = storage.save(str(household_a.id), "b.pdf", b"%PDF-2", ".pdf")
     untracked_new = storage.save(str(household_a.id), "c.pdf", b"%PDF-3", ".pdf")
+    persisted_path = tracked_path.replace("/", "\\") if legacy_windows_path else tracked_path
     db.add(StoredFile(household_id=household_a.id, original_name="a.pdf", mime_type="application/pdf",
-                      size_bytes=6, storage_path=tracked_path, uploaded_by_user_id=user_a.id))
+                      size_bytes=6, storage_path=persisted_path, uploaded_by_user_id=user_a.id))
     db.commit()
     old = (datetime.now(timezone.utc) - ORPHAN_FILE_GRACE - timedelta(hours=1)).timestamp()
     for path in (tracked_path, untracked_old):
@@ -198,6 +201,7 @@ def test_untracked_storage_files_are_removed_after_grace(db, household_a, user_a
     assert (tmp_path / tracked_path).exists()
     assert not (tmp_path / untracked_old).exists()
     assert (tmp_path / untracked_new).exists()
+    assert db.query(StoredFile.storage_path).scalar() == persisted_path
 
 
 def test_upload_commit_failure_removes_file_from_storage(client, db, household_a, token_a):

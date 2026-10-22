@@ -196,7 +196,7 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language", "X-Requested-With"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language", "X-Requested-With", "If-Match"],
 )
 # Zuletzt hinzugefügt = äusserste Middleware → Header auch auf CORS-Preflights
 app.add_middleware(SecurityHeadersMiddleware)

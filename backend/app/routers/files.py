@@ -33,7 +33,7 @@ from app.database import get_db
 from app.models import Document, DocumentFile, HouseholdMember, Pet, Plant, StoredFile
 from app.services import entitlements
 from app.services.locking import lock_household
-from app.services.storage import LocalStorageService
+from app.services.storage import LocalStorageService, canonical_storage_path
 from app.socket_manager import emit_to_household_sync
 
 # Decompression Bomb Schutz: max 25 Megapixel
@@ -467,11 +467,15 @@ def delete_untracked_storage_files(db: Session, now: datetime | None = None) -> 
     cutoff = ((now or datetime.now(timezone.utc)) - ORPHAN_FILE_GRACE).timestamp()
     old_paths = [path for path, mtime in _storage.list_files() if mtime < cutoff]
     deleted = 0
-    for start in range(0, len(old_paths), 500):
-        chunk = old_paths[start:start + 500]
+    # Existing Windows rows use backslashes. Query both persisted formats before
+    # comparing canonical keys, without migrating or loading all stored metadata.
+    # Keep at most 500 query parameters, including the legacy variants.
+    for start in range(0, len(old_paths), 250):
+        chunk = old_paths[start:start + 250]
+        persisted_paths = {variant for path in chunk for variant in (path, path.replace("/", "\\"))}
         known = {
-            row.storage_path
-            for row in db.query(StoredFile.storage_path).filter(StoredFile.storage_path.in_(chunk))
+            canonical_storage_path(row.storage_path)
+            for row in db.query(StoredFile.storage_path).filter(StoredFile.storage_path.in_(persisted_paths))
         }
         for path in chunk:
             if path not in known:

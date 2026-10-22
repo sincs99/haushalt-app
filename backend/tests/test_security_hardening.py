@@ -101,6 +101,25 @@ class TestCors:
         assert resp.status_code == 200
         assert "x-requested-with" in resp.headers["access-control-allow-headers"].lower()
 
+    @pytest.mark.parametrize("origin, expected_status", [(ORIGIN, 200), ("https://evil.example", 400)])
+    def test_expense_patch_preflight_with_version_header(self, client, origin, expected_status):
+        resp = client.options(
+            "/api/households/00000000-0000-0000-0000-000000000001/expenses/00000000-0000-0000-0000-000000000002",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "PATCH",
+                "Access-Control-Request-Headers": "authorization,content-type,if-match",
+            },
+        )
+        assert resp.status_code == expected_status
+        if expected_status == 200:
+            assert resp.headers["access-control-allow-origin"] == origin
+            assert resp.headers["access-control-allow-credentials"] == "true"
+            assert "if-match" in resp.headers["access-control-allow-headers"].lower()
+            assert "PATCH" in resp.headers["access-control-allow-methods"]
+        else:
+            assert "access-control-allow-origin" not in resp.headers
+
     def test_foreign_origin_preflight_with_csrf_header_rejected(self, client):
         """Fremder Origin besteht den Preflight für den Cookie-Endpunkt nicht
         (kein Allow-Origin → Browser verwirft die Antwort, Credentials-Flag ist dann wirkungslos)."""

@@ -1,6 +1,7 @@
 import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import { addCalendarDays, householdDateString, mondayOfWeek } from '../utils/dates'
 import { useAuthStore } from './auth'
 import { createOnlineFoodRepository } from '../repositories/foodRepository'
 import type {
@@ -9,32 +10,17 @@ import type {
 } from '../types'
 import { captureHousehold, createRequestGuard } from '../utils/householdGuard'
 
-/**
- * Gibt den ISO-Datums-String des Montags der aktuellen Woche zurück.
- */
-function getMonday(d: Date = new Date()): string {
-  const dt = new Date(d)
-  const day = dt.getDay()
-  // getDay(): 0=So, 1=Mo ... 6=Sa → Offset zu Montag
-  const diff = day === 0 ? -6 : 1 - day
-  dt.setDate(dt.getDate() + diff)
-  return toISODate(dt)
-}
-
-function toISODate(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
 export const useFoodStore = defineStore('food', () => {
   const repo = scopeRepository(createOnlineFoodRepository())
 
   // ── State ──
   const recipes = ref<Recipe[]>([])
   const weekPlan = ref<MealPlanEntry[]>([])
-  const currentWeekStart = ref(getMonday())
+  const householdWeek = () => mondayOfWeek(householdDateString(useAuthStore().currentHousehold?.timezone))
+  const currentWeekStart = ref(householdWeek())
+  watch(() => useAuthStore().currentHousehold?.timezone, () => {
+    currentWeekStart.value = householdWeek()
+  }, { flush: 'sync' })
   const loading = ref(false)
 
   // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
@@ -212,9 +198,7 @@ export const useFoodStore = defineStore('food', () => {
   }
 
   function navigateWeek(direction: -1 | 1) {
-    const d = new Date(currentWeekStart.value + 'T00:00:00')
-    d.setDate(d.getDate() + direction * 7)
-    currentWeekStart.value = toISODate(d)
+    currentWeekStart.value = addCalendarDays(currentWeekStart.value, direction * 7)
     return fetchWeekPlan()
   }
 
@@ -268,6 +252,7 @@ export const useFoodStore = defineStore('food', () => {
   /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
   function reset() {
     weekRequestId++
+    currentWeekStart.value = householdWeek()
     loading.value = false
     recipes.value = []
     weekPlan.value = []

@@ -169,3 +169,15 @@ export function addMonths(monthStr: string, delta: number): string {
   const month = (((m % 12) + 12) % 12) + 1
   return `${year}-${String(month).padStart(2, '0')}-01`
 }
+
+/** Calendar arithmetic on date-only values, independent of device timezone or DST. */
+export function addCalendarDays(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00Z`)
+  value.setUTCDate(value.getUTCDate() + days)
+  return value.toISOString().slice(0, 10)
+}
+
+export function mondayOfWeek(date: string): string {
+  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay()
+  return addCalendarDays(date, weekday === 0 ? -6 : 1 - weekday)
+}

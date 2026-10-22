@@ -914,6 +914,9 @@ function navigateToPet(petId: string) {
 
 .dialog-actions {
   display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
   justify-content: flex-end;
   gap: var(--space-2);
 }

@@ -10,7 +10,7 @@ const { repo, auth } = vi.hoisted(() => ({
     fetchRecipes: vi.fn(), createRecipe: vi.fn(), updateRecipe: vi.fn(), deleteRecipe: vi.fn(),
     fetchWeekPlan: vi.fn(), assignMeal: vi.fn(), removeMeal: vi.fn(), addMissingToShopping: vi.fn(),
   },
-  auth: { currentHouseholdId: null as string | null },
+  auth: { currentHouseholdId: null as string | null, currentHousehold: { timezone: 'Europe/Zurich' } },
 }))
 
 vi.mock('../../repositories/foodRepository', () => ({ createOnlineFoodRepository: () => repo }))
@@ -263,5 +263,35 @@ describe('Socket-Handler', () => {
     store.handleRecipeDeleted({ id: 'r1' })
     expect(store.weekPlan[0]).toMatchObject({ recipe_id: null, recipe: null, free_text: 'Pasta' })
     expect(store.weekPlan[1].recipe_id).toBe('r2')
+  })
+})
+
+
+describe('household calendar dates', () => {
+  afterEach(() => vi.useRealTimers())
+
+  test('default week uses household Monday when the device is still on Sunday', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-25T23:30:00Z'))
+    const store = useFoodStore()
+    expect(store.currentWeekStart).toBe('2026-10-26')
+    repo.fetchWeekPlan.mockResolvedValue([])
+    await store.fetchWeekPlan()
+    expect(repo.fetchWeekPlan).toHaveBeenCalledWith(HOUSEHOLD_ID, '2026-10-26')
+    await store.navigateWeek(-1)
+    expect(store.currentWeekStart).toBe('2026-10-19')
+    store.reset()
+    expect(store.currentWeekStart).toBe('2026-10-26')
+  })
+
+  test('week navigation remains calendar-based across DST and year boundaries', async () => {
+    const store = useFoodStore()
+    repo.fetchWeekPlan.mockResolvedValue([])
+    store.currentWeekStart = '2026-12-28'
+    await store.navigateWeek(1)
+    expect(store.currentWeekStart).toBe('2027-01-04')
+    store.currentWeekStart = '2026-03-23'
+    await store.navigateWeek(1)
+    expect(store.currentWeekStart).toBe('2026-03-30')
   })
 })

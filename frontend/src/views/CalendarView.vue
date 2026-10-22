@@ -1907,6 +1907,9 @@ watch(
 /* ── Dialog Footer Actions ── */
 .dialog-actions {
   display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: var(--space-2);
   align-items: center;
   justify-content: space-between;
   width: 100%;
@@ -1918,6 +1921,9 @@ watch(
 
 .dialog-actions__right {
   display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
   gap: var(--space-2);
 }
 

@@ -20,7 +20,7 @@ import pytest
 from app import socket_manager
 from app.core.config import settings
 from app.core.security import ALGORITHM
-from app.socket_manager import disconnect_user, sio
+from app.socket_manager import disconnect_user, emit_to_household_sync, sio
 
 
 def _token(user_id, expires_in: float) -> str:
@@ -222,6 +222,26 @@ def test_disconnect_cancels_expiry_timer(fake_sio):
     assert sid not in socket_manager._expiry_timers
 
 
+@pytest.mark.parametrize("reason", ["expired", "logout", "revoked"])
+def test_end_session_disconnects_when_notification_fails(fake_sio, reason):
+    async def scenario():
+        user = uuid.uuid4()
+        sid = await _open(user, _token(user, 60))
+
+        async def fail_emit(*_args, **_kwargs):
+            raise RuntimeError("synthetic notification failure")
+
+        try:
+            with patch.object(sio, "emit", fail_emit):
+                await socket_manager.end_session(sid, reason)
+            assert not sio.manager.is_connected(sid, "/")
+            assert sid not in socket_manager._expiry_timers
+        finally:
+            await _cleanup(sid)
+
+    asyncio.run(scenario())
+
+
 # ---------------------------------------------------------------------------
 # Logout / Widerruf
 # ---------------------------------------------------------------------------
@@ -295,6 +315,168 @@ def test_disconnect_user_sync_runs_on_event_loop():
     asyncio.run(scenario())
     assert called == [(user, "logout")]
 
+
+@pytest.mark.parametrize("remote_control", [False, True])
+def test_eviction_fences_delayed_positive_membership_result_and_allows_fresh_join(fake_sio, remote_control):
+    user, household = uuid.uuid4(), uuid.uuid4()
+
+    async def scenario():
+        sid = await _open(user, _token(user, 60))
+        queried, resume = asyncio.Event(), asyncio.Event()
+
+        async def stale_positive(*_args):
+            queried.set()
+            await resume.wait()
+            return True
+
+        try:
+            with patch.object(socket_manager, "run_in_threadpool", stale_positive):
+                pending = asyncio.create_task(socket_manager.join_household(sid, {"household_id": str(household)}))
+                await asyncio.wait_for(queried.wait(), 2)
+                if remote_control:
+                    await socket_manager.handle_control_message({
+                        "method": "evict_user", "household_id": str(household),
+                        "user_id": str(user), "host": "other-worker",
+                    })
+                else:
+                    await socket_manager.emit_to_household(household, "household_member_removed", {}, evict_user_id=user)
+                resume.set()
+                await asyncio.wait_for(pending, 2)
+            assert f"household_{household}" not in sio.manager.get_rooms(sid, "/")
+            # A real later rejoin gets a NEW DB check and may join successfully.
+            with patch.object(socket_manager, "_is_household_member", return_value=True):
+                await socket_manager.join_household(sid, {"household_id": str(household)})
+            assert f"household_{household}" in sio.manager.get_rooms(sid, "/")
+        finally:
+            resume.set()
+            await _cleanup(sid)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("inactive,deleted", [(True, False), (False, True), (False, False)])
+def test_socket_user_lookup_rejects_disabled_or_deleted_accounts(inactive, deleted):
+    from types import SimpleNamespace
+
+    user_id = uuid.uuid4()
+    user = SimpleNamespace(
+        id=user_id, is_active=not inactive,
+        deleted_at=datetime.now(timezone.utc) if deleted else None,
+    )
+    with patch.object(socket_manager, "SessionLocal") as factory:
+        factory.return_value.__enter__.return_value.get.return_value = user
+        result = socket_manager._load_user_id(user_id)
+    assert result == (None if inactive or deleted else str(user_id))
+
+
+def test_eviction_waits_for_pending_room_entry_before_completing(fake_sio):
+    user, household = uuid.uuid4(), uuid.uuid4()
+
+    async def scenario():
+        sid = await _open(user, _token(user, 60))
+        entering, resume = asyncio.Event(), asyncio.Event()
+        original_enter = sio.enter_room
+
+        async def delayed_enter(room_sid, room, **kwargs):
+            if room == f"household_{household}":
+                entering.set()
+                await resume.wait()
+            await original_enter(room_sid, room, **kwargs)
+
+        try:
+            with patch.object(sio, "enter_room", delayed_enter), patch.object(socket_manager, "_is_household_member", return_value=True):
+                joining = asyncio.create_task(socket_manager.join_household(sid, {"household_id": str(household)}))
+                await asyncio.wait_for(entering.wait(), 2)
+                evicting = asyncio.create_task(socket_manager.emit_to_household(household, "removed", {}, evict_user_id=user))
+                await asyncio.sleep(0)  # Let eviction attempt to acquire the fence.
+                assert not evicting.done()
+                resume.set()
+                await asyncio.wait_for(asyncio.gather(joining, evicting), 2)
+            assert f"household_{household}" not in sio.manager.get_rooms(sid, "/")
+        finally:
+            resume.set()
+            await _cleanup(sid)
+
+    asyncio.run(scenario())
+
+
+def test_eviction_removes_existing_member_even_when_notification_fails(fake_sio):
+    user, household = uuid.uuid4(), uuid.uuid4()
+
+    async def scenario():
+        sid = await _open(user, _token(user, 60))
+        await sio.enter_room(sid, f"household_{household}")
+
+        async def fail_emit(*_args, **_kwargs):
+            raise RuntimeError("synthetic notification failure")
+
+        try:
+            with patch.object(sio, "emit", fail_emit):
+                await socket_manager.emit_to_household(household, "removed", {}, evict_user_id=user)
+            assert f"household_{household}" not in sio.manager.get_rooms(sid, "/")
+        finally:
+            await _cleanup(sid)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("disconnect_fails", [False, True])
+def test_eviction_processes_other_sids_after_leave_failure(fake_sio, disconnect_fails):
+    user, household = uuid.uuid4(), uuid.uuid4()
+
+    async def scenario():
+        first = await _open(user, _token(user, 60))
+        second = await _open(user, _token(user, 60))
+        for sid in (first, second):
+            await sio.enter_room(sid, f"household_{household}")
+        original_leave = sio.leave_room
+
+        async def fail_first_leave(sid, room, **kwargs):
+            if sid == first:
+                raise RuntimeError("synthetic leave failure")
+            await original_leave(sid, room, **kwargs)
+
+        async def disconnect(sid, **kwargs):
+            if disconnect_fails:
+                raise RuntimeError("synthetic disconnect failure")
+            await fake_sio.disconnect(sid, **kwargs)
+
+        try:
+            with patch.object(sio, "leave_room", fail_first_leave), patch.object(sio, "disconnect", disconnect):
+                if disconnect_fails:
+                    with pytest.raises(RuntimeError, match="Could not evict"):
+                        await socket_manager.emit_to_household(household, "removed", {}, evict_user_id=user)
+                    assert first in socket_manager._expiry_timers
+                else:
+                    await socket_manager.emit_to_household(household, "removed", {}, evict_user_id=user)
+                    assert not sio.manager.is_connected(first, "/")
+            assert f"household_{household}" not in sio.manager.get_rooms(second, "/")
+        finally:
+            await _cleanup(first, second)
+
+    asyncio.run(scenario())
+
+
+def test_sync_membership_removal_waits_for_eviction_completion():
+    user, household = uuid.uuid4(), uuid.uuid4()
+
+    async def scenario():
+        entered, resume = asyncio.Event(), asyncio.Event()
+
+        async def controlled_eviction(*_args, **_kwargs):
+            entered.set()
+            await resume.wait()
+
+        with patch.object(socket_manager, "_event_loop", asyncio.get_running_loop()), patch.object(socket_manager, "emit_to_household", controlled_eviction):
+            worker = asyncio.create_task(asyncio.to_thread(emit_to_household_sync, household, "removed", {}, user))
+            try:
+                await asyncio.wait_for(entered.wait(), 2)
+                assert not worker.done()
+            finally:
+                resume.set()
+            await asyncio.wait_for(worker, 2)
+
+    asyncio.run(scenario())
 
 # ---------------------------------------------------------------------------
 # Mitgliedschaft neu prüfen (CASA-48)

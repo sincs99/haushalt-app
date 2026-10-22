@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useAuthStore } from './auth'
@@ -22,7 +23,7 @@ export function mealPlanOccupiedEntry(error: unknown): MealPlanEntry | null {
 
 export const usePollsStore = defineStore('polls', () => {
   // Repository
-  const repo = createOnlinePollsRepository()
+  const repo = scopeRepository(createOnlinePollsRepository())
 
   // State
   const polls = ref<EventPoll[]>([])
@@ -41,6 +42,7 @@ export const usePollsStore = defineStore('polls', () => {
 
   // Actions
   async function fetchPolls(status?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -56,12 +58,14 @@ export const usePollsStore = defineStore('polls', () => {
   }
 
   async function createPoll(payload: PollCreatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
     const created = await repo.create(householdId, payload)
     // Duplikat-Schutz: Socket könnte schneller sein
+    assertDataGeneration(actionGeneration)
     const idx = polls.value.findIndex(p => p.id === created.id)
     if (idx !== -1) {
       polls.value[idx] = created
@@ -71,6 +75,7 @@ export const usePollsStore = defineStore('polls', () => {
   }
 
   async function votePoll(pollId: string, optionId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     const userId = authStore.user?.id
@@ -99,11 +104,14 @@ export const usePollsStore = defineStore('polls', () => {
     try {
       const updated = await repo.vote(householdId, pollId, { option_id: optionId })
       // Server-Antwort übernehmen
+      assertDataGeneration(actionGeneration)
       const idx = polls.value.findIndex(p => p.id === pollId)
       if (idx !== -1) {
         polls.value[idx] = updated
       }
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // Rollback
       const idx = polls.value.findIndex(p => p.id === pollId)
       if (idx !== -1) {
@@ -114,11 +122,13 @@ export const usePollsStore = defineStore('polls', () => {
   }
 
   async function decidePoll(pollId: string, payload: PollDecidePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
     const updated = await repo.decide(householdId, pollId, payload)
+    assertDataGeneration(actionGeneration)
     const idx = polls.value.findIndex(p => p.id === pollId)
     if (idx !== -1) {
       polls.value[idx] = updated
@@ -126,6 +136,7 @@ export const usePollsStore = defineStore('polls', () => {
   }
 
   async function deletePoll(pollId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -138,7 +149,10 @@ export const usePollsStore = defineStore('polls', () => {
 
     try {
       await repo.remove(householdId, pollId)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // Rollback
       polls.value.splice(idx, 0, removed)
       throw error
@@ -166,6 +180,7 @@ export const usePollsStore = defineStore('polls', () => {
   }
 
   async function createMealPoll(question: string, mealDate: string, options: Array<{ label: string; recipe_id?: string }>) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -177,6 +192,7 @@ export const usePollsStore = defineStore('polls', () => {
       options: options.map(o => ({ label: o.label, recipe_id: o.recipe_id ?? null })),
     }
     const created = await repo.create(householdId, payload)
+    assertDataGeneration(actionGeneration)
     const idx = polls.value.findIndex(p => p.id === created.id)
     if (idx !== -1) {
       polls.value[idx] = created

@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -22,7 +23,7 @@ export const DASHBOARD_EXTRA_EVENTS = [
 ] as const
 
 export const useDashboardStore = defineStore('dashboard', () => {
-  const repo = createOnlineDashboardRepository()
+  const repo = scopeRepository(createOnlineDashboardRepository())
 
   // State
   const data = ref<DashboardResponse | null>(null)
@@ -37,6 +38,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
   // Actions
   async function fetchDashboard() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -49,6 +51,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
       data.value = result
       loadError.value = false
     } catch (e) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       // Nicht weiterwerfen: wird auch ungewartet (Socket-Invalidierung, App-Start) aufgerufen
       console.error('Failed to fetch dashboard:', e)
       if (active()) loadError.value = true
@@ -61,7 +65,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   function invalidate() {
     if (invalidateTimer) clearTimeout(invalidateTimer)
     invalidateTimer = setTimeout(() => {
-      fetchDashboard()
+      fetchDashboard().catch(() => {})
     }, 500)
   }
 

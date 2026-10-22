@@ -11,6 +11,7 @@ const { authStore } = vi.hoisted(() => ({
 vi.mock('../../stores/auth', () => ({ useAuthStore: () => authStore }))
 
 import api from '../client'
+import { currentDataGeneration, currentSessionGeneration } from '../../services/sessionScope'
 
 type Rejected = (error: unknown) => Promise<unknown>
 
@@ -20,7 +21,7 @@ function rejectedHandler(): Rejected {
 }
 
 function forbidden(url: string, code: string) {
-  return { config: { url }, response: { status: 403, data: { detail: { code } } } }
+  return { config: { url, _sessionGeneration: currentSessionGeneration(), _dataGeneration: currentDataGeneration() }, response: { status: 403, data: { detail: { code } } } }
 }
 
 beforeEach(() => {

@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -6,6 +7,7 @@ import { createOnlineExpensesRepository } from '../repositories/expensesReposito
 import { createOnlineHouseholdsRepository } from '../repositories/householdsRepository'
 import { translateApiError } from '../utils/apiErrors'
 import { createRequestGuard } from '../utils/householdGuard'
+import { createDeletedHistory } from '../utils/deletedHistory'
 import { isStale } from '../utils/syncVersion'
 import type { Expense, ExpenseCreatePayload, ExpenseUpdatePayload, BalancesResponse, HouseholdMemberInfo } from '../types'
 
@@ -26,8 +28,8 @@ function compareExpenses(a: Expense, b: Expense): number {
 }
 
 export const useExpensesStore = defineStore('expenses', () => {
-  const repo = createOnlineExpensesRepository()
-  const householdRepo = createOnlineHouseholdsRepository()
+  const repo = scopeRepository(createOnlineExpensesRepository())
+  const householdRepo = scopeRepository(createOnlineHouseholdsRepository())
 
   // State
   const expenses = ref<Expense[]>([])
@@ -41,8 +43,10 @@ export const useExpensesStore = defineStore('expenses', () => {
   const hasMore = ref(false)
   const loadingMore = ref(false)
   /** Verlauf: gelöschte Ausgaben (nur geladen, wenn der Verlauf geöffnet ist) */
-  const deletedExpenses = ref<Expense[]>([])
-  const deletedLoaded = ref(false)
+  const deletedHistory = createDeletedHistory<Expense>((hid, params) => repo.fetchAll(hid, params), EXPENSES_PAGE_SIZE)
+  const { items: deletedExpenses, loaded: deletedLoaded, hasMore: deletedHasMore,
+    loading: deletedLoading, error: deletedError, fetch: fetchDeleted,
+    loadMore: loadMoreDeleted, reset: resetDeleted } = deletedHistory
 
   // Debounce-Timer für Balances-Refetch
   let balancesTimer: ReturnType<typeof setTimeout> | null = null
@@ -60,7 +64,7 @@ export const useExpensesStore = defineStore('expenses', () => {
       const authStore = useAuthStore()
       const householdId = authStore.currentHouseholdId
       if (!householdId) return
-      fetchBalances(householdId)
+      fetchBalances(householdId).catch(() => {})
       useFinanceStore().fetchSummary(householdId).catch(() => {})
     }, 300)
   }
@@ -88,11 +92,12 @@ export const useExpensesStore = defineStore('expenses', () => {
   }
 
   function dropDeleted(id: string) {
-    deletedExpenses.value = deletedExpenses.value.filter(e => e.id !== id)
+    deletedHistory.drop(id)
   }
 
   // Actions
   async function fetchExpenses(householdId?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
@@ -115,30 +120,30 @@ export const useExpensesStore = defineStore('expenses', () => {
 
   /** Nächste Seite älterer Ausgaben anhängen (Duplikate durch neue Einträge werden übersprungen) */
   async function loadMore() {
+    const actionGeneration = currentDataGeneration()
     const hid = useAuthStore().currentHouseholdId
     if (!hid || loadingMore.value || !hasMore.value) return
     loadingMore.value = true
     try {
       const page = await repo.fetchAll(hid, { limit: EXPENSES_PAGE_SIZE, offset: expenses.value.length })
+      assertDataGeneration(actionGeneration)
       const known = new Set(expenses.value.map(e => e.id))
       expenses.value.push(...page.filter(e => !known.has(e.id)))
       hasMore.value = page.length === EXPENSES_PAGE_SIZE
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       error.value = translateApiError(e)
       throw e
     } finally {
-      loadingMore.value = false
+      if (actionGeneration === currentDataGeneration()) loadingMore.value = false
     }
   }
 
-  async function fetchDeleted(householdId?: string) {
-    const hid = householdId ?? useAuthStore().currentHouseholdId
-    if (!hid) return
-    deletedExpenses.value = await repo.fetchAll(hid, { deleted: true, limit: EXPENSES_PAGE_SIZE })
-    deletedLoaded.value = true
-  }
+
 
   async function fetchBalances(householdId?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
@@ -150,6 +155,8 @@ export const useExpensesStore = defineStore('expenses', () => {
       balances.value = result
       balancesError.value = false
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       // Balances-Fehler nicht als Store-Error propagieren (nicht-kritisch),
       // aber merken, damit die Karte nicht still verschwindet
       if (active()) balancesError.value = true
@@ -158,6 +165,7 @@ export const useExpensesStore = defineStore('expenses', () => {
   }
 
   async function fetchMembers(householdId?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
@@ -167,11 +175,14 @@ export const useExpensesStore = defineStore('expenses', () => {
       const result = await householdRepo.fetchMembers(hid)
       if (active()) members.value = result
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       console.error('Failed to fetch members:', e)
     }
   }
 
   async function addExpense(payload: ExpenseCreatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -181,11 +192,14 @@ export const useExpensesStore = defineStore('expenses', () => {
       // Kein Optimistic Update — Split wird serverseitig berechnet
       const created = await repo.create(householdId, payload)
       // Socket-Event wird die Liste aktualisieren, aber wir fügen
+      assertDataGeneration(actionGeneration)
       // das Ergebnis trotzdem sofort ein (Dedupe im Handler)
       if (!expenses.value.some(e => e.id === created.id)) upsertSorted(created)
       debouncedFetchBalances()
       return created
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       error.value = translateApiError(e)
       throw e
     }
@@ -197,6 +211,7 @@ export const useExpensesStore = defineStore('expenses', () => {
    * der Fehler wird weitergeworfen (Dialog zeigt „inzwischen geändert“ und lädt neu).
    */
   async function editExpense(expenseId: string, payload: ExpenseUpdatePayload, version?: number) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -205,11 +220,13 @@ export const useExpensesStore = defineStore('expenses', () => {
     error.value = null
     try {
       const updated = await repo.update(householdId, expenseId, payload, expectedVersion)
+      assertDataGeneration(actionGeneration)
       upsertSorted(updated)
       debouncedFetchBalances()
       return updated
     } catch (e: any) {
       const code = apiErrorCode(e)
+      assertDataGeneration(actionGeneration)
       if (code === 'EXPENSE_VERSION_CONFLICT') {
         const current = e.response.data.detail.current as Expense | undefined
         if (current) upsertSorted(current)
@@ -223,9 +240,11 @@ export const useExpensesStore = defineStore('expenses', () => {
 
   /** Aktuellen Stand einer Ausgabe vom Server holen (z. B. nach einem Konflikt) */
   async function refreshExpense(expenseId: string): Promise<Expense | undefined> {
+    const actionGeneration = currentDataGeneration()
     const hid = useAuthStore().currentHouseholdId
     if (!hid) return
     const fresh = await repo.get(hid, expenseId)
+    assertDataGeneration(actionGeneration)
     if (fresh.deleted_at) {
       expenses.value = expenses.value.filter(e => e.id !== expenseId)
     } else {
@@ -235,6 +254,7 @@ export const useExpensesStore = defineStore('expenses', () => {
   }
 
   async function removeExpense(expenseId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -246,9 +266,12 @@ export const useExpensesStore = defineStore('expenses', () => {
 
     try {
       await repo.remove(householdId, expenseId)
+      assertDataGeneration(actionGeneration)
       debouncedFetchBalances()
-      if (deletedLoaded.value) fetchDeleted(householdId).catch(() => {})
+      if (deletedLoaded.value || deletedLoading.value) fetchDeleted(householdId).catch(() => {})
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       // Rollback
       if (removed && idx !== -1) expenses.value.splice(idx, 0, removed)
       error.value = translateApiError(e)
@@ -262,16 +285,19 @@ export const useExpensesStore = defineStore('expenses', () => {
    * lehnt der Server mit 409 BILL_ALREADY_BOOKED ab.
    */
   async function restoreExpense(expenseId: string) {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
     error.value = null
     try {
       const restored = await repo.restore(householdId, expenseId)
+      assertDataGeneration(actionGeneration)
       upsertSorted(restored)
       dropDeleted(expenseId)
       debouncedFetchBalances()
       return restored
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
       error.value = translateApiError(e)
       throw e
     }
@@ -293,7 +319,7 @@ export const useExpensesStore = defineStore('expenses', () => {
   function handleExpenseDeleted(data: { id: string }) {
     expenses.value = expenses.value.filter(e => e.id !== data.id)
     debouncedFetchBalances()
-    if (deletedLoaded.value) fetchDeleted().catch(() => {})
+    if (deletedLoaded.value || deletedLoading.value) fetchDeleted().catch(() => {})
   }
 
   return {
@@ -308,6 +334,11 @@ export const useExpensesStore = defineStore('expenses', () => {
     loadingMore,
     deletedExpenses,
     deletedLoaded,
+    deletedHasMore,
+    deletedLoading,
+    deletedError,
+    loadMoreDeleted,
+    resetDeleted,
     // Actions
     fetchExpenses,
     loadMore,

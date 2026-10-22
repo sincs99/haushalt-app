@@ -29,47 +29,65 @@ import { useAiStore } from './ai'
 import { useDocumentsStore } from './documents'
 import { useTagsStore } from './tags'
 import { bumpHouseholdGeneration } from '../utils/householdGuard'
+import { clearToasts } from '../composables/useToast'
 
 export function resetHouseholdScopedStores(): void {
   bumpHouseholdGeneration()
+  clearToasts()
 
   const shopping = useShoppingStore()
+  shopping.resetPending()
   shopping.items = []
   shopping.lists = []
   shopping.activeListId = null
   shopping.stores = []
   shopping.activeStoreFilter = null
+  shopping.loading = false
 
   const todos = useTodosStore()
+  todos.resetPending()
   todos.items = []
   todos.members = []
+  todos.loading = false
 
   const expenses = useExpensesStore()
   expenses.expenses = []
   expenses.balances = null
   expenses.members = []
   expenses.hasMore = false
-  expenses.deletedExpenses = []
-  expenses.deletedLoaded = false
+  expenses.resetDeleted()
+  expenses.loading = false
+  expenses.error = null
+  expenses.balancesError = false
+  expenses.loadingMore = false
 
   const settlements = useSettlementsStore()
   settlements.settlements = []
   settlements.hasMore = false
-  settlements.deletedSettlements = []
-  settlements.deletedLoaded = false
+  settlements.resetDeleted()
+  settlements.loading = false
+  settlements.error = null
+  settlements.loadingMore = false
 
   const chores = useChoresStore()
+  chores.resetPending()
   chores.chores = []
   chores.assignments = []
   chores.members = []
+  chores.loading = false
 
   const finance = useFinanceStore()
   finance.budget = null
   finance.bills = []
   finance.summary = null
+  finance.loading = false
+  finance.error = null
 
   useDashboardStore().data = null
+  useDashboardStore().loadError = false
+  useDashboardStore().loading = false
   usePollsStore().polls = []
+  usePollsStore().loading = false
 
   useCalendarStore().reset()
   usePetsStore().reset()

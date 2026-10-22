@@ -55,11 +55,16 @@ services:
       DATABASE_URL: postgresql://haushalt:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt in .env.prod}@postgres:5432/haushalt
       UPLOAD_DIR: /app/data/uploads
       # Nur dem Docker-Netz des Frontend-nginx X-Forwarded-For glauben — docs/deployment.md §2.1
-      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.16.0.0/12}
+      ENVIRONMENT: production
+      AUTH_COOKIE_SECURE: "true"
+      FORWARDED_ALLOW_IPS: ${CASA_FRONTEND_PROXY_IP:-172.30.0.3}
       RATE_LIMIT_STORAGE_URI: ${RATE_LIMIT_STORAGE_URI:-redis://redis:6379/0}
       SOCKETIO_MESSAGE_QUEUE: ${SOCKETIO_MESSAGE_QUEUE:-redis://redis:6379/1}
       # Mehr als 1 Worker ist dank Redis möglich (CPU-Kerne beachten)
       UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
+    networks:
+      - default
+      - app_proxy
     volumes:
       - uploaddata:/app/data/uploads
     # Kein ports: — Backend nur über Frontend-Nginx erreichbar
@@ -75,9 +80,6 @@ services:
     container_name: casa-frontend
     restart: unless-stopped
     logging: *default-logging
-    environment:
-      # Netz von Nginx Proxy Manager: nur dessen X-Forwarded-For gilt als Client-IP
-      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-172.16.0.0/12}
     healthcheck:
       # Nur nginx selbst (ohne Backend) — Backend hat einen eigenen Healthcheck
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/nginx-health || exit 1"]
@@ -89,8 +91,11 @@ services:
       backend:
         condition: service_healthy
     networks:
-      - default
-      - npm
+      app_proxy:
+        ipv4_address: ${CASA_FRONTEND_PROXY_IP:-172.30.0.3}
+      npm: {}
+    environment:
+      NPM_TRUSTED_PROXY_IP: ${NPM_TRUSTED_PROXY_IP:?Exakte NPM-IP im gemeinsamen Netz in .env.prod setzen}
     # Kein ports: — NPM verbindet sich über das npm-Netzwerk
 
 volumes:
@@ -98,6 +103,11 @@ volumes:
   uploaddata:
 
 networks:
+  app_proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${CASA_PROXY_SUBNET:-172.30.0.0/29}
   npm:
     external: true
     name: "${NPM_NETWORK}"

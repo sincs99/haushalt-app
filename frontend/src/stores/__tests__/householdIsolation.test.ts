@@ -151,7 +151,7 @@ describe.each(cases)('%s', (_label, make) => {
     respond(1, c.data('hh-B'))
     await pB
     respond(0, c.data('hh-A'))
-    await pA
+    await expect(pA).rejects.toMatchObject({ code: 'ERR_CANCELED' })
     await flush()
     expect(snap(c.read())).toEqual(expectedB)
   })
@@ -170,7 +170,7 @@ describe.each(cases)('%s', (_label, make) => {
 
     // Die neue A-Phase hat noch nichts geladen → die alte Antwort darf nicht auftauchen
     respond(0, c.data('hh-A'))
-    await pOld
+    await expect(pOld).rejects.toMatchObject({ code: 'ERR_CANCELED' })
     await flush()
     expect(snap(c.read())).toEqual(empty)
   })
@@ -190,7 +190,7 @@ describe.each(cases)('%s', (_label, make) => {
     auth.currentHouseholdId = 'hh-A'
 
     respond(0, c.data('hh-A'))
-    await pOld
+    await expect(pOld).rejects.toMatchObject({ code: 'ERR_CANCELED' })
     await flush()
     expect(snap(c.read())).toEqual(empty)
   })
@@ -203,7 +203,7 @@ test('Ladeflag bleibt nach Wechsel ohne neuen Fetch nicht hängen', async () => 
   auth.currentHouseholdId = 'hh-B'
   resetHouseholdScopedStores()
   respond(0, list('hh-A'))
-  await p
+  await expect(p).rejects.toMatchObject({ code: 'ERR_CANCELED' })
   expect(todos.items).toEqual([])
   expect(todos.loading).toBe(false)
 })

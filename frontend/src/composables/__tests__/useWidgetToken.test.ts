@@ -5,6 +5,7 @@ import { nextTick, ref } from 'vue'
 import { useWidgetToken } from '../useWidgetToken'
 import { deferred } from '../../stores/__tests__/helpers'
 import type { WidgetTokenCreated, WidgetTokenStatus } from '../../repositories/widgetRepository'
+import { invalidateSessionScope } from '../../services/sessionScope'
 
 const statusA: WidgetTokenStatus = { exists: true, token_prefix: 'hw_AAAA', created_at: '2026-01-01T00:00:00Z', last_used_at: null }
 const statusB: WidgetTokenStatus = { exists: false, token_prefix: null, created_at: null, last_used_at: null }
@@ -16,6 +17,37 @@ function setup() {
   const widget = useWidgetToken(householdId, repo, (token) => `script(${token})`, onError)
   return { householdId, repo, onError, widget }
 }
+
+test('A to B to A does not accept a token from the first A phase', async () => {
+  const { householdId, repo, widget } = setup()
+  const pending = deferred<WidgetTokenCreated>()
+  repo.create.mockReturnValueOnce(pending.promise)
+  repo.fetchStatus.mockResolvedValue(statusB)
+  const creating = widget.create()
+  householdId.value = 'hh-b'
+  householdId.value = 'hh-a'
+  pending.resolve({ token: 'hw_old', token_prefix: 'hw_old', created_at: '' })
+  expect(await creating).toBe(false)
+  expect(widget.script.value).toBeNull()
+})
+
+test('an account switch during asynchronous script hashing discards the generated secret', async () => {
+  const householdId = ref<string | null>('hh-a')
+  const hashing = deferred<string>()
+  const build = vi.fn(() => hashing.promise)
+  const repo = {
+    create: vi.fn().mockResolvedValue({ token: 'hw_secretA', token_prefix: 'hw_A', created_at: '' }),
+    fetchStatus: vi.fn(), revoke: vi.fn(),
+  }
+  const widget = useWidgetToken(householdId, repo, build)
+  const creating = widget.create()
+  await vi.waitFor(() => expect(build).toHaveBeenCalled())
+  invalidateSessionScope()
+  hashing.resolve('script(hw_secretA)')
+  expect(await creating).toBe(false)
+  expect(widget.script.value).toBeNull()
+  expect(repo.fetchStatus).not.toHaveBeenCalled()
+})
 
 test('Status von Haushalt A, der nach dem Wechsel zu B ankommt, wird verworfen', async () => {
   const { householdId, repo, widget } = setup()

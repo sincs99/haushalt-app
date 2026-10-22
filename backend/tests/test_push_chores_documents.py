@@ -102,7 +102,9 @@ def test_chore_notifies_assignee_once_in_the_morning(db, zurich, user_a, user_a2
     chore = _chore(db, zurich, [user_a.id])
     assignment = _assignment(db, chore, DAY, user_a.id)
 
-    with _no_materialize():
+    # Notification and badge must share the fixture date. Otherwise this test
+    # starts failing once DAY falls outside the badge's 14-day chore lookback.
+    with _no_materialize(), patch("app.services.attention.household_today", return_value=DAY):
         assert push_service.process_chore_assignments(db, EARLY) == 0
         db.refresh(assignment)
         assert assignment.notified_at is None

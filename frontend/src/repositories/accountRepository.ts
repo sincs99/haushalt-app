@@ -1,4 +1,5 @@
-import api, { authRequestConfig } from '../api/client'
+import api from '../api/client'
+import { useAuthStore } from '../stores/auth'
 import type { TokenResponse } from '../types'
 
 /** Konto-Funktionen (backend/app/routers/account.py). */
@@ -27,12 +28,7 @@ export function createOnlineAccountRepository(): AccountRepository {
       await api.post('/api/account/email/resend')
     },
     async changePassword(currentPassword, newPassword) {
-      const { data } = await api.put<TokenResponse>(
-        '/api/account/password',
-        { current_password: currentPassword, new_password: newPassword },
-        authRequestConfig(),
-      )
-      return data
+      return useAuthStore().changePassword(currentPassword, newPassword)
     },
     async deleteAccount(password) {
       await api.delete('/api/account', { data: { password } })

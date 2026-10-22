@@ -135,18 +135,22 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .dialog-panel {
+  display: flex;
+  flex-direction: column;
   background: var(--card);
   border-radius: var(--radius-dialog);
   box-shadow: var(--shadow-overlay);
   width: 100%;
   max-width: 420px;
   max-height: 90vh;
-  overflow-y: auto;
+  max-height: min(90dvh, calc(100dvh - 2 * var(--space-4)));
+  overflow: hidden;
   outline: none;
 }
 
 .dialog-header {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   padding: var(--space-4) var(--space-6);
@@ -154,6 +158,8 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .dialog-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin: 0;
   font-family: var(--font-display);
   font-size: var(--text-title-dialog);
@@ -162,6 +168,7 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .dialog-close {
+  flex-shrink: 0;
   background: none;
   border: none;
   cursor: pointer;
@@ -179,11 +186,16 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .dialog-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: var(--space-4) var(--space-6);
 }
 
 .dialog-footer {
   display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-6);

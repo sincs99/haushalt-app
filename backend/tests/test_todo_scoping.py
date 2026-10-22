@@ -88,3 +88,29 @@ def test_user_a_cannot_delete_other_household_todo(
         headers={"Authorization": f"Bearer {token_a}"},
     )
     assert resp.status_code == 403
+
+
+def test_todo_assignee_must_be_current_household_member(
+    client, db, household_a, token_a, user_a, user_b, todo_a
+):
+    import uuid
+
+    headers = {"Authorization": f"Bearer {token_a}"}
+    url = f"/api/households/{household_a.id}/todos/"
+    for outsider in (user_b.id, uuid.uuid4()):
+        assert client.post(url, headers=headers, json={
+            "title": "Scoped assignee", "assigned_to_user_id": str(outsider),
+        }).status_code == 422
+        assert client.patch(url + str(todo_a.id), headers=headers, json={
+            "assigned_to_user_id": str(outsider),
+        }).status_code == 422
+    valid = client.post(url, headers=headers, json={
+        "title": "Scoped assignee", "assigned_to_user_id": str(user_a.id),
+    })
+    assert valid.status_code == 201
+    assert valid.json()["assigned_to_user_id"] == str(user_a.id)
+    unassigned = client.patch(url + valid.json()["id"], headers=headers, json={
+        "assigned_to_user_id": None,
+    })
+    assert unassigned.status_code == 200
+    assert unassigned.json()["assigned_to_user_id"] is None

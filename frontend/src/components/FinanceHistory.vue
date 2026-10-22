@@ -12,6 +12,7 @@ import { formatRappen } from '../utils/money'
 import { formatDate } from '../utils/dates'
 import { PhArrowCounterClockwise } from '@phosphor-icons/vue'
 import BaseCard from './ui/BaseCard.vue'
+import BaseButton from './ui/BaseButton.vue'
 import BaseErrorState from './ui/BaseErrorState.vue'
 import BaseSkeleton from './ui/BaseSkeleton.vue'
 
@@ -21,8 +22,9 @@ const { run, isPending } = useAsyncAction()
 const { t } = useI18n()
 
 const open = ref(false)
-const loading = ref(false)
-const loadError = ref(false)
+const loading = computed(() => expensesStore.deletedLoading || settlementsStore.deletedLoading)
+const loadError = computed(() => expensesStore.deletedError || settlementsStore.deletedError)
+const hasMore = computed(() => expensesStore.deletedHasMore || settlementsStore.deletedHasMore)
 
 interface HistoryEntry {
   kind: 'expense' | 'settlement'
@@ -60,19 +62,15 @@ const entries = computed<HistoryEntry[]>(() => {
       deletedBy: s.deleted_by_user_id,
     })),
   ]
-  return list.sort((a, b) => (a.deletedAt < b.deletedAt ? 1 : -1))
+  return list.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt) || b.id.localeCompare(a.id) || a.kind.localeCompare(b.kind))
 })
 
 async function load() {
-  loading.value = true
-  loadError.value = false
-  try {
-    await Promise.all([expensesStore.fetchDeleted(), settlementsStore.fetchDeleted()])
-  } catch {
-    loadError.value = true
-  } finally {
-    loading.value = false
-  }
+  await Promise.allSettled([expensesStore.fetchDeleted(), settlementsStore.fetchDeleted()])
+}
+
+async function loadMore() {
+  await Promise.allSettled([expensesStore.loadMoreDeleted(), settlementsStore.loadMoreDeleted()])
 }
 
 function toggle() {
@@ -98,16 +96,16 @@ async function restore(entry: HistoryEntry) {
       {{ open ? $t('expenses.history.hide') : $t('expenses.history.show') }}
     </button>
 
-    <BaseCard v-if="open" padding="md">
+    <BaseCard v-if="open" padding="md" :aria-busy="loading">
       <h2 class="section-title">{{ $t('expenses.history.title') }}</h2>
 
       <div v-if="loading && entries.length === 0" class="history__skeleton">
         <BaseSkeleton v-for="n in 2" :key="n" width="100%" height="36px" />
       </div>
-      <BaseErrorState v-else-if="loadError" :message="$t('expenses.history.loadError')" :retrying="loading" @retry="load" />
-      <p v-else-if="entries.length === 0" class="section-sub">{{ $t('expenses.history.empty') }}</p>
+      <BaseErrorState v-if="loadError" :message="$t('expenses.history.loadError')" :retrying="loading" @retry="load" />
+      <p v-if="!loading && !loadError && entries.length === 0" class="section-sub">{{ $t('expenses.history.empty') }}</p>
 
-      <ul v-else class="history__list">
+      <ul v-if="entries.length" class="history__list">
         <li v-for="entry in entries" :key="entry.kind + entry.id" class="history__row">
           <div class="history__info">
             <span class="history__title">{{ entry.title }}</span>
@@ -131,6 +129,9 @@ async function restore(entry: HistoryEntry) {
           </button>
         </li>
       </ul>
+      <BaseButton v-if="hasMore" variant="secondary" :loading="loading" :disabled="loading" @click="loadMore">
+        {{ $t('expenses.history.loadMore') }}
+      </BaseButton>
     </BaseCard>
   </div>
 </template>

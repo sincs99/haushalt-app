@@ -12,8 +12,9 @@
 #   5. Uploads-Archiv (gleicher Zeitstempel) per Hilfscontainer einspielen
 #   6. Backend starten (führt `alembic upgrade head` aus) und auf /api/health warten
 #
-# Nach einem Fehler wird das Backend wieder gestartet; Exit-Code 1.
-# Bash-Pendant mit identischer Logik: scripts/restore-db.sh (in CI per
+# Nach einem Fehler vor dem DB-Tausch kann das bisher laufende Backend starten;
+# nach dem Tausch bleibt es bei Fehlern zur sicheren Wiederaufnahme angehalten.
+# Bash-Pendant: scripts/restore-db.sh (in CI per
 # scripts/restore-drill.sh getestet).
 #
 # Migrationen sind forward-only: Ein älterer Dump gehört zum Code-Stand, mit dem er
@@ -58,10 +59,11 @@ $DbUser         = "haushalt"
 $DbName         = "haushalt"
 $ServiceName    = "postgres"
 $UploadsService = "backend"
-$Stamp          = Get-Date -Format "yyyyMMdd_HHmmss"
-$RestoreDb      = "${DbName}_restore"
-$OldDb          = "${DbName}_before_restore_${Stamp}"
-$Helper         = "casa-restore-helper-${Stamp}"
+$stageId        = [Guid]::NewGuid().ToString("N")
+$RestoreDb      = "${DbName}_restore_${stageId}"
+$OldDb          = "${DbName}_before_${stageId}"
+$RemoteDump     = "/tmp/casa-restore-${stageId}.dump"
+$Helper         = "casa-restore-helper-${stageId}"
 
 function Invoke-Sql([string]$Database, [string]$Sql) {
     # -At: nur Werte, ON_ERROR_STOP: jeder SQL-Fehler → Exit-Code != 0
@@ -71,16 +73,21 @@ function Invoke-Sql([string]$Database, [string]$Sql) {
 }
 
 # --- 1. Dump prüfen ---
-if (-not (Test-Path $DumpFile)) {
+if (-not (Test-Path -LiteralPath $DumpFile -PathType Leaf)) {
     Write-Error "Die Dump-Datei '$DumpFile' wurde nicht gefunden."
     exit 1
 }
-$fileInfo = Get-Item $DumpFile
-if ($fileInfo.Length -eq 0) {
+$fileInfo = Get-Item -LiteralPath $DumpFile
+if ($fileInfo.Length -lt 5) {
     Write-Error "Die Dump-Datei '$DumpFile' ist leer (0 Bytes)."
     exit 1
 }
-$magic = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($fileInfo.FullName)[0..4])
+$stream = [System.IO.File]::OpenRead($fileInfo.FullName)
+try {
+    $magicBytes = New-Object byte[] 5
+    if ($stream.Read($magicBytes, 0, 5) -ne 5) { throw "Dump header is incomplete" }
+} finally { $stream.Dispose() }
+$magic = [System.Text.Encoding]::ASCII.GetString($magicBytes)
 if ($magic -ne "PGDMP") {
     Write-Error "Die Datei '$DumpFile' ist kein gültiger PostgreSQL Custom-Format-Dump (Magic Bytes: '$magic' statt 'PGDMP')."
     exit 1
@@ -90,20 +97,15 @@ Write-Host "Dump-Datei: $($fileInfo.FullName) ($([math]::Round($fileInfo.Length 
 # Zugehöriges Uploads-Archiv (gleicher Zeitstempel wie der Dump)
 if (-not $NoUploads -and -not $UploadsFile) {
     $candidate = Join-Path $fileInfo.DirectoryName ($fileInfo.Name -replace '^casa-backup-', 'casa-uploads-' -replace '\.dump$', '.tar.gz')
-    if ($candidate -ne $fileInfo.FullName -and (Test-Path $candidate)) { $UploadsFile = $candidate }
+    if ($candidate -ne $fileInfo.FullName -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { $UploadsFile = $candidate }
 }
 if ($NoUploads) { $UploadsFile = $null }
 if ($UploadsFile) {
-    if (-not (Test-Path $UploadsFile)) {
+    if (-not (Test-Path -LiteralPath $UploadsFile -PathType Leaf)) {
         Write-Error "Das Uploads-Archiv '$UploadsFile' wurde nicht gefunden."
         exit 1
     }
-    $UploadsFile = (Get-Item $UploadsFile).FullName
-    $gz = [System.IO.File]::ReadAllBytes($UploadsFile)[0..1]
-    if ($gz[0] -ne 0x1F -or $gz[1] -ne 0x8B) {
-        Write-Error "Das Uploads-Archiv '$UploadsFile' ist kein gzip-Archiv."
-        exit 1
-    }
+    $UploadsFile = (Get-Item -LiteralPath $UploadsFile).FullName
     Write-Host "Uploads-Archiv: $UploadsFile" -ForegroundColor Cyan
 }
 else {
@@ -139,8 +141,21 @@ if (-not $Yes) {
 }
 
 $backendStopped = $false
+$backendWasRunning = $runningServices -contains $UploadsService
+$oldRenamed = $false
 $swapped = $false
+$stageReady = $false
 try {
+    # Validate and prepare all upload bytes before changing the database.
+    if ($UploadsFile) {
+        docker compose @composeArgs run -d --rm --no-deps --name $Helper --entrypoint sleep $UploadsService infinity | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Upload-Hilfscontainer konnte nicht starten." }
+        docker cp $UploadsFile "${Helper}:/tmp/casa-uploads.tar.gz"
+        if ($LASTEXITCODE -ne 0) { throw "Upload-Archiv konnte nicht kopiert werden." }
+        docker exec $Helper python /app/scripts/restore_uploads.py stage $stageId --archive /tmp/casa-uploads.tar.gz
+        if ($LASTEXITCODE -ne 0) { throw "Upload-Archivprüfung fehlgeschlagen; Datenbank und Dateien unverändert." }
+        $stageReady = $true
+    }
     # --- 4. Backend stoppen ---
     Write-Host "Stoppe Backend ..." -ForegroundColor Cyan
     docker compose @composeArgs stop $UploadsService
@@ -149,16 +164,15 @@ try {
 
     # --- 5. Restore in frische Datenbank ---
     Write-Host "Lege frische Datenbank '$RestoreDb' an ..." -ForegroundColor Cyan
-    Invoke-Sql "postgres" "DROP DATABASE IF EXISTS `"$RestoreDb`"" | Out-Null
     Invoke-Sql "postgres" "CREATE DATABASE `"$RestoreDb`" TEMPLATE template0" | Out-Null
 
-    docker compose @composeArgs cp $fileInfo.FullName "${ServiceName}:/tmp/casa-restore.dump"
+    docker compose @composeArgs cp $fileInfo.FullName "${ServiceName}:$RemoteDump"
     if ($LASTEXITCODE -ne 0) { throw "docker compose cp des Dumps fehlgeschlagen." }
 
     Write-Host "pg_restore --single-transaction --exit-on-error ..." -ForegroundColor Cyan
-    docker compose @composeArgs exec -T $ServiceName pg_restore --single-transaction --exit-on-error --no-owner -U $DbUser -d $RestoreDb /tmp/casa-restore.dump
+    docker compose @composeArgs exec -T $ServiceName pg_restore --single-transaction --exit-on-error --no-owner -U $DbUser -d $RestoreDb $RemoteDump
     $restoreExitCode = $LASTEXITCODE
-    docker compose @composeArgs exec -T $ServiceName rm -f /tmp/casa-restore.dump 2>$null
+    docker compose @composeArgs exec -T $ServiceName rm -f $RemoteDump 2>$null
     # Jeder Exit-Code != 0 ist ein Fehler — die Transaktion wurde komplett zurückgerollt
     if ($restoreExitCode -ne 0) { throw "pg_restore ist mit Exit-Code $restoreExitCode fehlgeschlagen." }
 
@@ -169,29 +183,23 @@ try {
     # --- 6. Tausch ---
     Write-Host "Tausche Datenbanken ..." -ForegroundColor Cyan
     Invoke-Sql "postgres" "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('$DbName', '$RestoreDb') AND pid <> pg_backend_pid()" | Out-Null
+    $oldRenamed = $true # Treat a lost SQL acknowledgement as a possible rename.
     Invoke-Sql "postgres" "ALTER DATABASE `"$DbName`" RENAME TO `"$OldDb`"" | Out-Null
     Invoke-Sql "postgres" "ALTER DATABASE `"$RestoreDb`" RENAME TO `"$DbName`"" | Out-Null
     $swapped = $true
-    if ($DropOld) {
-        Invoke-Sql "postgres" "DROP DATABASE `"$OldDb`"" | Out-Null
-        Write-Host "  ✓ Vorherige Datenbank gelöscht." -ForegroundColor Green
-    }
 
     # --- 7. Uploads (Hilfscontainer mit dem Upload-Volume; das Backend ist gestoppt) ---
     if ($UploadsFile) {
         Write-Host "Stelle Uploads wieder her ..." -ForegroundColor Cyan
-        docker compose @composeArgs run -d --rm --no-deps --name $Helper $UploadsService sleep 600 | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Hilfscontainer für Uploads konnte nicht gestartet werden." }
-        docker cp $UploadsFile "${Helper}:/tmp/casa-uploads.tar.gz"
-        if ($LASTEXITCODE -ne 0) { throw "docker cp des Uploads-Archivs fehlgeschlagen." }
-        # Bestehende Dateien ersetzen, damit keine Dateien ohne DB-Eintrag zurückbleiben
-        docker exec $Helper sh -c "find /app/data/uploads -mindepth 1 -delete && tar -xzf /tmp/casa-uploads.tar.gz -C /app/data && rm -f /tmp/casa-uploads.tar.gz"
-        if ($LASTEXITCODE -ne 0) { throw "Entpacken der Uploads ist fehlgeschlagen." }
+        docker exec $Helper python /app/scripts/restore_uploads.py apply $stageId
+        if ($LASTEXITCODE -ne 0) { throw "Upload-Tausch fehlgeschlagen. Staging-ID: $stageId" }
+        $stageReady = $false
         docker rm -f $Helper | Out-Null
         Write-Host "  ✓ Uploads wiederhergestellt." -ForegroundColor Green
     }
 
     # --- 8. Backend starten (alembic upgrade head) und auf /api/health warten ---
+    if ($backendWasRunning) {
     Write-Host "Starte Backend (führt alembic upgrade head aus) ..." -ForegroundColor Cyan
     docker compose @composeArgs start $UploadsService
     if ($LASTEXITCODE -ne 0) { throw "Backend konnte nicht gestartet werden." }
@@ -206,28 +214,54 @@ try {
     if (-not $healthy) {
         throw "Backend meldet nach 120 s nicht gesund. Logs: docker compose $($composeArgs -join ' ') logs backend"
     }
+    }
+    if ($DropOld) {
+        Invoke-Sql "postgres" "DROP DATABASE `"$OldDb`"" | Out-Null
+        Write-Host "  ✓ Vorherige Datenbank gelöscht." -ForegroundColor Green
+    }
 }
 catch {
     Write-Host ""
     Write-Host "❌ Restore fehlgeschlagen: $_" -ForegroundColor Red
-    docker rm -f $Helper 2>$null | Out-Null
+    if ($swapped) {
+        docker compose @composeArgs stop $UploadsService | Out-Null
+        Write-Host "   Backend bleibt zur Prüfung/Wiederaufnahme angehalten." -ForegroundColor Yellow
+    }
     if (-not $swapped) {
+        if ($oldRenamed) {
+            try {
+                Invoke-Sql "postgres" "ALTER DATABASE `"$OldDb`" RENAME TO `"$DbName`"" | Out-Null
+                $oldRenamed = $false
+            } catch { Write-Host "   Datenbank-Rückbenennung fehlgeschlagen; Backend bleibt gestoppt." -ForegroundColor Red }
+        }
         try { Invoke-Sql "postgres" "DROP DATABASE IF EXISTS `"$RestoreDb`"" | Out-Null } catch { }
-        Write-Host "   Die Datenbank '$DbName' ist unverändert." -ForegroundColor Yellow
+        if (-not $oldRenamed) { Write-Host "   Die bisherige Datenbank '$DbName' ist erhalten." -ForegroundColor Yellow }
     }
     else {
         Write-Host "   Die vorherige Datenbank liegt (falls nicht -DropOld) als '$OldDb' vor." -ForegroundColor Yellow
     }
-    if ($backendStopped) {
+    if ($stageReady -and -not $swapped -and -not $oldRenamed) {
+        docker exec $Helper python /app/scripts/restore_uploads.py discard $stageId
+        if ($LASTEXITCODE -eq 0) { $stageReady = $false }
+    }
+    if ($backendStopped -and $backendWasRunning -and -not $swapped -and -not $oldRenamed) {
         Write-Host "   Starte Backend wieder ..." -ForegroundColor Yellow
         docker compose @composeArgs start $UploadsService
     }
+    if ($stageReady) { Write-Host "   Upload-Staging-ID zur Prüfung/Wiederaufnahme: $stageId" -ForegroundColor Yellow }
     exit 1
+}
+finally {
+    try { docker compose @composeArgs exec -T $ServiceName rm -f $RemoteDump 2>$null | Out-Null } catch { }
+    if ($UploadsFile) {
+        try { docker rm -f $Helper 2>$null | Out-Null } catch { }
+    }
 }
 
 Write-Host ""
 Write-Host "═══════════════════════════════════════════" -ForegroundColor Green
-Write-Host "  ✅ Restore erfolgreich (Revision $revision), Backend gesund" -ForegroundColor Green
+Write-Host "  ✅ Restore erfolgreich (Revision $revision)" -ForegroundColor Green
+if ($backendWasRunning) { Write-Host "  Backend gesund." -ForegroundColor Green }
 if (-not $DropOld) {
     Write-Host "  Vorherige DB als '$OldDb' behalten. Nach Prüfung löschen:" -ForegroundColor Green
     Write-Host "    docker compose $($composeArgs -join ' ') exec -T postgres psql -U haushalt -d postgres -c 'DROP DATABASE `"$OldDb`"'" -ForegroundColor White

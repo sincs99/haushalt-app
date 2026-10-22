@@ -1,21 +1,8 @@
-"""Tageslimits und Token-Zähler (Tabellen ``ai_usage`` pro Haushalt, ``ai_user_usage`` pro Person).
+"""Atomic household, account and global UTC-day reservations.
 
-Ablauf pro Anfrage:
-
-1. ``reserve_call`` zählt einen Aufruf beim Haushalt UND bei der Person — jeweils mit
-   ``INSERT … ON CONFLICT DO UPDATE SET calls = calls + 1 WHERE calls < limit RETURNING``.
-   Ein Statement pro Zähler: legt die Tageszeile an oder erhöht sie, aber nur unter dem
-   Limit. Parallele Anfragen warten auf die Zeilensperre und sehen danach den neuen Stand,
-   es gibt also weder ein Überschreiten noch ein falsches 429 beim ersten Aufruf des
-   Tages (CASA-32). Greift eines der Limits, wird die ganze Reservierung zurückgerollt.
-   Danach wird committet — während des API-Aufrufs hält die Session keine DB-Verbindung.
-2. ``record_tokens`` addiert die Token-Zahlen aus ``response.usage`` (nur Haushalt).
-3. ``release_call`` gibt die Reservierung zurück, wenn die API nicht geantwortet hat
-   (Netzwerkfehler, Fehlerstatus, Überlast, unerwarteter Fehler) — dann sind keine
-   Kosten entstanden.
-
-Sperr-Reihenfolge immer Haushalt → Person (kein Deadlock zwischen Reserve und Release).
-Der Tag ist der UTC-Tag.
+The complete reservation commits before provider dispatch. Unknown outcomes
+remain charged to the call budget; only a proven pre-dispatch rejection can be
+refunded. A durable reservation UUID owns exactly one completion or refund.
 """
 
 from __future__ import annotations
@@ -28,7 +15,7 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import AiUsage, AiUserUsage
+from app.models import AiBudgetCounter, AiCallReservation, AiUsage, AiUserUsage
 from app.services import entitlements
 from app.services.ai.errors import AiDailyLimitReached, AiUsageInfo, AiUserDailyLimitReached
 
@@ -37,10 +24,15 @@ def today_utc() -> date:
     return datetime.now(timezone.utc).date()
 
 
-def _increment_below_limit(db: Session, model, key_column, key: uuid.UUID, day: date, limit: int) -> bool:
-    """Upsert ``calls + 1`` nur solange ``calls < limit``. True = gezählt."""
+def _increment_below_limit(db: Session, model, key_column, key: uuid.UUID | str, day: date, limit: int) -> bool:
+    """Atomically create or increment one budget under its unique scope/day key."""
+    if limit <= 0:
+        return False
     insert = postgresql.insert if db.get_bind().dialect.name == "postgresql" else sqlite.insert
-    stmt = insert(model).values(id=uuid.uuid4(), day=day, calls=1, **{key_column.key: key})
+    values = {"day": day, "calls": 1, key_column.key: key}
+    if model is not AiBudgetCounter:
+        values["id"] = uuid.uuid4()
+    stmt = insert(model).values(**values)
     stmt = stmt.on_conflict_do_update(
         index_elements=[key_column, model.day],
         set_={"calls": model.calls + 1},
@@ -50,58 +42,87 @@ def _increment_below_limit(db: Session, model, key_column, key: uuid.UUID, day: 
 
 
 def daily_limit(db: Session, household_id: uuid.UUID) -> int:
-    """Tageslimit des Haushalts (tarifabhängig, services/entitlements.py)."""
+    """Preserve the existing household entitlement/plan allocation."""
     return entitlements.limits_for_household_id(db, household_id).ai_daily_limit
 
 
-def reserve_call(db: Session, household_id: uuid.UUID, user_id: uuid.UUID) -> date:
-    """Reserviert einen Aufruf und liefert den gezählten Tag.
-
-    Wirft ``AiDailyLimitReached`` (Haushalt, Limit des Tarifs) oder ``AiUserDailyLimitReached`` (Person).
-    """
-    household_limit = daily_limit(db, household_id)
-    user_limit = settings.ai_daily_limit_per_user
+def reserve_call(db: Session, household_id: uuid.UUID, user_id: uuid.UUID) -> uuid.UUID:
+    """All three budgets succeed together, or none is consumed."""
     day = today_utc()
-    if household_limit <= 0:
-        raise AiDailyLimitReached("Daily limit is 0")
-    if user_limit <= 0:
-        raise AiUserDailyLimitReached("Daily user limit is 0")
-
-    if not _increment_below_limit(db, AiUsage, AiUsage.household_id, household_id, day, household_limit):
+    reservation_id = uuid.uuid4()
+    try:
+        # Stable lock order, shared with release_call, avoids budget deadlocks.
+        household_limit = daily_limit(db, household_id)
+        if not _increment_below_limit(db, AiBudgetCounter, AiBudgetCounter.scope_key, "global", day, settings.ai_daily_limit_global):
+            raise AiDailyLimitReached("Global daily AI budget reached")
+        if not _increment_below_limit(db, AiUserUsage, AiUserUsage.user_id, user_id, day, settings.ai_daily_limit_per_user):
+            raise AiUserDailyLimitReached("Personal daily AI limit reached")
+        if not _increment_below_limit(db, AiUsage, AiUsage.household_id, household_id, day, household_limit):
+            raise AiDailyLimitReached("Household daily AI limit reached")
+        db.add(AiCallReservation(
+            id=reservation_id, household_id=household_id, user_id=user_id,
+            day=day, state="reserved",
+        ))
+        db.commit()
+    except BaseException:
         db.rollback()
-        raise AiDailyLimitReached("Daily limit reached")
-    if not _increment_below_limit(db, AiUserUsage, AiUserUsage.user_id, user_id, day, user_limit):
-        db.rollback()  # nimmt auch die Haushalts-Zählung zurück
-        raise AiUserDailyLimitReached("Daily user limit reached")
-    db.commit()
-    return day
+        raise
+    return reservation_id
 
 
-def record_tokens(db: Session, household_id: uuid.UUID, day: date, usage: AiUsageInfo) -> None:
-    db.execute(
-        update(AiUsage)
-        .where(AiUsage.household_id == household_id, AiUsage.day == day)
-        .values(
-            input_tokens=AiUsage.input_tokens + usage.input_tokens,
-            output_tokens=AiUsage.output_tokens + usage.output_tokens,
-        )
-    )
-    db.commit()
+def _claim(db: Session, reservation_id: uuid.UUID, state: str):
+    # Conditional state transition is atomic across processes; duplicate and
+    # conflicting finalizers cannot debit another request's reservation.
+    return db.execute(
+        update(AiCallReservation)
+        .where(AiCallReservation.id == reservation_id, AiCallReservation.state == "reserved")
+        .values(state=state)
+        .returning(AiCallReservation.household_id, AiCallReservation.user_id, AiCallReservation.day)
+    ).first()
 
 
-def release_call(db: Session, household_id: uuid.UUID, user_id: uuid.UUID, day: date) -> None:
-    db.rollback()  # falls die Session nach einem Fehler noch eine offene Transaktion hat
-    db.execute(
-        update(AiUsage)
-        .where(AiUsage.household_id == household_id, AiUsage.day == day, AiUsage.calls > 0)
-        .values(calls=AiUsage.calls - 1)
-    )
-    db.execute(
-        update(AiUserUsage)
-        .where(AiUserUsage.user_id == user_id, AiUserUsage.day == day, AiUserUsage.calls > 0)
-        .values(calls=AiUserUsage.calls - 1)
-    )
-    db.commit()
+def record_tokens(db: Session, reservation_id: uuid.UUID, usage: AiUsageInfo) -> None:
+    try:
+        row = _claim(db, reservation_id, "completed")
+        if row is not None:
+            db.execute(
+                update(AiUsage)
+                .where(AiUsage.household_id == row.household_id, AiUsage.day == row.day)
+                .values(
+                    input_tokens=AiUsage.input_tokens + usage.input_tokens,
+                    output_tokens=AiUsage.output_tokens + usage.output_tokens,
+                )
+            )
+        db.commit()
+    except BaseException:
+        db.rollback()
+        raise
+
+
+def release_call(db: Session, reservation_id: uuid.UUID) -> None:
+    """Refund only the named, still-pending reservation, once."""
+    try:
+        row = _claim(db, reservation_id, "released")
+        if row is not None:
+            db.execute(
+                update(AiBudgetCounter)
+                .where(AiBudgetCounter.scope_key == "global", AiBudgetCounter.day == row.day, AiBudgetCounter.calls > 0)
+                .values(calls=AiBudgetCounter.calls - 1)
+            )
+            db.execute(
+                update(AiUserUsage)
+                .where(AiUserUsage.user_id == row.user_id, AiUserUsage.day == row.day, AiUserUsage.calls > 0)
+                .values(calls=AiUserUsage.calls - 1)
+            )
+            db.execute(
+                update(AiUsage)
+                .where(AiUsage.household_id == row.household_id, AiUsage.day == row.day, AiUsage.calls > 0)
+                .values(calls=AiUsage.calls - 1)
+            )
+        db.commit()
+    except BaseException:
+        db.rollback()
+        raise
 
 
 def calls_today(db: Session, household_id: uuid.UUID) -> int:

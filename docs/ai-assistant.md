@@ -84,7 +84,7 @@ client.beta.messages.parse(
 - **Kein Textparsing:** Das SDK schickt das Pydantic-Modell als JSON-Schema (`output_config.format`) und validiert die Antwort. Übernommen wird nur `response.parsed_output`.
 - **Kein `thinking`-Parameter, kein `budget_tokens`, kein Prefill, kein erzwungenes `tool_choice`.** Die Tiefe steuert `output_config.effort`.
 - **Serverseitige Fallbacks:** Lehnt ein Sicherheits-Klassifikator ab, beantwortet die API die Anfrage im selben Aufruf mit dem von Anthropic empfohlenen Ersatzmodell. Lehnt auch dieses ab, ist `stop_reason == "refusal"` → 422 `AI_REFUSED`.
-- **Client:** `anthropic.Anthropic(api_key=…, timeout=90, max_retries=1)`. Der Schlüssel wird explizit aus `settings.anthropic_api_key` übergeben.
+- **Client:** `anthropic.Anthropic(api_key=…, timeout=90, max_retries=0)`. Der Schlüssel wird explizit aus `settings.anthropic_api_key` übergeben. Keine automatischen Wiederholungen: Ein Versuch mit unbekanntem Ausgang kann bereits Kosten verursacht haben.
 - **Gleichzeitige Aufrufe:** höchstens `AI_MAX_CONCURRENT_REQUESTS` (Standard 4) pro Prozess, sonst sofort 503 `AI_BUSY`. Jeder Aufruf belegt einen Worker-Thread des sync Endpoints.
 
 ### Fehler
@@ -99,10 +99,9 @@ client.beta.messages.parse(
 | `stop_reason == "refusal"` | 422 | `AI_REFUSED` | ja (Tokens aus `usage`) |
 | Pflanze nicht erkannt (`recognized=false`) | 422 | `AI_PLANT_NOT_RECOGNIZED` | ja |
 | Antwort passt nicht ins Schema / `max_tokens` erreicht / unbrauchbar | 502 | `AI_INVALID_OUTPUT` | ja |
-| `RateLimitError` des Anbieters, zu viele gleichzeitige Aufrufe | 503 | `AI_BUSY` | nein |
-| übrige SDK-Fehler (`anthropic.APIError`, z. B. `APIResponseValidationError`) | 502 | `AI_UNAVAILABLE` | nein |
-| unerwartete Ausnahme (Bug) | 500 | — | nein (Reservierung wird zurückgegeben) |
-| `APIConnectionError` / `APITimeoutError` / sonstiger `APIStatusError` | 502 | `AI_UNAVAILABLE` | nein |
+| Lokale Kapazität erschöpft, noch kein Anbieteraufruf | 503 | `AI_BUSY` | nein |
+| `RateLimitError` des Anbieters | 503 | `AI_BUSY` | ja, konservativ |
+| `APIConnectionError` / `APITimeoutError` / sonstiger `APIStatusError` | 502 | `AI_UNAVAILABLE` | ja, Ausgang möglicherweise unbekannt |
 
 Details zu Status-Fehlern (Statuscode, `request_id`) landen nur im Server-Log, nie in der Antwort.
 
@@ -116,7 +115,7 @@ Details zu Status-Fehlern (Statuscode, `request_id`) landen nur im Server-Log, n
 | Pflanzenpflege | Pflanzenname/-art, optionaler Standort, Sprache | wie oben |
 
 - **Opt-in pro Haushalt:** `households.ai_enabled` ist standardmässig `false`. Nur Admins schalten um. Die Einstellungskarte zeigt den Hinweis, dass Eingaben (Zutaten, Pflanzenart, später Fotos) an die Anthropic-API gesendet werden.
-- **Keine Speicherung von Ein- oder Ausgaben im Backend.** Gespeichert werden nur Zähler (`ai_usage`: Tag, Haushalt, Aufrufe, Tokens). Ein Rezept landet erst in der Datenbank, wenn jemand auf „Speichern“ tippt.
+- **Keine Speicherung von Ein- oder Ausgaben im Backend.** Gespeichert werden Haushaltszähler (`ai_usage`: Tag, Haushalt, Aufrufe, Tokens), globale und kontobezogene Tageszähler sowie Reservierungen mit UUID, Konto- und Haushalts-ID, Tag und Abschlussstatus. Diese Budgetdaten überleben eine Haushaltslöschung, damit sie das gemeinsame Budget nicht zurücksetzt. Ein Rezept landet erst in der Datenbank, wenn jemand auf „Speichern“ tippt.
 - **Der Schlüssel bleibt im Backend.** Das Frontend ruft nie den Anbieter direkt; die CSP (`connect-src 'self'`) würde das auch blockieren.
 - Für die Verarbeitung bei Anthropic gelten deren Bedingungen für die kommerzielle API. Wer den Assistenten in Betrieb nimmt, sollte die Haushaltsmitglieder darüber informieren (der Hinweistext in den Einstellungen ist der Ausgangspunkt).
 
@@ -146,9 +145,13 @@ Prompt-Caching bringt hier nichts: Die Systemprompts liegen unter der Mindestlä
 ## 5. Kostenschutz
 
 1. **IP-Limit:** slowapi `10/minute` auf `/ai/recipe` und `/ai/plant-care` (in-memory, wie die übrigen Limits).
-2. **Tageslimit pro Haushalt und pro Person:** `ai_usage` (eine Zeile pro Haushalt und UTC-Tag) und `ai_user_usage` (eine Zeile pro Person und UTC-Tag, über alle Haushalte). `reserve_call` zählt beide in einer Transaktion per `INSERT … ON CONFLICT DO UPDATE SET calls = calls + 1 WHERE calls < limit RETURNING` — die Zeile wird angelegt oder erhöht, aber nur unter dem Limit. Parallele Anfragen überschreiten kein Limit und bekommen unter dem Limit kein falsches 429 (CASA-32; `tests/pg/test_pg_ai.py`, 10 parallele Anfragen). Greift das persönliche Limit, wird auch die Haushalts-Zählung zurückgerollt. Kam keine Antwort der API zustande (Netzwerk, Überlast, Fehlerstatus, sonstiger SDK-Fehler, unerwartete Ausnahme), wird die Reservierung bei beiden zurückgegeben (CASA-33).
+2. **Drei Tageslimits:** Haushalt, Konto über alle Haushalte und gemeinsam für den Server. `reserve_call` reserviert alle drei Zähler in einer Datenbanktransaktion mit bedingten Updates und fester Sperrreihenfolge. Scheitert ein Limit, werden alle Änderungen zurückgerollt. Eine neue Haushalts-ID schafft kein neues Kontobudget. Die Reservierung wird vor dem Anbieteraufruf committed.
 3. **Gleichzeitige Aufrufe** pro Prozess begrenzt (Abschnitt 2).
-4. **Mehrere Haushalte:** Wer weitere Haushalte gründet, vervielfacht das Haushaltslimit, aber nicht das persönliche Limit `AI_DAILY_LIMIT_PER_USER` (PD-A2, Review A-01). Ein globales Tageslimit gibt es nicht; dafür das Ausgabenlimit in der Anthropic-Konsole setzen.
+4. **Unbekannte Ergebnisse bleiben gezählt:** Timeouts, Verbindungsabbrüche und Anbieterfehler geben kein Budget frei. Nur nachweislich vor dem Versand abgewiesene Anfragen (fehlender Schlüssel oder lokale Kapazität) werden erstattet. Eine eindeutige Reservierungs-ID verhindert doppelte Erstattung oder doppelte Tokenverbuchung. Automatische SDK-Retries sind deaktiviert.
+
+Die Standardwerte 50 pro Haushalt, 20 pro Konto und 1000 global begrenzen die Summe unabhängig von neu gegründeten Haushalten und erhalten das bestehende persönliche Limit. Betreiber müssen das globale Limit anhand ihres freigegebenen Budgets konfigurieren und zusätzlich ein Ausgabenlimit beim Anbieter setzen; Aufrufzahlen sind keine feste Geldobergrenze. Ein Limit von 0 oder weniger sperrt Aufrufe. Es gibt keine Begrenzung der legitimen Haushaltszahl.
+
+Migration `b4c5d6e7f8a9` folgt auf die Tarif- und Abrechnungsmigration `b2c3d4e5f6a7`. Vorhandene persönliche Verbräuche in `ai_user_usage` bleiben erhalten; der globale Schutz übernimmt pro Tag das Maximum der bekannten Haushalts- und Personensummen, ohne beide Darstellungen doppelt zu zählen. Tageswechsel erfolgen nach UTC, auch Erstattungen nach Mitternacht bleiben beim ursprünglichen Tag. Neue Regressionstests müssen vor Freigabe in einer isolierten PostgreSQL-Umgebung ausgeführt werden; lokale SQLite- und Mocktests ersetzen diese Parallelitätsnachweise nicht.
 
 ## 6. Konfiguration
 
@@ -156,8 +159,9 @@ Prompt-Caching bringt hier nichts: Die Systemprompts liegen unter der Mindestlä
 |---|---|---|
 | `ANTHROPIC_API_KEY` | leer | Schlüssel von <https://console.anthropic.com>; leer = KI deaktiviert |
 | `AI_DAILY_LIMIT_PER_HOUSEHOLD` | `50` | Aufrufe pro Haushalt und UTC-Tag; `0` sperrt alle Aufrufe |
-| `AI_DAILY_LIMIT_PER_USER` | `20` | Aufrufe pro Person und UTC-Tag über alle Haushalte; `0` sperrt alle Aufrufe |
-| `AI_REQUEST_TIMEOUT_SECONDS` | `90` | Timeout pro Versuch; das SDK wiederholt höchstens einmal |
+| `AI_DAILY_LIMIT_PER_USER` | `20` | Aufrufe pro Konto über alle Haushalte und UTC-Tag |
+| `AI_DAILY_LIMIT_GLOBAL` | `1000` | Aufrufe insgesamt für den gemeinsamen Anbieterschlüssel und UTC-Tag |
+| `AI_REQUEST_TIMEOUT_SECONDS` | `90` | Timeout pro Versuch; keine automatischen Wiederholungen |
 | `AI_MAX_CONCURRENT_REQUESTS` | `4` | gleichzeitige KI-Aufrufe pro Backend-Prozess |
 
 Dev: in `.env` (wird von `docker-compose.yml` durchgereicht). Produktion: in `.env.prod` (`env_file`).
@@ -220,7 +224,7 @@ Details der Übernahme:
 1. **Schemas** in `services/ai/schemas.py`: Request-Modell (mit Längengrenzen) und Output-Modell (`…Output`, mit `Field(description=…)`, ohne harte Grenzen — die setzt der nächste Schritt durch).
 2. **Prompt** in `prompts.py`: Systemprompt DE/EN mit `_DATA_RULE` anhängen; Nutzernachricht über `render_input(intro, data)` bauen. Nie Nutzerdaten in den Systemprompt.
 3. **Feature-Funktion** `services/ai/<feature>.py`: `call_structured(...)` mit passendem `effort` (`low` für einfache Nachschlage-Aufgaben, `medium` für kreative/mehrteilige), Ausgabe in das App-Schema abbilden; bei Unbrauchbarem `AiInvalidOutput(…, result.usage)` werfen.
-4. **Endpunkt** in `routers/ai.py`: `Depends(require_ai_enabled)`, `@limiter.limit(AI_RATE_LIMIT)`, `_run_feature(db, household_id, feature, body)`. Neue fachliche Fehler in `_ERROR_MAP` eintragen, Codes in `ErrorCode` und `errors.*` (DE/EN).
+4. **Endpunkt** in `routers/ai.py`: `Depends(require_ai_enabled)`, `Depends(get_current_user)`, `@limiter.limit(AI_RATE_LIMIT)`, `_run_feature(db, household_id, current_user.id, feature, body)`. Neue fachliche Fehler in `_ERROR_MAP` eintragen, Codes in `ErrorCode` und `errors.*` (DE/EN).
 5. **Frontend:** Repository-Methode, Store-Action (Fehler als Code speichern), UI nur bei `aiStore.enabledForHousehold`.
 6. **Tests:** `ai_client.get_client` mocken (Fixture `fake_client` in `tests/test_ai_assistant.py`), mindestens Erfolg, Opt-in, Mitgliedschaft, Refusal, Schema-Abbildung.
 

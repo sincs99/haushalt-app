@@ -1,5 +1,7 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import { addCalendarDays, householdDateString, mondayOfWeek } from '../utils/dates'
 import { useAuthStore } from './auth'
 import { createOnlineFoodRepository } from '../repositories/foodRepository'
 import type {
@@ -8,32 +10,17 @@ import type {
 } from '../types'
 import { captureHousehold, createRequestGuard } from '../utils/householdGuard'
 
-/**
- * Gibt den ISO-Datums-String des Montags der aktuellen Woche zurück.
- */
-function getMonday(d: Date = new Date()): string {
-  const dt = new Date(d)
-  const day = dt.getDay()
-  // getDay(): 0=So, 1=Mo ... 6=Sa → Offset zu Montag
-  const diff = day === 0 ? -6 : 1 - day
-  dt.setDate(dt.getDate() + diff)
-  return toISODate(dt)
-}
-
-function toISODate(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
 export const useFoodStore = defineStore('food', () => {
-  const repo = createOnlineFoodRepository()
+  const repo = scopeRepository(createOnlineFoodRepository())
 
   // ── State ──
   const recipes = ref<Recipe[]>([])
   const weekPlan = ref<MealPlanEntry[]>([])
-  const currentWeekStart = ref(getMonday())
+  const householdWeek = () => mondayOfWeek(householdDateString(useAuthStore().currentHousehold?.timezone))
+  const currentWeekStart = ref(householdWeek())
+  watch(() => useAuthStore().currentHousehold?.timezone, () => {
+    currentWeekStart.value = householdWeek()
+  }, { flush: 'sync' })
   const loading = ref(false)
 
   // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
@@ -42,6 +29,7 @@ export const useFoodStore = defineStore('food', () => {
   // ── Recipe Actions ──
 
   async function fetchRecipes() {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
     const active = captureRequest(householdId, 'recipes')
@@ -51,11 +39,13 @@ export const useFoodStore = defineStore('food', () => {
   }
 
   async function createRecipe(payload: RecipeCreatePayload): Promise<Recipe | undefined> {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
     const created = await repo.createRecipe(householdId, payload)
     // Optimistic: sofort einfügen (Socket-Handler dedupliziert)
+    assertDataGeneration(actionGeneration)
     const idx = recipes.value.findIndex(r => r.id === created.id)
     if (idx === -1) {
       recipes.value.push(created)
@@ -64,10 +54,12 @@ export const useFoodStore = defineStore('food', () => {
   }
 
   async function updateRecipe(id: string, payload: RecipeUpdatePayload): Promise<Recipe | undefined> {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
     const updated = await repo.updateRecipe(householdId, id, payload)
+    assertDataGeneration(actionGeneration)
     const idx = recipes.value.findIndex(r => r.id === id)
     if (idx !== -1) {
       recipes.value[idx] = updated
@@ -82,10 +74,12 @@ export const useFoodStore = defineStore('food', () => {
   }
 
   async function deleteRecipe(id: string) {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
     await repo.deleteRecipe(householdId, id)
+    assertDataGeneration(actionGeneration)
     removeRecipeLocally(id)
   }
 
@@ -103,14 +97,19 @@ export const useFoodStore = defineStore('food', () => {
 
   /** Favorit optimistisch umschalten (Liste und eingebettete Rezepte im Wochenplan), Rollback bei Fehler. */
   async function toggleFavorite(id: string) {
+    const actionGeneration = currentDataGeneration()
     const recipe = recipes.value.find(r => r.id === id)
       ?? weekPlan.value.find(e => e.recipe_id === id)?.recipe
     if (!recipe) return
     const previous = recipe.is_favorite
     setFavoriteLocally(id, !previous)
     try {
-      return await updateRecipe(id, { is_favorite: !previous })
+      const updated = await updateRecipe(id, { is_favorite: !previous })
+      assertDataGeneration(actionGeneration)
+      return updated
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       setFavoriteLocally(id, previous)
       throw error
     }
@@ -131,6 +130,7 @@ export const useFoodStore = defineStore('food', () => {
   let weekRequestId = 0
 
   async function fetchWeekPlan(weekDate?: string) {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
@@ -144,19 +144,24 @@ export const useFoodStore = defineStore('food', () => {
       if (requestId !== weekRequestId || !inScope()) return
       weekPlan.value = plan
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // Fehler einer überholten Anfrage interessiert nicht mehr
       if (requestId !== weekRequestId) return
       throw error
     } finally {
+      assertDataGeneration(actionGeneration)
       if (requestId === weekRequestId) loading.value = false
     }
   }
 
   async function assignMeal(date: string, payload: MealPlanAssignPayload): Promise<MealPlanEntry | undefined> {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
     const entry = await repo.assignMeal(householdId, date, payload)
+    assertDataGeneration(actionGeneration)
     const idx = weekPlan.value.findIndex(e => e.date === date)
     if (idx !== -1) {
       weekPlan.value[idx] = entry
@@ -168,11 +173,13 @@ export const useFoodStore = defineStore('food', () => {
 
   /** Entfernt das Essen eines Tages; liefert den entfernten Eintrag (für Rückgängig). */
   async function removeMeal(date: string): Promise<MealPlanEntry | undefined> {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
     const removed = weekPlan.value.find(e => e.date === date)
     await repo.removeMeal(householdId, date)
+    assertDataGeneration(actionGeneration)
     weekPlan.value = weekPlan.value.filter(e => e.date !== date)
     return removed
   }
@@ -191,9 +198,7 @@ export const useFoodStore = defineStore('food', () => {
   }
 
   function navigateWeek(direction: -1 | 1) {
-    const d = new Date(currentWeekStart.value + 'T00:00:00')
-    d.setDate(d.getDate() + direction * 7)
-    currentWeekStart.value = toISODate(d)
+    currentWeekStart.value = addCalendarDays(currentWeekStart.value, direction * 7)
     return fetchWeekPlan()
   }
 
@@ -246,6 +251,9 @@ export const useFoodStore = defineStore('food', () => {
 
   /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
   function reset() {
+    weekRequestId++
+    currentWeekStart.value = householdWeek()
+    loading.value = false
     recipes.value = []
     weekPlan.value = []
   }

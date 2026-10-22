@@ -38,6 +38,14 @@ Typisches Ergebnis: `nginx-proxy-manager_default` oder `<npm-ordner>_default`. T
 NPM_NETWORK=nginx-proxy-manager_default
 ```
 
+Setze zusätzlich `NPM_TRUSTED_PROXY_IP` auf die **exakte IP des NPM-Containers in diesem Netzwerk**. Vergib sie im NPM-Stack statisch, damit ein Container-Neustart die Vertrauensgrenze nicht verschiebt. Die Adresse wird in der Nginx-Konfiguration ausschließlich für diesen Peer verwendet. Ein gesamtes privates oder Docker-Netz ist kein geeigneter Ersatz.
+
+```powershell
+docker network inspect nginx-proxy-manager_default
+```
+
+Das Frontend erreicht die API über ein separates internes Netz; nur seine feste Adresse wird vom Backend als Proxy akzeptiert. Standard: `CASA_PROXY_SUBNET=172.30.0.0/29`, `CASA_FRONTEND_PROXY_IP=172.30.0.3`. Bei einer Überschneidung mit vorhandenen Netzen beide Werte zusammen anpassen. Das Frontend ist nicht mehr im Datenbanknetz. Die API selbst behält ausgehenden Zugriff über ihr Datenbank-/Default-Netz für Push und KI.
+
 ### 1.4 Secrets generieren
 
 **JWT Secret Key** — mindestens 32 Zeichen, kryptographisch zufällig:
@@ -123,7 +131,9 @@ Erstelle in Nginx Proxy Manager einen neuen **Proxy Host** für die Casa-Domain:
 
 > ℹ️ `casa-frontend` ist der `container_name` aus `docker-compose.prod.yml`. NPM löst diesen Namen über das gemeinsame Docker-Netzwerk auf.
 
-**Refresh-Token-Cookie:** Die Anmeldung setzt einen HttpOnly-Cookie `casa_rt` (`Secure`, `SameSite=Strict`, Path `/api/auth`). NPM reicht `Set-Cookie` standardmässig durch — in der „Advanced“-Konfiguration des Proxy Hosts nichts eintragen, das Cookies filtert oder umschreibt (`proxy_hide_header Set-Cookie`, `proxy_cookie_path`, `proxy_cookie_domain`). Weil der Cookie `Secure` ist, muss die App über HTTPS laufen (`ENVIRONMENT=production` in `.env.prod`); für einen reinen HTTP-Test `AUTH_COOKIE_SECURE=false` setzen. Empfohlen: im SSL-Tab zusätzlich **HSTS enabled**.
+**Refresh-Token-Cookie:** Die Anmeldung setzt einen HttpOnly-Cookie `casa_rt` (`Secure`, `SameSite=Strict`, Path `/api/auth`). NPM muss `Set-Cookie` unverändert durchreichen; keine Cookie-Umschreibung oder Filterung konfigurieren. Production Compose erzwingt `ENVIRONMENT=production` und `AUTH_COOKIE_SECURE=true`, und der Backend-Start lehnt eine unsichere Produktionskonfiguration ab. Reine HTTP-Tests gehören in die Entwicklungs-Konfiguration. Empfohlen: im SSL-Tab zusätzlich **HSTS enabled**.
+
+**Proxy-Nachweis beim Betreiber:** In der tatsächlich erzeugten NPM-Konfiguration prüfen, dass `X-Forwarded-For` durch die echte Peer-Adresse ersetzt oder um diese ergänzt wird und `X-Forwarded-Proto` aus der TLS-Verbindung stammt. In `docker network inspect` dürfen keine unkontrollierten Workloads die konfigurierte vertrauenswürdige NPM-Adresse belegen. Das Frontend reicht eine einzelne bereinigte Client-IP weiter und akzeptiert nur `http`/`https` vom konfigurierten Proxy-Peer. Diese Repository-Konfiguration ersetzt keine Prüfung der vorhandenen Installation.
 
 ### 2.1 Echte Client-IP: vertrauenswürdige Proxies
 
@@ -131,22 +141,20 @@ Rate-Limits (Login, KI, …) und Logs brauchen die echte Client-IP. Sie kommt ü
 
 | Stufe | Wer vertraut wem | Variable (`.env.prod`) | Default |
 |---|---|---|---|
-| Frontend-nginx | übernimmt `X-Forwarded-For` nur von NPM | `TRUSTED_PROXY_CIDRS` (Komma-getrennt) | `172.16.0.0/12` |
-| Backend (uvicorn) | übernimmt den Header nur vom Frontend-nginx | `FORWARDED_ALLOW_IPS` | `172.16.0.0/12` |
+| Frontend-nginx | übernimmt `X-Forwarded-For` nur von NPM | `NPM_TRUSTED_PROXY_IP` | Pflichtwert: feste NPM-IP |
+| Backend (uvicorn) | übernimmt den Header nur vom Frontend-nginx | `CASA_FRONTEND_PROXY_IP` setzt `FORWARDED_ALLOW_IPS` | `172.30.0.3` |
 
-Der Default deckt die Docker-Standardpools `172.17.0.0/16`–`172.31.0.0/16` ab. Docker vergibt bei
-vielen Netzen aber auch `192.168.x.0/20`, und eigene `default-address-pools` sind möglich. Prüfen:
+Die tatsächliche NPM-Adresse und das separate Frontend-/Backend-Netz prüfen:
 
 ```powershell
-docker network inspect <NPM_NETWORK> --format "{{range .IPAM.Config}}{{.Subnet}}{{end}}"
-docker network inspect haushalt-app_default --format "{{range .IPAM.Config}}{{.Subnet}}{{end}}"
+docker network inspect <NPM_NETWORK>
+docker network inspect haushalt-app_app_proxy
 ```
 
-Liegt ein Subnetz ausserhalb, in `.env.prod` setzen (z. B. `TRUSTED_PROXY_CIDRS=172.16.0.0/12,192.168.0.0/16`)
-und `up -d` ausführen. Symptom bei falscher Einstellung: alle Nutzer teilen sich ein Rate-Limit
-(Logs zeigen nur die IP von NPM). Nie `0.0.0.0/0` bzw. `*` eintragen — dann kann jeder Client seine
-IP per Header fälschen. `frontend/nginx/30-casa-real-ip.sh` schreibt die Liste beim Start nach
-`/etc/nginx/snippets/real-ip.conf` und bricht bei ungültigen Einträgen ab.
+Bei einer Subnetz-Kollision `CASA_PROXY_SUBNET` und `CASA_FRONTEND_PROXY_IP` gemeinsam ändern.
+Symptom bei falscher NPM-Adresse: Nutzer teilen sich ein Rate-Limit, Logs zeigen nur die Proxy-IP.
+Keine pauschalen CIDRs oder `*` einsetzen. Die Nginx-Vorlage übernimmt ausschließlich
+`NPM_TRUSTED_PROXY_IP`; der bisherige `TRUSTED_PROXY_CIDRS`-Start-Hook wird nicht mehr eingebaut.
 
 ### Architektur-Überblick
 
@@ -160,6 +168,10 @@ Internet → NPM (TLS) → casa-frontend:80 (Nginx)
 ---
 
 ## 3. Update-Prozedur
+
+Für die [UI-/Geschäftslogik-Korrekturen vom 22. Oktober 2026](qa/ui-business-fixes-20261022.md) Frontend und Backend gemeinsam aktualisieren. Diese Änderungen benötigen keine zusätzliche Migration; bestehende Windows-Dateischlüssel werden ohne Datenumschreibung erkannt. Der gemeinsame Release-Zweig enthält weiterhin die Sicherheitsmigration `b4c5d6e7f8a9` für KI-Budgets. Bei einem Update von einem älteren Stand gelten deshalb die Backup- und Migrationshinweise für diese Sicherheitskorrekturen. Nach dem Update Ausgabenbearbeitung mit Versionskonflikt, Verlauf/Nachladen, bestehende Uploads und das Haushaltsdatum prüfen; die lokale Chromium-Abnahme ersetzt diese Betriebsprüfung nicht.
+
+Für die Sicherheitskorrekturen vom 21. Oktober 2026 Frontend und Backend gemeinsam aktualisieren. Vorher `NPM_TRUSTED_PROXY_IP` setzen und das neue interne Proxy-Netz auf Überschneidungen prüfen. Die KI-Budgets benötigen die neue Alembic-Migration; sie läuft beim Backend-Start. Beim ersten Deployment der schlüsselgebundenen Refresh-Hashes werden vorhandene Refresh-Sitzungen einmalig ungültig und Nutzer melden sich erneut an. Es gibt keinen Rückfall auf die früheren ungebundenen SHA-256-Hashes. Für bereits installierte Scriptable-Widgets die neue Skriptvorlage übernehmen.
 
 ```powershell
 cd C:\path\to\haushalt-app
@@ -253,18 +265,19 @@ Ein Dump gehört zu dem Code-Stand, mit dem er erstellt wurde. Rollback bedeutet
 
 Das Skript (CASA-07):
 
+- validiert das Upload-Archiv und bereitet seine Dateien separat vor,
 - stoppt das Backend (keine Schreibzugriffe während des Restores),
-- spielt den Dump in eine **frische** Datenbank `haushalt_restore` ein —
+- spielt den Dump in eine **frische** Datenbank mit eindeutigem Restore-Namen ein —
   `pg_restore --single-transaction --exit-on-error`: jeder Fehler bricht ab, die Produktions-DB
   bleibt dann unverändert,
-- tauscht erst danach: `haushalt` → `haushalt_before_restore_<Zeitstempel>`, `haushalt_restore` → `haushalt`,
+- tauscht erst danach: `haushalt` → `haushalt_before_restore_<Zeitstempel>`, Restore-Datenbank → `haushalt`,
 - stellt das Uploads-Archiv mit gleichem Zeitstempel wieder her (Hilfscontainer mit dem Upload-Volume),
-- startet das Backend (`alembic upgrade head`) und wartet auf `/api/health`.
+- startet ein zuvor laufendes Backend (`alembic upgrade head`) und wartet auf `/api/health`.
 
-Jeder Fehler beendet das Skript mit Exit-Code 1 und startet das Backend wieder. Die vorherige
+Jeder Fehler beendet das Skript mit Exit-Code 1. Vor dem DB-Tausch kann das zuvor laufende Backend mit der ursprünglichen DB wieder starten. Nach dem Tausch bleibt es bei Fehlern angehalten. Die vorherige
 Datenbank bleibt als `haushalt_before_restore_<Zeitstempel>` liegen (Rückweg, falls der falsche
 Dump erwischt wurde); nach der Prüfung löschen (der Befehl steht in der Ausgabe) oder gleich
-`-DropOld` angeben. Ohne Rückfrage (Automatisierung): `-Yes`.
+`-DropOld` angeben (Löschung erst nach erfolgreichem Abschluss). Ohne Rückfrage (Automatisierung): `-Yes`.
 
 Ist der Code **neuer** als der Dump, migriert das Backend den wiederhergestellten Stand beim
 Start nach vorne — das ist der normale Weg nach Datenverlust (Dump von gestern + heutiger Code).
@@ -278,6 +291,20 @@ Start nach vorne — das ist der normale Weg nach Datenverlust (Dump von gestern
 `alembic upgrade head`; Gegenprobe mit kaputtem Dump). Läuft in CI im Job `backend-postgres`.
 Lokal: `PG_ADMIN_URL=postgresql://user:pw@localhost:5432/postgres scripts/restore-drill.sh`.
 Auf Linux-Hosts gibt es `scripts/restore-db.sh` mit derselben Logik wie `restore-db.ps1`.
+
+Das Restore-Skript benötigt das aktuelle Backend-Image mit `scripts/restore_uploads.py`. Es prüft das Upload-Archiv vor jeder Änderung an SQL oder vorhandenen Uploads und entpackt es zunächst in einen separaten Bereich des Upload-Volumes. Erlaubt sind nur reguläre Dateien und Verzeichnisse unter `uploads/`; Links, Geräte, Traversal-Pfade und doppelte Einträge werden abgelehnt. Standardgrenzen: 100.000 Einträge und 20 GiB entpackte Daten; zusätzlich muss genügend freier Speicher für die neue Kopie vorhanden sein. Größere Archive erst mit bewusst angepassten Grenzen vorbereiten.
+
+Vor dem SQL-Restore wird das Backend angehalten. `pg_restore` läuft mit `--single-transaction --exit-on-error`; bei Fehlern vor dem DB-Tausch werden Uploads nicht ersetzt und ein zuvor laufender Dienst kann mit der ursprünglichen DB wieder starten. Erst nach erfolgreicher Datenbank- und Upload-Wiederherstellung wird ein vorher laufendes Backend gestartet. Ein Fehler beim Upload-Tausch erhält den vorbereiteten Bereich mit der ausgegebenen Staging-ID; die Datenbank kann dann bereits den neuen Stand haben. In diesem Zustand den Dienst nicht starten, bis Dateibestand und Datenbank wieder zusammenpassen. Eine Wiederaufnahme verwendet ausschließlich diese geprüfte Staging-ID. Das ersetzt keine gemeinsame Transaktion über SQL und Dateisystem.
+
+Nach einem fehlgeschlagenen Upload-Tausch und bereits erfolgreichem SQL-Restore den **Helper** mit der ausgegebenen Staging-ID wiederaufnehmen, nicht das gesamte PowerShell-Skript (damit Datenbank und Uploads nicht erneut vorbereitet und getauscht werden):
+
+```powershell
+docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm --no-deps --entrypoint python backend /app/scripts/restore_uploads.py apply <staging-id>
+# Erst nach erfolgreichem Helper und geprüftem gemeinsamen Stand:
+docker compose -f docker-compose.prod.yml --env-file .env.prod start backend
+```
+
+Ist schon der SQL-Restore fehlgeschlagen, wurde dessen Transaktion zurückgerollt: vorhandene Uploads nicht durch den Helper ersetzen. Den Fehler beheben und den Datenbank-/Dateistand prüfen. Nichtleere Rückstände in `previous/` bedeuten einen unvollständigen Dateitausch und müssen vor einer Wiederaufnahme gezielt abgeglichen werden. Parallele Compose-Projekte benötigen unterschiedliche interne Proxy-Subnetze; für Test-Restores eigene Werte setzen.
 
 ---
 
@@ -341,16 +368,18 @@ Ablauf und Voraussetzungen (passender Code-Stand!) siehe Abschnitt 4.2. Liegt ne
 
 ### 6.3 Restore in Throwaway-Projekt (zum Testen)
 
-Stellt den Dump in einem separaten Compose-Projekt wieder her, ohne die Produktionsdatenbank zu berühren:
+`-ProjectName` allein isoliert die Produktionskonfiguration nicht ausreichend: `docker-compose.prod.yml` enthält feste Containernamen und ein festes Proxy-Subnetz. Für einen parallelen Restore-Test zuerst eine separate Compose-Datei und Test-Umgebung vorbereiten: eigene Containernamen (oder projektbezogene Standardnamen), eigene Volumes, kollisionsfreie Ports/Subnetze und keine Verbindung zum produktiven NPM-Netz. Keine Produktions-Zugangsdaten oder echten Provider-Schlüssel übernehmen.
+
+Die folgenden Befehle setzen diese separat vorbereiteten Dateien und bereits gestarteten Test-Container voraus:
 
 ```powershell
-.\scripts\restore-db.ps1 .\backups\casa-backup-YYYY-MM-DD_HH-mm.dump -ComposeFile docker-compose.prod.yml -EnvFile .env.prod -ProjectName casa_test
+.\scripts\restore-db.ps1 .\backups\casa-backup-YYYY-MM-DD_HH-mm.dump -ComposeFile docker-compose.test.yml -EnvFile .env.test -ProjectName casa_test
 ```
 
 Nach der Prüfung das Test-Projekt wieder aufräumen:
 
 ```powershell
-docker compose -f docker-compose.prod.yml --env-file .env.prod --project-name casa_test down -v
+docker compose -f docker-compose.test.yml --env-file .env.test --project-name casa_test down -v
 ```
 
 ### 6.4 Nightly Backup via Windows Task Scheduler

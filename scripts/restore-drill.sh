@@ -93,8 +93,12 @@ if "$ROOT/scripts/restore-db.sh" --database-url "$DB_URL" --yes --drop-old "$WOR
 fi
 snapshot >"$WORK/after_broken.txt"
 diff -u "$WORK/after_update.txt" "$WORK/after_broken.txt" || fail "DB nach fehlgeschlagenem Restore verändert"
-[[ -z "$(psql "$PG_ADMIN_URL" -X -At -c "SELECT 1 FROM pg_database WHERE datname = '${DB}_restore'")" ]] \
-    || fail "Temporäre ${DB}_restore nach Fehler nicht aufgeräumt"
+broken_restore_db="$(sed -n 's/^-> Create isolated restore database \(casa_restore_[0-9a-f]*\) \.\.\.$/\1/p' "$WORK/broken.log")"
+[[ "$broken_restore_db" =~ ^casa_restore_[0-9a-f]{32}$ ]] \
+    || fail "Failed restore did not identify exactly one isolated database"
+remaining_restore_db="$(psql "$PG_ADMIN_URL" -X -v ON_ERROR_STOP=1 -At -c "SELECT 1 FROM pg_database WHERE datname = '$broken_restore_db'")"
+[[ -z "$remaining_restore_db" ]] \
+    || fail "Temporary $broken_restore_db was not removed after failure"
 echo "   ok (Exit-Code != 0, Daten unverändert)"
 
 echo "== 5. Restore des Backups"

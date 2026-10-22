@@ -116,6 +116,8 @@ async def _custom_rate_limit_handler(request: Request, exc: RateLimitExceeded) -
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup-Checks und Event-Loop für sync→async Bridge setzen."""
+    if settings.environment == "production" and not settings.refresh_cookie_secure:
+        raise RuntimeError("Production requires secure refresh cookies and HTTPS.")
     # JWT Secret Validierung
     if is_insecure_jwt_secret(settings.jwt_secret_key):
         raise RuntimeError(
@@ -194,7 +196,7 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language", "X-Requested-With"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language", "X-Requested-With", "If-Match"],
 )
 # Zuletzt hinzugefügt = äusserste Middleware → Header auch auf CORS-Preflights
 app.add_middleware(SecurityHeadersMiddleware)

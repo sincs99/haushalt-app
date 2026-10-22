@@ -231,7 +231,7 @@ def update_user(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=error_detail(ErrorCode.CANNOT_DEACTIVATE_SELF, "You cannot change your own account here"),
         )
-    user = db.get(User, user_id)
+    user = db.get(User, user_id, with_for_update=True, populate_existing=True)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

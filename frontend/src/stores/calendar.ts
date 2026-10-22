@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -41,8 +42,8 @@ function addDays(dateStr: string, days: number): string {
 
 export const useCalendarStore = defineStore('calendar', () => {
   // Repositories
-  const repo = createOnlineCalendarRepository()
-  const householdRepo = createOnlineHouseholdsRepository()
+  const repo = scopeRepository(createOnlineCalendarRepository())
+  const householdRepo = scopeRepository(createOnlineHouseholdsRepository())
 
   // State — Events
   const events = ref<CalendarEvent[]>([])
@@ -69,6 +70,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   // ── Calendar Actions ──
 
   async function fetchCalendars() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -79,6 +81,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function addCalendar(payload: CalendarCreatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -98,6 +101,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     try {
       const serverCal = await repo.createCalendar(householdId, payload)
       // Duplikat-Prüfung: Socket könnte schneller gewesen sein
+      assertDataGeneration(actionGeneration)
       const serverIdx = calendars.value.findIndex(c => c.id === serverCal.id)
       const tempIdx = calendars.value.findIndex(c => c.id === tempId)
 
@@ -107,12 +111,15 @@ export const useCalendarStore = defineStore('calendar', () => {
         calendars.value[tempIdx] = serverCal
       }
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       calendars.value = calendars.value.filter(c => c.id !== tempId)
       throw error
     }
   }
 
   async function updateCalendar(calendarId: string, payload: CalendarUpdatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -128,13 +135,17 @@ export const useCalendarStore = defineStore('calendar', () => {
 
     try {
       await repo.updateCalendar(householdId, calendarId, payload)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       Object.assign(item, snapshot)
       throw error
     }
   }
 
   async function deleteCalendar(calendarId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -148,7 +159,10 @@ export const useCalendarStore = defineStore('calendar', () => {
 
     try {
       await repo.deleteCalendar(householdId, calendarId)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       calendars.value.splice(idx, 0, removed)
       throw error
     }
@@ -179,6 +193,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   // ── Event Actions ──
 
   async function fetchEvents(fromDate?: string, toDate?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -197,6 +212,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function fetchMembers() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -207,6 +223,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function addEvent(payload: CalendarEventCreatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -234,6 +251,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       const serverEvent = await repo.create(householdId, payload)
 
       // 3. Defensive Duplikat-Prüfung: Socket könnte schneller gewesen sein
+      assertDataGeneration(actionGeneration)
       const serverIdx = events.value.findIndex(e => e.id === serverEvent.id)
       const tempIdx = events.value.findIndex(e => e.id === tempId)
 
@@ -245,6 +263,8 @@ export const useCalendarStore = defineStore('calendar', () => {
         events.value[tempIdx] = serverEvent
       }
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 4. Rollback bei Fehler
       events.value = events.value.filter(e => e.id !== tempId)
       throw error
@@ -252,6 +272,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function updateEvent(eventId: string, payload: CalendarEventUpdatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -268,7 +289,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     try {
       // 3. Server-Call
       await repo.update(householdId, eventId, payload)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 4. Rollback auf Snapshot
       Object.assign(item, snapshot)
       throw error
@@ -276,6 +300,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function deleteEvent(eventId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -291,7 +316,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     try {
       // 3. Server-Call
       await repo.remove(householdId, eventId)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 4. Rollback: Item wieder einfügen an gleicher Position
       events.value.splice(itemIndex, 0, removedItem)
       throw error
@@ -300,7 +328,7 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   function navigateWeek(offset: number) {
     currentWeekStart.value = addDays(currentWeekStart.value, offset * 7)
-    fetchEvents()
+    fetchEvents().catch(() => {})
   }
 
   // ── Event Socket-Handler — Idempotente Merges (Server gewinnt immer) ──
@@ -330,6 +358,7 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
   function reset() {
+    loading.value = false
     events.value = []
     members.value = []
     calendars.value = []

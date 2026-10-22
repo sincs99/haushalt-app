@@ -23,10 +23,9 @@ USER app
 #   Prozesse weder dieselben Zähler noch dieselben Socket-Räume.
 # --proxy-headers: X-Forwarded-For wird zu request.client.host (für Rate-Limiting).
 #   Das Frontend-nginx setzt X-Forwarded-For auf genau die echte Client-IP.
-# --forwarded-allow-ips: nur dem Docker-Netz (Frontend-nginx) vertrauen, nicht '*' —
-#   sonst könnte jeder, der Port 8000 direkt erreicht, seine IP per Header fälschen.
-#   Bei anderen Docker-Adress-Pools FORWARDED_ALLOW_IPS setzen.
+# --forwarded-allow-ips: Production Compose setzt ausschließlich die feste Adresse
+# des Frontend-Proxys im dedizierten Netz. Kein pauschales Vertrauen in Docker-Netze.
 # exec: uvicorn ersetzt die Shell und erhält SIGTERM direkt (sauberer Shutdown)
-ENV FORWARDED_ALLOW_IPS=172.16.0.0/12
+ENV FORWARDED_ALLOW_IPS=127.0.0.1
 ENV UVICORN_WORKERS=1
 CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers \"$UVICORN_WORKERS\" --proxy-headers --forwarded-allow-ips=\"$FORWARDED_ALLOW_IPS\""]

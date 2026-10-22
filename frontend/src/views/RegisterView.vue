@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { internalRedirect } from '../utils/internalRedirect'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
@@ -34,7 +35,7 @@ const formRef = ref<HTMLFormElement | null>(null)
 /** Nur interne Pfade als Weiterleitung akzeptieren (kein Open Redirect) */
 const redirect = computed(() => {
   const value = route.query.redirect
-  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : undefined
+  return internalRedirect(value)
 })
 // ?redirect beim Wechsel zum Login mitnehmen (z. B. Tag-Scan)
 const loginLink = computed(() => ({ path: '/login', query: redirect.value ? { redirect: redirect.value } : {} }))

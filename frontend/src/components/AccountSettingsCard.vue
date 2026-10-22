@@ -9,6 +9,7 @@ import BaseInput from './ui/BaseInput.vue'
 import { PASSWORD_MIN_LENGTH, useAuthStore } from '../stores/auth'
 import { accountRepository } from '../repositories/accountRepository'
 import { errorText, useToast } from '../composables/useToast'
+import { assertSessionGeneration, currentSessionGeneration } from '../services/sessionScope'
 
 /**
  * Konto: Passwort ändern und Konto löschen. Beides verlangt das aktuelle Passwort.
@@ -50,16 +51,18 @@ function openPasswordDialog() {
 }
 
 async function submitPassword() {
+  const generation = currentSessionGeneration()
   passwordSubmitted.value = true
   passwordError.value = ''
   if (currentPasswordError.value || newPasswordError.value || repeatError.value) return
   passwordLoading.value = true
   try {
-    const tokens = await accountRepository.changePassword(currentPassword.value, newPassword.value)
-    authStore.applyTokenResponse(tokens)
+    await accountRepository.changePassword(currentPassword.value, newPassword.value)
+    assertSessionGeneration(generation)
     passwordDialogOpen.value = false
     notifySuccess(t('account.passwordChanged'))
   } catch (err) {
+    if (generation !== currentSessionGeneration()) return
     passwordError.value = errorText(t('account.passwordChangeFailed'), err)
   } finally {
     passwordLoading.value = false
@@ -84,17 +87,20 @@ function openDeleteDialog() {
 }
 
 async function submitDelete() {
+  const generation = currentSessionGeneration()
   deleteSubmitted.value = true
   deleteError.value = ''
   if (deletePasswordError.value) return
   deleteLoading.value = true
   try {
     await accountRepository.deleteAccount(deletePassword.value)
+    assertSessionGeneration(generation)
     deleteDialogOpen.value = false
     notifySuccess(t('account.deleted'))
     // Backend hat alle Sitzungen widerrufen; lokalen Zustand verwerfen und zur Anmeldung
     await authStore.logout({ reason: 'user' })
   } catch (err) {
+    if (generation !== currentSessionGeneration()) return
     deleteError.value = errorText(t('account.deleteFailed'), err)
   } finally {
     deleteLoading.value = false

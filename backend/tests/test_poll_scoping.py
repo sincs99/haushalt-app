@@ -8,6 +8,8 @@ Zusätzlich: Vote-Wechsel und Decide-Flow.
 
 import uuid
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Positiv: User A liest eigene Polls → 200
 # ---------------------------------------------------------------------------
@@ -235,3 +237,45 @@ def test_decide_emits_full_event_payload(client, household_a, token_a, poll_a, c
     # Zeiten wie bei POST /events: in Haushaltszeit mit Offset
     assert event["starts_at"].endswith(("+01:00", "+02:00"))
     assert event["ends_at"] is None
+
+
+@pytest.mark.parametrize("recipe_kind", ["own", "foreign", "missing"])
+def test_event_poll_rejects_recipe_references_without_existence_oracle(
+    client, household_a, token_a, recipe_a, recipe_b, recipe_kind
+):
+    recipe_id = {"own": recipe_a.id, "foreign": recipe_b.id, "missing": uuid.uuid4()}[recipe_kind]
+    response = client.post(
+        f"/api/households/{household_a.id}/polls/",
+        headers={"Authorization": f"Bearer {token_a}"},
+        json={"question": "Meet?", "poll_type": "event", "options": [
+            {"label": "One", "recipe_id": str(recipe_id)}, {"label": "Two"},
+        ]},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "POLL_OPTION_INVALID", "message": "recipe_id is only supported for meal polls",
+    }
+
+
+def test_legacy_event_recipe_hidden_on_list_detail_and_socket(
+    client, db, household_a, token_a, poll_a, recipe_b, _mock_socket_emit
+):
+    option = poll_a.options[0]
+    option.recipe_id = recipe_b.id  # Pre-fix invalid data, deliberately bypass API.
+    db.commit()
+    headers = {"Authorization": f"Bearer {token_a}"}
+    url = f"/api/households/{household_a.id}/polls/"
+    detail = client.get(url + str(poll_a.id), headers=headers).json()
+    listing = client.get(url, headers=headers).json()
+    assert all(opt["recipe_id"] is None for opt in detail["options"])
+    assert all(opt["recipe_id"] is None for poll in listing for opt in poll["options"])
+    voted = client.post(url + f"{poll_a.id}/vote", headers=headers, json={"option_id": str(option.id)})
+    assert voted.status_code == 200
+    assert all(opt["recipe_id"] is None for opt in voted.json()["options"])
+    payloads = [call.args[2] for call in _mock_socket_emit.call_args_list if call.args[1] == "poll_voted"]
+    assert payloads
+    assert all(opt["recipe_id"] is None for payload in payloads for opt in payload["options"])
+    db.delete(recipe_b)
+    db.commit()
+    after_delete = client.get(url + str(poll_a.id), headers=headers).json()
+    assert [opt["recipe_id"] for opt in after_delete["options"]] == [opt["recipe_id"] for opt in detail["options"]]

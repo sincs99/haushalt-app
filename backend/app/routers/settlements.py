@@ -135,7 +135,7 @@ def list_settlements(
 ):
     q = db.query(Settlement).filter(Settlement.household_id == household_id)
     if deleted:
-        q = q.filter(Settlement.deleted_at.isnot(None)).order_by(Settlement.deleted_at.desc())
+        q = q.filter(Settlement.deleted_at.isnot(None)).order_by(Settlement.deleted_at.desc(), Settlement.id.desc())
     else:
         q = q.filter(Settlement.deleted_at.is_(None)).order_by(
             Settlement.settled_date.desc(), Settlement.created_at.desc(), Settlement.id

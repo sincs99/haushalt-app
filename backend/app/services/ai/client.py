@@ -30,6 +30,7 @@ from app.services.ai.errors import (
     AiBusy,
     AiInvalidOutput,
     AiNotConfigured,
+    AiNotDispatched,
     AiRefused,
     AiUnavailable,
     AiUsageInfo,
@@ -39,9 +40,9 @@ logger = logging.getLogger(__name__)
 
 MODEL = "claude-opus-5-5"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
-# Das SDK wiederholt 408/409/429/5xx und Verbindungsfehler selbst — einmal reicht,
-# sonst wartet der Nutzer bis zu timeout × (max_retries + 1)
-MAX_RETRIES = 1
+# An uncertain outcome may already have consumed provider resources. One local
+# reservation authorizes one attempt; retries must reserve their own budget.
+MAX_RETRIES = 0
 
 Effort = Literal["low", "medium", "high"]
 T = TypeVar("T", bound=BaseModel)
@@ -80,7 +81,7 @@ def call_structured(
     """Ein Request, Antwort validiert als ``output_model``. Wirft nur ``AiError``-Unterklassen."""
     client = get_client()
     if not _slots.acquire(blocking=False):
-        raise AiBusy("Too many concurrent AI requests")
+        raise AiNotDispatched("Too many concurrent AI requests")
     try:
         response = client.beta.messages.parse(
             model=MODEL,

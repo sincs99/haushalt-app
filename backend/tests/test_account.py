@@ -249,6 +249,22 @@ def test_change_password_web_client_gets_cookie(client, db, user_a, token_a):
     assert "casa_rt=" in resp.headers.get("set-cookie", "")
 
 
+def test_changed_password_token_pair_is_committed_before_response(client, db, user_a, token_a):
+    response = client.put(
+        "/api/account/password",
+        json={"current_password": "password123", "new_password": "newpassword9"},
+        headers=_auth(token_a),
+    )
+    assert response.status_code == 200
+    # Production closes the request session. No uncommitted new token may rely
+    # on the shared test session surviving until the following request.
+    db.rollback()
+    refreshed = client.post("/api/auth/refresh", json={
+        "refresh_token": response.json()["refresh_token"],
+    })
+    assert refreshed.status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # Konto löschen
 # ---------------------------------------------------------------------------

@@ -956,6 +956,19 @@ class TestShoppingListOpen:
 
 
 class TestTodoDone:
+    def test_legacy_foreign_assignee_name_is_not_resolved(
+        self, client, db, household_a, token_a, todo_a, user_b, user_a
+    ):
+        tag = _make_tag(db, household_a, "todo.done", "todo", todo_a.id)
+        todo_a.assignee_ids = [user_b.id]
+        db.commit()
+        foreign = _resolve(client, token_a, tag)
+        assert foreign.status_code == 200
+        assert foreign.json()["details"]["assigned_user_name"] is None
+        todo_a.assignee_ids = [user_a.id]
+        db.commit()
+        assert _resolve(client, token_a, tag).json()["details"]["assigned_user_name"] == user_a.display_name
+
     def test_resolve_and_execute(self, client, db, household_a, token_a2, todo_a, _mock_socket_emit):
         # Ausführen dürfen alle Mitglieder, nicht nur Admins
         tag = _make_tag(db, household_a, "todo.done", "todo", todo_a.id)

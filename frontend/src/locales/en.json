@@ -360,7 +360,9 @@
     "submitError": "An error occurred",
     "customSplit": {
       "allocated": "Allocated",
-      "mismatch": "Sum doesn't match"
+      "mismatch": "Sum doesn't match",
+      "invalidShare": "Enter a valid share of 0 or more, with up to two decimal places.",
+      "zeroHint": "Blank fields and 0 mean no share of the cost."
     },
     "balance": {
       "title": "Balance",
@@ -389,6 +391,16 @@
     "deleteRetroTitle": "Already settled",
     "deleteAnyway": "Delete anyway",
     "conflictReloaded": "{name} changed this expense in the meantime. The current values have been loaded – please check them and save again.",
+    "discardTitle": "Discard changes?",
+    "discardMessage": "Your unsaved entries will be lost.",
+    "discard": "Discard",
+    "keepEditing": "Keep editing",
+    "conflictPreserved": "{name} changed this expense in the meantime. Your entries are preserved. Compare them with the latest version and choose how to continue.",
+    "conflictLatest": "Latest saved version",
+    "conflictOverwriteHint": "“Keep my changes” preserves fields you edited and updates unchanged fields. On your next save, your edits replace conflicting changes to the same fields.",
+    "conflictKeepMine": "Keep my changes",
+    "conflictUseLatest": "Load latest version",
+    "conflictRefreshFailed": "This expense has changed. Your entries are preserved, but the latest version could not be loaded. Please try again.",
     "deletedMeanwhile": "This expense has been deleted in the meantime.",
     "createdBy": "Added by {name}",
     "updatedBy": "Last changed by {name}",
@@ -405,6 +417,7 @@
       "restored": "Restored",
       "restoreError": "Could not be restored.",
       "loadError": "History could not be loaded.",
+      "loadMore": "Load more entries",
       "settlementName": "Payment {from} → {to}"
     }
   },
@@ -655,7 +668,7 @@
     "CONFLICT_RETRY": "Someone changed this at the same time – please try again",
     "AI_NOT_CONFIGURED": "The AI assistant is not set up on this server",
     "AI_NOT_ENABLED": "The AI assistant is not turned on for this household",
-    "AI_DAILY_LIMIT_REACHED": "This household has reached its daily limit of AI requests – try again tomorrow",
+    "AI_DAILY_LIMIT_REACHED": "The daily AI request budget has been reached – try again tomorrow",
     "AI_USER_DAILY_LIMIT_REACHED": "You have reached your personal daily limit of AI requests – try again tomorrow",
     "AI_REFUSED": "The AI declined this request. Please rephrase it.",
     "AI_INVALID_OUTPUT": "The AI did not return a usable answer – please try again",
@@ -823,7 +836,7 @@
     "deleted": "Cat deleted",
     "deleteConfirm": "Really delete this cat?",
     "deleteHint": "All feeding data will be lost.",
-    "feedingWidget": "{fed} of {total} fed",
+    "feedingWidget": "{fed} of {total} feedings completed",
     "emptyState": "No cats yet",
     "emptyStateHint": "Add your first cat",
     "createError": "Error creating",

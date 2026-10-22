@@ -1,6 +1,7 @@
 import { ref, readonly } from 'vue'
 import i18n from '../i18n'
 import { translateApiError } from '../utils/apiErrors'
+import { currentDataGeneration, assertDataGeneration, isScopeChanged } from '../services/sessionScope'
 
 export interface ToastAction {
   label: string
@@ -53,6 +54,13 @@ function dismissToast(id: number) {
     timers.delete(id)
   }
   toasts.value = toasts.value.filter((t) => t.id !== id)
+}
+
+/** Undo callbacks may contain private snapshots and must not cross an account boundary. */
+export function clearToasts(): void {
+  for (const timer of timers.values()) clearTimeout(timer)
+  timers.clear()
+  toasts.value = []
 }
 
 /** Kurze Erfolgsmeldung für Aktionen, deren Ergebnis nicht direkt sichtbar ist. */
@@ -109,6 +117,7 @@ function notifyUndoable(
   undo: () => unknown | Promise<unknown>,
   options: UndoOptions = {},
 ) {
+  const generation = currentDataGeneration()
   const t = i18n.global.t
   let used = false
   return showToast(text, 'success', undefined, {
@@ -117,11 +126,13 @@ function notifyUndoable(
       if (used) return
       used = true
       Promise.resolve()
-        .then(() => undo())
+        .then(() => { assertDataGeneration(generation); return undo() })
         .then(() => {
+          assertDataGeneration(generation)
           if (options.undoneText) showToast(options.undoneText, 'info')
         })
         .catch((err) => {
+          if (isScopeChanged(err)) return
           notifyError(options.undoErrorText ?? t('common.undoError'), err)
         })
     },

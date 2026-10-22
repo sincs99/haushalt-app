@@ -86,6 +86,10 @@ def _require_mail() -> None:
 
 
 def _revoke_all_sessions(db: Session, user_id: uuid.UUID) -> None:
+    # Same User -> RefreshToken order as login/refresh/logout, before any flush
+    # of a pending password/account change can interleave with token issuance.
+    with db.no_autoflush:
+        db.query(User.id).filter(User.id == user_id).with_for_update().one()
     db.query(RefreshToken).filter(
         RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None)
     ).update({"revoked_at": datetime.now(timezone.utc)}, synchronize_session=False)
@@ -213,6 +217,7 @@ def change_password(
     db: Session = Depends(get_db),
 ):
     """Passwort ändern. Alle anderen Geräte werden abgemeldet; der Aufrufer erhält ein neues Token-Paar."""
+    current_user = db.get(User, current_user.id, with_for_update=True, populate_existing=True)
     if not verify_password(data.current_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -220,6 +225,7 @@ def change_password(
         )
     current_user.password_hash = hash_password(data.new_password)
     _revoke_all_sessions(db, current_user.id)
+    pair, _ = _create_token_pair(str(current_user.id), db)
     db.commit()
     disconnect_user_sync(current_user.id, "revoked")
     if settings.mail_enabled:
@@ -227,7 +233,6 @@ def change_password(
             send_mail,
             password_changed_mail(current_user.email, current_user.display_name, request_language(request)),
         )
-    pair, _ = _create_token_pair(str(current_user.id), db)
     return _deliver(pair, request, response)
 
 

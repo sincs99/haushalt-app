@@ -12,6 +12,7 @@ import { useAsyncAction } from '../composables/useAsyncAction'
 import { useLoader } from '../composables/useLoader'
 import { waitForOverlayBack } from '../composables/useBackClose'
 import { formatRappen } from '../utils/money'
+import { addCalendarDays, householdDateString } from '../utils/dates'
 import type { Recipe, MealPlanEntry, EventPoll, PollOption } from '../types'
 import {
   PhCaretLeft, PhCaretRight, PhStar, PhShoppingBagOpen, PhForkKnife, PhPlus, PhTrash,
@@ -97,37 +98,26 @@ function handleReconnect() {
 }
 
 // Haushaltswechsel: Daten des neuen Haushalts laden (App.vue hat den Store geleert)
-watch(() => authStore.currentHouseholdId, (id) => {
-  if (!id) return
+watch(() => [authStore.currentHouseholdId, authStore.currentHousehold?.timezone], () => {
+  if (!authStore.currentHouseholdId) return
   retryLoad()
 })
 
 // ── Kalenderwoche berechnen ──
 function getISOWeek(dateStr: string): number {
-  const d = new Date(dateStr + 'T00:00:00')
-  d.setHours(0, 0, 0, 0)
-  // Donnerstag der gleichen Woche
-  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7))
-  const yearStart = new Date(d.getFullYear(), 0, 1)
+  const d = new Date(dateStr + 'T00:00:00Z')
+  // Thursday determines the ISO week-year; UTC keeps date arithmetic independent of DST.
+  d.setUTCDate(d.getUTCDate() + 3 - ((d.getUTCDay() + 6) % 7))
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
   return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
 }
 
 const currentWeekNumber = computed(() => getISOWeek(foodStore.currentWeekStart))
 
 // ── Wochentage als Array von Datums-Strings ──
-const weekDates = computed(() => {
-  const start = new Date(foodStore.currentWeekStart + 'T00:00:00')
-  const dates: string[] = []
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(start)
-    d.setDate(start.getDate() + i)
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    dates.push(`${y}-${m}-${day}`)
-  }
-  return dates
-})
+const weekDates = computed(() => Array.from({ length: 7 }, (_, index) =>
+  addCalendarDays(foodStore.currentWeekStart, index),
+))
 
 // ── Wochentag-Kürzel (sprachabhängig) ──
 function getWeekdayLabel(dateStr: string): string {
@@ -137,12 +127,18 @@ function getWeekdayLabel(dateStr: string): string {
 }
 
 // ── Heute (YYYY-MM-DD) ──
-const todayStr = computed(() => {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  const d = String(now.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+const todayTick = ref(Date.now())
+const todayStr = computed(() => householdDateString(authStore.currentHousehold?.timezone, new Date(todayTick.value)))
+let todayTimer: ReturnType<typeof setInterval> | undefined
+function refreshToday() { todayTick.value = Date.now() }
+onMounted(() => {
+  refreshToday()
+  todayTimer = setInterval(refreshToday, 30_000)
+  document.addEventListener('visibilitychange', refreshToday)
+})
+onUnmounted(() => {
+  clearInterval(todayTimer)
+  document.removeEventListener('visibilitychange', refreshToday)
 })
 
 // ── Hilfsfunktion: MealPlanEntry für ein Datum finden ──
@@ -421,6 +417,7 @@ const newPollOptions = ref<Array<{ label: string; recipe_id?: string }>>([
 
 function openCreateMealPoll() {
   newPollQuestion.value = t('food.pollQuestionDefault')
+  refreshToday()
   newPollDate.value = todayStr.value
   newPollOptions.value = [{ label: '' }, { label: '' }]
   showCreateMealPoll.value = true
@@ -1108,6 +1105,8 @@ async function doCreateMealPoll() {
 /* ── Dialog Actions ── */
 .dialog-actions {
   display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
   align-items: center;
   gap: var(--space-2);
   width: 100%;

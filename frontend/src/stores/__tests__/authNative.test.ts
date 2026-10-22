@@ -4,7 +4,7 @@
  */
 import type {} from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { createMemoryStorage } from './helpers'
+import { createMemoryStorage, deferred } from './helpers'
 
 const { axiosPost, api, router } = vi.hoisted(() => ({
   axiosPost: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock('../../api/client', () => ({
   // Wie api/client.ts im nativen Modus: kein CSRF-Header, keine Cookies
   authRequestConfig: (extra: Record<string, string> = {}) => ({ headers: { ...extra } }),
 }))
-vi.mock('../../composables/useToast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
+vi.mock('../../composables/useToast', () => ({ clearToasts: vi.fn(), useToast: () => ({ showToast: vi.fn() }) }))
 vi.mock('../../i18n', () => ({ default: { global: { t: (key: string) => key } } }))
 vi.mock('../../router', () => ({ default: router }))
 vi.mock('../../services/pushService', () => ({ disablePush: vi.fn() }))
@@ -44,8 +44,34 @@ beforeEach(() => {
 })
 
 describe('Auth-Store (native App)', () => {
+  it('serializes a delayed native token write before logout revocation and removal', async () => {
+    const writing = deferred<void>()
+    let saved: string | null = null
+    const storage = {
+      get: vi.fn(async () => ({ value: saved })),
+      set: vi.fn(async ({ value }: { value: string }) => { await writing.promise; saved = value }),
+      remove: vi.fn(async () => { saved = null }),
+    }
+    vi.stubGlobal('window', { addEventListener: vi.fn(), Capacitor: { Plugins: { SecureStorage: storage } } })
+    axiosPost.mockResolvedValueOnce({ data: { access_token: 'acc', refresh_token: 'rt-late', expires_in: 900 } })
+    axiosPost.mockResolvedValueOnce({})
+    const store = useAuthStore()
+    const login = store.login('a@example.com', 'secret')
+    const cancelled = expect(login).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+    await vi.waitFor(() => expect(storage.set).toHaveBeenCalled())
+    const logout = store.logout({ reason: 'user' })
+    expect(store.isAuthenticated).toBe(false)
+    writing.resolve()
+    await cancelled
+    await logout
+    expect(axiosPost).toHaveBeenLastCalledWith('http://api.test/api/auth/logout', { refresh_token: 'rt-late' }, { headers: {} })
+    expect(saved).toBeNull()
+    expect(store.token).toBeNull()
+    expect(api.get).not.toHaveBeenCalled()
+  })
+
   it('speichert den Refresh-Token aus dem Login-Body im Geräte-Speicher', async () => {
-    api.post.mockResolvedValue({ data: { access_token: 'acc', refresh_token: 'rt-1', expires_in: 900 } })
+    axiosPost.mockResolvedValue({ data: { access_token: 'acc', refresh_token: 'rt-1', expires_in: 900 } })
     api.get.mockResolvedValue(me)
     const store = useAuthStore()
     await store.login('a@example.com', 'secret')

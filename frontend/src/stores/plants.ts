@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -39,8 +40,8 @@ function refreshFlags(item: PlantCareStatus) {
 }
 
 export const usePlantsStore = defineStore('plants', () => {
-  const repo = createOnlinePlantsRepository()
-  const householdRepo = createOnlineHouseholdsRepository()
+  const repo = scopeRepository(createOnlinePlantsRepository())
+  const householdRepo = scopeRepository(createOnlineHouseholdsRepository())
 
   // State
   const plants = ref<Plant[]>([])
@@ -112,6 +113,7 @@ export const usePlantsStore = defineStore('plants', () => {
   // ── Plant Actions ──
 
   async function fetchPlants() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -120,13 +122,16 @@ export const usePlantsStore = defineStore('plants', () => {
     loading.value = true
     try {
       const result = await repo.fetchAll(householdId)
+      assertDataGeneration(actionGeneration)
       if (active()) plants.value = result
     } finally {
+      assertDataGeneration(actionGeneration)
       if (active()) loading.value = false
     }
   }
 
   async function fetchCareStatus() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -134,11 +139,14 @@ export const usePlantsStore = defineStore('plants', () => {
 
     try {
       const result = await repo.fetchCareStatus(householdId)
+      assertDataGeneration(actionGeneration)
       if (active()) {
         careStatus.value = result
         careStatusError.value = false
       }
-    } catch {
+    } catch (scopeError) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(scopeError)) throw scopeError
       // Kein Throw (viele Aufrufer, u. a. Socket-Events); bisheriger Status bleibt stehen,
       // die Ansicht zeigt über careStatusError einen Hinweis mit „Erneut versuchen“.
       if (active()) careStatusError.value = true
@@ -146,22 +154,26 @@ export const usePlantsStore = defineStore('plants', () => {
   }
 
   async function fetchMembers() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
     const active = captureRequest(householdId, 'members')
 
     const result = await householdRepo.fetchMembers(householdId)
+    assertDataGeneration(actionGeneration)
     if (active()) members.value = result
   }
 
   async function createPlant(payload: PlantCreatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
     const active = captureHousehold(householdId)
 
     const created = await repo.create(householdId, payload)
+    assertDataGeneration(actionGeneration)
     if (!active()) return created
     // Dedupe: falls Socket schneller war
     const idx = plants.value.findIndex(p => p.id === created.id)
@@ -172,21 +184,25 @@ export const usePlantsStore = defineStore('plants', () => {
       plants.value[idx] = created
     }
     await fetchCareStatus()
+    assertDataGeneration(actionGeneration)
     return created
   }
 
   async function updatePlant(plantId: string, payload: PlantUpdatePayload, targetHouseholdId?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = targetHouseholdId ?? authStore.currentHouseholdId
     if (!householdId) return
     const active = captureHousehold(householdId)
 
     const updated = await repo.update(householdId, plantId, payload)
+    assertDataGeneration(actionGeneration)
     if (active()) handlePlantUpdated(updated)
     return updated
   }
 
   async function removePlant(plantId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -202,7 +218,10 @@ export const usePlantsStore = defineStore('plants', () => {
 
     try {
       await repo.remove(householdId, plantId)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // Rollback
       if (active()) {
         if (removed && idx !== -1 && !plants.value.some(plant => plant.id === plantId)) plants.value.splice(idx, 0, removed)
@@ -215,6 +234,7 @@ export const usePlantsStore = defineStore('plants', () => {
   // ── Care Task Actions ──
 
   async function fetchCareTasks(plantId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -224,16 +244,19 @@ export const usePlantsStore = defineStore('plants', () => {
     careTasksPlantId.value = plantId
     const tasks = await repo.fetchCareTasks(householdId, plantId)
     // Antwort einer inzwischen verlassenen Pflanze verwerfen
+    assertDataGeneration(actionGeneration)
     if (active() && careTasksPlantId.value === plantId) careTasks.value = tasks
   }
 
   async function createCareTask(plantId: string, payload: PlantCareTaskCreatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
     const active = captureHousehold(householdId)
 
     const created = await repo.createCareTask(householdId, plantId, payload)
+    assertDataGeneration(actionGeneration)
     if (active()) {
       upsertCareTask(created)
       upsertStatusTask(created)
@@ -242,12 +265,14 @@ export const usePlantsStore = defineStore('plants', () => {
   }
 
   async function updateCareTask(plantId: string, taskId: string, payload: PlantCareTaskUpdatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
     const active = captureHousehold(householdId)
 
     const updated = await repo.updateCareTask(householdId, plantId, taskId, payload)
+    assertDataGeneration(actionGeneration)
     if (active()) {
       upsertCareTask(updated)
       upsertStatusTask(updated)
@@ -260,6 +285,7 @@ export const usePlantsStore = defineStore('plants', () => {
    * Liefert den Log-Eintrag; `null` = heute schon erledigt, der Server hat nichts geändert (CASA-29).
    */
   async function completeCareTask(plantId: string, taskId: string, note?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -297,6 +323,7 @@ export const usePlantsStore = defineStore('plants', () => {
     try {
       const { task, log } = await repo.completeCareTask(householdId, plantId, taskId, note)
       // Server-Wahrheit übernehmen
+      assertDataGeneration(actionGeneration)
       if (active()) {
         upsertCareTask(task)
         upsertStatusTask(task)
@@ -304,6 +331,8 @@ export const usePlantsStore = defineStore('plants', () => {
       }
       return log ?? null
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       if (active()) {
         const current = careTasks.value.find(task => task.id === taskId)
         if (previousTask && current === optimisticTask) upsertCareTask(previousTask)
@@ -316,6 +345,7 @@ export const usePlantsStore = defineStore('plants', () => {
       }
       throw error
     } finally {
+      assertDataGeneration(actionGeneration)
       pendingCompletions.delete(taskId)
     }
   }
@@ -330,17 +360,21 @@ export const usePlantsStore = defineStore('plants', () => {
 
   /** "Alle fälligen giessen". */
   async function waterAll() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
     try {
       const logs = await repo.waterAll(householdId)
+      assertDataGeneration(actionGeneration)
       logs.forEach(prependLog)
       return logs
     } finally {
+      assertDataGeneration(actionGeneration)
       // Server-Wahrheit (auch bei Fehler, falls teilweise geschrieben wurde)
       await fetchCareStatus()
+      assertDataGeneration(actionGeneration)
     }
   }
 
@@ -351,33 +385,41 @@ export const usePlantsStore = defineStore('plants', () => {
    * ohne Angabe alle. Liefert die Anzahl angelegter und aktualisierter Aufgaben.
    */
   async function applyAdviceTasks(plantId: string, advice: AiPlantCareAdvice, selected?: string[] | null) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return { created: 0, updated: 0 }
 
     const existing = await repo.fetchCareTasks(householdId, plantId)
+    assertDataGeneration(actionGeneration)
     const plan = selectPlan(planAdvice(advice, existing), selected)
     for (const task of plan.update) {
       await updateCareTask(plantId, task.id, { interval_days: task.interval_days })
+      assertDataGeneration(actionGeneration)
     }
     for (const task of plan.create) {
       await createCareTask(plantId, { care_type: task.care_type, interval_days: task.interval_days })
+      assertDataGeneration(actionGeneration)
     }
     return { created: plan.create.length, updated: plan.update.length }
   }
 
   /** Aufgaben + Pflegehinweise (angehängt) + Art (nur wenn leer) einer bestehenden Pflanze übernehmen. */
   async function applyCareAdvice(plant: Plant, advice: AiPlantCareAdvice, selected?: string[] | null) {
+    const actionGeneration = currentDataGeneration()
     const result = await applyAdviceTasks(plant.id, advice, selected)
+    assertDataGeneration(actionGeneration)
     const payload: PlantUpdatePayload = {}
     const notes = mergeCareNotes(plant.care_notes, advice.care_notes)
     if (notes !== (plant.care_notes ?? '')) payload.care_notes = notes
     if (!plant.species?.trim() && advice.botanical_name) payload.species = advice.botanical_name.slice(0, 80)
     if (Object.keys(payload).length > 0) await updatePlant(plant.id, payload)
+    assertDataGeneration(actionGeneration)
     return result
   }
 
   async function removeCareTask(plantId: string, taskId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -391,7 +433,10 @@ export const usePlantsStore = defineStore('plants', () => {
 
     try {
       await repo.removeCareTask(householdId, plantId, taskId)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       if (active()) {
         if (removed && !careTasks.value.some(task => task.id === taskId)) upsertCareTask(removed)
         const item = careStatus.value.find(item => item.plant_id === plantId)
@@ -405,6 +450,7 @@ export const usePlantsStore = defineStore('plants', () => {
   }
 
   async function fetchCareLog(plantId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -413,6 +459,7 @@ export const usePlantsStore = defineStore('plants', () => {
     if (careLogPlantId.value !== plantId) careLog.value = []
     careLogPlantId.value = plantId
     const log = await repo.fetchCareLog(householdId, plantId)
+    assertDataGeneration(actionGeneration)
     if (active() && careLogPlantId.value === plantId) careLog.value = log.slice(0, CARE_LOG_LIMIT)
   }
 
@@ -468,6 +515,7 @@ export const usePlantsStore = defineStore('plants', () => {
 
   /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
   function reset() {
+    pendingCompletions.clear()
     stateVersion++
     latestRequests.clear()
     loading.value = false

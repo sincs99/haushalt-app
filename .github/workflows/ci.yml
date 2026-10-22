@@ -40,6 +40,10 @@ jobs:
       - name: Run tests with coverage
         run: pytest -q --cov=app --cov-report=term
 
+      - name: Restore orchestration regressions (mocked commands)
+        working-directory: .
+        run: python scripts/tests/test_restore_db_sh.py
+
   # Echte PostgreSQL-DB: Migrationen (hoch + eine zurück + wieder hoch) und die
   # pg-Lane (tests/pg/: Races, Locks, Drift-Check Modelle ↔ Migrationen).
   backend-postgres:
@@ -93,6 +97,15 @@ jobs:
       # Tabellenvergleich → alembic upgrade head; Gegenprobe mit kaputtem Dump
       - name: Install PostgreSQL client (pg_dump/pg_restore/psql)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Security concurrency regressions (disposable local database)
+        env:
+          PGPASSWORD: casa
+          TEST_AUTH_POSTGRES_URL: postgresql://casa:casa@localhost:5432/test_security
+          SECURITY_TEST_DATABASE_URL: postgresql://casa:casa@localhost:5432/test_security
+        run: |
+          createdb -h localhost -U casa test_security
+          pytest -q tests/test_auth_concurrency_postgres.py tests/test_upload_ai_postgres.py
 
       - name: Restore drill
         working-directory: .

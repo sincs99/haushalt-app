@@ -163,7 +163,7 @@ export function useRealtimeSession(): { stop: () => void } {
       setAppBadgeHousehold(householdId)
       refreshAllStores()
     },
-    { immediate: true },
+    { immediate: true, flush: 'sync' },
   )
 
   // Hintergrund-Aktualisierung aller Stores. Fehler werden hier bewusst

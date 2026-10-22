@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -36,8 +37,8 @@ function addDays(dateStr: string, days: number): string {
 }
 
 export const usePetsStore = defineStore('pets', () => {
-  const repo = createOnlinePetsRepository()
-  const householdRepo = createOnlineHouseholdsRepository()
+  const repo = scopeRepository(createOnlinePetsRepository())
+  const householdRepo = scopeRepository(createOnlineHouseholdsRepository())
 
   // State
   const pets = ref<Pet[]>([])
@@ -78,6 +79,7 @@ export const usePetsStore = defineStore('pets', () => {
 
   // Actions
   async function fetchPets() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -86,13 +88,16 @@ export const usePetsStore = defineStore('pets', () => {
     loading.value = true
     try {
       const result = await repo.fetchAll(householdId)
+      assertDataGeneration(actionGeneration)
       if (active()) pets.value = result
     } finally {
+      assertDataGeneration(actionGeneration)
       if (active()) loading.value = false
     }
   }
 
   async function fetchFeedingStatus() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -100,29 +105,36 @@ export const usePetsStore = defineStore('pets', () => {
 
     try {
       const result = await repo.fetchFeedingStatus(householdId)
+      assertDataGeneration(actionGeneration)
       if (active()) feedingStatus.value = result
-    } catch {
+    } catch (scopeError) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(scopeError)) throw scopeError
       // Silently fail — feeding status is non-critical
     }
   }
 
   async function fetchMembers() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
     const active = captureRequest(householdId, 'members')
 
     const result = await householdRepo.fetchMembers(householdId)
+    assertDataGeneration(actionGeneration)
     if (active()) members.value = result
   }
 
   async function createPet(payload: PetCreatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
     const active = captureHousehold(householdId)
 
     const created = await repo.create(householdId, payload)
+    assertDataGeneration(actionGeneration)
     if (!active()) return created
     // Dedupe: falls Socket schneller war
     const idx = pets.value.findIndex(p => p.id === created.id)
@@ -133,10 +145,12 @@ export const usePetsStore = defineStore('pets', () => {
     }
     // Feeding-Status neu laden (neues Pet hat leeren Status)
     await fetchFeedingStatus()
+    assertDataGeneration(actionGeneration)
     return created
   }
 
   async function updatePet(petId: string, payload: Clearable<PetUpdatePayload>, targetHouseholdId?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = targetHouseholdId ?? authStore.currentHouseholdId
     if (!householdId) return
@@ -144,6 +158,7 @@ export const usePetsStore = defineStore('pets', () => {
 
     // null = Feld leeren (Backend: exclude_unset, null wird gespeichert)
     const updated = await repo.update(householdId, petId, payload as PetUpdatePayload)
+    assertDataGeneration(actionGeneration)
     const idx = pets.value.findIndex(p => p.id === petId)
     if (active() && idx !== -1) {
       pets.value[idx] = updated
@@ -153,6 +168,7 @@ export const usePetsStore = defineStore('pets', () => {
 
   /** `force`: erst nach ausdrücklicher Bestätigung mit den Verlaufszahlen (PD-P2) */
   async function removePet(petId: string, options: { force?: boolean } = {}) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -168,10 +184,13 @@ export const usePetsStore = defineStore('pets', () => {
     try {
       await repo.remove(householdId, petId, options.force ?? false)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // Rollback
       if (active()) {
         if (removed && idx !== -1 && !pets.value.some(pet => pet.id === petId)) pets.value.splice(idx, 0, removed)
         await fetchFeedingStatus()
+        assertDataGeneration(actionGeneration)
       }
       throw error
     }
@@ -216,6 +235,7 @@ export const usePetsStore = defineStore('pets', () => {
    * Status neu und liefert `duplicate`. `undefined` = nichts passiert (Mutex/unbekannt).
    */
   async function toggleFeeding(petId: string, slot: FeedingSlot): Promise<FeedingToggleResult | undefined> {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -234,11 +254,15 @@ export const usePetsStore = defineStore('pets', () => {
       statusItem[slot] = null
       try {
         await repo.deleteFeeding(householdId, petId, existing.id)
+        assertDataGeneration(actionGeneration)
         return 'unfed'
       } catch (err) {
+        assertDataGeneration(actionGeneration)
+        if (isScopeChanged(err)) throw err
         statusItem[slot] = existing  // Rollback
         throw err
       } finally {
+      assertDataGeneration(actionGeneration)
         pendingToggles.delete(key)
       }
     } else {
@@ -255,17 +279,22 @@ export const usePetsStore = defineStore('pets', () => {
       statusItem[slot] = tempFeeding
       try {
         const real = await repo.createFeeding(householdId, petId, slot)
+        assertDataGeneration(actionGeneration)
         statusItem[slot] = real
         return 'fed'
       } catch (err: unknown) {
+        assertDataGeneration(actionGeneration)
+        if (isScopeChanged(err)) throw err
         statusItem[slot] = null  // Rollback
         // 409 = schon gefüttert → Server-Status holen, kein Fehler
         if (isFeedingDuplicate(err)) {
           await fetchFeedingStatus()
+          assertDataGeneration(actionGeneration)
           return 'duplicate'
         }
         throw err
       } finally {
+      assertDataGeneration(actionGeneration)
         pendingToggles.delete(key)
       }
     }
@@ -277,6 +306,7 @@ export const usePetsStore = defineStore('pets', () => {
    * (CASA-13: „Alle gefüttert“ nur melden, wenn der Server-Status das bestätigt).
    */
   async function feedAll(slot: FeedingSlot): Promise<FeedAllResult> {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return { created: [], allFed: false, fed: 0, total: 0 }
@@ -289,8 +319,10 @@ export const usePetsStore = defineStore('pets', () => {
       // Eigene Fütterungen sofort übernehmen (falls der Status-Refetch scheitert)
       if (active()) created.forEach(handleFeedingCreated)
     } finally {
+      assertDataGeneration(actionGeneration)
       // Server-Wahrheit (auch bei Fehler)
       await fetchFeedingStatus()
+      assertDataGeneration(actionGeneration)
     }
     const fed = feedingStatus.value.filter(s => !!s[slot]).length
     const total = feedingStatus.value.length
@@ -299,19 +331,24 @@ export const usePetsStore = defineStore('pets', () => {
 
   /** Undo für „Alle gefüttert“: die eben angelegten Fütterungen wieder löschen. */
   async function undoFeedings(feedings: FeedingLog[]) {
+    const actionGeneration = currentDataGeneration()
     const householdId = feedings[0]?.household_id
     if (!householdId || feedings.some(f => f.household_id !== householdId)) return
 
     try {
       await Promise.all(feedings.map(f => repo.deleteFeeding(householdId, f.pet_id, f.id)))
+      assertDataGeneration(actionGeneration)
     } finally {
+      assertDataGeneration(actionGeneration)
       if (useAuthStore().currentHouseholdId === householdId) await fetchFeedingStatus()
+      assertDataGeneration(actionGeneration)
     }
   }
 
   // ── Medication Actions ──
 
   async function fetchMedications(petId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -325,16 +362,19 @@ export const usePetsStore = defineStore('pets', () => {
     medicationsPetId.value = petId
     const meds = await repo.fetchMedications(householdId, petId)
     // Antwort eines inzwischen verlassenen Tiers verwerfen
+    assertDataGeneration(actionGeneration)
     if (active() && medicationsPetId.value === petId) medications.value = meds
   }
 
   async function createMedication(petId: string, payload: MedicationCreatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
     const active = captureHousehold(householdId)
 
     const created = await repo.createMedication(householdId, petId, payload)
+    assertDataGeneration(actionGeneration)
     if (!active() || (medicationsPetId.value && medicationsPetId.value !== petId)) return created
     const idx = medications.value.findIndex(m => m.id === created.id)
     if (idx === -1) {
@@ -346,12 +386,14 @@ export const usePetsStore = defineStore('pets', () => {
   }
 
   async function updateMedication(petId: string, medicationId: string, payload: Clearable<MedicationUpdatePayload>) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
     const active = captureHousehold(householdId)
 
     const updated = await repo.updateMedication(householdId, petId, medicationId, payload as MedicationUpdatePayload)
+    assertDataGeneration(actionGeneration)
     const idx = medications.value.findIndex(m => m.id === medicationId)
     if (active() && idx !== -1) {
       medications.value[idx] = updated
@@ -360,18 +402,21 @@ export const usePetsStore = defineStore('pets', () => {
   }
 
   async function removeMedication(petId: string, medicationId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
     const active = captureHousehold(householdId)
 
     await repo.removeMedication(householdId, petId, medicationId)
+    assertDataGeneration(actionGeneration)
     if (!active()) return
     medications.value = medications.value.filter(m => m.id !== medicationId)
     delete medicationLogs.value[medicationId]
   }
 
   async function giveMedication(petId: string, medicationId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -384,6 +429,7 @@ export const usePetsStore = defineStore('pets', () => {
   }
 
   async function fetchMedicationLog(petId: string, medicationId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -391,12 +437,15 @@ export const usePetsStore = defineStore('pets', () => {
 
     try {
       const logs = await repo.fetchMedicationLog(householdId, petId, medicationId)
+      assertDataGeneration(actionGeneration)
       if (active() && (!medicationsPetId.value || medicationsPetId.value === petId)) {
         const combined = [...logs, ...(medicationLogs.value[medicationId] ?? [])]
         medicationLogs.value[medicationId] = combined.filter((log, index) => combined.findIndex(item => item.id === log.id) === index)
           .sort((a, b) => (b.given_at ?? '').localeCompare(a.given_at ?? '')).slice(0, 10)
       }
-    } catch {
+    } catch (scopeError) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(scopeError)) throw scopeError
       // Silently fail
     }
   }
@@ -419,7 +468,7 @@ export const usePetsStore = defineStore('pets', () => {
     }
     // Archivierte Tiere haben keinen Fütterungsstatus mehr; reaktivierte brauchen ihn wieder
     if (pet.archived) feedingStatus.value = feedingStatus.value.filter(s => s.pet_id !== pet.id)
-    else if (wasArchived) fetchFeedingStatus()
+    else if (wasArchived) fetchFeedingStatus().catch(() => {})
   }
 
   function handlePetDeleted(data: { id: string }) {
@@ -470,6 +519,7 @@ export const usePetsStore = defineStore('pets', () => {
   // ── Care Task Actions ──
 
   async function fetchCareTasks(petId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -478,16 +528,19 @@ export const usePetsStore = defineStore('pets', () => {
     if (careTasksPetId.value !== petId) careTasks.value = []
     careTasksPetId.value = petId
     const tasks = await repo.fetchCareTasks(householdId, petId)
+    assertDataGeneration(actionGeneration)
     if (active() && careTasksPetId.value === petId) careTasks.value = tasks
   }
 
   async function createCareTask(petId: string, payload: PetCareTaskCreatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
     const active = captureHousehold(householdId)
 
     const created = await repo.createCareTask(householdId, petId, payload)
+    assertDataGeneration(actionGeneration)
     if (!active() || (careTasksPetId.value && careTasksPetId.value !== petId)) return created
     const idx = careTasks.value.findIndex(t => t.id === created.id)
     if (idx === -1) {
@@ -499,12 +552,14 @@ export const usePetsStore = defineStore('pets', () => {
   }
 
   async function updateCareTask(petId: string, taskId: string, payload: PetCareTaskUpdatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
     const active = captureHousehold(householdId)
 
     const updated = await repo.updateCareTask(householdId, petId, taskId, payload)
+    assertDataGeneration(actionGeneration)
     const idx = careTasks.value.findIndex(t => t.id === taskId)
     if (active() && idx !== -1) {
       careTasks.value[idx] = updated
@@ -513,6 +568,7 @@ export const usePetsStore = defineStore('pets', () => {
   }
 
   async function completeCareTask(petId: string, taskId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -537,10 +593,13 @@ export const usePetsStore = defineStore('pets', () => {
     try {
       const updated = await repo.completeCareTask(householdId, petId, taskId)
       // Server-Wahrheit übernehmen
+      assertDataGeneration(actionGeneration)
       const i = careTasks.value.findIndex(t => t.id === taskId)
       if (active() && i !== -1) careTasks.value[i] = updated
       return updated
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       const i = careTasks.value.findIndex(task => task.id === taskId)
       if (active() && i !== -1 && previous && careTasks.value[i] === optimistic) careTasks.value[i] = previous
       throw error
@@ -548,6 +607,7 @@ export const usePetsStore = defineStore('pets', () => {
   }
 
   async function removeCareTask(petId: string, taskId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -561,7 +621,10 @@ export const usePetsStore = defineStore('pets', () => {
 
     try {
       await repo.removeCareTask(householdId, petId, taskId)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // Rollback
       if (active() && removed && !careTasks.value.some(task => task.id === taskId)) careTasks.value.splice(idx, 0, removed)
       throw error
@@ -589,6 +652,7 @@ export const usePetsStore = defineStore('pets', () => {
 
   /** Haushaltswechsel: Daten gehören zum alten Haushalt. */
   function reset() {
+    pendingToggles.clear()
     stateVersion++
     latestRequests.clear()
     loading.value = false

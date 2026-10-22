@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -5,13 +6,14 @@ import { useExpensesStore } from './expenses'
 import { createOnlineSettlementsRepository } from '../repositories/settlementsRepository'
 import { translateApiError } from '../utils/apiErrors'
 import { createRequestGuard } from '../utils/householdGuard'
+import { createDeletedHistory } from '../utils/deletedHistory'
 import type { SettlementInfo, SettlementCreatePayload, SettlementCheckResponse } from '../types'
 
 /** Seitengrösse der Ausgleichsliste („Mehr laden“, CASA-23) */
 export const SETTLEMENTS_PAGE_SIZE = 50
 
 export const useSettlementsStore = defineStore('settlements', () => {
-  const repo = createOnlineSettlementsRepository()
+  const repo = scopeRepository(createOnlineSettlementsRepository())
 
   // State
   const settlements = ref<SettlementInfo[]>([])
@@ -20,8 +22,10 @@ export const useSettlementsStore = defineStore('settlements', () => {
   const hasMore = ref(false)
   const loadingMore = ref(false)
   /** Verlauf: gelöschte Ausgleiche (nur geladen, wenn der Verlauf geöffnet ist) */
-  const deletedSettlements = ref<SettlementInfo[]>([])
-  const deletedLoaded = ref(false)
+  const deletedHistory = createDeletedHistory<SettlementInfo>((hid, params) => repo.fetchAll(hid, params), SETTLEMENTS_PAGE_SIZE)
+  const { items: deletedSettlements, loaded: deletedLoaded, hasMore: deletedHasMore,
+    loading: deletedLoading, error: deletedError, fetch: fetchDeleted,
+    loadMore: loadMoreDeleted, reset: resetDeleted } = deletedHistory
 
   // Verspätete Antworten eines anderen Haushalts/einer alten Sitzung verwerfen (CASA-12)
   const captureRequest = createRequestGuard()
@@ -34,7 +38,7 @@ export const useSettlementsStore = defineStore('settlements', () => {
       const expensesStore = useExpensesStore()
       const authStore = useAuthStore()
       const householdId = authStore.currentHouseholdId
-      if (householdId) expensesStore.fetchBalances(householdId)
+      if (householdId) expensesStore.fetchBalances(householdId).catch(() => {})
     }, 300)
   }
 
@@ -46,6 +50,7 @@ export const useSettlementsStore = defineStore('settlements', () => {
 
   // Actions
   async function fetchAll(householdId?: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const hid = householdId ?? authStore.currentHouseholdId
     if (!hid) return
@@ -67,28 +72,27 @@ export const useSettlementsStore = defineStore('settlements', () => {
   }
 
   async function loadMore() {
+    const actionGeneration = currentDataGeneration()
     const hid = useAuthStore().currentHouseholdId
     if (!hid || loadingMore.value || !hasMore.value) return
     loadingMore.value = true
     try {
       const page = await repo.fetchAll(hid, { limit: SETTLEMENTS_PAGE_SIZE, offset: settlements.value.length })
+      assertDataGeneration(actionGeneration)
       const known = new Set(settlements.value.map(s => s.id))
       settlements.value.push(...page.filter(s => !known.has(s.id)))
       hasMore.value = page.length === SETTLEMENTS_PAGE_SIZE
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       error.value = translateApiError(e)
       throw e
     } finally {
-      loadingMore.value = false
+      if (actionGeneration === currentDataGeneration()) loadingMore.value = false
     }
   }
 
-  async function fetchDeleted(householdId?: string) {
-    const hid = householdId ?? useAuthStore().currentHouseholdId
-    if (!hid) return
-    deletedSettlements.value = await repo.fetchAll(hid, { deleted: true, limit: SETTLEMENTS_PAGE_SIZE })
-    deletedLoaded.value = true
-  }
+
 
   /** Plausibilität vor dem Speichern prüfen (PD-F3: Duplikat, mehr als offene Schuld) */
   async function check(payload: SettlementCreatePayload): Promise<SettlementCheckResponse | undefined> {
@@ -102,6 +106,7 @@ export const useSettlementsStore = defineStore('settlements', () => {
    * derselben ID (Timeout, Doppelklick) legt keinen zweiten Ausgleich an (CASA-08).
    */
   async function create(payload: SettlementCreatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -109,17 +114,21 @@ export const useSettlementsStore = defineStore('settlements', () => {
     error.value = null
     try {
       const created = await repo.create(householdId, { ...payload, id: payload.id ?? crypto.randomUUID() })
+      assertDataGeneration(actionGeneration)
       // Dedupe: falls Socket schneller war
       upsertTop(created)
       debouncedFetchBalances()
       return created
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       error.value = translateApiError(e)
       throw e
     }
   }
 
   async function remove(settlementId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -131,9 +140,12 @@ export const useSettlementsStore = defineStore('settlements', () => {
 
     try {
       await repo.remove(householdId, settlementId)
+      assertDataGeneration(actionGeneration)
       debouncedFetchBalances()
-      if (deletedLoaded.value) fetchDeleted(householdId).catch(() => {})
+      if (deletedLoaded.value || deletedLoading.value) fetchDeleted(householdId).catch(() => {})
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(e)) throw e
       // Rollback
       if (removed && idx !== -1) settlements.value.splice(idx, 0, removed)
       error.value = translateApiError(e)
@@ -143,16 +155,19 @@ export const useSettlementsStore = defineStore('settlements', () => {
 
   /** Gelöschten Ausgleich wiederherstellen (Rückgängig, Verlauf) */
   async function restore(settlementId: string) {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
     error.value = null
     try {
       const restored = await repo.restore(householdId, settlementId)
+      assertDataGeneration(actionGeneration)
       upsertTop(restored)
-      deletedSettlements.value = deletedSettlements.value.filter(s => s.id !== settlementId)
+      deletedHistory.drop(settlementId)
       debouncedFetchBalances()
       return restored
     } catch (e: any) {
+      assertDataGeneration(actionGeneration)
       error.value = translateApiError(e)
       throw e
     }
@@ -162,14 +177,14 @@ export const useSettlementsStore = defineStore('settlements', () => {
   function handleSettlementCreated(serverSettlement: SettlementInfo) {
     // Auch bei Wiederherstellung (Server sendet dann settlement_created)
     upsertTop(serverSettlement)
-    deletedSettlements.value = deletedSettlements.value.filter(s => s.id !== serverSettlement.id)
+    deletedHistory.drop(serverSettlement.id)
     debouncedFetchBalances()
   }
 
   function handleSettlementDeleted(data: { id: string }) {
     settlements.value = settlements.value.filter(s => s.id !== data.id)
     debouncedFetchBalances()
-    if (deletedLoaded.value) fetchDeleted().catch(() => {})
+    if (deletedLoaded.value || deletedLoading.value) fetchDeleted().catch(() => {})
   }
 
   return {
@@ -181,6 +196,11 @@ export const useSettlementsStore = defineStore('settlements', () => {
     loadingMore,
     deletedSettlements,
     deletedLoaded,
+    deletedHasMore,
+    deletedLoading,
+    deletedError,
+    loadMoreDeleted,
+    resetDeleted,
     // Actions
     fetchAll,
     loadMore,

@@ -1,3 +1,4 @@
+import { internalRedirect } from '../utils/internalRedirect'
 import { createRouter, createWebHistory } from 'vue-router'
 import { waitForOverlayBack } from '../composables/useBackClose'
 import { applyHouseholdQuery } from './householdQuery'
@@ -186,7 +187,7 @@ router.beforeEach(async (to) => {
     const authStore = useAuthStore()
     await authStore.authReady
     if (authStore.isAuthenticated) {
-      const redirect = typeof to.query.redirect === 'string' && to.query.redirect.startsWith('/') ? to.query.redirect : '/dashboard'
+      const redirect = internalRedirect(to.query.redirect) ?? '/dashboard'
       return { path: redirect }
     }
   }

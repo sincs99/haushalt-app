@@ -33,9 +33,11 @@ from app.services.ai.errors import (
     AiError,
     AiInvalidOutput,
     AiNotConfigured,
+    AiNotDispatched,
     AiPlantNotRecognized,
     AiRefused,
     AiUnavailable,
+    AiUsageInfo,
     AiUserDailyLimitReached,
 )
 from app.services.ai.schemas import (
@@ -170,7 +172,7 @@ def require_ai_enabled(
 # Fehler → (HTTP-Status, Code, Meldung). Reihenfolge: speziellste Klasse zuerst.
 _ERROR_MAP: list[tuple[type[AiError], int, str, str]] = [
     (AiNotConfigured, 503, ErrorCode.AI_NOT_CONFIGURED, "AI assistant is not configured"),
-    (AiDailyLimitReached, 429, ErrorCode.AI_DAILY_LIMIT_REACHED, "Daily AI limit reached for this household"),
+    (AiDailyLimitReached, 429, ErrorCode.AI_DAILY_LIMIT_REACHED, "Daily AI budget reached"),
     (AiUserDailyLimitReached, 429, ErrorCode.AI_USER_DAILY_LIMIT_REACHED, "Your personal daily AI limit is reached"),
     (AiRefused, 422, ErrorCode.AI_REFUSED, "The AI declined this request"),
     (AiPlantNotRecognized, 422, ErrorCode.AI_PLANT_NOT_RECOGNIZED, "The input was not recognized as a plant"),
@@ -179,8 +181,9 @@ _ERROR_MAP: list[tuple[type[AiError], int, str, str]] = [
     (AiUnavailable, 502, ErrorCode.AI_UNAVAILABLE, "AI service is unavailable"),
 ]
 
-# Bei diesen Fehlern hat die API nicht geantwortet → Aufruf zählt nicht zum Tageslimit
-_NOT_BILLED = (AiNotConfigured, AiBusy, AiUnavailable)
+# Only proven pre-dispatch failures can be refunded. Timeouts/provider errors
+# can have incurred work, so an unknown result keeps all three reservations.
+_NOT_DISPATCHED = (AiNotConfigured, AiNotDispatched)
 
 
 def _to_http(exc: AiError) -> HTTPException:
@@ -198,12 +201,12 @@ def _run_feature(
     db: Session,
     household_id: uuid.UUID,
     user_id: uuid.UUID,
-    feature: Callable[[ReqT], tuple[ResT, object]],
+    feature: Callable[[ReqT], tuple[ResT, AiUsageInfo]],
     body: ReqT,
 ) -> ResT:
     """Tageslimits reservieren → Feature aufrufen → Tokens verbuchen."""
     try:
-        day = usage.reserve_call(db, household_id, user_id)
+        reservation_id = usage.reserve_call(db, household_id, user_id)
     except (AiDailyLimitReached, AiUserDailyLimitReached) as exc:
         raise _to_http(exc)
 
@@ -211,17 +214,12 @@ def _run_feature(
         result, call_usage = feature(body)
     except AiError as exc:
         if exc.usage is not None:
-            usage.record_tokens(db, household_id, day, exc.usage)
-        elif isinstance(exc, _NOT_BILLED):
-            usage.release_call(db, household_id, user_id, day)
+            usage.record_tokens(db, reservation_id, exc.usage)
+        elif isinstance(exc, _NOT_DISPATCHED):
+            usage.release_call(db, reservation_id)
         raise _to_http(exc)
-    except Exception:
-        # Unerwarteter Fehler (Bug, unbekannte SDK-Ausnahme): keine verwertbare Antwort →
-        # Reservierung zurückgeben statt das Limit still zu verbrauchen (CASA-33)
-        usage.release_call(db, household_id, user_id, day)
-        raise
 
-    usage.record_tokens(db, household_id, day, call_usage)
+    usage.record_tokens(db, reservation_id, call_usage)
     return result
 
 

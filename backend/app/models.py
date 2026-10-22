@@ -1637,6 +1637,34 @@ class AiUsage(Base):
     household: Mapped["Household"] = relationship(back_populates="ai_usage")
 
 
+class AiBudgetCounter(Base):
+    """Global UTC-day budget; survives account/household deletion.
+
+    Account allocations use the existing AiUserUsage table, not this table.
+    """
+
+    __tablename__ = "ai_budget_counters"
+    scope_key: Mapped[str] = mapped_column(String(48), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
+class AiCallReservation(Base):
+    """One owner token per dispatch, making completion/refund idempotent.
+
+    UUIDs intentionally have no cascading FKs: deleting a household must not
+    erase aggregate reservations while a provider request is still in flight.
+    No prompt, response, API key or personal profile data is retained.
+    """
+
+    __tablename__ = "ai_call_reservations"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    household_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    state: Mapped[str] = mapped_column(String(12), nullable=False, default="reserved")
+
+
 class AiUserUsage(Base):
     """Tageszähler der KI-Aufrufe pro Person über alle Haushalte (PD-A2).
 

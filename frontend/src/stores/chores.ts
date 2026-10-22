@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -8,8 +9,8 @@ import { upsertVersioned } from '../utils/syncVersion'
 import { createRequestGuard } from '../utils/householdGuard'
 
 export const useChoresStore = defineStore('chores', () => {
-  const repo = createOnlineChoresRepository()
-  const householdRepo = createOnlineHouseholdsRepository()
+  const repo = scopeRepository(createOnlineChoresRepository())
+  const householdRepo = scopeRepository(createOnlineHouseholdsRepository())
 
   // State
   const chores = ref<ChoreInfo[]>([])
@@ -24,6 +25,10 @@ export const useChoresStore = defineStore('chores', () => {
 
   // Ämtli und Einträge laden parallel → `loading` erst false, wenn beide fertig sind
   let loadsInFlight = 0
+  function resetPending() {
+    pendingToggles.clear()
+    loadsInFlight = 0
+  }
   function startLoad() {
     loadsInFlight++
     loading.value = true
@@ -35,6 +40,7 @@ export const useChoresStore = defineStore('chores', () => {
 
   // Actions
   async function fetchChores() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -45,11 +51,13 @@ export const useChoresStore = defineStore('chores', () => {
       const result = await repo.fetchChores(householdId)
       if (active()) chores.value = result
     } finally {
+      assertDataGeneration(actionGeneration)
       endLoad()
     }
   }
 
   async function fetchAssignments(params?: { from?: string; to?: string }) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -60,11 +68,13 @@ export const useChoresStore = defineStore('chores', () => {
       const result = await repo.fetchAssignments(householdId, params)
       if (active()) assignments.value = result
     } finally {
+      assertDataGeneration(actionGeneration)
       endLoad()
     }
   }
 
   async function fetchMembers() {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -75,12 +85,14 @@ export const useChoresStore = defineStore('chores', () => {
   }
 
   async function createChore(payload: ChoreCreatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
     const created = await repo.createChore(householdId, payload)
     // Dedupe: falls Socket schneller war
+    assertDataGeneration(actionGeneration)
     const idx = chores.value.findIndex(c => c.id === created.id)
     if (idx === -1) {
       chores.value.push(created)
@@ -91,6 +103,7 @@ export const useChoresStore = defineStore('chores', () => {
   }
 
   async function updateChore(choreId: string, payload: ChoreUpdatePayload) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -98,6 +111,7 @@ export const useChoresStore = defineStore('chores', () => {
     const idx = chores.value.findIndex(c => c.id === choreId)
     const previous = idx !== -1 ? { ...chores.value[idx] } : null
     const updated = await repo.updateChore(householdId, choreId, payload)
+    assertDataGeneration(actionGeneration)
     if (idx !== -1) {
       chores.value[idx] = updated
     }
@@ -108,11 +122,13 @@ export const useChoresStore = defineStore('chores', () => {
       payload[key] !== undefined && (!previous || previous[key] !== payload[key])
     if (changed('recurrence') || changed('weekday') || changed('day_of_month') || changed('active')) {
       await fetchAssignments()
+      assertDataGeneration(actionGeneration)
     }
     return updated
   }
 
   async function removeChore(choreId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
@@ -127,7 +143,10 @@ export const useChoresStore = defineStore('chores', () => {
 
     try {
       await repo.removeChore(householdId, choreId)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // Rollback
       if (removed && idx !== -1) chores.value.splice(idx, 0, removed)
       const restored = removedAssignments.filter(r => !assignments.value.some(a => a.id === r.id))
@@ -140,6 +159,7 @@ export const useChoresStore = defineStore('chores', () => {
   }
 
   async function completeAssignment(assignmentId: string) {
+    const actionGeneration = currentDataGeneration()
     if (pendingToggles.has(assignmentId)) return
     pendingToggles.add(assignmentId)
 
@@ -162,8 +182,11 @@ export const useChoresStore = defineStore('chores', () => {
     try {
       const updated = await repo.completeAssignment(householdId, assignmentId)
       // Server gewinnt, ausser ein Socket-Event hat schon einen neueren Stand geliefert
+      assertDataGeneration(actionGeneration)
       if (updated) upsertVersioned(assignments.value, updated, false)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // Rollback
       const currentItem = assignments.value.find(a => a.id === assignmentId)
       if (currentItem && item) {
@@ -172,11 +195,13 @@ export const useChoresStore = defineStore('chores', () => {
       }
       throw error
     } finally {
+      assertDataGeneration(actionGeneration)
       pendingToggles.delete(assignmentId)
     }
   }
 
   async function uncompleteAssignment(assignmentId: string) {
+    const actionGeneration = currentDataGeneration()
     if (pendingToggles.has(assignmentId)) return
     pendingToggles.add(assignmentId)
 
@@ -198,8 +223,11 @@ export const useChoresStore = defineStore('chores', () => {
 
     try {
       const updated = await repo.uncompleteAssignment(householdId, assignmentId)
+      assertDataGeneration(actionGeneration)
       if (updated) upsertVersioned(assignments.value, updated, false)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       const currentItem = assignments.value.find(a => a.id === assignmentId)
       if (currentItem && item) {
         currentItem.completed_at = prevCompletedAt
@@ -207,16 +235,19 @@ export const useChoresStore = defineStore('chores', () => {
       }
       throw error
     } finally {
+      assertDataGeneration(actionGeneration)
       pendingToggles.delete(assignmentId)
     }
   }
 
   async function reassignAssignment(assignmentId: string, assignedUserId: string) {
+    const actionGeneration = currentDataGeneration()
     const authStore = useAuthStore()
     const householdId = authStore.currentHouseholdId
     if (!householdId) return
 
     const updated = await repo.reassignAssignment(householdId, assignmentId, assignedUserId)
+    assertDataGeneration(actionGeneration)
     upsertVersioned(assignments.value, updated, false)
   }
 
@@ -263,6 +294,7 @@ export const useChoresStore = defineStore('chores', () => {
   }
 
   return {
+    resetPending,
     // State
     chores,
     assignments,

@@ -11,16 +11,15 @@
  * Verallgemeinert das frühere captureRequest aus pets.ts/plants.ts.
  */
 import { useAuthStore } from '../stores/auth'
-
-let generation = 0
+import { currentDataGeneration, invalidateDataScope } from '../services/sessionScope'
 
 /** Neue Generation: alle laufenden Requests gelten ab jetzt als veraltet. */
 export function bumpHouseholdGeneration(): void {
-  generation++
+  invalidateDataScope()
 }
 
 export function householdGeneration(): number {
-  return generation
+  return currentDataGeneration()
 }
 
 /**
@@ -29,8 +28,8 @@ export function householdGeneration(): number {
  * geschrieben wird.
  */
 export function captureHousehold(householdId: string): () => boolean {
-  const gen = generation
-  return () => gen === generation && useAuthStore().currentHouseholdId === householdId
+  const gen = currentDataGeneration()
+  return () => gen === currentDataGeneration() && useAuthStore().currentHouseholdId === householdId
 }
 
 /** Ergebnis von captureRequest: `active()` für Daten, `active.latest()` für Ladeflags. */

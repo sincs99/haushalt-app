@@ -229,6 +229,7 @@ def _create_token_pair(user_id: str, db: Session) -> tuple[TokenResponse, Refres
         expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days),
     )
     db.add(rt)
+    # The caller owns the transaction, including revocation and successor link.
     db.flush()
 
     response = TokenResponse(
@@ -241,11 +242,11 @@ def _create_token_pair(user_id: str, db: Session) -> tuple[TokenResponse, Refres
 
 
 def _rotate(db: Session, token: RefreshToken) -> TokenResponse:
-    """Ersetzt einen (gesperrten) aktiven Token durch einen neuen — ein einziger Commit."""
+    """Replace a token while its owner lock is held; caller commits everything."""
     pair, new_rt = _create_token_pair(str(token.user_id), db)
     token.revoked_at = datetime.now(timezone.utc)
     token.replaced_by_id = new_rt.id
-    db.commit()
+    db.flush()
     return pair
 
 
@@ -270,7 +271,7 @@ def _active_successor(db: Session, token: RefreshToken) -> RefreshToken | None:
         if current.replaced_by_id is None:
             return None
         nxt = lock_row(db, RefreshToken, current.replaced_by_id)
-        if nxt is None:
+        if nxt is None or nxt.user_id != token.user_id:
             return None
         if nxt.revoked_at is None:
             return nxt
@@ -286,14 +287,61 @@ def _cleanup_expired_tokens(user_id: uuid.UUID, db: Session) -> None:
     db.query(RefreshToken).filter(
         RefreshToken.user_id == user_id,
         (
-            (RefreshToken.expires_at < now)
+            # Keep recent rotated ancestors even if their original expiry just
+            # passed: an in-flight logout may still present that predecessor.
+            ((RefreshToken.expires_at < now) & RefreshToken.revoked_at.is_(None))
             | (
                 RefreshToken.revoked_at.isnot(None)
                 & (RefreshToken.revoked_at < seven_days_ago)
             )
         ),
     ).delete(synchronize_session=False)
-    db.commit()
+
+
+def _lock_refresh_owner(token_hash: str, db: Session) -> RefreshToken | None:
+    """Serialize refresh/logout across the whole user's token chains.
+
+    A lock on the submitted token alone is insufficient: a grace retry can
+    rotate its successor while logout presents a different link in that chain.
+    Read authority only AFTER acquiring the stable User-row lock and refresh
+    any identity-map entry that might have been loaded before waiting.
+    """
+    owner_id = db.query(RefreshToken.user_id).filter_by(token_hash=token_hash).scalar()
+    if owner_id is None:
+        return None
+    owner = db.query(User.id).filter(User.id == owner_id).with_for_update().first()
+    if owner is None:
+        return None
+    return (
+        db.query(RefreshToken)
+        .filter_by(token_hash=token_hash)
+        .populate_existing()
+        .first()
+    )
+
+
+def _revoke_refresh_chain(token: RefreshToken, db: Session) -> bool:
+    """Revoke a submitted token AND every successor while holding its owner lock."""
+    now = datetime.now(timezone.utc)
+    seen: set[uuid.UUID] = set()
+    changed = False
+    current = token
+    while current is not None and current.id not in seen:
+        seen.add(current.id)
+        successor_id = current.replaced_by_id
+        if current.revoked_at is None:
+            current.revoked_at = now
+            changed = True
+        # A logout is terminal, never eligible for the benign-retry grace path.
+        current.replaced_by_id = None
+        current = (
+            db.query(RefreshToken)
+            .filter_by(id=successor_id, user_id=token.user_id)
+            .populate_existing()
+            .first()
+            if successor_id is not None else None
+        )
+    return changed
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +433,10 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    user = db.query(User).filter_by(email=form_data.username).first()
+    user = (
+        db.query(User).filter_by(email=form_data.username)
+        .with_for_update().populate_existing().first()
+    )
     # Auch bei unbekannter E-Mail einen bcrypt-Vergleich durchführen, damit die
     # Antwortzeit nicht verrät, ob ein Account existiert (User-Enumeration).
     password_hash = user.password_hash if user else _DUMMY_PASSWORD_HASH
@@ -425,19 +476,16 @@ def refresh_endpoint(
         )
 
     token_hash = hash_refresh_token(raw_token)
-    # Zeile sperren (CASA-11): Parallele Refreshes mit demselben Token laufen
-    # nacheinander; der zweite sieht danach "widerrufen MIT Nachfolger" (Grace-Pfad)
-    old_token = (
-        db.query(RefreshToken)
-        .filter_by(token_hash=token_hash)
-        .with_for_update()
-        .populate_existing()
-        .first()
-    )
+    old_token = _lock_refresh_owner(token_hash, db)
 
     # 1) Token nicht gefunden
     if old_token is None:
         raise _refresh_rejected(ErrorCode.REFRESH_TOKEN_INVALID, "Refresh token invalid", from_cookie)
+
+    # Apply account state to both normal rotation AND retries in the grace chain.
+    owner = db.get(User, old_token.user_id, populate_existing=True)
+    if owner is None or owner.deleted_at is not None or not owner.is_active:
+        raise _refresh_rejected(ErrorCode.ACCOUNT_DISABLED, "Account is disabled", from_cookie)
 
     now = datetime.now(timezone.utc)
 
@@ -452,7 +500,9 @@ def refresh_endpoint(
             # Benign retry / zweiter Tab → aktiven Nachfolger der Kette weiterrotieren
             successor = _active_successor(db, old_token)
             if successor is not None and _as_aware(successor.expires_at) >= now:
-                return _deliver(_rotate(db, successor), request, response)
+                pair = _rotate(db, successor)
+                db.commit()
+                return _deliver(pair, request, response)
 
         # Grace Window nicht anwendbar → volle Reuse-Detection
         user_id = old_token.user_id
@@ -471,21 +521,17 @@ def refresh_endpoint(
     if _as_aware(old_token.expires_at) < now:
         raise _refresh_rejected(ErrorCode.REFRESH_TOKEN_EXPIRED, "Refresh token expired", from_cookie)
 
-    # 4) Konto gesperrt oder gelöscht → kein neues Paar
-    owner = db.get(User, old_token.user_id)
-    if owner is None or owner.deleted_at is not None or not owner.is_active:
-        raise _refresh_rejected(ErrorCode.ACCOUNT_DISABLED, "Account is disabled", from_cookie)
-
     # 5) Alles OK → alten Token widerrufen + Nachfolger anlegen, ein Commit
     user_id = old_token.user_id
     pair = _rotate(db, old_token)
 
-    # 6) Lazy Cleanup: alte Tokens dieses Users aufräumen
+    # Cleanup shares the owner lock. Keep rotation if only housekeeping fails.
     try:
-        _cleanup_expired_tokens(user_id, db)
+        with db.begin_nested():
+            _cleanup_expired_tokens(user_id, db)
     except Exception:
-        db.rollback()
         logger.warning("Refresh token cleanup failed for user %s", user_id, exc_info=True)
+    db.commit()
 
     return _deliver(pair, request, response)
 
@@ -505,14 +551,16 @@ def logout_endpoint(
     raw_token, _from_cookie = _resolve_refresh_token(request, data.refresh_token if data else None)
     if raw_token:
         token_hash = hash_refresh_token(raw_token)
-        existing = db.query(RefreshToken).filter_by(token_hash=token_hash).first()
-        if existing and existing.revoked_at is None:
-            existing.revoked_at = datetime.now(timezone.utc)
+        existing = _lock_refresh_owner(token_hash, db)
+        if existing is not None:
+            user_id = existing.user_id
+            changed = _revoke_refresh_chain(existing, db)
             db.commit()
             # Offene Socket-Verbindungen des Users serverseitig trennen. Der Access-Token
             # trägt keine Geräte-Kennung, deshalb trifft das alle Verbindungen des Users;
             # andere Geräte verbinden sich mit ihrem weiterhin gültigen Token selbst neu.
-            disconnect_user_sync(existing.user_id, "logout")
+            if changed:
+                disconnect_user_sync(user_id, "logout")
 
     if _uses_cookie_delivery(request) or REFRESH_COOKIE_NAME in request.cookies:
         _clear_refresh_cookie(response)

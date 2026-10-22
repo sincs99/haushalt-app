@@ -1,3 +1,4 @@
+import { scopeRepository, isScopeChanged, currentDataGeneration, assertDataGeneration } from '../services/sessionScope'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { useAuthStore } from './auth'
@@ -16,8 +17,8 @@ export type UploadProgress = (current: number, total: number) => void
 
 export const useDocumentsStore = defineStore('documents', () => {
   // Repository — einmal im Store-Setup erstellen
-  const repo = createOnlineDocumentsRepository()
-  const filesRepo = createOnlineFilesRepository()
+  const repo = scopeRepository(createOnlineDocumentsRepository())
+  const filesRepo = scopeRepository(createOnlineFilesRepository())
 
   // State
   const items = ref<DocumentItem[]>([])
@@ -42,6 +43,7 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   // Actions
   async function fetchDocuments() {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
@@ -59,11 +61,13 @@ export const useDocumentsStore = defineStore('documents', () => {
       items.value = page.items
       total.value = page.total
     } finally {
+      assertDataGeneration(actionGeneration)
       if (seq === requestSeq) loading.value = false
     }
   }
 
   async function loadMore() {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId || loadingMore.value || !hasMore.value) return
 
@@ -83,11 +87,13 @@ export const useDocumentsStore = defineStore('documents', () => {
       items.value.push(...page.items.filter((i) => !known.has(i.id)))
       total.value = page.total
     } finally {
+      assertDataGeneration(actionGeneration)
       loadingMore.value = false
     }
   }
 
   async function fetchStorage() {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
     const inScope = captureHousehold(householdId)
@@ -96,13 +102,17 @@ export const useDocumentsStore = defineStore('documents', () => {
   }
 
   async function setCategory(value: DocumentCategory | null) {
+    const actionGeneration = currentDataGeneration()
     category.value = value
     await fetchDocuments()
+    assertDataGeneration(actionGeneration)
   }
 
   async function setQuery(value: string) {
+    const actionGeneration = currentDataGeneration()
     query.value = value
     await fetchDocuments()
+    assertDataGeneration(actionGeneration)
   }
 
   /**
@@ -111,17 +121,22 @@ export const useDocumentsStore = defineStore('documents', () => {
    * wieder gelöscht (best-effort), damit keine verwaisten Dateien entstehen.
    */
   async function uploadFiles(householdId: string, files: File[], onProgress?: UploadProgress) {
+    const generation = currentDataGeneration()
     const ids: string[] = []
     try {
       for (const [index, file] of files.entries()) {
         onProgress?.(index + 1, files.length)
         // Fotos verkleinern (Handy-Kamera, HEIC); PDFs unverändert
         const upload = file.type.startsWith('image/') ? await prepareImageForUpload(file) : file
+        assertDataGeneration(generation)
         ids.push((await filesRepo.uploadFile(householdId, upload)).id)
       }
       return ids
     } catch (error) {
+      assertDataGeneration(generation)
+      if (isScopeChanged(error)) throw error
       await discardFiles(householdId, ids)
+      assertDataGeneration(generation)
       throw error
     }
   }
@@ -133,16 +148,22 @@ export const useDocumentsStore = defineStore('documents', () => {
   }
 
   async function uploadDocument(files: File[], meta: DocumentMeta, onProgress?: UploadProgress) {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId || files.length === 0) return
 
     // Kein Optimistic Update: Upload kann am Server scheitern (Typ, Grösse, Quota)
     const fileIds = await uploadFiles(householdId, files, onProgress)
+    assertDataGeneration(actionGeneration)
     let serverItem: DocumentItem
     try {
       serverItem = await repo.create(householdId, meta, fileIds)
+      assertDataGeneration(actionGeneration)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       await discardFiles(householdId, fileIds)
+      assertDataGeneration(actionGeneration)
       throw error
     }
     handleDocumentCreated(serverItem)
@@ -151,20 +172,28 @@ export const useDocumentsStore = defineStore('documents', () => {
   }
 
   async function addPages(documentId: string, files: File[], onProgress?: UploadProgress) {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId || files.length === 0) return
 
     const fileIds = await uploadFiles(householdId, files, onProgress)
+    assertDataGeneration(actionGeneration)
     try {
-      handleDocumentUpdated(await repo.addFiles(householdId, documentId, fileIds))
+      const updated = await repo.addFiles(householdId, documentId, fileIds)
+      assertDataGeneration(actionGeneration)
+      handleDocumentUpdated(updated)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       await discardFiles(householdId, fileIds)
+      assertDataGeneration(actionGeneration)
       throw error
     }
     fetchStorage().catch(() => {})
   }
 
   async function movePage(documentId: string, fileId: string, direction: -1 | 1) {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     const item = items.value.find((i) => i.id === documentId)
     if (!householdId || !item) return
@@ -180,24 +209,30 @@ export const useDocumentsStore = defineStore('documents', () => {
     item.files = reordered
 
     try {
-      handleDocumentUpdated(
-        await repo.reorderFiles(householdId, documentId, reordered.map((f) => f.id)),
-      )
+      const updated = await repo.reorderFiles(householdId, documentId, reordered.map((f) => f.id))
+      assertDataGeneration(actionGeneration)
+      handleDocumentUpdated(updated)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       item.files = snapshot
       throw error
     }
   }
 
   async function removePage(documentId: string, fileId: string) {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
-    handleDocumentUpdated(await repo.removeFile(householdId, documentId, fileId))
+    const updated = await repo.removeFile(householdId, documentId, fileId)
+    assertDataGeneration(actionGeneration)
+    handleDocumentUpdated(updated)
     fetchStorage().catch(() => {})
   }
 
   async function updateDocument(documentId: string, data: Partial<DocumentMeta>) {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
@@ -212,8 +247,12 @@ export const useDocumentsStore = defineStore('documents', () => {
 
     try {
       // 3. Server-Call — Server gewinnt
-      handleDocumentUpdated(await repo.update(householdId, documentId, data))
+      const updated = await repo.update(householdId, documentId, data)
+      assertDataGeneration(actionGeneration)
+      handleDocumentUpdated(updated)
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 4. Rollback auf Snapshot
       Object.assign(item, snapshot)
       throw error
@@ -221,6 +260,7 @@ export const useDocumentsStore = defineStore('documents', () => {
   }
 
   async function deleteDocument(documentId: string) {
+    const actionGeneration = currentDataGeneration()
     const householdId = useAuthStore().currentHouseholdId
     if (!householdId) return
 
@@ -236,8 +276,11 @@ export const useDocumentsStore = defineStore('documents', () => {
     try {
       // 3. Server-Call
       await repo.remove(householdId, documentId)
+      assertDataGeneration(actionGeneration)
       fetchStorage().catch(() => {})
     } catch (error) {
+      assertDataGeneration(actionGeneration)
+      if (isScopeChanged(error)) throw error
       // 4. Rollback: Item wieder einfügen an gleicher Position
       items.value.splice(itemIndex, 0, removedItem)
       total.value += 1
@@ -280,6 +323,10 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   function reset() {
     requestSeq++
+    category.value = null
+    query.value = ''
+    loading.value = false
+    loadingMore.value = false
     items.value = []
     total.value = 0
     storage.value = null

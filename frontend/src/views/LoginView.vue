@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { internalRedirect } from '../utils/internalRedirect'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseCard from '../components/ui/BaseCard.vue'
@@ -26,7 +27,7 @@ const submitted = ref(false)
 /** Nur interne Pfade als Weiterleitung akzeptieren (kein Open Redirect) */
 const redirect = computed(() => {
   const value = route.query.redirect
-  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : undefined
+  return internalRedirect(value)
 })
 // ?redirect beim Wechsel zur Registrierung mitnehmen (z. B. Tag-Scan als Neuling)
 const registerLink = computed(() => ({ path: '/register', query: redirect.value ? { redirect: redirect.value } : {} }))

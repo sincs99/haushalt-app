@@ -59,8 +59,9 @@ services:
       MAIL_FROM: ${MAIL_FROM:-Haushalt App <noreply@example.com>}
       APP_BASE_URL: ${APP_BASE_URL:-}
       AI_DAILY_LIMIT_PER_USER: ${AI_DAILY_LIMIT_PER_USER:-20}
+      AI_DAILY_LIMIT_GLOBAL: ${AI_DAILY_LIMIT_GLOBAL:-1000}
       # Nur diesem Netz (Frontend-nginx) X-Forwarded-For glauben — docs/deployment.md §2.1
-      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.16.0.0/12}
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
     # Nur lokal (API-Debugging); das Frontend erreicht das Backend über das Docker-Netz
     ports:
       - "127.0.0.1:8000:8000"
@@ -72,8 +73,8 @@ services:
     depends_on:
       - backend
     environment:
-      # Proxies, deren X-Forwarded-For als Client-IP gilt (Komma-getrennt)
-      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-172.16.0.0/12}
+      # Optionaler einzelner lokaler Reverse-Proxy
+      NPM_TRUSTED_PROXY_IP: ${NPM_TRUSTED_PROXY_IP:-127.0.0.1}
     healthcheck:
       # Nur nginx selbst (ohne Backend) — Backend hat einen eigenen Healthcheck
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/nginx-health || exit 1"]

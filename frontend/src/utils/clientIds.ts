@@ -15,6 +15,7 @@ export function isNetworkError(error: unknown): boolean {
 export function createRetryIds() {
   const pending = new Map<string, string>()
   return {
+    clear(): void { pending.clear() },
     /** ID für einen Create mit diesem Inhalt (die eines gescheiterten Versuchs, sonst neu). */
     idFor(key: string): string {
       return pending.get(key) ?? crypto.randomUUID()

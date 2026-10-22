@@ -11,8 +11,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { MeResponse } from '../../types'
 import { createMemoryStorage, deferred } from './helpers'
 
-const { axiosPost, api, router, showToast, disablePush, socketDisconnect, refetchAfterMemberDeparture } = vi.hoisted(() => ({
+const { axiosPost, axiosPut, api, router, showToast, disablePush, socketDisconnect, refetchAfterMemberDeparture } = vi.hoisted(() => ({
   axiosPost: vi.fn(),
+  axiosPut: vi.fn(),
   api: { get: vi.fn(), post: vi.fn() },
   router: { push: vi.fn(), replace: vi.fn(), currentRoute: { value: { fullPath: '/' } } },
   showToast: vi.fn(),
@@ -21,7 +22,7 @@ const { axiosPost, api, router, showToast, disablePush, socketDisconnect, refetc
   refetchAfterMemberDeparture: vi.fn(),
 }))
 
-vi.mock('axios', () => ({ default: { post: axiosPost } }))
+vi.mock('axios', () => ({ default: { post: axiosPost, put: axiosPut } }))
 vi.mock('../../api/client', () => ({
   default: api,
   API_BASE: 'http://api.test',
@@ -32,15 +33,21 @@ vi.mock('../../api/client', () => ({
     headers: { 'X-Requested-With': 'casa', ...extra },
   }),
 }))
-vi.mock('../../composables/useToast', () => ({ useToast: () => ({ showToast }) }))
+vi.mock('../../composables/useToast', () => ({ clearToasts: vi.fn(), useToast: () => ({ showToast }) }))
 vi.mock('../../i18n', () => ({ default: { global: { t: (key: string) => key } } }))
 vi.mock('../../router', () => ({ default: router }))
 vi.mock('../../services/pushService', () => ({ disablePush }))
 vi.mock('../../composables/useSocket', () => ({ useSocket: () => ({ disconnect: socketDisconnect }) }))
 vi.mock('../../services/memberDeparture', () => ({ refetchAfterMemberDeparture }))
+vi.mock('../householdScope', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../householdScope')>()
+  return { resetHouseholdScopedStores: vi.fn(actual.resetHouseholdScopedStores) }
+})
 
 import { useAuthStore } from '../auth'
 import { SESSION_MARKER_KEY } from '../../services/tokenStorage'
+import { resetHouseholdScopedStores } from '../householdScope'
+import { currentScopeSignal, ScopeChangedError } from '../../services/sessionScope'
 
 const HOUSEHOLD_KEY = 'haushalt_household_id'
 const LEGACY_TOKEN_KEY = 'haushalt_tokens'
@@ -84,6 +91,110 @@ const tokenResponse = {
 function markSession() {
   localStorage.setItem(SESSION_MARKER_KEY, '1')
 }
+
+function jwtFor(subject: string): string {
+  return `header.${btoa(JSON.stringify({ sub: subject }))}.signature`
+}
+
+describe('authority transitions', () => {
+  test('a pending password rotation finishes before logout and cannot reinstall credentials', async () => {
+    const pending = deferred<any>()
+    axiosPut.mockReturnValueOnce(pending.promise)
+    axiosPost.mockResolvedValue({})
+    const store = useAuthStore()
+    store.token = 'old-access'
+    const changing = store.changePassword('old-password', 'new-password')
+    const cancelled = expect(changing).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+    await vi.waitFor(() => expect(axiosPut).toHaveBeenCalled())
+    const loggingOut = store.logout({ reason: 'user' })
+    expect(store.token).toBeNull()
+    expect(axiosPost).not.toHaveBeenCalled()
+    pending.resolve(tokenResponse)
+    await cancelled
+    await loggingOut
+    expect(store.token).toBeNull()
+    expect(axiosPost).toHaveBeenCalledWith(LOGOUT_URL, {}, cookieRequest)
+  })
+
+  test('password change refreshes an expired same-user access token once', async () => {
+    const store = useAuthStore()
+    store.token = 'old-access'
+    axiosPut.mockRejectedValueOnce(httpError(401)).mockResolvedValueOnce(tokenResponse)
+    axiosPost.mockResolvedValueOnce(tokenResponse)
+    await store.changePassword('old-password', 'new-password')
+    expect(axiosPut).toHaveBeenCalledTimes(2)
+    expect(axiosPost).toHaveBeenCalledWith(REFRESH_URL, {}, cookieRequest)
+    expect(store.token).toBe('new-access')
+  })
+
+  test('clears private state immediately while logout is still waiting on the network', async () => {
+    const pending = deferred<any>()
+    axiosPost.mockReturnValue(pending.promise)
+    const store = useAuthStore()
+    store.token = jwtFor('A')
+    store.user = { id: 'A', email: 'a@test.invalid', display_name: 'A' }
+    const logout = store.logout({ reason: 'user' })
+    expect(store.token).toBeNull()
+    expect(store.user).toBeNull()
+    expect(resetHouseholdScopedStores).toHaveBeenCalled()
+    pending.resolve({ data: {} })
+    await logout
+  })
+
+  test('late refresh cannot resurrect a logged-out account', async () => {
+    const pending = deferred<any>()
+    axiosPost.mockReturnValueOnce(pending.promise).mockResolvedValue({ data: {} })
+    const store = useAuthStore()
+    store.token = jwtFor('A')
+    const refresh = store.refresh()
+    const rejected = expect(refresh).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+    await vi.waitFor(() => expect(axiosPost).toHaveBeenCalledTimes(1))
+    const logout = store.logout({ reason: 'user' })
+    pending.resolve({ data: { access_token: jwtFor('A'), expires_in: 900 } })
+    await rejected
+    await logout
+    expect(store.token).toBeNull()
+    expect(localStorage.getItem(SESSION_MARKER_KEY)).toBeNull()
+  })
+
+  test('late login response cannot undo a subsequent logout', async () => {
+    const pending = deferred<any>()
+    axiosPost.mockReturnValueOnce(pending.promise).mockResolvedValue({ data: {} })
+    const store = useAuthStore()
+    const login = store.login('a@test.invalid', 'dummy-password')
+    const rejected = expect(login).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+    await vi.waitFor(() => expect(axiosPost).toHaveBeenCalledTimes(1))
+    const logout = store.logout({ reason: 'user' })
+    pending.resolve({ data: { access_token: jwtFor('A'), expires_in: 900 } })
+    await rejected
+    await logout
+    expect(store.token).toBeNull()
+    expect(api.get).not.toHaveBeenCalled()
+  })
+
+  test('a shared cookie belonging to B cannot replace A during refresh', async () => {
+    axiosPost.mockResolvedValue({ data: { access_token: jwtFor('B'), expires_in: 900 } })
+    const store = useAuthStore()
+    store.token = jwtFor('A')
+    await expect(store.refresh()).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+    expect(store.token).toBeNull()
+    expect(store.isAuthenticated).toBe(false)
+  })
+
+  test('late /me response cannot populate the next session', async () => {
+    const pending = deferred<any>()
+    api.get.mockReturnValueOnce(pending.promise)
+    axiosPost.mockResolvedValue({ data: {} })
+    const store = useAuthStore()
+    const request = store.fetchMe()
+    const rejected = expect(request).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+    await store.logout({ reason: 'user' })
+    pending.resolve(meResponse())
+    await rejected
+    expect(store.user).toBeNull()
+    expect(store.households).toEqual([])
+  })
+})
 
 /** Holt den registrierten storage-Listener (Cross-Tab-Sync). */
 function storageListener(): (event: Partial<StorageEvent>) => void {
@@ -277,14 +388,14 @@ describe('refresh', () => {
 
 describe('login / register', () => {
   test('login sendet Formulardaten mit Cookie-Optionen und übernimmt nur den Access-Token', async () => {
-    api.post.mockResolvedValue(tokenResponse)
+    axiosPost.mockResolvedValue(tokenResponse)
     api.get.mockResolvedValue(meResponse())
     const store = useAuthStore()
 
     await store.login('a@example.com', 'secret')
 
-    expect(api.post).toHaveBeenCalledWith(
-      '/api/auth/login',
+    expect(axiosPost).toHaveBeenCalledWith(
+      'http://api.test/api/auth/login',
       expect.any(URLSearchParams),
       expect.objectContaining({
         withCredentials: true,
@@ -302,14 +413,14 @@ describe('login / register', () => {
   })
 
   test('register mit Einladungscode sendet Cookie-Optionen', async () => {
-    api.post.mockResolvedValue(tokenResponse)
+    axiosPost.mockResolvedValue(tokenResponse)
     api.get.mockResolvedValue(meResponse())
     const store = useAuthStore()
 
     await store.register('a@example.com', 'secret', 'Anna', { inviteCode: 'ALPHA123' })
 
-    expect(api.post).toHaveBeenCalledWith(
-      '/api/auth/register',
+    expect(axiosPost).toHaveBeenCalledWith(
+      'http://api.test/api/auth/register',
       { email: 'a@example.com', password: 'secret', display_name: 'Anna', invite_code: 'ALPHA123' },
       cookieRequest,
     )
@@ -433,6 +544,38 @@ describe('Haushalte', () => {
     expect(store.households).toHaveLength(0)
     expect(store.currentHouseholdId).toBeNull()
     expect(localStorage.getItem(HOUSEHOLD_KEY)).toBeNull()
+  })
+
+  test.each([true, false])('socket-confirmed leave succeeds when its HTTP scope is cancelled (remaining household: %s)', async (remaining) => {
+    const response = meResponse()
+    if (!remaining) response.data.households = response.data.households.slice(0, 1)
+    api.get.mockResolvedValue(response)
+    const store = useAuthStore()
+    await store.fetchMe()
+    const signal = currentScopeSignal()
+    const leaving = store.leaveHousehold('hh-1', () => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(new ScopeChangedError()), { once: true })
+    }))
+    store.handleMemberLeft({ household_id: 'hh-1', user_id: 'user-1' })
+    expect(signal.aborted).toBe(true)
+    expect(await leaving).toBe(remaining ? '/dashboard' : '/no-household')
+    expect(showToast).not.toHaveBeenCalled()
+  })
+
+  test('a socket-confirmed departure still rejects after the login session changes', async () => {
+    api.get.mockResolvedValue(meResponse())
+    axiosPost.mockResolvedValue({})
+    const store = useAuthStore()
+    await store.fetchMe()
+    const pending = deferred<void>()
+    const leaving = store.leaveHousehold('hh-1', () => pending.promise)
+    const cancelled = expect(leaving).rejects.toMatchObject({ code: 'ERR_CANCELED' })
+    store.handleMemberLeft({ household_id: 'hh-1', user_id: 'user-1' })
+    const loggingOut = store.logout({ reason: 'user' })
+    pending.reject(new ScopeChangedError())
+    await cancelled
+    await loggingOut
+    expect(store.currentHouseholdId).toBeNull()
   })
 
   test('fehlgeschlagener Austritt lässt den Haushalt stehen', async () => {
@@ -564,7 +707,7 @@ describe('logout', () => {
     expect(store.sessionExpired).toBe(true)
 
     // Erneute Anmeldung setzt den Hinweis zurück
-    api.post.mockResolvedValue(tokenResponse)
+    axiosPost.mockResolvedValue(tokenResponse)
     api.get.mockResolvedValue(meResponse())
     await store.login('a@example.com', 'secret')
     expect(store.sessionExpired).toBe(false)
@@ -581,7 +724,7 @@ describe('logout', () => {
 
     await store.logout({ reason: 'user' })
 
-    expect(disablePush).toHaveBeenCalledWith({ notifyBackend: true })
+    expect(disablePush).toHaveBeenCalledWith({ notifyBackend: false })
     expect(store.isAuthenticated).toBe(false)
     expect(localStorage.getItem(SESSION_MARKER_KEY)).toBeNull()
     expect(router.push).toHaveBeenCalledWith('/login')

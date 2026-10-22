@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -83,6 +83,15 @@ class PollResponse(BaseModel):
     options: list[PollOptionResponse]
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def hide_event_recipe_references(self):
+        # Old event options could contain an unchecked foreign recipe FK. Never
+        # expose its value or later SET NULL changes, including socket payloads.
+        if self.poll_type != "meal":
+            for option in self.options:
+                option.recipe_id = None
+        return self
 
 
 class VoteRequest(BaseModel):
@@ -203,6 +212,13 @@ def create_poll(
     membership: HouseholdMember = Depends(verify_household_access),
     db: Session = Depends(get_db),
 ):
+    if body.poll_type != "meal" and any(opt.recipe_id is not None for opt in body.options):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_detail(
+                ErrorCode.POLL_OPTION_INVALID, "recipe_id is only supported for meal polls"
+            ),
+        )
     # Für meal-Polls ist meal_date Pflicht
     if body.poll_type == "meal" and body.meal_date is None:
         raise HTTPException(

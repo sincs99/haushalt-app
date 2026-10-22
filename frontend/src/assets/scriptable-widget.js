@@ -13,6 +13,7 @@
 const BASE_URL = '__BASE_URL__'
 const WIDGET_KEY = '__WIDGET_KEY__'
 const LANG = '__LANG__'
+const CACHE_ID = '__CACHE_ID__'
 
 const TEXT = {
   de: {
@@ -51,7 +52,30 @@ const C = {
 }
 
 const KIND_SYMBOL = { todo: 'checklist', chore: 'sparkles', pet: 'pawprint', plant: 'leaf' }
-const CACHE = FileManager.local().joinPath(FileManager.local().documentsDirectory(), 'haushalt-widget.json')
+const files = FileManager.local()
+const CACHE = files.joinPath(files.documentsDirectory(), `haushalt-widget-${CACHE_ID}.json`)
+const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+function clearCache() {
+  try { if (files.fileExists(CACHE)) files.remove(CACHE) } catch (_) { /* best effort */ }
+}
+
+function readCache() {
+  try {
+    if (!files.fileExists(CACHE)) return null
+    const cached = JSON.parse(files.readString(CACHE))
+    const age = Date.now() - cached.saved_at
+    if (cached.cache_id !== CACHE_ID || cached.origin !== BASE_URL ||
+        !Number.isFinite(age) || age < 0 || age > CACHE_MAX_AGE_MS || !cached.data) {
+      clearCache()
+      return null
+    }
+    return cached.data
+  } catch (_) {
+    clearCache()
+    return null
+  }
+}
 
 async function load() {
   const req = new Request(`${BASE_URL}/api/widget/summary?lang=${LANG}`)
@@ -60,14 +84,23 @@ async function load() {
   try {
     const data = await req.loadJSON()
     const status = req.response && req.response.statusCode
-    if (status === 401) return { error: TEXT.invalid }
+    if (status === 401 || status === 403) {
+      clearCache()
+      return { error: TEXT.invalid }
+    }
     if (status !== 200) throw new Error(`HTTP ${status}`)
-    FileManager.local().writeString(CACHE, JSON.stringify(data))
+    try {
+      files.writeString(CACHE, JSON.stringify({ cache_id: CACHE_ID, origin: BASE_URL, saved_at: Date.now(), data }))
+    } catch (_) { /* Eine volle lokale Ablage verhindert keine frische Anzeige. */ }
     return { data }
   } catch (e) {
-    if (FileManager.local().fileExists(CACHE)) {
-      return { data: JSON.parse(FileManager.local().readString(CACHE)), offline: true }
+    // Scriptable kann HTTP-Fehler auch als Exception melden.
+    if (req.response && (req.response.statusCode === 401 || req.response.statusCode === 403)) {
+      clearCache()
+      return { error: TEXT.invalid }
     }
+    const cached = readCache()
+    if (cached) return { data: cached, offline: true }
     return { error: TEXT.error }
   }
 }

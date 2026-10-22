@@ -169,6 +169,8 @@ Internet → NPM (TLS) → casa-frontend:80 (Nginx)
 
 ## 3. Update-Prozedur
 
+Für die [UI-/Geschäftslogik-Korrekturen vom 22. Oktober 2026](qa/ui-business-fixes-20261022.md) Frontend und Backend gemeinsam aktualisieren. Diese Änderungen benötigen keine zusätzliche Migration; bestehende Windows-Dateischlüssel werden ohne Datenumschreibung erkannt. Der gemeinsame Release-Zweig enthält weiterhin die Sicherheitsmigration `b4c5d6e7f8a9` für KI-Budgets. Bei einem Update von einem älteren Stand gelten deshalb die Backup- und Migrationshinweise für diese Sicherheitskorrekturen. Nach dem Update Ausgabenbearbeitung mit Versionskonflikt, Verlauf/Nachladen, bestehende Uploads und das Haushaltsdatum prüfen; die lokale Chromium-Abnahme ersetzt diese Betriebsprüfung nicht.
+
 Für die Sicherheitskorrekturen vom 21. Oktober 2026 Frontend und Backend gemeinsam aktualisieren. Vorher `NPM_TRUSTED_PROXY_IP` setzen und das neue interne Proxy-Netz auf Überschneidungen prüfen. Die KI-Budgets benötigen die neue Alembic-Migration; sie läuft beim Backend-Start. Beim ersten Deployment der schlüsselgebundenen Refresh-Hashes werden vorhandene Refresh-Sitzungen einmalig ungültig und Nutzer melden sich erneut an. Es gibt keinen Rückfall auf die früheren ungebundenen SHA-256-Hashes. Für bereits installierte Scriptable-Widgets die neue Skriptvorlage übernehmen.
 
 ```powershell

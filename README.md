@@ -140,6 +140,7 @@ Fehler-Monitoring über `SENTRY_DSN`. Siehe [`docs/deployment.md`](docs/deployme
 - [`docs/security/audit-remediation-2026-10-21.md`](docs/security/audit-remediation-2026-10-21.md): Sicherheitskorrekturen vom 21. Oktober 2026, lokale Testnachweise und noch offene Betriebsprüfungen
 - [`docs/qa/logic-review.md`](docs/qa/logic-review.md): Logik-Review der Geschäftsregeln (Szenarien pro Modul, behobene Fehler, offene Produktentscheidungen)
 - [`docs/qa/current-audit-fixes.md`](docs/qa/current-audit-fixes.md): Korrekturen vom 7. Oktober 2026, lokale Prüfnachweise und Hinweise zum gemeinsamen Frontend-/Backend-Deployment
+- [`docs/qa/ui-business-fixes-20261022.md`](docs/qa/ui-business-fixes-20261022.md): UI-/Geschäftslogik-Korrekturen vom 22. Oktober 2026, Konfliktbearbeitung, Verlauf und lokale Abnahmegrenzen
 - [`docs/ai-assistant.md`](docs/ai-assistant.md): KI-Assistent (Architektur, Datenschutz, Kosten, Erweiterung)
 - [`docs/offline-first-phase2.md`](docs/offline-first-phase2.md): Konzept für Offline-Betrieb (Meilenstein M0 ist umgesetzt)
 

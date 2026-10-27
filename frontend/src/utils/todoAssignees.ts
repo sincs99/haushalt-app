@@ -6,7 +6,7 @@
  * - Ex-Mitglieder zählen nicht (Aufgabe mit nur Ex-Mitgliedern = offen für alle)
  * - erledigt ist eine Aufgabe für alle, sobald eine Person abhakt (``done_by_user_id``)
  */
-import type { HouseholdMemberInfo, TodoItem } from '../types'
+import type { DashboardAssignee, HouseholdMemberInfo, TodoItem } from '../types'
 
 /** Avatare in der Zeile, danach "+n" */
 export const MAX_STACK = 3
@@ -51,6 +51,15 @@ export function assigneeStack(
     shown: active.slice(0, max),
     overflow: Math.max(0, active.length - max),
     label: active.map(m => m.display_name).join(', '),
+  }
+}
+
+/** Avatar-Stapel für Zuständige mit Namen (Dashboard; die API liefert nur Mitglieder) */
+export function namedStack(people: readonly DashboardAssignee[], max = MAX_STACK) {
+  return {
+    shown: people.slice(0, max),
+    overflow: Math.max(0, people.length - max),
+    label: people.map(p => p.display_name).join(', '),
   }
 }
 

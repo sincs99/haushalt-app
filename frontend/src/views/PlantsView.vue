@@ -227,9 +227,18 @@ function openPlant(plantId: string) {
   router.push(`/plants/${plantId}`)
 }
 
-function summaryTask(plantId: string): PlantCareStatusTask | undefined {
-  // Für die Kartenzeile: fällige Aufgaben zuerst, sonst die nächste anstehende
-  return dueTasks(plantId)[0] ?? nextTask(plantId)
+// Kartenzeile: alle fälligen Aufgaben (z. B. "Giessen, Düngen"), sonst die nächste anstehende.
+// Nur die erste zu zeigen liess "Gegossen" wirkungslos erscheinen, wenn zugleich Düngen fällig war.
+function summary(plantId: string): { names: string; dueAt: string } | undefined {
+  const due = dueTasks(plantId)
+  const tasks = due.length > 0 ? due : [nextTask(plantId)].filter((task): task is PlantCareStatusTask => !!task)
+  if (tasks.length === 0) return undefined
+  return { names: tasks.map(task => careTaskName(task, t)).join(', '), dueAt: tasks[0].next_due_at }
+}
+
+function waterDue(plantId: string): boolean {
+  const status = statusFor(plantId)
+  return !!status && isWaterDue(status)
 }
 </script>
 
@@ -326,9 +335,9 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
             >{{ $t('plants.dueToday') }}</span>
           </div>
 
-          <div v-if="summaryTask(plant.id)" class="plant-card__next">
-            {{ careTaskName(summaryTask(plant.id)!, t) }}
-            · {{ dueText(summaryTask(plant.id)!.next_due_at, t) }}
+          <div v-if="summary(plant.id)" class="plant-card__next">
+            {{ summary(plant.id)!.names }}
+            · {{ dueText(summary(plant.id)!.dueAt, t) }}
           </div>
           <div v-else class="plant-card__next plant-card__next--empty">
             {{ $t('plants.noTasksShort') }}
@@ -344,7 +353,7 @@ function summaryTask(plantId: string): PlantCareStatusTask | undefined {
             </button>
             <BaseButton
               v-if="hasWaterTask(plant.id)"
-              :variant="badgeState(plant.id) === 'overdue' || badgeState(plant.id) === 'today' ? 'primary' : 'secondary'"
+              :variant="waterDue(plant.id) ? 'primary' : 'secondary'"
               size="sm"
               :loading="isPending(`water-${plant.id}`)"
               :disabled="isPending(`water-${plant.id}`)"

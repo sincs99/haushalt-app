@@ -232,7 +232,7 @@ Household ├── ShoppingList ──< ShoppingItem
 
 Alle in Abschnitt 4 genannten Module sind implementiert und in der App erreichbar, ebenso Dokument-Ablage mit Mehrseiten-Upload, PWA mit Update-Hinweis, Web Push, Badge, Homescreen-Widget, Tags, KI-Assistent, Konto-Funktionen, Tarife/Stripe und Betreiber-Ansicht. Der Betrieb (Docker, Backups, Restore-Drill) ist in [`deployment.md`](deployment.md) beschrieben.
 
-Zwei Vorhaben sind seit 2026-11-09 in Arbeit und noch nicht Teil dieses Stands: eine End-to-End-Suite (`frontend/e2e/`, `npm run test:e2e`, mit CI-Job) und eine Abnahme-Checkliste ([`qa/ABNAHME-CHECKLISTE.md`](qa/ABNAHME-CHECKLISTE.md)). Zusätzlich werden `PetDetailView.vue` und `CalendarView.vue` in Unterkomponenten aufgeteilt.
+Seit 2026-11-09 gibt es eine End-to-End-Suite mit Playwright (`frontend/e2e/`, `npm run test:e2e`, CI-Job `e2e`; drei Abläufe: Registrierung/Login, Einkauf zu zweit in Echtzeit, Ausgabe mit Ausgleich) und eine Abnahme-Checkliste ([`qa/ABNAHME-CHECKLISTE.md`](qa/ABNAHME-CHECKLISTE.md)) mit den hier ausgeführten Nachweisen und den Prüfungen, die der Betreiber selbst machen muss. `PetDetailView.vue` und `CalendarView.vue` sind in Unterkomponenten aufgeteilt (`components/pets/`, `components/calendar/`).
 
 ### Offen
 
@@ -280,7 +280,7 @@ Zwei Vorhaben sind seit 2026-11-09 in Arbeit und noch nicht Teil dieses Stands: 
 | Design-Tokens, UI-Audit | [`design/design-tokens.md`](design/design-tokens.md), [`design/ui-audit.md`](design/ui-audit.md) |
 | Sicherheits-Reviews | [`security/`](security/), zuletzt [`security/audit-remediation-2026-10-21.md`](security/audit-remediation-2026-10-21.md) |
 | Logik-Audit, Geschäftsregel-Matrix, Produktentscheidungen | [`qa/FULL_LOGIC_AUDIT.md`](qa/FULL_LOGIC_AUDIT.md), [`qa/BUSINESS_RULES_MATRIX.md`](qa/BUSINESS_RULES_MATRIX.md), [`qa/PRODUCT_DECISIONS.md`](qa/PRODUCT_DECISIONS.md) |
-| Abnahme (in Arbeit seit 2026-11-09) | [`qa/ABNAHME-CHECKLISTE.md`](qa/ABNAHME-CHECKLISTE.md) |
+| Abnahme | [`qa/ABNAHME-CHECKLISTE.md`](qa/ABNAHME-CHECKLISTE.md) |
 | Modul-Reviews | [`review-epic5-calendars.md`](review-epic5-calendars.md), [`review-epic8-upload.md`](review-epic8-upload.md), [`review-epic16-month-view.md`](review-epic16-month-view.md), [`review-todo-reminders.md`](review-todo-reminders.md), [`security-review-food-module.md`](security-review-food-module.md) |
 
 ## 10. Dieses Dokument pflegen

@@ -3,7 +3,7 @@
 **Branch:** `claude/logic-review` · **Basis:** `master` nach PR #29 (792 Backend-Tests grün, 363 Frontend-Tests grün)
 
 Dieses Review prüft, ob die App das Verhalten zeigt, das sie in `README.md`,
-`docs/PROJECT-STATUS.md` (Geschäftsregeln, Abschnitt 8, Epics 31–34) und
+`docs/PROJECT-STATUS.md` (Geschäftsregeln und bekannte Einschränkungen) und
 `docs/offline-first-phase2.md` verspricht — und was ein Nutzer darüber hinaus erwartet.
 Sicherheit war nicht Gegenstand (siehe `docs/security/`).
 

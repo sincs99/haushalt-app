@@ -426,6 +426,38 @@ describe('login / register', () => {
     )
     expect(store.token).toBe('new-access')
   })
+
+  test('abgelehnte Anmeldung ohne Sitzung baut die Ansicht nicht neu auf (Formular und Fehlermeldung bleiben)', async () => {
+    axiosPost.mockRejectedValue({ response: { status: 401 } })
+    const store = useAuthStore()
+    const before = store.scopeKey
+
+    await expect(store.login('a@example.com', 'falsch')).rejects.toBeDefined()
+
+    expect(store.scopeKey).toBe(before)
+  })
+
+  test('abgelehnte Registrierung ohne Sitzung baut die Ansicht nicht neu auf', async () => {
+    axiosPost.mockRejectedValue({ response: { status: 422 } })
+    const store = useAuthStore()
+    const before = store.scopeKey
+
+    await expect(store.register('a@example.com', 'secret', 'Anna', { householdName: 'Zuhause' })).rejects.toBeDefined()
+
+    expect(store.scopeKey).toBe(before)
+  })
+
+  test('Anmeldung über eine bestehende Sitzung hinweg baut die Ansichten neu auf', async () => {
+    axiosPost.mockResolvedValue(tokenResponse)
+    api.get.mockResolvedValue(meResponse())
+    const store = useAuthStore()
+    await store.login('a@example.com', 'secret')
+    const before = store.scopeKey
+
+    await store.login('b@example.com', 'secret')
+
+    expect(store.scopeKey).toBeGreaterThan(before)
+  })
 })
 
 describe('Haushalte', () => {

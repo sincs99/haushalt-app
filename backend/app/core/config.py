@@ -94,6 +94,9 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # slowapi/limits-Storage, z. B. redis://redis:6379/0
     rate_limit_storage_uri: str = "memory://"
+    # Nur für lokale Test-Stacks (Playwright-E2E): false schaltet slowapi ab.
+    # In Produktion verboten (Startup-Check in app/main.py).
+    rate_limit_enabled: bool = True
     # python-socketio Message-Queue, z. B. redis://redis:6379/1 (leer = ein Prozess)
     socketio_message_queue: str = ""
 

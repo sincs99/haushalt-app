@@ -23,4 +23,6 @@ limiter = Limiter(
     key_func=get_remote_address,
     storage_uri=settings.rate_limit_storage_uri.strip() or "memory://",
     in_memory_fallback_enabled=True,
+    # RATE_LIMIT_ENABLED=false nur für E2E-Test-Stacks; Produktion lehnt das ab (main.py)
+    enabled=settings.rate_limit_enabled,
 )

@@ -122,6 +122,24 @@ pip install pip-audit && pip-audit -r backend/requirements.txt
 cd frontend && npm audit --omit=dev --audit-level=high
 ```
 
+### End-to-End-Tests (Playwright)
+
+`frontend/e2e/` enthält drei Journeys gegen den echt laufenden Stack (PostgreSQL + Backend + Frontend): Registrieren/Anmelden mit Neuladen, Live-Abgleich der Einkaufsliste zwischen zwei Browser-Kontexten (Socket.IO) und Ausgabe mit Ausgleichszahlung. Die CI führt sie im Job `e2e` aus; bei einem Fehler liegt der Playwright-Bericht als Artefakt `playwright-report` bereit.
+
+```bash
+# Eigene, wegwerfbare Datenbank anlegen (wird migriert; nie die Entwicklungs- oder Produktiv-DB verwenden)
+createdb -h localhost -U USER casa_e2e
+
+cd frontend
+npm ci
+npx playwright install chromium                      # einmalig
+export E2E_DATABASE_URL=postgresql://USER:PASSWORT@localhost:5432/casa_e2e
+export E2E_PYTHON=$PWD/../backend/venv/bin/python    # Python mit den Backend-Abhängigkeiten (Standard: python)
+npm run test:e2e
+```
+
+Playwright führt `alembic upgrade head` aus und startet Backend (Port 8100, `E2E_BACKEND_PORT`) und Vite (Port 5180, `E2E_FRONTEND_PORT`) selbst; beide Ports müssen frei sein. Das Test-Backend läuft ohne Mailversand, ohne Pflicht-Zustimmung und mit `RATE_LIMIT_ENABLED=false` (jeder Lauf registriert mehrere Konten; in Produktion verweigert das Backend den Start mit dieser Einstellung). Jeder Test legt eigene Konten mit eindeutigen E-Mail-Adressen an, die Datenbank muss zwischen Läufen nicht geleert werden. Fehler-Screenshots und Traces landen in `frontend/test-results/` (nicht versioniert).
+
 `npm run typecheck` prüft die Anwendung mit `vue-tsc -p tsconfig.app.json --noEmit`; `npm run build` führt diese Prüfung ebenfalls aus.
 
 Kennzahlen (Tests, Coverage, i18n-Schlüssel, Migrationen) stehen mit Datum und dem Befehl, der sie erzeugt, in [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md#2-kennzahlen-erhoben-am-2026-11-09). Stand 2026-11-09: Backend 1268 Tests bestanden (80 übersprungen), Coverage 94 %; Frontend-Coverage 82,5 % (Statements) und 77 % (Branches).

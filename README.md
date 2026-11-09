@@ -124,7 +124,7 @@ cd frontend && npm audit --omit=dev --audit-level=high
 
 `npm run typecheck` prüft die Anwendung mit `vue-tsc -p tsconfig.app.json --noEmit`; `npm run build` führt diese Prüfung ebenfalls aus.
 
-Stand 2026-10-10: Backend 1159 Tests (1093 auf SQLite, 66 in der PostgreSQL-Lane), Coverage 95 %; Frontend 727 Tests in 56 Dateien, Coverage 83,4 % (Statements); 1312 i18n-Schlüssel; 46 Alembic-Revisionen (Kopf `cal1a2b3c4d5`). Details: [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md).
+Kennzahlen (Tests, Coverage, i18n-Schlüssel, Migrationen) stehen mit Datum und dem Befehl, der sie erzeugt, in [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md#2-kennzahlen-erhoben-am-2026-11-09). Stand 2026-11-09: Backend 1268 Tests bestanden (80 übersprungen), Coverage 94 %; Frontend-Coverage 82,5 % (Statements) und 77 % (Branches).
 
 Die Backend-Tests setzen `DATABASE_URL`, `JWT_SECRET_KEY` und `CORS_ORIGINS` selbst und brauchen für die SQLite-Lane keine laufende Datenbank. Die PostgreSQL-Lane ([`backend/tests/pg/README.md`](backend/tests/pg/README.md)) legt mit `TEST_PG_URL` eine frische Test-Datenbank an (`alembic upgrade head`) und wird sonst übersprungen. Neun zusätzliche Sicherheits-Paralleltests verwenden separat `TEST_AUTH_POSTGRES_URL` und `SECURITY_TEST_DATABASE_URL`; die CI führt sie gegen eine eigene Wegwerf-Datenbank `test_security` aus. Diese URLs dürfen nur auf eigens dafür angelegte lokale Testdatenbanken zeigen. Die Tests des KI-Assistenten mocken den Anthropic-Client und brauchen keinen API-Schlüssel. Wer `DATABASE_URL` in der Shell gesetzt hat, sollte sie vor `pytest` entfernen, sonst laufen die Tests gegen diese Datenbank.
 

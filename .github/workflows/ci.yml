@@ -95,8 +95,12 @@ jobs:
 
       # CASA-07 / PD-D2: Backup → Update → Restore (scripts/restore-db.sh) → exakter
       # Tabellenvergleich → alembic upgrade head; Gegenprobe mit kaputtem Dump
-      - name: Install PostgreSQL client (pg_dump/pg_restore/psql)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      # Client-Version an den Server (postgres:16) binden: ein neueres pg_dump schreibt
+      # Einstellungen in den Dump (z. B. transaction_timeout), die PostgreSQL 16 ablehnt.
+      - name: Install PostgreSQL 16 client (pg_dump/pg_restore/psql)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-16
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
 
       - name: Security concurrency regressions (disposable local database)
         env:

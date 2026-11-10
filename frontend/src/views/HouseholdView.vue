@@ -529,7 +529,7 @@ watch(() => authStore.currentHouseholdId, (id) => {
       </div>
       <div v-else>
         <div class="invite-code-display">
-          <code class="invite-code">{{ inviteCode || '...' }}</code>
+          <code class="invite-code" data-testid="invite-code">{{ inviteCode || '...' }}</code>
         </div>
         <p v-if="inviteExpired" class="section-hint invite-expired" role="alert">
           {{ $t('household.inviteExpired') }}

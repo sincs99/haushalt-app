@@ -2,6 +2,11 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Backend für den Dev-Proxy; die E2E-Tests (playwright.config.ts) setzen einen eigenen Port.
+// tsconfig.app.json lädt bewusst keine Node-Typen, daher nur diese schmale Deklaration.
+declare const process: { env: Record<string, string | undefined> }
+const apiProxyTarget = process.env.CASA_API_PROXY_TARGET || 'http://localhost:8000'
+
 export default defineConfig({
   plugins: [
     vue(),
@@ -56,11 +61,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: apiProxyTarget,
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'http://localhost:8000',
+        target: apiProxyTarget,
         changeOrigin: true,
         ws: true,
       },

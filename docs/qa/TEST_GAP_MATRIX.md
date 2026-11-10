@@ -64,7 +64,7 @@ Priority: P0 = must exist before the corresponding fix ships · P1 = next iterat
 | 27 | DST and household time | Zurich offsets | gap/overlap event creation; device TZ ≠ household TZ | unit + vitest (TZ env) | 02:30 on 2026-03-29 → clear error or normalised; frontend dates with `TZ=America/New_York` | P2 |
 | 28 | AI quota concurrency/failure | SQLite unit | first-row race, unmapped exceptions | PG integration + unit | no 429 below limit; `APIResponseValidationError` → 502, quota released | P2 |
 | 29 | Push click household context, badge per household | none | multi-household push | E2E | tap pet reminder of household B while on A → B opened | P2 |
-| 30 | **Critical household journeys end-to-end** | none | two devices, realtime | E2E (Playwright, two browser contexts) | (a) shopping list sync add/check/delete between two users; (b) expense create → balances on other device; (c) household switch while loading; (d) logout → other user login; (e) meal poll decide visible on other device; (f) chore complete via `/t/<token>` twice | P1 |
+| 30 | **Critical household journeys end-to-end** | Playwright (`frontend/e2e/`, CI job `e2e`): register/login + reload; shopping add/check live between two contexts; even-split expense → balances → settlement on both devices | delete sync; cases (c)–(f) | E2E (Playwright, two browser contexts) | (a) shopping list sync add/check/delete between two users; (b) expense create → balances on other device; (c) household switch while loading; (d) logout → other user login; (e) meal poll decide visible on other device; (f) chore complete via `/t/<token>` twice | P1 |
 
 ## 3. What remains unverified after this audit
 

@@ -489,7 +489,15 @@ export const useAuthStore = defineStore('auth', () => {
   // ── Internal: State synchron zurücksetzen, native Ablage geordnet leeren ──
 
   function _clearState(broadcast = true, clearNative = true) {
-    scopeKey.value++
+    // Nur wenn es eine Sitzung zu verwerfen gibt, die Ansichten neu aufbauen. Ohne
+    // Sitzung (Login-/Registrierungsformular) würde der Neuaufbau die Eingaben und
+    // die Fehlermeldung eines abgelehnten Versuchs löschen.
+    const hadSession = token.value !== null
+      || user.value !== null
+      || hasOfflineSession.value
+      || currentHouseholdId.value !== null
+      || households.value.length > 0
+    if (hadSession) scopeKey.value++
     invalidateSessionScope()
     _refreshPromise = null
     _revalidatePromise = null

@@ -78,6 +78,12 @@ backups/
 # Frontend coverage
 frontend/coverage/
 
+# Playwright-E2E (Berichte, Fehler-Screenshots/Traces)
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/playwright/.cache/
+
 # UI-/Mobile-Screenshots (lokal, Playwright); die Audit-Skripte bleiben versioniert
 frontend/qa/*
 !frontend/qa/mobile-audit.cjs

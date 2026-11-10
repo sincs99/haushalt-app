@@ -99,7 +99,11 @@ jobs:
       # Einstellungen in den Dump (z. B. transaction_timeout), die PostgreSQL 16 ablehnt.
       - name: Install PostgreSQL 16 client (pg_dump/pg_restore/psql)
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-16
+          # Version 16 liegt nicht in jedem Runner-Image im Standard-Repo → PGDG-Repo einrichten
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-16
+          /usr/lib/postgresql/16/bin/pg_dump --version
           echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
 
       - name: Security concurrency regressions (disposable local database)

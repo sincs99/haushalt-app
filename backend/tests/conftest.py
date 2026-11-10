@@ -30,6 +30,7 @@ def _compile_uuid_sqlite(type_, compiler, **kw):
 # --------------------------------------------------------------------------
 # 3) App- und DB-Imports (NACH Env-Vars und Compiler-Hook)
 # --------------------------------------------------------------------------
+from contextlib import ExitStack  # noqa: E402
 from unittest.mock import patch  # noqa: E402
 
 import pytest  # noqa: E402
@@ -120,30 +121,35 @@ def _disable_rate_limit():
 @pytest.fixture(autouse=True)
 def _mock_socket_emit():
     """Mock emit_to_household_sync global, damit kein Event-Loop nötig ist."""
-    with patch("app.socket_manager.emit_to_household_sync") as mock_emit:
-        # Auch in den Routern patchen, da dort der Import direkt ist
-        with patch("app.routers.budgets.emit_to_household_sync", mock_emit):
-            with patch("app.routers.recurring_bills.emit_to_household_sync", mock_emit):
-                with patch("app.routers.shopping.emit_to_household_sync", mock_emit):
-                    with patch("app.routers.todos.emit_to_household_sync", mock_emit):
-                        with patch("app.routers.expenses.emit_to_household_sync", mock_emit):
-                            with patch("app.routers.settlements.emit_to_household_sync", mock_emit):
-                                with patch("app.routers.chores.emit_to_household_sync", mock_emit):
-                                    with patch("app.routers.households.emit_to_household_sync", mock_emit):
-                                        with patch("app.routers.events.emit_to_household_sync", mock_emit):
-                                            with patch("app.routers.polls.emit_to_household_sync", mock_emit):
-                                                with patch("app.routers.pets.emit_to_household_sync", mock_emit), patch(
-                                                    "app.routers.plants.emit_to_household_sync", mock_emit
-                                                ):
-                                                    with patch("app.routers.food.emit_to_household_sync", mock_emit):
-                                                        with patch("app.routers.notes.emit_to_household_sync", mock_emit):
-                                                            with patch("app.routers.calendars.emit_to_household_sync", mock_emit):
-                                                                with patch("app.routers.files.emit_to_household_sync", mock_emit):
-                                                                    with patch("app.routers.documents.emit_to_household_sync", mock_emit):
-                                                                        with patch("app.routers.tags.emit_to_household_sync", mock_emit), patch(
-                                                                            "app.routers.ai.emit_to_household_sync", mock_emit
-                                                                        ):
-                                                                            yield mock_emit
+    # Auch in den Routern patchen, da dort der Import direkt ist. Flach über einen
+    # ExitStack: Python erlaubt höchstens 20 verschachtelte with-Blöcke.
+    routers = (
+        "budgets",
+        "recurring_bills",
+        "shopping",
+        "todos",
+        "expenses",
+        "settlements",
+        "chores",
+        "households",
+        "events",
+        "polls",
+        "pets",
+        "plants",
+        "food",
+        "notes",
+        "calendars",
+        "files",
+        "documents",
+        "tags",
+        "ai",
+        "sensors",
+    )
+    with ExitStack() as stack:
+        mock_emit = stack.enter_context(patch("app.socket_manager.emit_to_household_sync"))
+        for name in routers:
+            stack.enter_context(patch(f"app.routers.{name}.emit_to_household_sync", mock_emit))
+        yield mock_emit
 
 
 @pytest.fixture()

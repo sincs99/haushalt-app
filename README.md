@@ -2,11 +2,13 @@
 
 [![CI](https://github.com/sincs99/haushalt-app/actions/workflows/ci.yml/badge.svg)](https://github.com/sincs99/haushalt-app/actions/workflows/ci.yml)
 
-Web-App (PWA) für die gemeinsame Organisation eines Haushalts: Einkaufslisten, Aufgaben, Putzplan mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Pflanzen, Notizen, eine Dokument-Ablage (Verträge, Rechnungen, Garantien), NFC/QR-Tags für Ein-Tipp-Aktionen und ein optionaler KI-Assistent (Rezeptvorschläge, Pflanzenpflege). Mehrere Nutzer pro Haushalt, Echtzeit-Sync per WebSocket, Mobile-First, zweisprachig (DE/EN).
+Web-App (PWA) für die gemeinsame Organisation eines Haushalts: Einkaufslisten, Aufgaben, Putzplan mit Ämtli-Rotation, Ausgaben-Teilung mit Ausgleichszahlungen, Budget und wiederkehrende Rechnungen, Kalender mit Abstimmungen, Essensplanung, Haustiere, Pflanzen, Notizen, eine Dokument-Ablage (Verträge, Rechnungen, Garantien), NFC/QR-Tags für Ein-Tipp-Aktionen, Raumklima-Sensoren und ein optionaler KI-Assistent (Rezeptvorschläge, Pflanzenpflege). Mehrere Nutzer pro Haushalt, Echtzeit-Sync per WebSocket, Mobile-First, zweisprachig (DE/EN).
 
 Detaillierter Stand und Architektur: [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md).
 
 Homescreen-Widget fürs iPhone (über die App Scriptable): [`docs/widget.md`](docs/widget.md).
+
+Raumklima mit Temperatur- und Feuchtesensoren (z. B. Tuya-Zigbee über Zigbee2MQTT): [`docs/sensors.md`](docs/sensors.md).
 
 ## Tech-Stack
 

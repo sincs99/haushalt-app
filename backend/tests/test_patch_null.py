@@ -32,6 +32,7 @@ from app.models import (
     PlantCareTask,
     Recipe,
     RecurringBill,
+    SensorDevice,
     ShoppingItem,
     ShoppingList,
     Tag,
@@ -48,6 +49,7 @@ from app.routers import (
     pets,
     plants,
     recurring_bills,
+    sensors,
     shopping,
     tags,
     todos,
@@ -94,6 +96,13 @@ def _tag(db, hh, user, todo):
     return {"tag_id": t.id}, t
 
 
+def _sensor(db, hh):
+    d = SensorDevice(id=uuid.uuid4(), household_id=hh.id, external_id="0xa4c1", name="Wohnzimmer")
+    db.add(d)
+    db.commit()
+    return {"device_id": d.id}, d
+
+
 # (Schema, Modell, Setup(request, db) → (Pfad-Parameter, Objekt))
 CASES = [
     (calendars.CalendarUpdate, Calendar, lambda r, db: ({"calendar_id": r.getfixturevalue("calendar_a").id}, r.getfixturevalue("calendar_a"))),
@@ -109,6 +118,7 @@ CASES = [
     (plants.PlantUpdate, Plant, lambda r, db: ({"plant_id": r.getfixturevalue("plant_a").id}, r.getfixturevalue("plant_a"))),
     (plants.CareTaskUpdate, PlantCareTask, lambda r, db: _plant_care_task(db, r.getfixturevalue("household_a"), r.getfixturevalue("plant_a"))),
     (recurring_bills.RecurringBillUpdate, RecurringBill, lambda r, db: ({"bill_id": r.getfixturevalue("bill_a").id}, r.getfixturevalue("bill_a"))),
+    (sensors.SensorDeviceUpdate, SensorDevice, lambda r, db: _sensor(db, r.getfixturevalue("household_a"))),
     (shopping.ShoppingListUpdate, ShoppingList, lambda r, db: ({"list_id": r.getfixturevalue("shopping_list_a").id}, r.getfixturevalue("shopping_list_a"))),
     (shopping.ShoppingItemUpdate, ShoppingItem, lambda r, db: ({"item_id": r.getfixturevalue("shopping_item_a").id}, r.getfixturevalue("shopping_item_a"))),
     (tags.TagUpdate, Tag, lambda r, db: _tag(db, r.getfixturevalue("household_a"), r.getfixturevalue("user_a"), r.getfixturevalue("todo_a"))),

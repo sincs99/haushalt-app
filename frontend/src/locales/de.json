@@ -79,7 +79,8 @@
     "documents": "Ablage",
     "assistant": "KI-Assistent",
     "plants": "Pflanzen",
-    "mainNav": "Hauptnavigation"
+    "mainNav": "Hauptnavigation",
+    "climate": "Raumklima"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -196,7 +197,8 @@
     "settingsSub": "Haushalt, Mitglieder & Sprache",
     "documentsSub": "Verträge, Rechnungen & Garantien",
     "assistantSub": "Pflanzenpflege mit KI",
-    "plantsSub": "Giessen, Düngen & Pflege"
+    "plantsSub": "Giessen, Düngen & Pflege",
+    "climateSub": "Temperatur & Luftfeuchtigkeit"
   },
   "shopping": {
     "title": "Einkaufsliste",
@@ -761,7 +763,9 @@
     "MEAL_PLAN_OCCUPIED": "Für diesen Tag ist schon ein Essen geplant",
     "EVENT_TIME_NONEXISTENT": "Diese Uhrzeit gibt es wegen der Zeitumstellung an diesem Tag nicht – bitte eine andere wählen",
     "POLL_OPTION_TIME_REQUIRED": "Jede Option braucht Datum und Uhrzeit",
-    "SHOPPING_LIST_NOT_FOUND": "Diese Einkaufsliste gibt es nicht mehr"
+    "SHOPPING_LIST_NOT_FOUND": "Diese Einkaufsliste gibt es nicht mehr",
+    "SENSOR_TOKEN_INVALID": "Sensor-Schlüssel ungültig",
+    "SENSOR_NOT_FOUND": "Sensor nicht gefunden – er wurde vielleicht gelöscht"
   },
   "push": {
     "title": "Benachrichtigungen",
@@ -1606,5 +1610,57 @@
     "acceptRequired": "Bitte akzeptiere die Nutzungsbedingungen und die Datenschutzerklärung",
     "operatorMissing": "[Betreiberangaben fehlen – OPERATOR_* in der Konfiguration setzen]",
     "loadError": "Der Text konnte nicht geladen werden."
+  },
+  "climate": {
+    "title": "Raumklima",
+    "emptyTitle": "Noch keine Sensoren",
+    "emptySubtitle": "Sensoren erscheinen hier, sobald sie Messwerte liefern. Ein Admin richtet die Anbindung in den Einstellungen ein.",
+    "emptySubtitleAdmin": "Sensoren erscheinen hier automatisch, sobald sie Messwerte liefern. Dafür braucht die Sensor-Brücke einen Schlüssel.",
+    "emptyAction": "Zu den Einstellungen",
+    "temperature": "Temperatur",
+    "humidityLabel": "Luftfeuchtigkeit",
+    "battery": "Batterie",
+    "humidity": {
+      "dry": "trocken",
+      "high": "feucht"
+    },
+    "offline": "offline",
+    "batteryLow": "Batterie schwach",
+    "neverSeen": "noch kein Messwert",
+    "lastSeen": "Letzter Messwert {time}",
+    "rangeDay": "24 Stunden",
+    "rangeWeek": "7 Tage",
+    "chartEmpty": "Keine Messwerte in diesem Zeitraum",
+    "chartSummary": "{title}: zwischen {min} und {max} {unit}",
+    "nameLabel": "Name",
+    "roomLabel": "Raum",
+    "roomPlaceholder": "z. B. Wohnzimmer",
+    "saved": "Sensor gespeichert",
+    "saveError": "Änderung konnte nicht gespeichert werden.",
+    "deleteTitle": "Sensor löschen?",
+    "deleteText": "Der Sensor und sein Verlauf werden gelöscht. Liefert er weiter Messwerte, erscheint er wieder als neuer Sensor.",
+    "deleted": "Sensor gelöscht",
+    "deleteError": "Sensor konnte nicht gelöscht werden.",
+    "justNow": "gerade eben"
+  },
+  "sensorKey": {
+    "title": "Raumklima-Sensoren",
+    "hint": "Thermometer und andere Sensoren liefern ihre Messwerte über eine Brücke (z. B. Zigbee2MQTT oder Home Assistant) an die App. Die Brücke braucht dafür einen Schlüssel, der nur Messwerte schreiben darf.",
+    "create": "Schlüssel erzeugen",
+    "replace": "Neuen Schlüssel erzeugen",
+    "replaceConfirm": "Der bisherige Schlüssel funktioniert danach nicht mehr. Die Brücke muss den neuen Schlüssel bekommen.",
+    "revoke": "Widerrufen",
+    "revokeConfirm": "Die Brücke kann danach keine Messwerte mehr liefern. Vorhandene Sensoren und ihr Verlauf bleiben erhalten.",
+    "revoked": "Sensor-Schlüssel widerrufen",
+    "active": "Schlüssel aktiv ({prefix}…)",
+    "createdAt": "Erstellt am {date}",
+    "lastUsed": "zuletzt genutzt am {date}",
+    "neverUsed": "noch nicht genutzt",
+    "onlyNow": "Der Schlüssel ist nur jetzt sichtbar. Dieser Beispielaufruf liefert einen Messwert:",
+    "exampleLabel": "Beispielaufruf mit Schlüssel",
+    "copy": "Beispiel kopieren",
+    "copied": "Beispiel kopiert",
+    "copyFailed": "Kopieren nicht möglich – Text im Feld markieren und kopieren",
+    "adminOnly": "Nur Admins können den Schlüssel erzeugen oder widerrufen."
   }
 }

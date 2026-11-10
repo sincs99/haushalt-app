@@ -1178,3 +1178,24 @@ export interface AdminUser {
   deleted: boolean
   household_count: number
 }
+
+// ── Raumklima (Sensoren) ──
+
+export interface SensorDevice {
+  id: string
+  household_id: string
+  external_id: string
+  name: string
+  room: string | null
+  temperature: number | null
+  humidity: number | null
+  battery: number | null
+  last_seen_at: string | null
+  created_at: string
+}
+
+export interface SensorReadingPoint {
+  recorded_at: string
+  temperature: number | null
+  humidity: number | null
+}

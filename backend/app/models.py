@@ -8,6 +8,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -1719,3 +1720,95 @@ class WidgetToken(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+class SensorIngestToken(Base):
+    """Schreib-Schlüssel, mit dem eine Brücke (z. B. Zigbee2MQTT) Messwerte liefert.
+
+    Gehört einem Haushalt (höchstens einer pro Haushalt) und erlaubt ausschliesslich
+    POST /api/sensors/ingest. Gespeichert wird nur der SHA-256-Hash, der Klartext
+    wird beim Erzeugen einmal angezeigt. Doku: docs/sensors.md
+    """
+
+    __tablename__ = "sensor_ingest_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("households.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    # Erste Zeichen zum Wiedererkennen in der Oberfläche (kein Geheimnis)
+    token_prefix: Mapped[str] = mapped_column(String(12), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class SensorDevice(Base):
+    """Ein Sensor (Thermometer, Hygrometer) eines Haushalts mit seinem letzten Stand.
+
+    Entsteht beim ersten Messwert automatisch; ``external_id`` ist die Kennung der
+    Quelle (z. B. Zigbee-Adresse) und pro Haushalt eindeutig.
+    """
+
+    __tablename__ = "sensor_devices"
+    __table_args__ = (
+        UniqueConstraint("household_id", "external_id", name="uq_sensor_device_household_external"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("households.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    external_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    room: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    temperature: Mapped[float | None] = mapped_column(Float, nullable=True)  # °C
+    humidity: Mapped[float | None] = mapped_column(Float, nullable=True)  # % rel. Feuchte
+    battery: Mapped[float | None] = mapped_column(Float, nullable=True)  # %
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Zeitpunkt des letzten Verlaufseintrags (der Verlauf wird ausgedünnt gespeichert)
+    last_logged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+
+
+class SensorReading(Base):
+    """Verlaufseintrag eines Sensors: Stand des Geräts zu einem Zeitpunkt."""
+
+    __tablename__ = "sensor_readings"
+    __table_args__ = (
+        Index("ix_sensor_readings_device_recorded", "device_id", "recorded_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sensor_devices.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    temperature: Mapped[float | None] = mapped_column(Float, nullable=True)
+    humidity: Mapped[float | None] = mapped_column(Float, nullable=True)

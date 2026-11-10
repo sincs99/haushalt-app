@@ -59,7 +59,7 @@ Hintergrund-Tasks im Backend: Web-Push-Scheduler, Aufräumen verwaister Uploads
 
 **Mehrmandantenfähigkeit.** Jeder Endpoint unter `/api/households/{id}/…` prüft die Mitgliedschaft (`verify_household_access`, fremder Haushalt → 403) oder die Admin-Rolle (`verify_household_admin`). Die `*_scoping`-Tests prüfen das für jedes Modul.
 
-**Frontend (`frontend/src/`).** `views/` (Seiten, Routen in `router/index.ts`), `components/` (inklusive `components/ui/` mit den Basiskomponenten und dem Design-System aus `assets/theme.css`, Tokens in [`design/design-tokens.md`](design/design-tokens.md)), `stores/`, `repositories/`, `composables/`, `utils/`, `locales/`. Die App-Shell (`App.vue`) zeigt ab 768 px eine Top-Bar mit sechs Links (Start, Kalender, Einkauf, Aufgaben, Finanzen, Haushalt), darunter die Bottom-Nav mit vier Tabs (Start, Kalender, Aufgaben, Einkauf) und dem Eintrag „Mehr“. Das „Mehr“-Sheet führt zu Finanzen, Tieren, Pflanzen, Essen, Notizen, Dokumenten und Einstellungen; der Assistent erscheint dort nur, wenn die KI für den Haushalt aktiv ist. Der Inhalt ist auf 640 px Breite begrenzt, Touch-Ziele sind mindestens 44 px gross.
+**Frontend (`frontend/src/`).** `views/` (Seiten, Routen in `router/index.ts`), `components/` (inklusive `components/ui/` mit den Basiskomponenten und dem Design-System aus `assets/theme.css`, Tokens in [`design/design-tokens.md`](design/design-tokens.md)), `stores/`, `repositories/`, `composables/`, `utils/`, `locales/`. Die App-Shell (`App.vue`) zeigt ab 768 px eine Top-Bar mit sechs Links (Start, Kalender, Einkauf, Aufgaben, Finanzen, Haushalt), darunter die Bottom-Nav mit vier Tabs (Start, Kalender, Aufgaben, Einkauf) und dem Eintrag „Mehr“. Das „Mehr“-Sheet führt zu Finanzen, Tieren, Pflanzen, Raumklima, Essen, Notizen, Dokumenten und Einstellungen; der Assistent erscheint dort nur, wenn die KI für den Haushalt aktiv ist. Der Inhalt ist auf 640 px Breite begrenzt, Touch-Ziele sind mindestens 44 px gross.
 
 **Muster in den Stores.**
 - Optimistische Updates mit Rollback bei Serverfehlern; Toast als Rückmeldung.
@@ -108,6 +108,7 @@ Jedes Modul besteht aus Router, Store, Repository und View (falls vorhanden). Di
 | Pflanzen | `routers/plants.py` | `PlantsView`, `PlantDetailView` |
 | Essen: Rezepte, Wochenmenü | `routers/food.py` | `FoodView`, `RecipeManager` |
 | Notizen | `routers/notes.py` | `NotesView` |
+| Raumklima (Sensoren) | `routers/sensors.py` | `ClimateView`, `SensorChart`, `SensorKeyCard` |
 | Dateien, Dokument-Ablage | `routers/files.py`, `routers/documents.py`, `services/storage.py`, `services/file_cleanup.py` | `DocumentsView` |
 | Web Push | `routers/push.py`, `services/push_service.py` | `PushSettings`, `pwa.ts`, `public/push-sw.js` |
 | Tags (NFC/QR) | `routers/tags.py`, `services/tag_actions.py` | `TagsView`, `TagScanView` (`/t/:token`) |
@@ -274,6 +275,7 @@ Seit 2026-11-09 gibt es eine End-to-End-Suite mit Playwright (`frontend/e2e/`, `
 | Änderungen je Version | [`../CHANGELOG.md`](../CHANGELOG.md) |
 | KI-Assistent: Aufbau, Kosten, Schemas | [`ai-assistant.md`](ai-assistant.md) |
 | Homescreen-Widget | [`widget.md`](widget.md) |
+| Raumklima (Sensoren) | [`sensors.md`](sensors.md) |
 | Tarife und Abrechnung | [`monetization.md`](monetization.md) |
 | Native Apps (Capacitor) | [`mobile-apps.md`](mobile-apps.md) |
 | Offline-first: Konzept und Architektur | [`offline-first-phase2.md`](offline-first-phase2.md), [`offline-ready-architecture.md`](offline-ready-architecture.md) |

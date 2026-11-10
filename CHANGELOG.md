@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Indoor climate view: temperature, humidity and battery of sensors with live updates and 24-hour/7-day history. A bridge (e.g. Zigbee2MQTT) delivers readings with a write-only household key. See `docs/sensors.md`.
+
 ## [0.1.0.0] - 2026-10-22
 
 ### Fixed

@@ -28,6 +28,7 @@ import { useFoodStore } from './food'
 import { useAiStore } from './ai'
 import { useDocumentsStore } from './documents'
 import { useTagsStore } from './tags'
+import { useSensorsStore } from './sensors'
 import { bumpHouseholdGeneration } from '../utils/householdGuard'
 import { clearToasts } from '../composables/useToast'
 
@@ -97,4 +98,5 @@ export function resetHouseholdScopedStores(): void {
   useAiStore().reset()
   useDocumentsStore().reset()
   useTagsStore().$reset()
+  useSensorsStore().reset()
 }

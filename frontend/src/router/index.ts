@@ -118,6 +118,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/climate',
+      name: 'climate',
+      component: () => import('../views/ClimateView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/notes',
       name: 'notes',
       component: () => import('../views/NotesView.vue'),

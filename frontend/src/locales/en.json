@@ -79,7 +79,8 @@
     "documents": "Documents",
     "assistant": "AI assistant",
     "plants": "Plants",
-    "mainNav": "Main navigation"
+    "mainNav": "Main navigation",
+    "climate": "Indoor climate"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -196,7 +197,8 @@
     "settingsSub": "Household, members & language",
     "documentsSub": "Contracts, invoices & warranties",
     "assistantSub": "Plant care with AI",
-    "plantsSub": "Watering, feeding & care"
+    "plantsSub": "Watering, feeding & care",
+    "climateSub": "Temperature & humidity"
   },
   "shopping": {
     "title": "Shopping list",
@@ -761,7 +763,9 @@
     "MEAL_PLAN_OCCUPIED": "A meal is already planned for this day",
     "EVENT_TIME_NONEXISTENT": "This time does not exist on that day because of the daylight saving change – please pick another",
     "POLL_OPTION_TIME_REQUIRED": "Every option needs a date and time",
-    "SHOPPING_LIST_NOT_FOUND": "This shopping list no longer exists"
+    "SHOPPING_LIST_NOT_FOUND": "This shopping list no longer exists",
+    "SENSOR_TOKEN_INVALID": "Invalid sensor key",
+    "SENSOR_NOT_FOUND": "Sensor not found – it may have been deleted"
   },
   "push": {
     "title": "Notifications",
@@ -1606,5 +1610,57 @@
     "acceptRequired": "Please accept the terms of use and the privacy policy",
     "operatorMissing": "[operator details missing – set OPERATOR_* in the configuration]",
     "loadError": "The text could not be loaded."
+  },
+  "climate": {
+    "title": "Indoor climate",
+    "emptyTitle": "No sensors yet",
+    "emptySubtitle": "Sensors appear here as soon as they send readings. An admin sets up the connection in the settings.",
+    "emptySubtitleAdmin": "Sensors appear here automatically as soon as they send readings. The sensor bridge needs a key for that.",
+    "emptyAction": "Go to settings",
+    "temperature": "Temperature",
+    "humidityLabel": "Humidity",
+    "battery": "Battery",
+    "humidity": {
+      "dry": "dry",
+      "high": "humid"
+    },
+    "offline": "offline",
+    "batteryLow": "Battery low",
+    "neverSeen": "no reading yet",
+    "lastSeen": "Last reading {time}",
+    "rangeDay": "24 hours",
+    "rangeWeek": "7 days",
+    "chartEmpty": "No readings in this period",
+    "chartSummary": "{title}: between {min} and {max} {unit}",
+    "nameLabel": "Name",
+    "roomLabel": "Room",
+    "roomPlaceholder": "e.g. Living room",
+    "saved": "Sensor saved",
+    "saveError": "The change could not be saved.",
+    "deleteTitle": "Delete sensor?",
+    "deleteText": "The sensor and its history will be deleted. If it keeps sending readings, it reappears as a new sensor.",
+    "deleted": "Sensor deleted",
+    "deleteError": "The sensor could not be deleted.",
+    "justNow": "just now"
+  },
+  "sensorKey": {
+    "title": "Indoor climate sensors",
+    "hint": "Thermometers and other sensors send their readings to the app through a bridge (e.g. Zigbee2MQTT or Home Assistant). The bridge needs a key that can only write readings.",
+    "create": "Create key",
+    "replace": "Create new key",
+    "replaceConfirm": "The current key stops working. The bridge needs the new key.",
+    "revoke": "Revoke",
+    "revokeConfirm": "The bridge can no longer send readings. Existing sensors and their history are kept.",
+    "revoked": "Sensor key revoked",
+    "active": "Key active ({prefix}…)",
+    "createdAt": "Created on {date}",
+    "lastUsed": "last used on {date}",
+    "neverUsed": "not used yet",
+    "onlyNow": "The key is only visible now. This example call sends one reading:",
+    "exampleLabel": "Example call with key",
+    "copy": "Copy example",
+    "copied": "Example copied",
+    "copyFailed": "Copying is not possible – select the text in the field and copy it",
+    "adminOnly": "Only admins can create or revoke the key."
   }
 }

@@ -40,6 +40,7 @@ from app.routers import (
     polls,
     push,
     recurring_bills,
+    sensors,
     settlements,
     shopping,
     tags,
@@ -237,6 +238,8 @@ app.include_router(ai.status_router)
 app.include_router(ai.router)
 app.include_router(widget.manage_router)
 app.include_router(widget.router)
+app.include_router(sensors.manage_router)
+app.include_router(sensors.router)
 
 # Socket.IO unter /socket.io mounten
 app.mount("/socket.io", socket_app)

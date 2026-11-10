@@ -27,6 +27,7 @@ import AccountSettingsCard from '../components/AccountSettingsCard.vue'
 import BillingCard from '../components/BillingCard.vue'
 import LegalLinks from '../components/LegalLinks.vue'
 import WidgetSettingsCard from '../components/WidgetSettingsCard.vue'
+import SensorKeyCard from '../components/SensorKeyCard.vue'
 import ConnectionStatus from '../components/ConnectionStatus.vue'
 
 const router = useRouter()
@@ -627,6 +628,9 @@ watch(() => authStore.currentHouseholdId, (id) => {
 
     <!-- ══ Sektion: Homescreen-Widget (Scriptable) ══ -->
     <WidgetSettingsCard />
+
+    <!-- ══ Sektion: Raumklima-Sensoren (Schreib-Schlüssel für die Brücke) ══ -->
+    <SensorKeyCard />
 
     <!-- ══ Sektion: KI-Assistent (nur wenn auf dem Server eingerichtet) ══ -->
     <AiSettingsCard />

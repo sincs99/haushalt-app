@@ -246,6 +246,14 @@ Neuer CI-Job `dependency-audit` in `.github/workflows/ci.yml`: eigener Job ohne 
 
 Kompatibilitätsprüfung ohne lokale Installation: Backend und CI verwenden Python 3.12, Pillow 13 verlangt mindestens 3.11. Casa nutzt keine der entfernten Methoden; Bilder im Modus `I` werden im Uploadpfad vor dem JPEG-Speichern nach RGB konvertiert und nicht direkt als PNG geschrieben. `pillow-heif==1.8.0` verlangt laut [Paketmetadaten](https://pypi.org/pypi/pillow-heif/1.8.0/json) `pillow>=11.1.0` ohne Obergrenze. Die aktualisierten Python-Pakete sind auf PyPI nicht zurückgezogen; ihre Abhängigkeitsgrenzen passen zu den übrigen Pins. Das Frontend-Lockfile übernimmt Version, Tarball-URL und SHA-512-Integrität von [npm](https://registry.npmjs.org/follow-redirects/1.16.1); `1.16.1` erfüllt den bestehenden axios-Bereich `^1.16.0`. Installation, Bild-/Uploadtests und beide Audits erfolgen in CI; ein grüner Lauf wird hier nicht vorweggenommen.
 
+**Nachtrag 2026-11-18:** Der CI-Lauf zu #42 meldete eine neue Advisory für `dnspython`; `npm audit` blieb ohne Befund.
+
+| Paket | Bisher | Neuer Pin | Nachweis und Einordnung |
+|---|---|---|---|
+| dnspython | 2.9.0 | 2.9.2 | CVE-2026-128089: Der Zonefile-Parser `from_text()` prüft die Dienstnummer eines WKS-Records nicht und kann dadurch übermässig Speicher und CPU verbrauchen. **Relevanz: keine** — transitiv über `email-validator`; das Backend importiert `dns` nicht direkt und nutzt nur pydantics `EmailStr` (Syntaxprüfung ohne DNS-Abfrage), fremder Zonefile-Text wird nicht geparst. Patch-Update, damit der Audit wieder grün läuft. |
+
+Kompatibilität: `dnspython 2.9.2` verlangt Python ≥ 3.11 (Backend und CI: 3.12); `email-validator==2.3.0` verlangt `dnspython>=2.0.0`.
+
 **Backend — `pip-audit -r backend/requirements.txt`**
 
 | Paket | Version | Fix | Advisories | Relevanz für Casa |
